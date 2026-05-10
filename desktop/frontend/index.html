@@ -42,13 +42,14 @@
         <header class="topbar">
           <h2>Hosts</h2>
           <div class="actions">
+            <button id="add-host-button" type="button" class="primary">+ Add</button>
             <button id="lock-button" type="button" title="Lock the vault and forget any cached password — next launch will prompt.">Lock</button>
           </div>
         </header>
         <div class="hosts-body">
           <ul id="hosts-list" class="hosts"></ul>
           <p id="hosts-empty" class="muted" hidden>
-            No saved hosts. Use <code>zeroterm add &lt;name&gt; user@host</code> from the CLI.
+            No saved hosts. Click <strong>+ Add</strong>, or use <code>zeroterm add &lt;name&gt; user@host</code> from the CLI.
           </p>
         </div>
       </section>
@@ -105,6 +106,69 @@
             <button id="hk-reject" type="button">Cancel connection</button>
             <button id="hk-accept" type="button" class="primary">Trust and connect</button>
           </div>
+        </div>
+      </div>
+
+      <!-- Add / edit host overlay -->
+      <div id="host-edit-overlay" class="overlay" hidden>
+        <div class="dialog wide">
+          <h3 id="host-edit-title">Add host</h3>
+          <form id="host-edit-form">
+            <div class="grid-2">
+              <label>
+                <span>Name</span>
+                <input id="hf-name" type="text" autocomplete="off" required />
+              </label>
+              <label>
+                <span>User</span>
+                <input id="hf-user" type="text" autocomplete="off" required />
+              </label>
+              <label class="grid-span-2">
+                <span>Host</span>
+                <input id="hf-host" type="text" autocomplete="off" required placeholder="hostname or IP" />
+              </label>
+              <label>
+                <span>Port</span>
+                <input id="hf-port" type="number" min="1" max="65535" value="22" required />
+              </label>
+              <label>
+                <span>Authentication</span>
+                <select id="hf-auth-type">
+                  <option value="password">Password</option>
+                  <option value="key">Private key</option>
+                </select>
+              </label>
+            </div>
+
+            <div id="hf-password-block">
+              <label>
+                <span>Password</span>
+                <input id="hf-password" type="password" autocomplete="off" />
+              </label>
+            </div>
+
+            <div id="hf-key-block" hidden>
+              <label>
+                <span id="hf-key-label">Private key</span>
+                <div class="key-row">
+                  <button id="hf-key-pick" type="button">Choose file…</button>
+                  <span id="hf-key-status" class="muted small">No key loaded</span>
+                </div>
+              </label>
+              <label>
+                <span>Passphrase (optional)</span>
+                <input id="hf-key-passphrase" type="password" autocomplete="off" />
+              </label>
+            </div>
+
+            <p id="host-edit-error" class="error" hidden></p>
+            <p id="host-edit-readonly" class="muted small" hidden></p>
+
+            <div class="dialog-actions">
+              <button id="host-edit-cancel" type="button">Cancel</button>
+              <button id="host-edit-save" type="submit" class="primary">Save</button>
+            </div>
+          </form>
         </div>
       </div>
     </main>

@@ -10,7 +10,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::mpsc;
 use tracing::{debug, info};
@@ -172,6 +172,152 @@ pub async fn list_hosts(state: State<'_, AppState>) -> Result<Vec<HostSummary>, 
             },
         })
         .collect())
+}
+
+// ---- host CRUD -----------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostInput {
+    pub name: String,
+    pub host: String,
+    pub port: u16,
+    pub user: String,
+    pub auth: HostAuthInput,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum HostAuthInput {
+    Password { value: String },
+    PrivateKey {
+        key_pem: String,
+        passphrase: Option<String>,
+    },
+}
+
+impl HostInput {
+    fn into_app_host(self, id: String) -> zeroterm_app::Host {
+        zeroterm_app::Host {
+            id,
+            name: self.name,
+            host: self.host,
+            port: self.port,
+            user: self.user,
+            auth: match self.auth {
+                HostAuthInput::Password { value } => zeroterm_app::HostAuth::Password { value },
+                HostAuthInput::PrivateKey {
+                    key_pem,
+                    passphrase,
+                } => zeroterm_app::HostAuth::PrivateKey {
+                    key_pem,
+                    passphrase,
+                },
+            },
+            // CRUD UI doesn't (yet) edit forwards / proxy_jump — preserve
+            // them on update via `update_host`'s round-trip below.
+            forwards: Vec::new(),
+            proxy_jump: None,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostFull {
+    pub id: String,
+    pub name: String,
+    pub host: String,
+    pub port: u16,
+    pub user: String,
+    pub auth_type: &'static str,
+    /// Only populated for `password` auth — keys never leave the vault
+    /// over IPC for editing (you can replace the key but not view it).
+    pub password: Option<String>,
+    pub key_passphrase: Option<String>,
+    /// Read-only summaries of saved forwards (edit via CLI for now).
+    pub forwards: Vec<String>,
+    pub proxy_jump: Option<String>,
+}
+
+#[tauri::command]
+pub async fn save_host(
+    state: State<'_, AppState>,
+    input: HostInput,
+) -> Result<String, String> {
+    let app_lock = state.app.lock().unwrap();
+    let app = app_lock.as_ref().ok_or("vault is locked")?;
+    let h = input.into_app_host(String::new());
+    app.save_host(&h).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn update_host(
+    state: State<'_, AppState>,
+    id: String,
+    input: HostInput,
+) -> Result<(), String> {
+    let app_lock = state.app.lock().unwrap();
+    let app = app_lock.as_ref().ok_or("vault is locked")?;
+
+    // Read existing record so we can preserve forwards / proxy_jump
+    // — the form edits identity + auth only for now.
+    let existing = app
+        .find_host_by_id(&id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("no host with id {id}"))?;
+
+    let mut new_host = input.into_app_host(id);
+    new_host.forwards = existing.forwards;
+    new_host.proxy_jump = existing.proxy_jump;
+
+    app.update_host(&new_host).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_host(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let app_lock = state.app.lock().unwrap();
+    let app = app_lock.as_ref().ok_or("vault is locked")?;
+    app.delete_host(&id).map_err(|e| e.to_string())
+}
+
+/// Read a local text file (key material picked by the host editor).
+/// We don't whitelist arbitrary FS access via the `tauri-plugin-fs`
+/// permission machinery; this command takes a single path the user
+/// just selected via the dialog plugin and reads it as UTF-8.
+#[tauri::command]
+pub async fn read_local_text_file(path: String) -> Result<String, String> {
+    std::fs::read_to_string(&path).map_err(|e| format!("reading {path}: {e}"))
+}
+
+#[tauri::command]
+pub async fn get_host(state: State<'_, AppState>, id: String) -> Result<HostFull, String> {
+    let app_lock = state.app.lock().unwrap();
+    let app = app_lock.as_ref().ok_or("vault is locked")?;
+    let h = app
+        .find_host_by_id(&id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("no host with id {id}"))?;
+
+    let (auth_type, password, key_passphrase) = match &h.auth {
+        zeroterm_app::HostAuth::Password { value } => ("password", Some(value.clone()), None),
+        zeroterm_app::HostAuth::PrivateKey { passphrase, .. } => {
+            ("key", None, passphrase.clone())
+        }
+    };
+
+    Ok(HostFull {
+        id: h.id,
+        name: h.name,
+        host: h.host,
+        port: h.port,
+        user: h.user,
+        auth_type,
+        password,
+        key_passphrase,
+        forwards: h.forwards.iter().map(|f| f.summary()).collect(),
+        proxy_jump: h.proxy_jump,
+    })
 }
 
 // --------------------------------------------------------------------------

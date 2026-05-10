@@ -12,7 +12,7 @@ W3 step 2 — first cut. What works:
 
 - Vault unlock / first-run create
 - **Auto-unlock from OS keychain** when "Remember password" was checked previously
-- Host list (read-only — manage hosts via CLI)
+- **Host CRUD** — add / edit / delete hosts via modal form (key picked from disk via the file dialog)
 - Click → connect → interactive PTY-backed shell (xterm.js)
 - **Files button → SFTP browser** (list, navigate, upload, download, rename, delete, mkdir)
 - **Auto-applies saved port forwards & ProxyJump** from the host's vault record (configure via `zeroterm forward …` for now)
@@ -22,8 +22,7 @@ W3 step 2 — first cut. What works:
 
 Known gaps (deliberate):
 
-- No host CRUD UI — use `zeroterm add/remove/forward …` from the CLI
-- No GUI editor for forwards / ProxyJump on saved hosts (terminal header is read-only display)
+- No host CRUD UI for **forwards / ProxyJump** — basic identity / auth editing is in the modal, but the forwards list and the ProxyJump alias are read-only display only. Manage with `zeroterm forward …` for now.
 - No tabs / splits / multiple windows
 - No drag-and-drop upload, no recursive operations, no bulk select
 - No SSH agent
@@ -123,6 +122,11 @@ Commands (frontend → backend):
 | `try_keychain_unlock` | — | `boolean` (true = unlocked from cache) |
 | `forget_keychain` | — | — |
 | `list_hosts`   | — | `HostSummary[]` |
+| `save_host`    | `{ input: HostInput }` | new `id` |
+| `update_host`  | `{ id, input: HostInput }` | — (preserves saved forwards / ProxyJump) |
+| `delete_host`  | `{ id }` | — |
+| `get_host`     | `{ id }` | `HostFull` (password is sent back; key bytes never are) |
+| `read_local_text_file` | `{ path }` | file contents — used by the host modal to load a key the user just picked |
 | `connect_host` | `{ hostId, cols?, rows? }` | `sessionId: number` |
 | `send_input`   | `{ sessionId, data: number[] }` | — |
 | `resize_session` | `{ sessionId, cols, rows }` | — |

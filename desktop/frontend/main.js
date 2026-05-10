@@ -164,6 +164,9 @@ async function enterHosts() {
     info.append(name, target, auth);
     info.addEventListener("click", () => connect(host));
 
+    const buttons = document.createElement("div");
+    buttons.className = "row-buttons";
+
     const filesBtn = document.createElement("button");
     filesBtn.type = "button";
     filesBtn.textContent = "Files";
@@ -172,10 +175,35 @@ async function enterHosts() {
       openFiles(host);
     });
 
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.textContent = "Edit";
+    editBtn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      openHostEditor(host.id);
+    });
+
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.textContent = "Delete";
+    delBtn.className = "danger";
+    delBtn.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      if (!confirm(`Delete saved host "${host.name}"?`)) return;
+      try {
+        await invoke("delete_host", { id: host.id });
+        await enterHosts();
+      } catch (e) {
+        alert(`delete failed: ${e}`);
+      }
+    });
+
+    buttons.append(filesBtn, editBtn, delBtn);
+
     li.style.display = "flex";
     li.style.alignItems = "center";
     li.style.gap = "12px";
-    li.append(info, filesBtn);
+    li.append(info, buttons);
     hostsList.appendChild(li);
   }
 }
@@ -382,6 +410,189 @@ async function respondHostKey(accept) {
   } catch (e) {
     console.error("respond_host_key failed", e);
   }
+}
+
+// --------------------------------------------------------------------------
+// host editor (add / edit / delete)
+// --------------------------------------------------------------------------
+const hostOverlay = document.getElementById("host-edit-overlay");
+const hostForm = document.getElementById("host-edit-form");
+const hostTitle = document.getElementById("host-edit-title");
+const hfName = document.getElementById("hf-name");
+const hfHost = document.getElementById("hf-host");
+const hfPort = document.getElementById("hf-port");
+const hfUser = document.getElementById("hf-user");
+const hfAuthType = document.getElementById("hf-auth-type");
+const hfPasswordBlock = document.getElementById("hf-password-block");
+const hfPassword = document.getElementById("hf-password");
+const hfKeyBlock = document.getElementById("hf-key-block");
+const hfKeyPick = document.getElementById("hf-key-pick");
+const hfKeyStatus = document.getElementById("hf-key-status");
+const hfKeyPassphrase = document.getElementById("hf-key-passphrase");
+const hostError = document.getElementById("host-edit-error");
+const hostReadonly = document.getElementById("host-edit-readonly");
+
+let editingHostId = null;
+// We never expose the saved key bytes back to the form. The user can
+// either keep the existing key (leave the picker empty when editing)
+// or replace it (pick a new file). This flag tells `save` whether to
+// re-send key bytes.
+let hfKeyPem = null;
+
+document.getElementById("add-host-button").addEventListener("click", () => openHostEditor());
+document.getElementById("host-edit-cancel").addEventListener("click", closeHostEditor);
+hfAuthType.addEventListener("change", () => syncAuthSections());
+hfKeyPick.addEventListener("click", pickKeyFile);
+hostForm.addEventListener("submit", saveHostForm);
+
+async function openHostEditor(id = null) {
+  editingHostId = id;
+  hostError.hidden = true;
+  hostError.textContent = "";
+  hostReadonly.hidden = true;
+  hostReadonly.textContent = "";
+  hfKeyPem = null;
+  hfKeyStatus.textContent = "No key loaded";
+  hfPassword.value = "";
+  hfKeyPassphrase.value = "";
+
+  if (id) {
+    hostTitle.textContent = "Edit host";
+    try {
+      const h = await invoke("get_host", { id });
+      hfName.value = h.name;
+      hfHost.value = h.host;
+      hfPort.value = h.port;
+      hfUser.value = h.user;
+      hfAuthType.value = h.authType;
+      if (h.authType === "password") {
+        hfPassword.value = h.password ?? "";
+      } else {
+        hfKeyStatus.textContent = "Existing key kept (pick a file to replace)";
+        hfKeyPassphrase.value = h.keyPassphrase ?? "";
+      }
+      const ro = [];
+      if (h.proxyJump) ro.push(`ProxyJump: ${h.proxyJump}`);
+      if (h.forwards.length > 0) ro.push(`Forwards: ${h.forwards.join(", ")}`);
+      if (ro.length > 0) {
+        hostReadonly.textContent =
+          ro.join(" · ") + " — edit via CLI for now (`zeroterm forward …`)";
+        hostReadonly.hidden = false;
+      }
+    } catch (e) {
+      hostError.textContent = `load failed: ${e}`;
+      hostError.hidden = false;
+    }
+  } else {
+    hostTitle.textContent = "Add host";
+    hfName.value = "";
+    hfHost.value = "";
+    hfPort.value = "22";
+    hfUser.value = "";
+    hfAuthType.value = "password";
+  }
+
+  syncAuthSections();
+  hostOverlay.hidden = false;
+  hfName.focus();
+}
+
+function closeHostEditor() {
+  hostOverlay.hidden = true;
+  editingHostId = null;
+  hfKeyPem = null;
+  hostForm.reset();
+}
+
+function syncAuthSections() {
+  if (hfAuthType.value === "password") {
+    hfPasswordBlock.hidden = false;
+    hfKeyBlock.hidden = true;
+  } else {
+    hfPasswordBlock.hidden = true;
+    hfKeyBlock.hidden = false;
+  }
+}
+
+async function pickKeyFile() {
+  const chosen = await invoke("plugin:dialog|open", {
+    options: {
+      multiple: false,
+      directory: false,
+      title: "Choose a private key file",
+    },
+  });
+  if (!chosen) return;
+  const path = String(chosen);
+  try {
+    const text = await invoke("read_local_text_file", { path });
+    hfKeyPem = text;
+    const basename = path.split(/[\\/]/).pop();
+    hfKeyStatus.textContent = `loaded ${basename} (${text.length} bytes)`;
+  } catch (e) {
+    hfKeyStatus.textContent = `read failed: ${e}`;
+  }
+}
+
+async function saveHostForm(ev) {
+  ev.preventDefault();
+  hostError.hidden = true;
+
+  const auth = hfAuthType.value === "password"
+    ? { type: "password", value: hfPassword.value }
+    : await buildKeyAuth();
+  if (auth === null) return;
+
+  const input = {
+    name: hfName.value.trim(),
+    host: hfHost.value.trim(),
+    port: parseInt(hfPort.value, 10),
+    user: hfUser.value.trim(),
+    auth,
+  };
+
+  if (!input.name || !input.host || !input.user) {
+    showHostError("name, host and user are required");
+    return;
+  }
+
+  try {
+    if (editingHostId) {
+      await invoke("update_host", { id: editingHostId, input });
+    } else {
+      await invoke("save_host", { input });
+    }
+    closeHostEditor();
+    await enterHosts();
+  } catch (e) {
+    showHostError(String(e));
+  }
+}
+
+async function buildKeyAuth() {
+  if (editingHostId && !hfKeyPem) {
+    // Editing existing host without picking a new key — refuse to wipe
+    // the existing PEM. Tell user how to keep it: just don't pick.
+    showHostError(
+      "Keep the existing key by closing this dialog without saving, " +
+      "or pick a new file to replace it.",
+    );
+    return null;
+  }
+  if (!editingHostId && !hfKeyPem) {
+    showHostError("Pick a private key file first.");
+    return null;
+  }
+  return {
+    type: "private_key",
+    key_pem: hfKeyPem,
+    passphrase: hfKeyPassphrase.value || null,
+  };
+}
+
+function showHostError(msg) {
+  hostError.textContent = msg;
+  hostError.hidden = false;
 }
 
 // --------------------------------------------------------------------------
