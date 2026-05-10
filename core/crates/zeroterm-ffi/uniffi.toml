@@ -1,0 +1,7 @@
+[bindings.swift]
+module_name = "ZeroTerm"
+generate_module_map = true
+
+[bindings.kotlin]
+package_name = "com.zeroterm.ffi"
+generate_immutable_records = false

@@ -1,0 +1,4 @@
+module ZeroTermFFI {
+    header "ZeroTermFFI.h"
+    export *
+}

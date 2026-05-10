@@ -1,0 +1,22 @@
+[package]
+name = "zeroterm-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Orchestration layer: vault-aware host management on top of zeroterm-ssh + zeroterm-vault"
+
+[dependencies]
+zeroterm-ssh = { path = "../zeroterm-ssh" }
+zeroterm-vault = { path = "../zeroterm-vault" }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+dirs = { workspace = true }
+keyring = { workspace = true }
+
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+anyhow = { workspace = true }

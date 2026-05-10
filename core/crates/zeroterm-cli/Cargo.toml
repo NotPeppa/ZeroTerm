@@ -1,0 +1,26 @@
+[package]
+name = "zeroterm-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Interactive SSH CLI for ZeroTerm"
+
+[[bin]]
+name = "zeroterm"
+path = "src/main.rs"
+
+[dependencies]
+zeroterm-ssh = { path = "../zeroterm-ssh" }
+zeroterm-app = { path = "../zeroterm-app" }
+
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+clap = { workspace = true }
+crossterm = { workspace = true }
+rpassword = { workspace = true }
+dialoguer = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+futures = { workspace = true }
+async-trait = { workspace = true }

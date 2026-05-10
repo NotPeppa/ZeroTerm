@@ -1,0 +1,69 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/zeroterm-ssh",
+    "crates/zeroterm-cli",
+    "crates/zeroterm-store",
+    "crates/zeroterm-vault",
+    "crates/zeroterm-app",
+    "crates/zeroterm-ffi",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/your-org/zeroterm"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# SSH
+russh = "0.45"
+russh-keys = "0.45"
+russh-sftp = "2"
+
+# Errors
+thiserror = "1"
+anyhow = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Filesystem helpers
+dirs = "5"
+
+# CLI deps
+clap = { version = "4", features = ["derive"] }
+crossterm = { version = "0.28", features = ["event-stream"] }
+rpassword = "7"
+dialoguer = { version = "0.11", default-features = false }
+futures = "0.3"
+async-trait = "0.1"
+
+# Storage (vault / future sync)
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Crypto
+argon2 = "0.5"
+chacha20poly1305 = "0.10"
+hkdf = "0.12"
+sha2 = "0.10"
+rand = "0.8"
+zeroize = { version = "1.8", features = ["zeroize_derive"] }
+hex = "0.4"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# IDs
+uuid = { version = "1.10", features = ["v7"] }
+
+# FFI
+uniffi = { version = "0.28", features = ["cli", "tokio"] }
+
+# Dev
+tempfile = "3"

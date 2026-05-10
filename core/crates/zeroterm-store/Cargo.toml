@@ -1,0 +1,11 @@
+[package]
+name = "zeroterm-store"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Local SQLite-backed storage for ZeroTerm — opaque ciphertext only"
+
+[dependencies]
+rusqlite = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }

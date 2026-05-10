@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo --version)",
+      "Bash(rustc --version)",
+      "PowerShell(cargo *)",
+      "PowerShell(Add-Type -AssemblyName System.Drawing; $bmp = New-Object System.Drawing.Bitmap 512, 512; $g = [System.Drawing.Graphics]::FromImage\\($bmp\\); $g.SmoothingMode = 'AntiAlias'; $g.TextRenderingHint = 'AntiAliasGridFit'; $g.Clear\\([System.Drawing.Color]::FromArgb\\(14, 15, 18\\)\\); $brushBg = New-Object System.Drawing.SolidBrush\\([System.Drawing.Color]::FromArgb\\(91, 157, 255\\)\\); $g.FillRectangle\\($brushBg, 56, 56, 400, 400\\); $font = New-Object System.Drawing.Font 'Arial', 280, \\([System.Drawing.FontStyle]::Bold\\); $brushFg = New-Object System.Drawing.SolidBrush\\([System.Drawing.Color]::FromArgb\\(10, 24, 40\\)\\); $g.DrawString\\('Z', $font, $brushFg, 110, 60\\); $bmp.Save\\('desktop\\\\src-tauri\\\\icons\\\\source.png', [System.Drawing.Imaging.ImageFormat]::Png\\); $g.Dispose\\(\\); $bmp.Dispose\\(\\); Write-Host \"wrote desktop\\\\src-tauri\\\\icons\\\\source.png\"; Get-Item 'desktop\\\\src-tauri\\\\icons\\\\source.png' | Select-Object Length)",
+      "Bash(cargo tauri *)"
+    ]
+  }
+}

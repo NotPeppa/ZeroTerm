@@ -1,0 +1,29 @@
+[package]
+name = "zeroterm-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "uniffi bindings for ZeroTerm core (Swift, Kotlin)"
+
+[lib]
+name = "zeroterm_ffi"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[dependencies]
+zeroterm-app = { path = "../zeroterm-app" }
+zeroterm-vault = { path = "../zeroterm-vault" }
+zeroterm-ssh = { path = "../zeroterm-ssh" }
+
+uniffi = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"

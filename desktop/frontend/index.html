@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ZeroTerm</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main id="root">
+      <!-- Unlock view -->
+      <section id="view-unlock" class="view">
+        <div class="card">
+          <h1>ZeroTerm</h1>
+          <p id="unlock-status" class="muted">checking vault…</p>
+          <form id="unlock-form" hidden>
+            <label>
+              <span id="unlock-label">Master password</span>
+              <input id="unlock-password" type="password" autocomplete="off" autofocus />
+            </label>
+            <input
+              id="unlock-confirm"
+              type="password"
+              placeholder="Confirm master password"
+              autocomplete="off"
+              hidden
+            />
+            <label class="checkbox">
+              <input type="checkbox" id="unlock-remember" />
+              Remember password (store in OS keychain)
+            </label>
+            <button id="unlock-button" type="submit">Unlock</button>
+            <p id="unlock-error" class="error" hidden></p>
+          </form>
+          <p id="unlock-path" class="muted small"></p>
+        </div>
+      </section>
+
+      <!-- Hosts list -->
+      <section id="view-hosts" class="view" hidden>
+        <header class="topbar">
+          <h2>Hosts</h2>
+          <div class="actions">
+            <button id="lock-button" type="button" title="Lock the vault and forget any cached password — next launch will prompt.">Lock</button>
+          </div>
+        </header>
+        <div class="hosts-body">
+          <ul id="hosts-list" class="hosts"></ul>
+          <p id="hosts-empty" class="muted" hidden>
+            No saved hosts. Use <code>zeroterm add &lt;name&gt; user@host</code> from the CLI.
+          </p>
+        </div>
+      </section>
+
+      <!-- Terminal -->
+      <section id="view-terminal" class="view" hidden>
+        <header class="topbar">
+          <div class="title-stack">
+            <h2 id="term-title">—</h2>
+            <p id="term-subtitle" class="muted small" hidden></p>
+          </div>
+          <div class="actions">
+            <button id="back-button" type="button">Back</button>
+            <button id="disconnect-button" type="button">Disconnect</button>
+          </div>
+        </header>
+        <div id="terminal" class="terminal-host"></div>
+      </section>
+
+      <!-- Files (SFTP) -->
+      <section id="view-files" class="view" hidden>
+        <header class="topbar">
+          <h2 id="files-title">—</h2>
+          <div class="actions">
+            <button id="files-back" type="button">Back</button>
+          </div>
+        </header>
+        <div class="files-toolbar">
+          <button id="files-up" type="button" title="Parent directory">↑</button>
+          <button id="files-refresh" type="button" title="Refresh">⟳</button>
+          <span id="files-path" class="files-path">/</span>
+          <span class="spacer"></span>
+          <button id="files-mkdir" type="button">New folder</button>
+          <button id="files-upload" type="button">Upload</button>
+        </div>
+        <div id="files-status" class="files-status muted small"></div>
+        <div id="files-progress" class="files-progress" hidden>
+          <div class="files-progress-row">
+            <span id="progress-label">…</span>
+            <button id="progress-cancel" type="button">Cancel</button>
+          </div>
+          <progress id="progress-bar" value="0" max="100"></progress>
+        </div>
+        <ul id="files-list" class="files"></ul>
+      </section>
+
+      <!-- Host-key prompt overlay -->
+      <div id="host-key-overlay" class="overlay" hidden>
+        <div class="dialog">
+          <h3 id="hk-title">Host key</h3>
+          <p id="hk-body"></p>
+          <pre id="hk-detail" class="hk-detail"></pre>
+          <div class="dialog-actions">
+            <button id="hk-reject" type="button">Cancel connection</button>
+            <button id="hk-accept" type="button" class="primary">Trust and connect</button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

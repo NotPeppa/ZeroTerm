@@ -1,0 +1,25 @@
+# Rust build artifacts
+target/
+**/*.rs.bk
+*.pdb
+
+# Cargo lockfile is kept for the workspace root only (it's already in core/)
+# Keep core/Cargo.lock; ignore lockfiles for any nested example crates.
+
+# Editor / OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local env
+.env
+.env.local
+
+# Per-user known_hosts created during testing, if placed in repo root
+test-known-hosts
+
+# Tauri / desktop
+desktop/src-tauri/gen/
+desktop/node_modules/
+desktop/dist/

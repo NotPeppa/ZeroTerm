@@ -1,0 +1,100 @@
+use std::collections::HashMap;
+use std::sync::atomic::AtomicU64;
+use std::sync::{Arc, Mutex};
+
+use tokio::sync::{mpsc, oneshot};
+use tokio_util::sync::CancellationToken;
+
+/// Backend state shared across Tauri commands.
+///
+/// Locking discipline:
+///   - All inner mutexes are sync `std::sync::Mutex`. **Never await while
+///     holding one**. The session loop in `session::run` is the only
+///     long-lived async work here, and it doesn't take these locks at
+///     all — it owns its `ShellChannel` directly.
+///   - Locks are short and granular; if you find yourself wanting to hold
+///     `app` and `sessions` at the same time, restructure instead.
+pub struct AppState {
+    /// `None` while the vault is locked, `Some(App)` once unlocked.
+    pub app: Mutex<Option<zeroterm_app::App>>,
+
+    /// Active shell sessions keyed by id assigned via `next_session_id`.
+    pub sessions: Mutex<HashMap<u64, SessionHandle>>,
+
+    pub next_session_id: AtomicU64,
+
+    /// Outstanding host-key prompts, keyed by request_id. The session
+    /// task that triggered the prompt awaits a oneshot from this map;
+    /// the `respond_host_key` command pulls the sender out and fulfills
+    /// it.
+    pub pending_host_key: Mutex<HashMap<String, oneshot::Sender<bool>>>,
+
+    /// Active SFTP handles keyed by id assigned via `next_sftp_id`.
+    /// Distinct from `sessions` because SFTP doesn't share the shell
+    /// session — each `sftp_open` builds its own SSH connection.
+    pub sftp_handles: Mutex<HashMap<u64, SftpHandle>>,
+
+    pub next_sftp_id: AtomicU64,
+
+    /// Cancellation tokens for in-flight transfers, keyed by transferId.
+    /// `sftp_cancel_transfer` pulls one out and fires it; the streaming
+    /// download/upload loops check the token between chunks.
+    pub transfers: Mutex<HashMap<u64, CancellationToken>>,
+
+    pub next_transfer_id: AtomicU64,
+}
+
+impl AppState {
+    pub fn new() -> Self {
+        Self {
+            app: Mutex::new(None),
+            sessions: Mutex::new(HashMap::new()),
+            next_session_id: AtomicU64::new(1),
+            pending_host_key: Mutex::new(HashMap::new()),
+            sftp_handles: Mutex::new(HashMap::new()),
+            next_sftp_id: AtomicU64::new(1),
+            transfers: Mutex::new(HashMap::new()),
+            next_transfer_id: AtomicU64::new(1),
+        }
+    }
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Per-session control channel. The frontend calls `send_input`,
+/// `resize_session`, or `disconnect_session`; those commands enqueue a
+/// [`SessionCommand`] which the session task drains.
+///
+/// We don't keep the spawned task's `JoinHandle` here: the task ends
+/// itself on either `SessionCommand::Disconnect` or remote close, and
+/// when `AppState` drops the `control_tx` is dropped too — the task's
+/// `recv()` returns `None` and it falls through to graceful shutdown.
+pub struct SessionHandle {
+    pub control_tx: mpsc::Sender<SessionCommand>,
+    /// Human-readable list of forwards active for this session
+    /// (`["L 8080:127.0.0.1:80", "D 1080"]`). The frontend reads this
+    /// when displaying the host header.
+    pub forward_summaries: Vec<String>,
+    pub jump_summary: Option<String>,
+}
+
+#[derive(Debug)]
+pub enum SessionCommand {
+    Input(Vec<u8>),
+    Resize(u16, u16),
+    Disconnect,
+}
+
+/// Owns an SFTP channel along with the SSH session it rides on. Both
+/// must stay alive for the SFTP commands to keep working. Drop closes
+/// both naturally. If the host has a saved ProxyJump, the jump session
+/// hangs off here too — the underlying TCP connection can't outlive it.
+pub struct SftpHandle {
+    pub _session: zeroterm_ssh::Session,
+    pub _jump_session: Option<zeroterm_ssh::Session>,
+    pub sftp: Arc<zeroterm_ssh::Sftp>,
+}

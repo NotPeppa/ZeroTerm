@@ -1,0 +1,28 @@
+[package]
+name = "zeroterm-vault"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "End-to-end encrypted credential & config store for ZeroTerm"
+
+[dependencies]
+zeroterm-store = { path = "../zeroterm-store" }
+
+argon2 = { workspace = true }
+chacha20poly1305 = { workspace = true }
+hkdf = { workspace = true }
+sha2 = { workspace = true }
+rand = { workspace = true }
+zeroize = { workspace = true }
+uuid = { workspace = true }
+
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+anyhow = { workspace = true }
+
+[[example]]
+name = "vault_demo"
+path = "examples/vault_demo.rs"
