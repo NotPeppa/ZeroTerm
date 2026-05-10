@@ -429,6 +429,9 @@ const hfKeyBlock = document.getElementById("hf-key-block");
 const hfKeyPick = document.getElementById("hf-key-pick");
 const hfKeyStatus = document.getElementById("hf-key-status");
 const hfKeyPassphrase = document.getElementById("hf-key-passphrase");
+const hfJump = document.getElementById("hf-jump");
+const hfForwardsList = document.getElementById("hf-forwards");
+const hfForwardAdd = document.getElementById("hf-forward-add");
 const hostError = document.getElementById("host-edit-error");
 const hostReadonly = document.getElementById("host-edit-readonly");
 
@@ -438,11 +441,24 @@ let editingHostId = null;
 // or replace it (pick a new file). This flag tells `save` whether to
 // re-send key bytes.
 let hfKeyPem = null;
+// In-memory forwards being edited. Each entry shape:
+//   { kind: "local" | "dynamic", bindAddr, bindPort, targetHost?, targetPort? }
+let hfForwards = [];
 
 document.getElementById("add-host-button").addEventListener("click", () => openHostEditor());
 document.getElementById("host-edit-cancel").addEventListener("click", closeHostEditor);
 hfAuthType.addEventListener("change", () => syncAuthSections());
 hfKeyPick.addEventListener("click", pickKeyFile);
+hfForwardAdd.addEventListener("click", () => {
+  hfForwards.push({
+    kind: "local",
+    bindAddr: "127.0.0.1",
+    bindPort: "",
+    targetHost: "",
+    targetPort: "",
+  });
+  renderForwards();
+});
 hostForm.addEventListener("submit", saveHostForm);
 
 async function openHostEditor(id = null) {
@@ -455,6 +471,11 @@ async function openHostEditor(id = null) {
   hfKeyStatus.textContent = "No key loaded";
   hfPassword.value = "";
   hfKeyPassphrase.value = "";
+  hfForwards = [];
+
+  // Populate the ProxyJump dropdown with every saved alias except the
+  // one being edited (no self-jump).
+  await populateJumpOptions(id);
 
   if (id) {
     hostTitle.textContent = "Edit host";
@@ -471,14 +492,8 @@ async function openHostEditor(id = null) {
         hfKeyStatus.textContent = "Existing key kept (pick a file to replace)";
         hfKeyPassphrase.value = h.keyPassphrase ?? "";
       }
-      const ro = [];
-      if (h.proxyJump) ro.push(`ProxyJump: ${h.proxyJump}`);
-      if (h.forwards.length > 0) ro.push(`Forwards: ${h.forwards.join(", ")}`);
-      if (ro.length > 0) {
-        hostReadonly.textContent =
-          ro.join(" · ") + " — edit via CLI for now (`zeroterm forward …`)";
-        hostReadonly.hidden = false;
-      }
+      hfJump.value = h.proxyJump ?? "";
+      hfForwards = h.forwards.map(forwardFromIO);
     } catch (e) {
       hostError.textContent = `load failed: ${e}`;
       hostError.hidden = false;
@@ -490,17 +505,161 @@ async function openHostEditor(id = null) {
     hfPort.value = "22";
     hfUser.value = "";
     hfAuthType.value = "password";
+    hfJump.value = "";
   }
 
   syncAuthSections();
+  renderForwards();
   hostOverlay.hidden = false;
   hfName.focus();
+}
+
+async function populateJumpOptions(currentId) {
+  hfJump.innerHTML = "";
+  const noneOpt = document.createElement("option");
+  noneOpt.value = "";
+  noneOpt.textContent = "(none)";
+  hfJump.appendChild(noneOpt);
+
+  let hosts = [];
+  try {
+    hosts = await invoke("list_hosts");
+  } catch (e) {
+    console.warn("list_hosts in jump dropdown failed", e);
+    return;
+  }
+  for (const h of hosts) {
+    if (h.id === currentId) continue;
+    const opt = document.createElement("option");
+    opt.value = h.name;
+    opt.textContent = `${h.name} (${h.user}@${h.host}:${h.port})`;
+    hfJump.appendChild(opt);
+  }
+}
+
+function forwardFromIO(spec) {
+  if (spec.kind === "local") {
+    return {
+      kind: "local",
+      bindAddr: spec.bindAddr,
+      bindPort: String(spec.bindPort),
+      targetHost: spec.targetHost,
+      targetPort: String(spec.targetPort),
+    };
+  }
+  return {
+    kind: "dynamic",
+    bindAddr: spec.bindAddr,
+    bindPort: String(spec.bindPort),
+  };
+}
+
+function renderForwards() {
+  hfForwardsList.innerHTML = "";
+  if (hfForwards.length === 0) {
+    const empty = document.createElement("li");
+    empty.style.padding = "6px 8px";
+    empty.style.color = "var(--muted)";
+    empty.style.fontSize = "12px";
+    empty.style.gridTemplateColumns = "1fr";
+    empty.textContent = "(no forwards — click + Add forward)";
+    hfForwardsList.appendChild(empty);
+    return;
+  }
+
+  hfForwards.forEach((fwd, idx) => {
+    const li = document.createElement("li");
+
+    const kindSel = document.createElement("select");
+    [
+      ["local", "Local (-L)"],
+      ["dynamic", "SOCKS5 (-D)"],
+    ].forEach(([v, label]) => {
+      const o = document.createElement("option");
+      o.value = v;
+      o.textContent = label;
+      kindSel.appendChild(o);
+    });
+    kindSel.value = fwd.kind;
+    kindSel.addEventListener("change", () => {
+      fwd.kind = kindSel.value;
+      // Clear target fields when switching to dynamic
+      if (fwd.kind === "dynamic") {
+        delete fwd.targetHost;
+        delete fwd.targetPort;
+      } else {
+        fwd.targetHost = fwd.targetHost ?? "";
+        fwd.targetPort = fwd.targetPort ?? "";
+      }
+      renderForwards();
+    });
+
+    const fields = document.createElement("div");
+    fields.className = "fields";
+
+    const bind = document.createElement("input");
+    bind.type = "text";
+    bind.className = "bind";
+    bind.placeholder = "bind addr";
+    bind.value = fwd.bindAddr;
+    bind.addEventListener("input", () => (fwd.bindAddr = bind.value));
+    fields.appendChild(bind);
+
+    const bp = document.createElement("input");
+    bp.type = "number";
+    bp.className = "short";
+    bp.placeholder = "port";
+    bp.min = 1;
+    bp.max = 65535;
+    bp.value = fwd.bindPort;
+    bp.addEventListener("input", () => (fwd.bindPort = bp.value));
+    fields.appendChild(bp);
+
+    if (fwd.kind === "local") {
+      const arrow = document.createElement("span");
+      arrow.textContent = "→";
+      arrow.style.color = "var(--muted)";
+      arrow.style.alignSelf = "center";
+      fields.appendChild(arrow);
+
+      const th = document.createElement("input");
+      th.type = "text";
+      th.className = "medium";
+      th.placeholder = "target host";
+      th.value = fwd.targetHost ?? "";
+      th.addEventListener("input", () => (fwd.targetHost = th.value));
+      fields.appendChild(th);
+
+      const tp = document.createElement("input");
+      tp.type = "number";
+      tp.className = "short";
+      tp.placeholder = "port";
+      tp.min = 1;
+      tp.max = 65535;
+      tp.value = fwd.targetPort ?? "";
+      tp.addEventListener("input", () => (fwd.targetPort = tp.value));
+      fields.appendChild(tp);
+    }
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "remove";
+    remove.textContent = "Remove";
+    remove.addEventListener("click", () => {
+      hfForwards.splice(idx, 1);
+      renderForwards();
+    });
+
+    li.append(kindSel, fields, remove);
+    hfForwardsList.appendChild(li);
+  });
 }
 
 function closeHostEditor() {
   hostOverlay.hidden = true;
   editingHostId = null;
   hfKeyPem = null;
+  hfForwards = [];
   hostForm.reset();
 }
 
@@ -543,12 +702,48 @@ async function saveHostForm(ev) {
     : await buildKeyAuth();
   if (auth === null) return;
 
+  // Validate + serialize forwards
+  const forwards = [];
+  for (const [i, fwd] of hfForwards.entries()) {
+    const bp = parseInt(fwd.bindPort, 10);
+    if (!bp || bp < 1 || bp > 65535) {
+      showHostError(`forward ${i + 1}: invalid bind port`);
+      return;
+    }
+    if (fwd.kind === "local") {
+      if (!fwd.targetHost?.trim()) {
+        showHostError(`forward ${i + 1}: target host is required`);
+        return;
+      }
+      const tp = parseInt(fwd.targetPort, 10);
+      if (!tp || tp < 1 || tp > 65535) {
+        showHostError(`forward ${i + 1}: invalid target port`);
+        return;
+      }
+      forwards.push({
+        kind: "local",
+        bind_addr: fwd.bindAddr || "127.0.0.1",
+        bind_port: bp,
+        target_host: fwd.targetHost.trim(),
+        target_port: tp,
+      });
+    } else {
+      forwards.push({
+        kind: "dynamic",
+        bind_addr: fwd.bindAddr || "127.0.0.1",
+        bind_port: bp,
+      });
+    }
+  }
+
   const input = {
     name: hfName.value.trim(),
     host: hfHost.value.trim(),
     port: parseInt(hfPort.value, 10),
     user: hfUser.value.trim(),
     auth,
+    forwards,
+    proxy_jump: hfJump.value || null,
   };
 
   if (!input.name || !input.host || !input.user) {

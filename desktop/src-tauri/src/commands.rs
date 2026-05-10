@@ -184,6 +184,10 @@ pub struct HostInput {
     pub port: u16,
     pub user: String,
     pub auth: HostAuthInput,
+    #[serde(default)]
+    pub forwards: Vec<ForwardSpecIO>,
+    #[serde(default)]
+    pub proxy_jump: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -194,6 +198,78 @@ pub enum HostAuthInput {
         key_pem: String,
         passphrase: Option<String>,
     },
+}
+
+/// Wire shape for a forward, both incoming (`HostInput`) and outgoing
+/// (`HostFull`). Mirrors `zeroterm_app::ForwardSpec` but lives here so
+/// we can decorate it with the right serde shape for IPC.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ForwardSpecIO {
+    Local {
+        #[serde(default = "default_bind_addr")]
+        bind_addr: String,
+        bind_port: u16,
+        target_host: String,
+        target_port: u16,
+    },
+    Dynamic {
+        #[serde(default = "default_bind_addr")]
+        bind_addr: String,
+        bind_port: u16,
+    },
+}
+
+fn default_bind_addr() -> String {
+    "127.0.0.1".to_string()
+}
+
+impl ForwardSpecIO {
+    fn into_app(self) -> zeroterm_app::ForwardSpec {
+        match self {
+            ForwardSpecIO::Local {
+                bind_addr,
+                bind_port,
+                target_host,
+                target_port,
+            } => zeroterm_app::ForwardSpec::Local {
+                bind_addr,
+                bind_port,
+                target_host,
+                target_port,
+            },
+            ForwardSpecIO::Dynamic {
+                bind_addr,
+                bind_port,
+            } => zeroterm_app::ForwardSpec::Dynamic {
+                bind_addr,
+                bind_port,
+            },
+        }
+    }
+
+    fn from_app(spec: &zeroterm_app::ForwardSpec) -> Self {
+        match spec {
+            zeroterm_app::ForwardSpec::Local {
+                bind_addr,
+                bind_port,
+                target_host,
+                target_port,
+            } => ForwardSpecIO::Local {
+                bind_addr: bind_addr.clone(),
+                bind_port: *bind_port,
+                target_host: target_host.clone(),
+                target_port: *target_port,
+            },
+            zeroterm_app::ForwardSpec::Dynamic {
+                bind_addr,
+                bind_port,
+            } => ForwardSpecIO::Dynamic {
+                bind_addr: bind_addr.clone(),
+                bind_port: *bind_port,
+            },
+        }
+    }
 }
 
 impl HostInput {
@@ -214,10 +290,8 @@ impl HostInput {
                     passphrase,
                 },
             },
-            // CRUD UI doesn't (yet) edit forwards / proxy_jump — preserve
-            // them on update via `update_host`'s round-trip below.
-            forwards: Vec::new(),
-            proxy_jump: None,
+            forwards: self.forwards.into_iter().map(|f| f.into_app()).collect(),
+            proxy_jump: self.proxy_jump,
         }
     }
 }
@@ -235,8 +309,8 @@ pub struct HostFull {
     /// over IPC for editing (you can replace the key but not view it).
     pub password: Option<String>,
     pub key_passphrase: Option<String>,
-    /// Read-only summaries of saved forwards (edit via CLI for now).
-    pub forwards: Vec<String>,
+    /// Structured forwards for the editor.
+    pub forwards: Vec<ForwardSpecIO>,
     pub proxy_jump: Option<String>,
 }
 
@@ -260,17 +334,18 @@ pub async fn update_host(
     let app_lock = state.app.lock().unwrap();
     let app = app_lock.as_ref().ok_or("vault is locked")?;
 
-    // Read existing record so we can preserve forwards / proxy_jump
-    // — the form edits identity + auth only for now.
-    let existing = app
+    // Confirm the host exists; the input fully replaces the saved
+    // record (including forwards / proxy_jump, which the editor now
+    // handles).
+    if app
         .find_host_by_id(&id)
         .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("no host with id {id}"))?;
+        .is_none()
+    {
+        return Err(format!("no host with id {id}"));
+    }
 
-    let mut new_host = input.into_app_host(id);
-    new_host.forwards = existing.forwards;
-    new_host.proxy_jump = existing.proxy_jump;
-
+    let new_host = input.into_app_host(id);
     app.update_host(&new_host).map_err(|e| e.to_string())
 }
 
@@ -315,7 +390,7 @@ pub async fn get_host(state: State<'_, AppState>, id: String) -> Result<HostFull
         auth_type,
         password,
         key_passphrase,
-        forwards: h.forwards.iter().map(|f| f.summary()).collect(),
+        forwards: h.forwards.iter().map(ForwardSpecIO::from_app).collect(),
         proxy_jump: h.proxy_jump,
     })
 }

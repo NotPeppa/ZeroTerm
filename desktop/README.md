@@ -13,16 +13,15 @@ W3 step 2 — first cut. What works:
 - Vault unlock / first-run create
 - **Auto-unlock from OS keychain** when "Remember password" was checked previously
 - **Host CRUD** — add / edit / delete hosts via modal form (key picked from disk via the file dialog)
+- **Per-host port forwards & ProxyJump editor** in the same modal — persisted, auto-applied on connect
 - Click → connect → interactive PTY-backed shell (xterm.js)
 - **Files button → SFTP browser** (list, navigate, upload, download, rename, delete, mkdir)
-- **Auto-applies saved port forwards & ProxyJump** from the host's vault record (configure via `zeroterm forward …` for now)
 - Resize forwarding
 - Async host-key prompt with accept/reject overlay
 - Lock vault button (forgets the cached password too — full re-auth required next launch)
 
 Known gaps (deliberate):
 
-- No host CRUD UI for **forwards / ProxyJump** — basic identity / auth editing is in the modal, but the forwards list and the ProxyJump alias are read-only display only. Manage with `zeroterm forward …` for now.
 - No tabs / splits / multiple windows
 - No drag-and-drop upload, no recursive operations, no bulk select
 - No SSH agent

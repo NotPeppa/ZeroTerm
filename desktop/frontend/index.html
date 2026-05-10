@@ -161,6 +161,26 @@
               </label>
             </div>
 
+            <fieldset class="advanced">
+              <legend>ProxyJump &amp; forwards</legend>
+              <label>
+                <span>ProxyJump (saved alias)</span>
+                <select id="hf-jump"></select>
+              </label>
+
+              <div class="forwards-block">
+                <div class="forwards-label">
+                  <span>Port forwards</span>
+                  <button id="hf-forward-add" type="button" class="small">+ Add forward</button>
+                </div>
+                <ul id="hf-forwards" class="forward-list"></ul>
+                <p class="muted small">
+                  Forwards start automatically when you connect. SOCKS5
+                  uses no auth, CONNECT only.
+                </p>
+              </div>
+            </fieldset>
+
             <p id="host-edit-error" class="error" hidden></p>
             <p id="host-edit-readonly" class="muted small" hidden></p>
 
