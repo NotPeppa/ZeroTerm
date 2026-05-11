@@ -52,6 +52,100 @@ function uniqueId(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+const FILE_EDITOR_MAX_BYTES = 2 * 1024 * 1024;
+
+const EDITABLE_TEXT_EXTS = new Set([
+  "txt", "log", "md", "markdown", "json", "jsonc", "yaml", "yml", "toml",
+  "ini", "conf", "cfg", "cnf", "env", "sh", "bash", "zsh", "fish", "ps1",
+  "sql", "xml", "html", "htm", "css", "js", "mjs", "cjs", "ts", "tsx",
+  "jsx", "py", "rb", "go", "rs", "java", "kt", "swift", "php", "c", "h",
+  "cpp", "hpp", "cc", "cs", "vue", "svelte", "properties", "service",
+]);
+
+const EDITABLE_TEXT_BASENAMES = new Set([
+  "dockerfile", "makefile", "readme", "readme.md", ".env", ".gitignore",
+  ".gitattributes", ".bashrc", ".zshrc", ".profile", "nginx.conf",
+  "sshd_config", "authorized_keys", "known_hosts", "config",
+]);
+
+const ACE_BASE_PATH = "https://cdn.jsdelivr.net/npm/ace-builds@1.42.0/src-min-noconflict";
+
+const MODE_BY_EXTENSION = {
+  txt: "text",
+  log: "text",
+  md: "markdown",
+  markdown: "markdown",
+  json: "json",
+  jsonc: "json",
+  yaml: "yaml",
+  yml: "yaml",
+  toml: "toml",
+  ini: "ini",
+  conf: "ini",
+  cfg: "ini",
+  cnf: "ini",
+  env: "sh",
+  sh: "sh",
+  bash: "sh",
+  zsh: "sh",
+  fish: "sh",
+  ps1: "powershell",
+  sql: "sql",
+  xml: "xml",
+  html: "html",
+  htm: "html",
+  css: "css",
+  js: "javascript",
+  mjs: "javascript",
+  cjs: "javascript",
+  ts: "typescript",
+  tsx: "tsx",
+  jsx: "jsx",
+  py: "python",
+  rb: "ruby",
+  go: "golang",
+  rs: "rust",
+  java: "java",
+  kt: "kotlin",
+  swift: "swift",
+  php: "php",
+  c: "c_cpp",
+  h: "c_cpp",
+  cc: "c_cpp",
+  cpp: "c_cpp",
+  hpp: "c_cpp",
+  cs: "csharp",
+  vue: "vue",
+  svelte: "svelte",
+  properties: "properties",
+  service: "ini",
+};
+
+function isLikelyEditableTextName(name) {
+  const lower = String(name || "").toLowerCase();
+  if (!lower) return false;
+  if (EDITABLE_TEXT_BASENAMES.has(lower)) return true;
+  if (lower.startsWith(".env")) return true;
+
+  const idx = lower.lastIndexOf(".");
+  if (idx <= 0 || idx === lower.length - 1) return false;
+  const ext = lower.slice(idx + 1);
+  return EDITABLE_TEXT_EXTS.has(ext);
+}
+
+function detectAceModeByName(name) {
+  const lower = String(name || "").toLowerCase();
+  if (!lower) return "text";
+  if (lower === "dockerfile") return "dockerfile";
+  if (lower === "makefile") return "makefile";
+  if (lower === "nginx.conf") return "nginx";
+
+  const idx = lower.lastIndexOf(".");
+  if (idx <= 0 || idx === lower.length - 1) return "text";
+  const ext = lower.slice(idx + 1);
+  return MODE_BY_EXTENSION[ext] || "text";
+}
+
 // --------------------------------------------------------------------------
 // Unlock flow
 // --------------------------------------------------------------------------
@@ -1176,6 +1270,21 @@ const filesUploadMany = document.getElementById("files-upload-many");
 const filesDownloadSelected = document.getElementById("files-download-selected");
 const filesDeleteSelected = document.getElementById("files-delete-selected");
 const filesSelectionHint = document.getElementById("files-selection-hint");
+const fileEditorOverlay = document.getElementById("file-editor-overlay");
+const fileEditorTitle = document.getElementById("file-editor-title");
+const fileEditorPath = document.getElementById("file-editor-path");
+const fileEditorHint = document.getElementById("file-editor-hint");
+const fileEditorContent = document.getElementById("file-editor-content");
+const fileEditorFindInput = document.getElementById("file-editor-find");
+const fileEditorReplaceInput = document.getElementById("file-editor-replace");
+const fileEditorMatchCaseInput = document.getElementById("file-editor-match-case");
+const fileEditorFindPrevButton = document.getElementById("file-editor-find-prev");
+const fileEditorFindNextButton = document.getElementById("file-editor-find-next");
+const fileEditorReplaceOneButton = document.getElementById("file-editor-replace-one");
+const fileEditorReplaceAllButton = document.getElementById("file-editor-replace-all");
+const fileEditorError = document.getElementById("file-editor-error");
+const fileEditorSaveButton = document.getElementById("file-editor-save");
+const fileEditorCancelButton = document.getElementById("file-editor-cancel");
 
 let filesSftpId = null;
 let filesCurrentPath = "/";
@@ -1186,8 +1295,91 @@ let activeTransferId = null;
 let pendingCancel = false;
 let progressUnlisten = null;
 let dragDepth = 0;
+const fileEditorState = {
+  open: false,
+  path: "",
+  originalContent: "",
+  dirty: false,
+  saving: false,
+};
+let fileEditorAce = null;
 
 const filesDropTarget = document.querySelector(".files-drop-zone-wrap");
+
+function ensureFileEditorAce() {
+  if (fileEditorAce) return true;
+
+  if (!window.ace) {
+    setFileEditorError("Ace editor failed to load.");
+    return false;
+  }
+
+  window.ace.config.set("basePath", ACE_BASE_PATH);
+  window.ace.config.set("modePath", ACE_BASE_PATH);
+  window.ace.config.set("themePath", ACE_BASE_PATH);
+  window.ace.config.set("workerPath", ACE_BASE_PATH);
+  fileEditorAce = window.ace.edit("file-editor-content");
+  fileEditorAce.setTheme("ace/theme/tomorrow_night_bright");
+  fileEditorAce.session.setMode("ace/mode/text");
+  fileEditorAce.session.setUseWrapMode(false);
+  fileEditorAce.setShowPrintMargin(false);
+  fileEditorAce.setOptions({
+    fontSize: "13px",
+    tabSize: 2,
+    useSoftTabs: true,
+    showLineNumbers: true,
+    showGutter: true,
+    highlightActiveLine: true,
+  });
+
+  fileEditorAce.session.on("change", () => {
+    if (!fileEditorState.open) return;
+    setFileEditorDirty(fileEditorGetValue() !== fileEditorState.originalContent);
+  });
+
+  fileEditorAce.commands.addCommand({
+    name: "saveRemoteFile",
+    bindKey: { win: "Ctrl-S", mac: "Command-S" },
+    exec: () => {
+      saveRemoteEditor();
+    },
+  });
+  fileEditorAce.commands.addCommand({
+    name: "closeRemoteEditor",
+    bindKey: { win: "Esc", mac: "Esc" },
+    exec: () => {
+      closeRemoteEditor();
+    },
+  });
+
+  return true;
+}
+
+function fileEditorSetValue(content) {
+  if (!ensureFileEditorAce()) return;
+  fileEditorAce.setValue(content, -1);
+}
+
+function fileEditorGetValue() {
+  if (!ensureFileEditorAce()) return "";
+  return fileEditorAce.getValue();
+}
+
+function fileEditorSetReadOnly(readOnly) {
+  if (!ensureFileEditorAce()) return;
+  fileEditorAce.setReadOnly(readOnly);
+}
+
+function fileEditorFocus() {
+  if (!ensureFileEditorAce()) return;
+  fileEditorAce.focus();
+}
+
+function fileEditorSetModeByPath(path) {
+  if (!ensureFileEditorAce()) return;
+  const mode = detectAceModeByName(basename(path));
+  fileEditorAce.session.setMode(`ace/mode/${mode}`);
+}
 
 document.getElementById("files-back").addEventListener("click", () => closeFiles());
 document.getElementById("files-up").addEventListener("click", () => {
@@ -1216,6 +1408,29 @@ document.getElementById("files-upload").addEventListener("click", uploadHere);
 filesUploadMany.addEventListener("click", uploadManyHere);
 filesDownloadSelected.addEventListener("click", downloadSelectedFiles);
 filesDeleteSelected.addEventListener("click", deleteSelectedFiles);
+fileEditorCancelButton.addEventListener("click", () => closeRemoteEditor());
+fileEditorSaveButton.addEventListener("click", () => saveRemoteEditor());
+fileEditorOverlay.addEventListener("click", (ev) => {
+  if (ev.target === fileEditorOverlay) {
+    closeRemoteEditor();
+  }
+});
+fileEditorFindPrevButton.addEventListener("click", () => searchInEditor({ backwards: true }));
+fileEditorFindNextButton.addEventListener("click", () => searchInEditor({ backwards: false }));
+fileEditorReplaceOneButton.addEventListener("click", () => replaceInEditor({ all: false }));
+fileEditorReplaceAllButton.addEventListener("click", () => replaceInEditor({ all: true }));
+fileEditorFindInput.addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter") {
+    ev.preventDefault();
+    searchInEditor({ backwards: ev.shiftKey });
+  }
+});
+fileEditorReplaceInput.addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter") {
+    ev.preventDefault();
+    replaceInEditor({ all: ev.shiftKey });
+  }
+});
 filesSelectAll.addEventListener("change", () => {
   if (filesSelectAll.checked) {
     for (const entry of filesEntries) filesSelected.add(entry.name);
@@ -1258,6 +1473,205 @@ filesDropTarget.addEventListener("drop", async (ev) => {
 
   await uploadDroppedFiles(dropped);
 });
+
+function canInlineEditEntry(entry) {
+  return (
+    entry.kind === "file" &&
+    entry.size <= FILE_EDITOR_MAX_BYTES &&
+    isLikelyEditableTextName(entry.name)
+  );
+}
+
+function setFileEditorError(message) {
+  if (!message) {
+    fileEditorError.hidden = true;
+    fileEditorError.textContent = "";
+    return;
+  }
+  fileEditorError.hidden = false;
+  fileEditorError.textContent = message;
+}
+
+function setFileEditorDirty(dirty) {
+  fileEditorState.dirty = dirty;
+  fileEditorTitle.textContent = dirty ? "Edit Remote File *" : "Edit Remote File";
+}
+
+function editorSearchOptions({ backwards = false } = {}) {
+  return {
+    backwards,
+    wrap: true,
+    caseSensitive: fileEditorMatchCaseInput.checked,
+    wholeWord: false,
+    regExp: false,
+  };
+}
+
+function searchInEditor({ backwards = false } = {}) {
+  if (!fileEditorState.open || !ensureFileEditorAce()) return false;
+  const needle = fileEditorFindInput.value;
+  if (!needle) {
+    setFileEditorError("Enter text in Search first.");
+    return false;
+  }
+
+  const range = fileEditorAce.find(needle, editorSearchOptions({ backwards }));
+  if (!range) {
+    setFileEditorError("No matches found.");
+    return false;
+  }
+  setFileEditorError("");
+  return true;
+}
+
+function replaceInEditor({ all = false } = {}) {
+  if (!fileEditorState.open || !ensureFileEditorAce()) return;
+  const needle = fileEditorFindInput.value;
+  if (!needle) {
+    setFileEditorError("Enter text in Search first.");
+    return;
+  }
+
+  const replacement = fileEditorReplaceInput.value ?? "";
+  const opts = editorSearchOptions();
+
+  if (all) {
+    const replaced = fileEditorAce.replaceAll(replacement, { ...opts, needle });
+    if (!replaced) {
+      setFileEditorError("No matches found to replace.");
+      return;
+    }
+    setFileEditorError("");
+    fileEditorHint.textContent = `Replaced ${replaced} occurrence(s).`;
+    return;
+  }
+
+  if (!searchInEditor({ backwards: false })) return;
+  const replaced = fileEditorAce.replace(replacement);
+  if (replaced == null) {
+    setFileEditorError("No match selected to replace.");
+    return;
+  }
+
+  setFileEditorError("");
+  fileEditorHint.textContent = "Replaced 1 occurrence.";
+}
+
+function resetFileEditorState() {
+  fileEditorState.open = false;
+  fileEditorState.path = "";
+  fileEditorState.originalContent = "";
+  fileEditorState.dirty = false;
+  fileEditorState.saving = false;
+  if (ensureFileEditorAce()) {
+    fileEditorSetValue("");
+    fileEditorSetReadOnly(false);
+    fileEditorAce.session.setMode("ace/mode/text");
+    fileEditorAce.clearSelection();
+  }
+  fileEditorSaveButton.disabled = false;
+  fileEditorCancelButton.disabled = false;
+  fileEditorFindInput.value = "";
+  fileEditorReplaceInput.value = "";
+  fileEditorMatchCaseInput.checked = false;
+  fileEditorPath.textContent = "";
+  fileEditorHint.textContent = "Supports common UTF-8 text files. Press Ctrl/Cmd + S to save.";
+  fileEditorTitle.textContent = "Edit Remote File";
+  setFileEditorError("");
+}
+
+async function openRemoteEditor(entry) {
+  if (!canInlineEditEntry(entry)) {
+    alert("This file type is not in the inline-edit list, or the file is too large.");
+    return;
+  }
+  if (filesSftpId === null) return;
+  if (!ensureFileEditorAce()) {
+    alert("Editor component failed to load.");
+    return;
+  }
+
+  if (fileEditorState.open && fileEditorState.dirty) {
+    const ok = confirm("Discard unsaved editor changes?");
+    if (!ok) return;
+  }
+
+  resetFileEditorState();
+  const path = joinPath(filesCurrentPath, entry.name);
+  fileEditorOverlay.hidden = false;
+  fileEditorTitle.textContent = "Opening...";
+  fileEditorPath.textContent = path;
+  fileEditorHint.textContent = "Loading file content...";
+  fileEditorSetReadOnly(true);
+  fileEditorSaveButton.disabled = true;
+
+  try {
+    const doc = await invoke("sftp_read_text", {
+      sftpId: filesSftpId,
+      path,
+      maxBytes: FILE_EDITOR_MAX_BYTES,
+    });
+
+    fileEditorState.open = true;
+    fileEditorState.path = doc.path;
+    fileEditorState.originalContent = doc.content;
+    fileEditorSetValue(doc.content);
+    fileEditorSetModeByPath(doc.path);
+    fileEditorPath.textContent = `${doc.path} · ${formatSize(doc.size)}`;
+    fileEditorHint.textContent =
+      `UTF-8 text · ${doc.content.split(/\r?\n/).length} lines · Ctrl/Cmd + S to save`;
+    fileEditorSetReadOnly(false);
+    fileEditorSaveButton.disabled = false;
+    setFileEditorDirty(false);
+    fileEditorFocus();
+  } catch (e) {
+    fileEditorState.open = false;
+    setFileEditorError(`open failed: ${e}`);
+    fileEditorTitle.textContent = "Edit Remote File";
+    fileEditorHint.textContent = "Unable to open this file in the inline editor.";
+  }
+}
+
+function closeRemoteEditor({ force = false } = {}) {
+  if (fileEditorOverlay.hidden) return true;
+  if (!force && fileEditorState.saving) return false;
+  if (!force && fileEditorState.open && fileEditorState.dirty && !fileEditorState.saving) {
+    const ok = confirm("You have unsaved changes. Close editor anyway?");
+    if (!ok) return false;
+  }
+  fileEditorOverlay.hidden = true;
+  resetFileEditorState();
+  return true;
+}
+
+async function saveRemoteEditor() {
+  if (!fileEditorState.open || fileEditorState.saving) return;
+
+  const content = fileEditorGetValue();
+  fileEditorState.saving = true;
+  fileEditorSaveButton.disabled = true;
+  fileEditorCancelButton.disabled = true;
+  setFileEditorError("");
+
+  try {
+    const bytes = await invoke("sftp_write_text", {
+      sftpId: filesSftpId,
+      path: fileEditorState.path,
+      content,
+    });
+    fileEditorState.originalContent = content;
+    setFileEditorDirty(false);
+    fileEditorHint.textContent = `Saved ${formatSize(bytes)} just now`;
+    filesStatus.textContent = `Saved ${fileEditorState.path}.`;
+    await navigateTo(filesCurrentPath);
+  } catch (e) {
+    setFileEditorError(`save failed: ${e}`);
+  } finally {
+    fileEditorState.saving = false;
+    fileEditorSaveButton.disabled = !fileEditorState.open;
+    fileEditorCancelButton.disabled = false;
+  }
+}
 
 async function openFiles(host) {
   filesHost = host;
@@ -1306,6 +1720,7 @@ async function openFiles(host) {
 }
 
 async function closeFiles() {
+  if (!closeRemoteEditor()) return;
   cancelActiveTransfer();
   filesDropOverlay.hidden = true;
   dragDepth = 0;
@@ -1398,6 +1813,14 @@ function renderFilesList(entries) {
     actions.className = "row-actions";
 
     if (entry.kind === "file") {
+      if (canInlineEditEntry(entry)) {
+        const editBtn = document.createElement("button");
+        editBtn.type = "button";
+        editBtn.textContent = "Edit";
+        editBtn.addEventListener("click", () => openRemoteEditor(entry));
+        actions.appendChild(editBtn);
+      }
+
       const downloadBtn = document.createElement("button");
       downloadBtn.type = "button";
       downloadBtn.textContent = "Download";

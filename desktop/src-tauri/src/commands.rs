@@ -698,6 +698,22 @@ fn kind_str(k: FileKind) -> &'static str {
     }
 }
 
+const DEFAULT_TEXT_EDIT_MAX_BYTES: u64 = 2 * 1024 * 1024;
+const HARD_TEXT_EDIT_MAX_BYTES: u64 = 8 * 1024 * 1024;
+
+fn normalize_text_edit_limit(max_bytes: Option<u64>) -> u64 {
+    let requested = max_bytes.unwrap_or(DEFAULT_TEXT_EDIT_MAX_BYTES);
+    requested.clamp(1, HARD_TEXT_EDIT_MAX_BYTES)
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteTextFileDto {
+    pub path: String,
+    pub size: u64,
+    pub content: String,
+}
+
 #[tauri::command]
 pub async fn sftp_open(
     state: State<'_, AppState>,
@@ -905,6 +921,74 @@ pub async fn sftp_upload_bytes(
 
     forget_transfer(&state, transfer_id);
     result.map_err(|e| e.to_string())
+}
+
+/// Download a UTF-8 text file for inline editing.
+#[tauri::command]
+pub async fn sftp_read_text(
+    state: State<'_, AppState>,
+    sftp_id: u64,
+    path: String,
+    max_bytes: Option<u64>,
+) -> Result<RemoteTextFileDto, String> {
+    let sftp = lookup_sftp(&state, sftp_id)?;
+    let max_len = normalize_text_edit_limit(max_bytes);
+    let metadata = sftp.stat(&path).await.map_err(|e| e.to_string())?;
+
+    if metadata.kind != FileKind::File {
+        return Err(format!("`{path}` is not a regular file"));
+    }
+    if metadata.size > max_len {
+        return Err(format!(
+            "`{path}` is {} bytes, above editor limit {} bytes",
+            metadata.size, max_len
+        ));
+    }
+
+    let bytes = sftp.download_to_vec(&path).await.map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > max_len {
+        return Err(format!(
+            "`{path}` expanded to {} bytes, above editor limit {} bytes",
+            bytes.len(),
+            max_len
+        ));
+    }
+    if bytes.contains(&0) {
+        return Err(format!("`{path}` looks like binary data (contains NUL bytes)"));
+    }
+
+    let content =
+        String::from_utf8(bytes).map_err(|_| format!("`{path}` is not valid UTF-8 text"))?;
+
+    Ok(RemoteTextFileDto {
+        path,
+        size: metadata.size,
+        content,
+    })
+}
+
+/// Save UTF-8 text content back to a remote file path.
+#[tauri::command]
+pub async fn sftp_write_text(
+    state: State<'_, AppState>,
+    sftp_id: u64,
+    path: String,
+    content: String,
+) -> Result<u64, String> {
+    let sftp = lookup_sftp(&state, sftp_id)?;
+    let bytes = content.into_bytes();
+    let size = bytes.len() as u64;
+    if size > HARD_TEXT_EDIT_MAX_BYTES {
+        return Err(format!(
+            "editor payload is {} bytes, above hard limit {} bytes",
+            size, HARD_TEXT_EDIT_MAX_BYTES
+        ));
+    }
+
+    sftp.upload_from_slice(&path, &bytes)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(size)
 }
 
 #[tauri::command]

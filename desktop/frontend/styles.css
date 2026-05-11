@@ -614,6 +614,54 @@ label.checkbox input[type="checkbox"] {
   width: min(680px, calc(100vw - 24px));
 }
 
+.dialog.file-editor-dialog {
+  width: min(1040px, calc(100vw - 24px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#file-editor-path {
+  margin-bottom: 2px;
+}
+
+.file-editor-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.file-editor-tools input[type="text"] {
+  height: 34px;
+  min-width: 180px;
+  flex: 1 1 200px;
+}
+
+.file-editor-tools button {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+#file-editor-content {
+  width: 100%;
+  height: min(64vh, 640px);
+  border: 1px solid #36496f;
+  border-radius: 10px;
+  background: #0d162b;
+  overflow: hidden;
+}
+
+#file-editor-content:focus-within {
+  border-color: #6ea6ff;
+}
+
+#file-editor-content.ace_editor {
+  height: 100%;
+  width: 100%;
+  border-radius: 10px;
+}
+
 .dialog h3 {
   font-size: 16px;
   margin-bottom: 8px;
@@ -775,5 +823,9 @@ button.small {
 
   .host-cards {
     grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  }
+
+  #file-editor-content {
+    height: min(52vh, 440px);
   }
 }

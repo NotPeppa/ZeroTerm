@@ -233,10 +233,39 @@
           </form>
         </div>
       </div>
+
+      <div id="file-editor-overlay" class="overlay" hidden>
+        <div class="dialog file-editor-dialog">
+          <h3 id="file-editor-title">Edit Remote File</h3>
+          <p id="file-editor-path" class="tiny muted"></p>
+          <p id="file-editor-hint" class="tiny muted">
+            Supports common UTF-8 text files. Press Ctrl/Cmd + S to save.
+          </p>
+          <div class="file-editor-tools">
+            <input id="file-editor-find" type="text" placeholder="Search..." autocomplete="off" />
+            <input id="file-editor-replace" type="text" placeholder="Replace..." autocomplete="off" />
+            <label class="checkbox slim">
+              <input id="file-editor-match-case" type="checkbox" />
+              Match case
+            </label>
+            <button id="file-editor-find-prev" type="button">Prev</button>
+            <button id="file-editor-find-next" type="button">Next</button>
+            <button id="file-editor-replace-one" type="button">Replace</button>
+            <button id="file-editor-replace-all" type="button">Replace All</button>
+          </div>
+          <div id="file-editor-content"></div>
+          <p id="file-editor-error" class="error" hidden></p>
+          <div class="dialog-actions">
+            <button id="file-editor-cancel" type="button">Close</button>
+            <button id="file-editor-save" type="button" class="primary">Save</button>
+          </div>
+        </div>
+      </div>
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/ace-builds@1.42.0/src-min-noconflict/ace.js"></script>
     <script type="module" src="./main.js"></script>
   </body>
 </html>
