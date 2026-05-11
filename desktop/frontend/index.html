@@ -9,11 +9,10 @@
   </head>
   <body>
     <main id="root">
-      <!-- Unlock view -->
       <section id="view-unlock" class="view">
-        <div class="card">
+        <div class="unlock-card">
           <h1>ZeroTerm</h1>
-          <p id="unlock-status" class="muted">checking vault…</p>
+          <p id="unlock-status" class="muted">checking vault...</p>
           <form id="unlock-form" hidden>
             <label>
               <span id="unlock-label">Master password</span>
@@ -30,73 +29,117 @@
               <input type="checkbox" id="unlock-remember" />
               Remember password (store in OS keychain)
             </label>
-            <button id="unlock-button" type="submit">Unlock</button>
+            <button id="unlock-button" type="submit" class="primary">Unlock</button>
             <p id="unlock-error" class="error" hidden></p>
           </form>
-          <p id="unlock-path" class="muted small"></p>
+          <p id="unlock-path" class="muted tiny"></p>
         </div>
       </section>
 
-      <!-- Hosts list -->
       <section id="view-hosts" class="view" hidden>
-        <header class="topbar">
-          <h2>Hosts</h2>
-          <div class="actions">
-            <button id="add-host-button" type="button" class="primary">+ Add</button>
-            <button id="lock-button" type="button" title="Lock the vault and forget any cached password — next launch will prompt.">Lock</button>
+        <div class="workspace">
+          <aside class="sidebar">
+            <div class="brand">ZeroTerm</div>
+            <nav class="nav-links">
+              <button type="button" class="nav-link active">Hosts</button>
+              <button type="button" class="nav-link">Keychain</button>
+              <button type="button" class="nav-link">Port Forwarding</button>
+              <button type="button" class="nav-link">Known Hosts</button>
+              <button type="button" class="nav-link">Logs</button>
+            </nav>
+            <div class="sidebar-actions">
+              <button id="open-terminals-button" type="button">Terminals</button>
+              <button id="new-window-button" type="button">New Window</button>
+              <button id="lock-button" type="button">Lock Vault</button>
+            </div>
+          </aside>
+
+          <div class="surface">
+            <header class="surface-topbar">
+              <input id="host-search" class="search" type="text" placeholder="Find a host or ssh user@hostname..." autocomplete="off" />
+              <div class="top-actions">
+                <button id="add-host-button" type="button" class="primary">+ New host</button>
+              </div>
+            </header>
+
+            <div class="hosts-toolbar">
+              <button id="hosts-connect-selected" type="button">Connect Selected</button>
+              <button id="hosts-delete-selected" type="button" class="danger">Delete Selected</button>
+              <span id="hosts-selection-hint" class="muted tiny">0 selected</span>
+            </div>
+
+            <div class="hosts-grid-wrap">
+              <ul id="hosts-list" class="host-cards"></ul>
+              <p id="hosts-empty" class="muted" hidden>
+                No saved hosts yet. Click <strong>+ New host</strong> or add from CLI.
+              </p>
+            </div>
           </div>
-        </header>
-        <div class="hosts-body">
-          <ul id="hosts-list" class="hosts"></ul>
-          <p id="hosts-empty" class="muted" hidden>
-            No saved hosts. Click <strong>+ Add</strong>, or use <code>zeroterm add &lt;name&gt; user@host</code> from the CLI.
-          </p>
         </div>
       </section>
 
-      <!-- Terminal -->
       <section id="view-terminal" class="view" hidden>
-        <header class="topbar">
-          <div class="title-stack">
-            <h2 id="term-title">—</h2>
-            <p id="term-subtitle" class="muted small" hidden></p>
-          </div>
-          <div class="actions">
-            <button id="back-button" type="button">Back</button>
-            <button id="disconnect-button" type="button">Disconnect</button>
+        <header class="terminal-topbar">
+          <div id="term-tab-strip" class="tab-strip"></div>
+          <div class="term-actions">
+            <button id="new-tab-button" type="button">+ Tab</button>
+            <button id="split-vertical-button" type="button">Split V</button>
+            <button id="split-horizontal-button" type="button">Split H</button>
+            <button id="close-split-button" type="button">Close Split</button>
+            <button id="disconnect-button" type="button">Disconnect Pane</button>
+            <button id="term-new-window-button" type="button">New Window</button>
+            <button id="back-button" type="button">Hosts</button>
           </div>
         </header>
-        <div id="terminal" class="terminal-host"></div>
+
+        <div id="terminal-workspace" class="terminal-workspace"></div>
       </section>
 
-      <!-- Files (SFTP) -->
       <section id="view-files" class="view" hidden>
-        <header class="topbar">
-          <h2 id="files-title">—</h2>
-          <div class="actions">
+        <header class="files-topbar">
+          <div class="title-stack">
+            <h2 id="files-title">Files</h2>
+            <span id="files-path" class="muted tiny">/</span>
+          </div>
+          <div class="files-actions">
             <button id="files-back" type="button">Back</button>
           </div>
         </header>
+
         <div class="files-toolbar">
-          <button id="files-up" type="button" title="Parent directory">↑</button>
-          <button id="files-refresh" type="button" title="Refresh">⟳</button>
-          <span id="files-path" class="files-path">/</span>
-          <span class="spacer"></span>
-          <button id="files-mkdir" type="button">New folder</button>
+          <button id="files-up" type="button" title="Parent directory">Up</button>
+          <button id="files-refresh" type="button">Refresh</button>
+          <button id="files-mkdir" type="button">New Folder</button>
           <button id="files-upload" type="button">Upload</button>
+          <button id="files-upload-many" type="button">Upload Many</button>
+          <span class="grow"></span>
+          <label class="checkbox slim">
+            <input id="files-select-all" type="checkbox" />
+            Select all
+          </label>
+          <button id="files-download-selected" type="button">Download Selected</button>
+          <button id="files-delete-selected" type="button" class="danger">Delete Selected</button>
+          <span id="files-selection-hint" class="muted tiny">0 selected</span>
         </div>
-        <div id="files-status" class="files-status muted small"></div>
+
+        <div id="files-status" class="files-status muted tiny"></div>
+
         <div id="files-progress" class="files-progress" hidden>
           <div class="files-progress-row">
-            <span id="progress-label">…</span>
+            <span id="progress-label">...</span>
             <button id="progress-cancel" type="button">Cancel</button>
           </div>
           <progress id="progress-bar" value="0" max="100"></progress>
         </div>
-        <ul id="files-list" class="files"></ul>
+
+        <div class="files-drop-zone-wrap">
+          <ul id="files-list" class="files-list"></ul>
+          <div id="files-drop-overlay" class="files-drop-overlay" hidden>
+            Drop files to upload to current directory
+          </div>
+        </div>
       </section>
 
-      <!-- Host-key prompt overlay -->
       <div id="host-key-overlay" class="overlay" hidden>
         <div class="dialog">
           <h3 id="hk-title">Host key</h3>
@@ -109,7 +152,6 @@
         </div>
       </div>
 
-      <!-- Add / edit host overlay -->
       <div id="host-edit-overlay" class="overlay" hidden>
         <div class="dialog wide">
           <h3 id="host-edit-title">Add host</h3>
@@ -136,6 +178,7 @@
                 <select id="hf-auth-type">
                   <option value="password">Password</option>
                   <option value="key">Private key</option>
+                  <option value="agent">SSH agent</option>
                 </select>
               </label>
             </div>
@@ -149,10 +192,10 @@
 
             <div id="hf-key-block" hidden>
               <label>
-                <span id="hf-key-label">Private key</span>
+                <span>Private key</span>
                 <div class="key-row">
-                  <button id="hf-key-pick" type="button">Choose file…</button>
-                  <span id="hf-key-status" class="muted small">No key loaded</span>
+                  <button id="hf-key-pick" type="button">Choose file...</button>
+                  <span id="hf-key-status" class="muted tiny">No key loaded</span>
                 </div>
               </label>
               <label>
@@ -162,7 +205,7 @@
             </div>
 
             <fieldset class="advanced">
-              <legend>ProxyJump &amp; forwards</legend>
+              <legend>ProxyJump and forwards</legend>
               <label>
                 <span>ProxyJump (saved alias)</span>
                 <select id="hf-jump"></select>
@@ -174,15 +217,14 @@
                   <button id="hf-forward-add" type="button" class="small">+ Add forward</button>
                 </div>
                 <ul id="hf-forwards" class="forward-list"></ul>
-                <p class="muted small">
-                  Forwards start automatically when you connect. SOCKS5
-                  uses no auth, CONNECT only.
+                <p class="muted tiny">
+                  Supports local forward (-L) and dynamic SOCKS5 (-D).
                 </p>
               </div>
             </fieldset>
 
             <p id="host-edit-error" class="error" hidden></p>
-            <p id="host-edit-readonly" class="muted small" hidden></p>
+            <p id="host-edit-readonly" class="muted tiny" hidden></p>
 
             <div class="dialog-actions">
               <button id="host-edit-cancel" type="button">Cancel</button>

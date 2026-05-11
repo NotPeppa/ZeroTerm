@@ -23,6 +23,7 @@ pub struct HostSummary {
 pub enum AuthKind {
     Password,
     PrivateKey,
+    Agent,
 }
 
 /// Input for [`crate::ZeroTerm::save_host`]. `id` is assigned by the
@@ -43,6 +44,7 @@ pub enum HostAuthInput {
         key_pem: String,
         passphrase: Option<String>,
     },
+    Agent,
 }
 
 /// Information about a server's offered host key, surfaced to the
@@ -79,6 +81,7 @@ pub(crate) fn host_to_summary(h: zeroterm_app::Host) -> HostSummary {
         auth_kind: match h.auth {
             zeroterm_app::HostAuth::Password { .. } => AuthKind::Password,
             zeroterm_app::HostAuth::PrivateKey { .. } => AuthKind::PrivateKey,
+            zeroterm_app::HostAuth::Agent => AuthKind::Agent,
         },
     }
 }
@@ -98,6 +101,7 @@ pub(crate) fn host_input_to_host(input: HostInput) -> zeroterm_app::Host {
                     passphrase,
                 }
             }
+            HostAuthInput::Agent => zeroterm_app::HostAuth::Agent,
         },
         // FFI doesn't (yet) accept forward / ProxyJump configuration —
         // saved hosts coming from the FFI side are forward-less. Edit

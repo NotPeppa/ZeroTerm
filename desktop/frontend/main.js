@@ -1,5 +1,4 @@
-// ZeroTerm desktop frontend — vanilla JS, intentionally no build step.
-// xterm.js is loaded via CDN (see index.html) and exposed on window.
+// ZeroTerm desktop frontend (vanilla JS, no build step)
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -7,9 +6,6 @@ const { listen } = window.__TAURI__.event;
 const Terminal = window.Terminal;
 const FitAddon = window.FitAddon.FitAddon;
 
-// --------------------------------------------------------------------------
-// view switcher
-// --------------------------------------------------------------------------
 const views = {
   unlock: document.getElementById("view-unlock"),
   hosts: document.getElementById("view-hosts"),
@@ -23,9 +19,43 @@ function show(name) {
   }
 }
 
+function formatSize(n) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
+function joinPath(base, name) {
+  if (base.endsWith("/")) return base + name;
+  return base + "/" + name;
+}
+
+function parentPath(path) {
+  if (!path || path === "/") return "/";
+  const trimmed = path.replace(/\/+$/, "");
+  const idx = trimmed.lastIndexOf("/");
+  if (idx <= 0) return "/";
+  return trimmed.slice(0, idx);
+}
+
+function localJoin(base, leaf) {
+  const sep = base.includes("\\") ? "\\" : "/";
+  return base.replace(/[\\/]+$/, "") + sep + leaf;
+}
+
+function basename(path) {
+  return String(path).split(/[\\/]/).pop() || String(path);
+}
+
+function uniqueId(prefix) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
 // --------------------------------------------------------------------------
-// boot — figure out vault state, route to unlock or hosts
+// Unlock flow
 // --------------------------------------------------------------------------
+
 const unlockForm = document.getElementById("unlock-form");
 const unlockStatus = document.getElementById("unlock-status");
 const unlockLabel = document.getElementById("unlock-label");
@@ -45,19 +75,16 @@ async function refreshVaultStatus({ tryKeychain = true } = {}) {
     unlockPath.textContent = `vault: ${status.path}`;
 
     if (status.unlocked) {
-      enterHosts();
+      await enterHosts();
       return;
     }
 
     if (status.exists) {
-      // Boot path tries the keychain first so users who ticked
-      // "Remember password" skip the dialog. After an explicit Lock we
-      // intentionally skip this — Lock means "force re-auth".
       if (tryKeychain) {
         try {
           const ok = await invoke("try_keychain_unlock");
           if (ok) {
-            enterHosts();
+            await enterHosts();
             return;
           }
         } catch (e) {
@@ -71,11 +98,12 @@ async function refreshVaultStatus({ tryKeychain = true } = {}) {
       unlockConfirm.hidden = true;
     } else {
       unlockStatus.textContent =
-        "No vault yet. Choose a master password — you can't recover it later.";
+        "No vault yet. Choose a master password — it cannot be recovered.";
       unlockLabel.textContent = "New master password";
       unlockButton.textContent = "Create vault";
       unlockConfirm.hidden = false;
     }
+
     unlockRemember.checked = false;
     unlockForm.hidden = false;
     unlockPassword.focus();
@@ -87,22 +115,24 @@ async function refreshVaultStatus({ tryKeychain = true } = {}) {
 unlockForm.addEventListener("submit", async (ev) => {
   ev.preventDefault();
   unlockError.hidden = true;
-  const pw = unlockPassword.value;
+
+  const password = unlockPassword.value;
   const remember = unlockRemember.checked;
 
   try {
     if (vaultExists) {
-      await invoke("unlock_vault", { password: pw, remember });
+      await invoke("unlock_vault", { password, remember });
     } else {
-      if (pw !== unlockConfirm.value) {
-        throw "passwords don't match";
+      if (password !== unlockConfirm.value) {
+        throw new Error("passwords do not match");
       }
-      await invoke("create_vault", { password: pw, remember });
+      await invoke("create_vault", { password, remember });
     }
+
     unlockPassword.value = "";
     unlockConfirm.value = "";
     unlockRemember.checked = false;
-    enterHosts();
+    await enterHosts();
   } catch (e) {
     unlockError.textContent = String(e);
     unlockError.hidden = false;
@@ -110,15 +140,24 @@ unlockForm.addEventListener("submit", async (ev) => {
 });
 
 // --------------------------------------------------------------------------
-// hosts view
+// Hosts view
 // --------------------------------------------------------------------------
+
 const hostsList = document.getElementById("hosts-list");
 const hostsEmpty = document.getElementById("hosts-empty");
+const hostSearch = document.getElementById("host-search");
+const hostsSelectionHint = document.getElementById("hosts-selection-hint");
+const hostsConnectSelected = document.getElementById("hosts-connect-selected");
+const hostsDeleteSelected = document.getElementById("hosts-delete-selected");
+const openTerminalsButton = document.getElementById("open-terminals-button");
+const newWindowButton = document.getElementById("new-window-button");
+
+let hostsCache = [];
+const selectedHostIds = new Set();
+
+hostSearch.addEventListener("input", () => renderHosts());
+
 document.getElementById("lock-button").addEventListener("click", async () => {
-  // Lock = full re-auth required. Drop the in-memory app AND the
-  // keychain cache, so the next launch (and any reload right now) goes
-  // back to the password prompt. Users who want to stay auto-unlocked
-  // simply close the app without clicking Lock.
   try {
     await invoke("forget_keychain");
   } catch (e) {
@@ -129,66 +168,142 @@ document.getElementById("lock-button").addEventListener("click", async () => {
   refreshVaultStatus({ tryKeychain: false });
 });
 
+document.getElementById("add-host-button").addEventListener("click", () => openHostEditor());
+
+hostsConnectSelected.addEventListener("click", async () => {
+  const picked = hostsCache.filter((h) => selectedHostIds.has(h.id));
+  if (picked.length === 0) return;
+  for (const host of picked) {
+    await openHostInTerminal(host);
+  }
+});
+
+hostsDeleteSelected.addEventListener("click", async () => {
+  const picked = hostsCache.filter((h) => selectedHostIds.has(h.id));
+  if (picked.length === 0) return;
+  if (!confirm(`Delete ${picked.length} selected host(s)?`)) return;
+
+  for (const host of picked) {
+    try {
+      await invoke("delete_host", { id: host.id });
+    } catch (e) {
+      alert(`delete failed for ${host.name}: ${e}`);
+      break;
+    }
+  }
+  await enterHosts();
+});
+
+openTerminalsButton.addEventListener("click", () => {
+  if (termState.tabs.length === 0) {
+    alert("No terminal tabs yet. Open a host first.");
+    return;
+  }
+  show("terminal");
+  renderTerminalWorkspace();
+});
+
+newWindowButton.addEventListener("click", () => {
+  invoke("open_new_window").catch((e) => alert(`new window failed: ${e}`));
+});
+
 async function enterHosts() {
   show("hosts");
-  hostsList.innerHTML = "";
-  let hosts = [];
+  selectedHostIds.clear();
+  hostSearch.value = "";
+
   try {
-    hosts = await invoke("list_hosts");
+    hostsCache = await invoke("list_hosts");
   } catch (e) {
+    hostsCache = [];
     hostsEmpty.hidden = false;
     hostsEmpty.textContent = `error: ${e}`;
     return;
   }
 
-  if (hosts.length === 0) {
-    hostsEmpty.hidden = false;
-    return;
-  }
-  hostsEmpty.hidden = true;
+  renderHosts();
+}
 
-  for (const host of hosts) {
+function renderHosts() {
+  hostsList.innerHTML = "";
+
+  const q = hostSearch.value.trim().toLowerCase();
+  const rows = q
+    ? hostsCache.filter((h) =>
+      `${h.name} ${h.user} ${h.host} ${h.port}`.toLowerCase().includes(q)
+    )
+    : hostsCache;
+
+  if (rows.length === 0) {
+    hostsEmpty.hidden = false;
+    hostsEmpty.textContent = q
+      ? "No host matched your search."
+      : "No saved hosts yet. Click + New host or add from CLI.";
+  } else {
+    hostsEmpty.hidden = true;
+  }
+
+  for (const host of rows) {
     const li = document.createElement("li");
+    li.className = "host-card";
+
+    const top = document.createElement("div");
+    top.className = "row-top";
+
+    const pick = document.createElement("input");
+    pick.type = "checkbox";
+    pick.checked = selectedHostIds.has(host.id);
+    pick.addEventListener("change", () => {
+      if (pick.checked) selectedHostIds.add(host.id);
+      else selectedHostIds.delete(host.id);
+      updateHostsSelectionState();
+    });
+
+    const badge = document.createElement("div");
+    badge.className = "badge";
+
     const info = document.createElement("div");
-    info.style.flex = "1";
-    info.style.cursor = "pointer";
+    info.style.minWidth = "0";
+
     const name = document.createElement("div");
     name.className = "name";
     name.textContent = host.name;
+
     const target = document.createElement("div");
     target.className = "target";
     target.textContent = `${host.user}@${host.host}:${host.port}`;
-    const auth = document.createElement("div");
-    auth.className = "auth";
-    auth.textContent = host.authType;
-    info.append(name, target, auth);
-    info.addEventListener("click", () => connect(host));
 
-    const buttons = document.createElement("div");
-    buttons.className = "row-buttons";
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = host.authType;
+
+    info.append(name, target, meta);
+    top.append(pick, badge, info);
+
+    const actions = document.createElement("div");
+    actions.className = "row-actions";
+
+    const connectBtn = document.createElement("button");
+    connectBtn.type = "button";
+    connectBtn.textContent = "Connect";
+    connectBtn.className = "primary";
+    connectBtn.addEventListener("click", () => openHostInTerminal(host));
 
     const filesBtn = document.createElement("button");
     filesBtn.type = "button";
     filesBtn.textContent = "Files";
-    filesBtn.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      openFiles(host);
-    });
+    filesBtn.addEventListener("click", () => openFiles(host));
 
     const editBtn = document.createElement("button");
     editBtn.type = "button";
     editBtn.textContent = "Edit";
-    editBtn.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      openHostEditor(host.id);
-    });
+    editBtn.addEventListener("click", () => openHostEditor(host.id));
 
     const delBtn = document.createElement("button");
     delBtn.type = "button";
     delBtn.textContent = "Delete";
     delBtn.className = "danger";
-    delBtn.addEventListener("click", async (ev) => {
-      ev.stopPropagation();
+    delBtn.addEventListener("click", async () => {
       if (!confirm(`Delete saved host "${host.name}"?`)) return;
       try {
         await invoke("delete_host", { id: host.id });
@@ -198,176 +313,443 @@ async function enterHosts() {
       }
     });
 
-    buttons.append(filesBtn, editBtn, delBtn);
-
-    li.style.display = "flex";
-    li.style.alignItems = "center";
-    li.style.gap = "12px";
-    li.append(info, buttons);
+    actions.append(connectBtn, filesBtn, editBtn, delBtn);
+    li.append(top, actions);
     hostsList.appendChild(li);
   }
+
+  updateHostsSelectionState();
+}
+
+function updateHostsSelectionState() {
+  const count = selectedHostIds.size;
+  hostsSelectionHint.textContent = `${count} selected`;
+  hostsConnectSelected.disabled = count === 0;
+  hostsDeleteSelected.disabled = count === 0;
 }
 
 // --------------------------------------------------------------------------
-// terminal view
+// Terminal tabs / splits
 // --------------------------------------------------------------------------
-const termTitle = document.getElementById("term-title");
-const termSubtitle = document.getElementById("term-subtitle");
-const termHost = document.getElementById("terminal");
-const backButton = document.getElementById("back-button");
-const disconnectButton = document.getElementById("disconnect-button");
 
-let term = null;
-let fitAddon = null;
-let activeSessionId = null;
-let dataUnlisten = null;
-let closedUnlisten = null;
-let resizeObserver = null;
-let pendingTextDecoder = new TextDecoder();
+const termTabStrip = document.getElementById("term-tab-strip");
+const terminalWorkspace = document.getElementById("terminal-workspace");
+const backButton = document.getElementById("back-button");
+const newTabButton = document.getElementById("new-tab-button");
+const splitVerticalButton = document.getElementById("split-vertical-button");
+const splitHorizontalButton = document.getElementById("split-horizontal-button");
+const closeSplitButton = document.getElementById("close-split-button");
+const disconnectButton = document.getElementById("disconnect-button");
+const termNewWindowButton = document.getElementById("term-new-window-button");
+
+const termState = {
+  tabs: [],
+  activeTabId: null,
+};
 
 backButton.addEventListener("click", () => {
-  if (activeSessionId !== null) {
-    invoke("disconnect_session", { sessionId: activeSessionId }).catch(() => {});
-  } else {
-    teardownTerminal();
-    enterHosts();
-  }
+  show("hosts");
 });
 
-disconnectButton.addEventListener("click", () => {
-  if (activeSessionId !== null) {
-    invoke("disconnect_session", { sessionId: activeSessionId }).catch(() => {});
-  }
+newTabButton.addEventListener("click", () => {
+  show("hosts");
+  alert("Select a host to open a new terminal tab.");
 });
 
-async function connect(host) {
-  show("terminal");
-  termTitle.textContent = `${host.name}  (${host.user}@${host.host}:${host.port})`;
-  termSubtitle.hidden = true;
-  termSubtitle.textContent = "";
+splitVerticalButton.addEventListener("click", () => splitActiveTab("vertical"));
+splitHorizontalButton.addEventListener("click", () => splitActiveTab("horizontal"));
+closeSplitButton.addEventListener("click", closeActiveSplit);
 
-  // Build terminal first so we know geometry before we ask for a PTY.
-  setupTerminal();
-  const cols = term.cols;
-  const rows = term.rows;
-
+disconnectButton.addEventListener("click", async () => {
+  const pane = getActivePane();
+  if (!pane || pane.sessionId === null) return;
   try {
-    activeSessionId = await invoke("connect_host", {
-      hostId: host.id,
-      cols,
-      rows,
-    });
+    await invoke("disconnect_session", { sessionId: pane.sessionId });
   } catch (e) {
-    term.write(`\x1b[31mfailed to connect: ${e}\x1b[0m\r\n`);
+    console.warn("disconnect session failed", e);
+  }
+});
+
+termNewWindowButton.addEventListener("click", () => {
+  invoke("open_new_window").catch((e) => alert(`new window failed: ${e}`));
+});
+
+function getActiveTab() {
+  return termState.tabs.find((t) => t.id === termState.activeTabId) || null;
+}
+
+function getActivePane() {
+  const tab = getActiveTab();
+  if (!tab) return null;
+  return tab.panes.find((p) => p.id === tab.activePaneId) || tab.panes[0] || null;
+}
+
+function createPane(host) {
+  return {
+    id: uniqueId("pane"),
+    host,
+    sessionId: null,
+    rootEl: null,
+    bodyEl: null,
+    titleEl: null,
+    statusEl: null,
+    term: null,
+    fitAddon: null,
+    dataUnlisten: null,
+    closedUnlisten: null,
+    resizeObserver: null,
+  };
+}
+
+async function openHostInTerminal(host) {
+  let tab = {
+    id: uniqueId("tab"),
+    title: host.name,
+    layout: "single",
+    panes: [],
+    activePaneId: null,
+  };
+
+  const pane = createPane(host);
+  tab.panes.push(pane);
+  tab.activePaneId = pane.id;
+  termState.tabs.push(tab);
+  termState.activeTabId = tab.id;
+
+  show("terminal");
+  renderTerminalWorkspace();
+  await connectPaneSession(pane);
+}
+
+function renderTerminalWorkspace() {
+  renderTabStrip();
+
+  terminalWorkspace.innerHTML = "";
+  const tab = getActiveTab();
+  if (!tab) {
+    terminalWorkspace.className = "terminal-workspace layout-single";
+    const empty = document.createElement("div");
+    empty.className = "term-empty";
+    empty.textContent = "No open terminal tabs. Open one from Hosts.";
+    terminalWorkspace.appendChild(empty);
     return;
   }
 
-  // Pull the session info so we can show forwards / jump in the header.
-  try {
-    const info = await invoke("session_info", { sessionId: activeSessionId });
-    const bits = [];
-    if (info.jump) bits.push(`via ${info.jump}`);
-    if (info.forwards.length > 0) bits.push(info.forwards.join(", "));
-    if (bits.length > 0) {
-      termSubtitle.textContent = bits.join(" · ");
-      termSubtitle.hidden = false;
-    }
-  } catch (e) {
-    console.warn("session_info failed", e);
+  const layout = tab.layout === "vertical"
+    ? "layout-vertical"
+    : tab.layout === "horizontal"
+      ? "layout-horizontal"
+      : "layout-single";
+  terminalWorkspace.className = `terminal-workspace ${layout}`;
+
+  for (const pane of tab.panes) {
+    ensurePaneElements(pane, tab);
+    pane.rootEl.classList.toggle("active", pane.id === tab.activePaneId);
+    terminalWorkspace.appendChild(pane.rootEl);
   }
 
-  await wireSessionEvents(activeSessionId);
+  requestAnimationFrame(() => {
+    for (const pane of tab.panes) {
+      fitPane(pane);
+    }
+  });
 }
 
-function setupTerminal() {
-  teardownTerminal();
-  term = new Terminal({
-    fontFamily:
-      'Menlo, Consolas, "Liberation Mono", "DejaVu Sans Mono", monospace',
+function renderTabStrip() {
+  termTabStrip.innerHTML = "";
+
+  for (const tab of termState.tabs) {
+    const el = document.createElement("div");
+    el.className = "tab-item" + (tab.id === termState.activeTabId ? " active" : "");
+
+    const title = document.createElement("span");
+    title.textContent = tab.title;
+
+    const close = document.createElement("span");
+    close.className = "close";
+    close.textContent = "✕";
+    close.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      closeTab(tab.id);
+    });
+
+    el.append(title, close);
+    el.addEventListener("click", () => {
+      termState.activeTabId = tab.id;
+      renderTerminalWorkspace();
+    });
+
+    termTabStrip.appendChild(el);
+  }
+}
+
+function ensurePaneElements(pane, tab) {
+  if (pane.rootEl) return;
+
+  const root = document.createElement("div");
+  root.className = "term-pane";
+
+  const header = document.createElement("div");
+  header.className = "pane-header";
+
+  const title = document.createElement("span");
+  title.className = "pane-title";
+  title.textContent = pane.host
+    ? `${pane.host.name} (${pane.host.user}@${pane.host.host}:${pane.host.port})`
+    : "Empty pane";
+
+  const status = document.createElement("span");
+  status.className = "pane-status";
+  status.textContent = "connecting...";
+
+  const body = document.createElement("div");
+  body.className = "pane-body";
+
+  header.append(title, status);
+  root.append(header, body);
+
+  root.addEventListener("click", () => {
+    tab.activePaneId = pane.id;
+    renderTerminalWorkspace();
+  });
+
+  pane.rootEl = root;
+  pane.bodyEl = body;
+  pane.titleEl = title;
+  pane.statusEl = status;
+
+  ensurePaneTerminal(pane);
+}
+
+function ensurePaneTerminal(pane) {
+  if (pane.term || !pane.bodyEl) return;
+
+  pane.term = new Terminal({
+    fontFamily: '"JetBrains Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace',
     fontSize: 13,
     theme: {
-      background: "#000000",
-      foreground: "#e6e9ef",
-      cursor: "#e6e9ef",
+      background: "#05080f",
+      foreground: "#e7ecff",
+      cursor: "#9cc3ff",
     },
     cursorBlink: true,
-    scrollback: 5000,
+    scrollback: 10000,
     convertEol: false,
   });
-  fitAddon = new FitAddon();
-  term.loadAddon(fitAddon);
-  term.open(termHost);
-  fitAddon.fit();
-  term.focus();
 
-  term.onData((d) => {
-    if (activeSessionId === null) return;
+  pane.fitAddon = new FitAddon();
+  pane.term.loadAddon(pane.fitAddon);
+  pane.term.open(pane.bodyEl);
+  pane.fitAddon.fit();
+
+  pane.term.onData((d) => {
+    if (pane.sessionId === null) return;
     const bytes = Array.from(new TextEncoder().encode(d));
-    invoke("send_input", { sessionId: activeSessionId, data: bytes }).catch(
-      (e) => console.error("send_input failed", e),
-    );
+    invoke("send_input", { sessionId: pane.sessionId, data: bytes }).catch((e) => {
+      console.warn("send_input failed", e);
+    });
   });
 
-  resizeObserver = new ResizeObserver(() => {
-    if (!fitAddon || !term) return;
-    fitAddon.fit();
-    if (activeSessionId !== null) {
-      invoke("resize_session", {
-        sessionId: activeSessionId,
-        cols: term.cols,
-        rows: term.rows,
-      }).catch(() => {});
+  pane.resizeObserver = new ResizeObserver(() => {
+    fitPane(pane);
+  });
+  pane.resizeObserver.observe(pane.bodyEl);
+}
+
+function fitPane(pane) {
+  if (!pane.term || !pane.fitAddon) return;
+  try {
+    pane.fitAddon.fit();
+  } catch {
+    return;
+  }
+  if (pane.sessionId !== null) {
+    invoke("resize_session", {
+      sessionId: pane.sessionId,
+      cols: pane.term.cols,
+      rows: pane.term.rows,
+    }).catch(() => {});
+  }
+}
+
+async function connectPaneSession(pane) {
+  if (!pane.host) return;
+  ensurePaneTerminal(pane);
+
+  if (pane.sessionId !== null) {
+    await disconnectPaneSession(pane, { dispose: false });
+  }
+
+  const cols = pane.term ? pane.term.cols : 80;
+  const rows = pane.term ? pane.term.rows : 24;
+
+  try {
+    const sessionId = await invoke("connect_host", {
+      hostId: pane.host.id,
+      cols,
+      rows,
+    });
+    pane.sessionId = sessionId;
+    pane.statusEl.textContent = "connected";
+
+    await wirePaneSessionEvents(pane, sessionId);
+
+    try {
+      const info = await invoke("session_info", { sessionId });
+      const bits = [];
+      if (info.jump) bits.push(`via ${info.jump}`);
+      if (info.forwards.length > 0) bits.push(info.forwards.join(", "));
+      if (bits.length > 0) {
+        pane.statusEl.textContent = bits.join(" · ");
+      }
+    } catch (e) {
+      console.warn("session_info failed", e);
     }
-  });
-  resizeObserver.observe(termHost);
+  } catch (e) {
+    pane.statusEl.textContent = `connect failed: ${e}`;
+    if (pane.term) {
+      pane.term.write(`\x1b[31mfailed to connect: ${e}\x1b[0m\r\n`);
+    }
+  }
 }
 
-async function wireSessionEvents(sessionId) {
-  dataUnlisten = await listen("session:data", (ev) => {
+async function wirePaneSessionEvents(pane, sessionId) {
+  if (pane.dataUnlisten) {
+    pane.dataUnlisten();
+    pane.dataUnlisten = null;
+  }
+  if (pane.closedUnlisten) {
+    pane.closedUnlisten();
+    pane.closedUnlisten = null;
+  }
+
+  pane.dataUnlisten = await listen("session:data", (ev) => {
     if (ev.payload.sessionId !== sessionId) return;
-    // payload.data is a number[] (Vec<u8>) over IPC.
-    const bytes = new Uint8Array(ev.payload.data);
-    term.write(bytes);
+    if (!pane.term) return;
+    pane.term.write(new Uint8Array(ev.payload.data));
   });
 
-  closedUnlisten = await listen("session:closed", (ev) => {
+  pane.closedUnlisten = await listen("session:closed", (ev) => {
     if (ev.payload.sessionId !== sessionId) return;
-    const tail =
-      ev.payload.message
-        ? `\r\n\x1b[31m${ev.payload.message}\x1b[0m\r\n`
-        : ev.payload.exitCode != null
-          ? `\r\n\x1b[2m[remote exited with status ${ev.payload.exitCode}]\x1b[0m\r\n`
-          : `\r\n\x1b[2m[disconnected]\x1b[0m\r\n`;
-    term.write(tail);
-    activeSessionId = null;
+    const tail = ev.payload.message
+      ? `\r\n\x1b[31m${ev.payload.message}\x1b[0m\r\n`
+      : ev.payload.exitCode != null
+        ? `\r\n\x1b[2m[remote exited with status ${ev.payload.exitCode}]\x1b[0m\r\n`
+        : "\r\n\x1b[2m[disconnected]\x1b[0m\r\n";
+
+    pane.sessionId = null;
+    if (pane.statusEl) pane.statusEl.textContent = "disconnected";
+    if (pane.term) pane.term.write(tail);
   });
 }
 
-function teardownTerminal() {
-  if (dataUnlisten) {
-    dataUnlisten();
-    dataUnlisten = null;
+async function disconnectPaneSession(pane, { dispose }) {
+  const sid = pane.sessionId;
+  pane.sessionId = null;
+
+  if (sid !== null) {
+    try {
+      await invoke("disconnect_session", { sessionId: sid });
+    } catch (e) {
+      console.warn("disconnect_session failed", e);
+    }
   }
-  if (closedUnlisten) {
-    closedUnlisten();
-    closedUnlisten = null;
+
+  if (pane.dataUnlisten) {
+    pane.dataUnlisten();
+    pane.dataUnlisten = null;
   }
-  if (resizeObserver) {
-    resizeObserver.disconnect();
-    resizeObserver = null;
+  if (pane.closedUnlisten) {
+    pane.closedUnlisten();
+    pane.closedUnlisten = null;
   }
-  if (term) {
-    term.dispose();
-    term = null;
+
+  if (dispose) {
+    if (pane.resizeObserver && pane.bodyEl) {
+      pane.resizeObserver.disconnect();
+    }
+    pane.resizeObserver = null;
+
+    if (pane.term) pane.term.dispose();
+    pane.term = null;
+    pane.fitAddon = null;
+
+    if (pane.rootEl?.parentNode) pane.rootEl.parentNode.removeChild(pane.rootEl);
+    pane.rootEl = null;
+    pane.bodyEl = null;
+    pane.titleEl = null;
+    pane.statusEl = null;
   }
-  fitAddon = null;
-  activeSessionId = null;
-  termHost.innerHTML = "";
+}
+
+function closeTab(tabId) {
+  const idx = termState.tabs.findIndex((t) => t.id === tabId);
+  if (idx < 0) return;
+  const tab = termState.tabs[idx];
+
+  tab.panes.forEach((pane) => {
+    disconnectPaneSession(pane, { dispose: true });
+  });
+
+  termState.tabs.splice(idx, 1);
+
+  if (termState.tabs.length === 0) {
+    termState.activeTabId = null;
+  } else if (termState.activeTabId === tabId) {
+    termState.activeTabId = termState.tabs[Math.max(0, idx - 1)].id;
+  }
+
+  if (termState.tabs.length === 0) {
+    show("hosts");
+  } else {
+    renderTerminalWorkspace();
+  }
+}
+
+async function splitActiveTab(orientation) {
+  const tab = getActiveTab();
+  if (!tab) return;
+
+  if (tab.panes.length >= 2) {
+    alert("Current split mode supports up to 2 panes.");
+    return;
+  }
+
+  const source = getActivePane();
+  if (!source || !source.host) {
+    alert("Active pane has no host to duplicate.");
+    return;
+  }
+
+  const newPane = createPane(source.host);
+  tab.panes.push(newPane);
+  tab.activePaneId = newPane.id;
+  tab.layout = orientation;
+
+  renderTerminalWorkspace();
+  await connectPaneSession(newPane);
+}
+
+function closeActiveSplit() {
+  const tab = getActiveTab();
+  if (!tab || tab.panes.length <= 1) return;
+
+  const active = getActivePane();
+  let removeIndex = tab.panes.findIndex((p) => p.id === active?.id);
+  if (removeIndex < 0) removeIndex = tab.panes.length - 1;
+  const pane = tab.panes[removeIndex];
+
+  disconnectPaneSession(pane, { dispose: true });
+  tab.panes.splice(removeIndex, 1);
+  tab.layout = "single";
+  tab.activePaneId = tab.panes[0].id;
+  renderTerminalWorkspace();
 }
 
 // --------------------------------------------------------------------------
-// host-key prompt
+// Host-key prompt
 // --------------------------------------------------------------------------
+
 const hkOverlay = document.getElementById("host-key-overlay");
 const hkTitle = document.getElementById("hk-title");
 const hkBody = document.getElementById("hk-body");
@@ -379,21 +761,22 @@ let currentHostKey = null;
 
 listen("host-key-prompt", (ev) => {
   currentHostKey = ev.payload;
+
   if (currentHostKey.kind === "unknown") {
     hkTitle.textContent = "Unknown host";
     hkBody.textContent =
-      `The authenticity of '${currentHostKey.host}:${currentHostKey.port}' can't be established. ` +
-      `Trusting this key adds it to known_hosts permanently — you won't be asked again next time.`;
+      `The authenticity of '${currentHostKey.host}:${currentHostKey.port}' cannot be established. ` +
+      "Trusting this key adds it to known_hosts.";
     hkDetail.textContent = `${currentHostKey.keyType}\n${currentHostKey.fingerprint}`;
   } else {
-    hkTitle.textContent = "WARNING — host key changed";
+    hkTitle.textContent = "Warning: host key changed";
     hkBody.textContent =
-      "This could be a man-in-the-middle attack. Trusting here only allows this single connection — " +
-      "the stored key in known_hosts is NOT updated. Refuse unless you know exactly why the key changed.";
+      "This might indicate a man-in-the-middle attack. Trust only if you know why the key changed.";
     hkDetail.textContent =
       `Server now offers:\n  ${currentHostKey.keyType} ${currentHostKey.fingerprint}\n` +
       `known_hosts has:\n  ${currentHostKey.stored ?? "(unknown)"}`;
   }
+
   hkOverlay.hidden = false;
 });
 
@@ -408,13 +791,14 @@ async function respondHostKey(accept) {
   try {
     await invoke("respond_host_key", { requestId: id, accept });
   } catch (e) {
-    console.error("respond_host_key failed", e);
+    console.warn("respond_host_key failed", e);
   }
 }
 
 // --------------------------------------------------------------------------
-// host editor (add / edit / delete)
+// Host editor
 // --------------------------------------------------------------------------
+
 const hostOverlay = document.getElementById("host-edit-overlay");
 const hostForm = document.getElementById("host-edit-form");
 const hostTitle = document.getElementById("host-edit-title");
@@ -436,17 +820,9 @@ const hostError = document.getElementById("host-edit-error");
 const hostReadonly = document.getElementById("host-edit-readonly");
 
 let editingHostId = null;
-// We never expose the saved key bytes back to the form. The user can
-// either keep the existing key (leave the picker empty when editing)
-// or replace it (pick a new file). This flag tells `save` whether to
-// re-send key bytes.
 let hfKeyPem = null;
-// In-memory forwards being edited. Each entry shape:
-//   { kind: "local" | "dynamic", bindAddr, bindPort, targetHost?, targetPort? }
 let hfForwards = [];
 
-document.getElementById("add-host-button").addEventListener("click", () => openHostEditor());
-document.getElementById("host-edit-cancel").addEventListener("click", closeHostEditor);
 hfAuthType.addEventListener("change", () => syncAuthSections());
 hfKeyPick.addEventListener("click", pickKeyFile);
 hfForwardAdd.addEventListener("click", () => {
@@ -459,6 +835,7 @@ hfForwardAdd.addEventListener("click", () => {
   });
   renderForwards();
 });
+document.getElementById("host-edit-cancel").addEventListener("click", closeHostEditor);
 hostForm.addEventListener("submit", saveHostForm);
 
 async function openHostEditor(id = null) {
@@ -473,8 +850,6 @@ async function openHostEditor(id = null) {
   hfKeyPassphrase.value = "";
   hfForwards = [];
 
-  // Populate the ProxyJump dropdown with every saved alias except the
-  // one being edited (no self-jump).
   await populateJumpOptions(id);
 
   if (id) {
@@ -486,12 +861,14 @@ async function openHostEditor(id = null) {
       hfPort.value = h.port;
       hfUser.value = h.user;
       hfAuthType.value = h.authType;
+
       if (h.authType === "password") {
         hfPassword.value = h.password ?? "";
-      } else {
-        hfKeyStatus.textContent = "Existing key kept (pick a file to replace)";
+      } else if (h.authType === "key") {
+        hfKeyStatus.textContent = "Existing key kept (choose a file to replace)";
         hfKeyPassphrase.value = h.keyPassphrase ?? "";
       }
+
       hfJump.value = h.proxyJump ?? "";
       hfForwards = h.forwards.map(forwardFromIO);
     } catch (e) {
@@ -514,26 +891,32 @@ async function openHostEditor(id = null) {
   hfName.focus();
 }
 
+function closeHostEditor() {
+  hostOverlay.hidden = true;
+  editingHostId = null;
+  hfKeyPem = null;
+  hfForwards = [];
+  hostForm.reset();
+}
+
 async function populateJumpOptions(currentId) {
   hfJump.innerHTML = "";
-  const noneOpt = document.createElement("option");
-  noneOpt.value = "";
-  noneOpt.textContent = "(none)";
-  hfJump.appendChild(noneOpt);
+  const none = document.createElement("option");
+  none.value = "";
+  none.textContent = "(none)";
+  hfJump.appendChild(none);
 
-  let hosts = [];
   try {
-    hosts = await invoke("list_hosts");
+    const hosts = await invoke("list_hosts");
+    for (const h of hosts) {
+      if (h.id === currentId) continue;
+      const opt = document.createElement("option");
+      opt.value = h.name;
+      opt.textContent = `${h.name} (${h.user}@${h.host}:${h.port})`;
+      hfJump.appendChild(opt);
+    }
   } catch (e) {
-    console.warn("list_hosts in jump dropdown failed", e);
-    return;
-  }
-  for (const h of hosts) {
-    if (h.id === currentId) continue;
-    const opt = document.createElement("option");
-    opt.value = h.name;
-    opt.textContent = `${h.name} (${h.user}@${h.host}:${h.port})`;
-    hfJump.appendChild(opt);
+    console.warn("populateJumpOptions failed", e);
   }
 }
 
@@ -556,13 +939,12 @@ function forwardFromIO(spec) {
 
 function renderForwards() {
   hfForwardsList.innerHTML = "";
+
   if (hfForwards.length === 0) {
     const empty = document.createElement("li");
-    empty.style.padding = "6px 8px";
-    empty.style.color = "var(--muted)";
-    empty.style.fontSize = "12px";
     empty.style.gridTemplateColumns = "1fr";
-    empty.textContent = "(no forwards — click + Add forward)";
+    empty.style.color = "var(--muted)";
+    empty.textContent = "(no forwards)";
     hfForwardsList.appendChild(empty);
     return;
   }
@@ -570,20 +952,16 @@ function renderForwards() {
   hfForwards.forEach((fwd, idx) => {
     const li = document.createElement("li");
 
-    const kindSel = document.createElement("select");
-    [
-      ["local", "Local (-L)"],
-      ["dynamic", "SOCKS5 (-D)"],
-    ].forEach(([v, label]) => {
+    const kind = document.createElement("select");
+    [["local", "Local (-L)"], ["dynamic", "SOCKS5 (-D)"]].forEach(([v, label]) => {
       const o = document.createElement("option");
       o.value = v;
       o.textContent = label;
-      kindSel.appendChild(o);
+      kind.appendChild(o);
     });
-    kindSel.value = fwd.kind;
-    kindSel.addEventListener("change", () => {
-      fwd.kind = kindSel.value;
-      // Clear target fields when switching to dynamic
+    kind.value = fwd.kind;
+    kind.addEventListener("change", () => {
+      fwd.kind = kind.value;
       if (fwd.kind === "dynamic") {
         delete fwd.targetHost;
         delete fwd.targetPort;
@@ -598,16 +976,16 @@ function renderForwards() {
     fields.className = "fields";
 
     const bind = document.createElement("input");
-    bind.type = "text";
     bind.className = "bind";
-    bind.placeholder = "bind addr";
+    bind.type = "text";
+    bind.placeholder = "bind";
     bind.value = fwd.bindAddr;
     bind.addEventListener("input", () => (fwd.bindAddr = bind.value));
     fields.appendChild(bind);
 
     const bp = document.createElement("input");
-    bp.type = "number";
     bp.className = "short";
+    bp.type = "number";
     bp.placeholder = "port";
     bp.min = 1;
     bp.max = 65535;
@@ -617,22 +995,22 @@ function renderForwards() {
 
     if (fwd.kind === "local") {
       const arrow = document.createElement("span");
-      arrow.textContent = "→";
-      arrow.style.color = "var(--muted)";
+      arrow.textContent = "->";
       arrow.style.alignSelf = "center";
+      arrow.style.color = "var(--muted)";
       fields.appendChild(arrow);
 
       const th = document.createElement("input");
-      th.type = "text";
       th.className = "medium";
+      th.type = "text";
       th.placeholder = "target host";
       th.value = fwd.targetHost ?? "";
       th.addEventListener("input", () => (fwd.targetHost = th.value));
       fields.appendChild(th);
 
       const tp = document.createElement("input");
-      tp.type = "number";
       tp.className = "short";
+      tp.type = "number";
       tp.placeholder = "port";
       tp.min = 1;
       tp.max = 65535;
@@ -643,34 +1021,22 @@ function renderForwards() {
 
     const remove = document.createElement("button");
     remove.type = "button";
-    remove.className = "remove";
     remove.textContent = "Remove";
+    remove.className = "danger";
     remove.addEventListener("click", () => {
       hfForwards.splice(idx, 1);
       renderForwards();
     });
 
-    li.append(kindSel, fields, remove);
+    li.append(kind, fields, remove);
     hfForwardsList.appendChild(li);
   });
 }
 
-function closeHostEditor() {
-  hostOverlay.hidden = true;
-  editingHostId = null;
-  hfKeyPem = null;
-  hfForwards = [];
-  hostForm.reset();
-}
-
 function syncAuthSections() {
-  if (hfAuthType.value === "password") {
-    hfPasswordBlock.hidden = false;
-    hfKeyBlock.hidden = true;
-  } else {
-    hfPasswordBlock.hidden = true;
-    hfKeyBlock.hidden = false;
-  }
+  const t = hfAuthType.value;
+  hfPasswordBlock.hidden = t !== "password";
+  hfKeyBlock.hidden = t !== "key";
 }
 
 async function pickKeyFile() {
@@ -678,60 +1044,88 @@ async function pickKeyFile() {
     options: {
       multiple: false,
       directory: false,
-      title: "Choose a private key file",
+      title: "Choose a private key",
     },
   });
+
   if (!chosen) return;
   const path = String(chosen);
+
   try {
     const text = await invoke("read_local_text_file", { path });
     hfKeyPem = text;
-    const basename = path.split(/[\\/]/).pop();
-    hfKeyStatus.textContent = `loaded ${basename} (${text.length} bytes)`;
+    hfKeyStatus.textContent = `loaded ${basename(path)} (${text.length} bytes)`;
   } catch (e) {
     hfKeyStatus.textContent = `read failed: ${e}`;
   }
+}
+
+async function buildKeyAuth() {
+  if (editingHostId && !hfKeyPem) {
+    showHostError("Pick a new key file to replace existing key.");
+    return null;
+  }
+  if (!editingHostId && !hfKeyPem) {
+    showHostError("Pick a private key file first.");
+    return null;
+  }
+  return {
+    type: "private_key",
+    key_pem: hfKeyPem,
+    passphrase: hfKeyPassphrase.value || null,
+  };
+}
+
+function showHostError(msg) {
+  hostError.textContent = msg;
+  hostError.hidden = false;
 }
 
 async function saveHostForm(ev) {
   ev.preventDefault();
   hostError.hidden = true;
 
-  const auth = hfAuthType.value === "password"
-    ? { type: "password", value: hfPassword.value }
-    : await buildKeyAuth();
-  if (auth === null) return;
+  let auth;
+  if (hfAuthType.value === "password") {
+    auth = { type: "password", value: hfPassword.value };
+  } else if (hfAuthType.value === "key") {
+    auth = await buildKeyAuth();
+    if (auth === null) return;
+  } else {
+    auth = { type: "agent" };
+  }
 
-  // Validate + serialize forwards
   const forwards = [];
   for (const [i, fwd] of hfForwards.entries()) {
-    const bp = parseInt(fwd.bindPort, 10);
-    if (!bp || bp < 1 || bp > 65535) {
+    const bindPort = parseInt(fwd.bindPort, 10);
+    if (!bindPort || bindPort < 1 || bindPort > 65535) {
       showHostError(`forward ${i + 1}: invalid bind port`);
       return;
     }
+
     if (fwd.kind === "local") {
       if (!fwd.targetHost?.trim()) {
-        showHostError(`forward ${i + 1}: target host is required`);
+        showHostError(`forward ${i + 1}: target host required`);
         return;
       }
-      const tp = parseInt(fwd.targetPort, 10);
-      if (!tp || tp < 1 || tp > 65535) {
+      const targetPort = parseInt(fwd.targetPort, 10);
+      if (!targetPort || targetPort < 1 || targetPort > 65535) {
         showHostError(`forward ${i + 1}: invalid target port`);
         return;
       }
+
       forwards.push({
         kind: "local",
         bind_addr: fwd.bindAddr || "127.0.0.1",
-        bind_port: bp,
+        bind_port: bindPort,
         target_host: fwd.targetHost.trim(),
-        target_port: tp,
+        target_port: targetPort,
       });
     } else {
       forwards.push({
         kind: "dynamic",
         bind_addr: fwd.bindAddr || "127.0.0.1",
-        bind_port: bp,
+        bind_port: bindPort,
       });
     }
   }
@@ -764,35 +1158,10 @@ async function saveHostForm(ev) {
   }
 }
 
-async function buildKeyAuth() {
-  if (editingHostId && !hfKeyPem) {
-    // Editing existing host without picking a new key — refuse to wipe
-    // the existing PEM. Tell user how to keep it: just don't pick.
-    showHostError(
-      "Keep the existing key by closing this dialog without saving, " +
-      "or pick a new file to replace it.",
-    );
-    return null;
-  }
-  if (!editingHostId && !hfKeyPem) {
-    showHostError("Pick a private key file first.");
-    return null;
-  }
-  return {
-    type: "private_key",
-    key_pem: hfKeyPem,
-    passphrase: hfKeyPassphrase.value || null,
-  };
-}
-
-function showHostError(msg) {
-  hostError.textContent = msg;
-  hostError.hidden = false;
-}
-
 // --------------------------------------------------------------------------
-// files (SFTP)
+// Files view: bulk actions + drag and drop
 // --------------------------------------------------------------------------
+
 const filesTitle = document.getElementById("files-title");
 const filesPath = document.getElementById("files-path");
 const filesList = document.getElementById("files-list");
@@ -801,66 +1170,126 @@ const filesProgress = document.getElementById("files-progress");
 const progressLabel = document.getElementById("progress-label");
 const progressBar = document.getElementById("progress-bar");
 const progressCancel = document.getElementById("progress-cancel");
+const filesDropOverlay = document.getElementById("files-drop-overlay");
+const filesSelectAll = document.getElementById("files-select-all");
+const filesUploadMany = document.getElementById("files-upload-many");
+const filesDownloadSelected = document.getElementById("files-download-selected");
+const filesDeleteSelected = document.getElementById("files-delete-selected");
+const filesSelectionHint = document.getElementById("files-selection-hint");
 
 let filesSftpId = null;
 let filesCurrentPath = "/";
 let filesHost = null;
+let filesEntries = [];
+let filesSelected = new Set();
 let activeTransferId = null;
 let pendingCancel = false;
 let progressUnlisten = null;
+let dragDepth = 0;
+
+const filesDropTarget = document.querySelector(".files-drop-zone-wrap");
 
 document.getElementById("files-back").addEventListener("click", () => closeFiles());
 document.getElementById("files-up").addEventListener("click", () => {
-  if (filesCurrentPath === "/" || filesCurrentPath === "") return;
+  if (!filesSftpId) return;
   navigateTo(parentPath(filesCurrentPath));
 });
 document.getElementById("files-refresh").addEventListener("click", () => {
+  if (!filesSftpId) return;
   navigateTo(filesCurrentPath);
 });
 document.getElementById("files-mkdir").addEventListener("click", async () => {
+  if (!filesSftpId) return;
   const name = prompt("New folder name:");
   if (!name) return;
   try {
-    const target = joinPath(filesCurrentPath, name);
-    await invoke("sftp_mkdir", { sftpId: filesSftpId, path: target });
-    navigateTo(filesCurrentPath);
+    await invoke("sftp_mkdir", {
+      sftpId: filesSftpId,
+      path: joinPath(filesCurrentPath, name),
+    });
+    await navigateTo(filesCurrentPath);
   } catch (e) {
     showFilesError(`mkdir failed: ${e}`);
   }
 });
 document.getElementById("files-upload").addEventListener("click", uploadHere);
+filesUploadMany.addEventListener("click", uploadManyHere);
+filesDownloadSelected.addEventListener("click", downloadSelectedFiles);
+filesDeleteSelected.addEventListener("click", deleteSelectedFiles);
+filesSelectAll.addEventListener("change", () => {
+  if (filesSelectAll.checked) {
+    for (const entry of filesEntries) filesSelected.add(entry.name);
+  } else {
+    filesSelected.clear();
+  }
+  renderFilesList(filesEntries);
+  updateFilesSelectionState();
+});
+
+progressCancel.addEventListener("click", cancelActiveTransfer);
+
+filesDropTarget.addEventListener("dragenter", (ev) => {
+  ev.preventDefault();
+  if (views.files.hidden) return;
+  dragDepth += 1;
+  filesDropOverlay.hidden = false;
+});
+
+filesDropTarget.addEventListener("dragover", (ev) => {
+  ev.preventDefault();
+  if (views.files.hidden) return;
+  filesDropOverlay.hidden = false;
+});
+
+filesDropTarget.addEventListener("dragleave", (ev) => {
+  ev.preventDefault();
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (dragDepth === 0) filesDropOverlay.hidden = true;
+});
+
+filesDropTarget.addEventListener("drop", async (ev) => {
+  ev.preventDefault();
+  dragDepth = 0;
+  filesDropOverlay.hidden = true;
+  if (filesSftpId === null) return;
+
+  const dropped = Array.from(ev.dataTransfer?.files || []);
+  if (dropped.length === 0) return;
+
+  await uploadDroppedFiles(dropped);
+});
 
 async function openFiles(host) {
   filesHost = host;
+  filesCurrentPath = "/";
+  filesEntries = [];
+  filesSelected.clear();
+  filesSelectAll.checked = false;
+
   show("files");
-  filesTitle.textContent = `${host.name}  (${host.user}@${host.host}:${host.port})`;
+  filesTitle.textContent = `${host.name} (${host.user}@${host.host}:${host.port})`;
   filesPath.textContent = "/";
   filesList.innerHTML = "";
-  filesStatus.textContent = "Connecting…";
+  filesStatus.textContent = "Connecting...";
 
-  // Start listening to progress events for this files session.
   if (progressUnlisten) {
     progressUnlisten();
     progressUnlisten = null;
   }
+
   progressUnlisten = await listen("sftp:progress", (ev) => {
     const p = ev.payload;
 
-    // Latch: backend assigns transferId asynchronously, so adopt the
-    // first event's id as the canonical one for the in-flight transfer.
     if (activeTransferId === "pending") {
       activeTransferId = p.transferId;
-      // If the user clicked Cancel before this first event arrived,
-      // honour it now that we finally know the real id.
       if (pendingCancel) {
         pendingCancel = false;
-        invoke("sftp_cancel_transfer", { transferId: activeTransferId }).catch(
-          (e) => console.warn("cancel failed", e),
-        );
+        invoke("sftp_cancel_transfer", { transferId: activeTransferId }).catch(() => {});
       }
     }
 
     if (activeTransferId !== p.transferId) return;
+
     if (p.finished) {
       hideProgress();
       return;
@@ -878,32 +1307,46 @@ async function openFiles(host) {
 
 async function closeFiles() {
   cancelActiveTransfer();
+  filesDropOverlay.hidden = true;
+  dragDepth = 0;
+
   if (progressUnlisten) {
     progressUnlisten();
     progressUnlisten = null;
   }
+
   if (filesSftpId !== null) {
     try {
       await invoke("sftp_close", { sftpId: filesSftpId });
     } catch (e) {
       console.warn("sftp_close failed", e);
     }
-    filesSftpId = null;
   }
+
+  filesSftpId = null;
   filesHost = null;
+  filesEntries = [];
+  filesSelected.clear();
   filesList.innerHTML = "";
   hideProgress();
-  enterHosts();
+
+  await enterHosts();
 }
 
 async function navigateTo(path) {
   if (filesSftpId === null) return;
-  filesStatus.textContent = `Listing ${path}…`;
+  filesStatus.textContent = `Listing ${path}...`;
+
   try {
     const entries = await invoke("sftp_list", { sftpId: filesSftpId, path });
     filesCurrentPath = path;
+    filesEntries = entries;
+    filesSelected.clear();
+    filesSelectAll.checked = false;
+
     filesPath.textContent = path;
     renderFilesList(entries);
+    updateFilesSelectionState();
     filesStatus.textContent = "";
   } catch (e) {
     showFilesError(`list failed: ${e}`);
@@ -912,66 +1355,99 @@ async function navigateTo(path) {
 
 function renderFilesList(entries) {
   filesList.innerHTML = "";
+
   if (entries.length === 0) {
     const empty = document.createElement("li");
-    empty.style.color = "var(--muted)";
+    empty.className = "file-row";
+    empty.style.gridTemplateColumns = "1fr";
     empty.style.justifyContent = "center";
+    empty.style.color = "var(--muted)";
     empty.textContent = "(empty)";
     filesList.appendChild(empty);
     return;
   }
 
-  for (const e of entries) {
-    const li = document.createElement("li");
-    if (e.kind === "dir") li.classList.add("dir");
+  for (const entry of entries) {
+    const row = document.createElement("li");
+    row.className = `file-row${entry.kind === "dir" ? " dir" : ""}`;
+
+    const pick = document.createElement("input");
+    pick.type = "checkbox";
+    pick.checked = filesSelected.has(entry.name);
+    pick.addEventListener("change", () => {
+      if (pick.checked) filesSelected.add(entry.name);
+      else filesSelected.delete(entry.name);
+      updateFilesSelectionState();
+    });
 
     const marker = document.createElement("span");
-    marker.className = "marker";
-    marker.textContent = kindMarker(e.kind);
+    marker.textContent = kindMarker(entry.kind);
 
     const name = document.createElement("span");
     name.className = "name";
-    name.textContent = e.kind === "dir" ? `${e.name}/` : e.name;
-    if (e.kind === "dir") {
-      name.addEventListener("click", () => {
-        navigateTo(joinPath(filesCurrentPath, e.name));
-      });
+    name.textContent = entry.kind === "dir" ? `${entry.name}/` : entry.name;
+    if (entry.kind === "dir") {
+      name.addEventListener("click", () => navigateTo(joinPath(filesCurrentPath, entry.name)));
     }
 
     const size = document.createElement("span");
     size.className = "size";
-    size.textContent = e.kind === "dir" ? "—" : formatSize(e.size);
+    size.textContent = entry.kind === "dir" ? "—" : formatSize(entry.size);
 
     const actions = document.createElement("span");
     actions.className = "row-actions";
-    if (e.kind === "file") {
-      const dl = document.createElement("button");
-      dl.type = "button";
-      dl.textContent = "Download";
-      dl.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        downloadEntry(e);
-      });
-      actions.appendChild(dl);
+
+    if (entry.kind === "file") {
+      const downloadBtn = document.createElement("button");
+      downloadBtn.type = "button";
+      downloadBtn.textContent = "Download";
+      downloadBtn.addEventListener("click", () => downloadEntry(entry));
+      actions.appendChild(downloadBtn);
     }
+
     const renameBtn = document.createElement("button");
     renameBtn.type = "button";
     renameBtn.textContent = "Rename";
-    renameBtn.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      renameEntry(e);
-    });
+    renameBtn.addEventListener("click", () => renameEntry(entry));
+
     const delBtn = document.createElement("button");
     delBtn.type = "button";
     delBtn.textContent = "Delete";
-    delBtn.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      deleteEntry(e);
-    });
+    delBtn.className = "danger";
+    delBtn.addEventListener("click", () => deleteEntry(entry));
+
     actions.append(renameBtn, delBtn);
 
-    li.append(marker, name, size, actions);
-    filesList.appendChild(li);
+    row.append(pick, marker, name, size, actions);
+    filesList.appendChild(row);
+  }
+}
+
+function updateFilesSelectionState() {
+  const count = filesSelected.size;
+  filesSelectionHint.textContent = `${count} selected`;
+  filesDownloadSelected.disabled = count === 0;
+  filesDeleteSelected.disabled = count === 0;
+
+  const allCount = filesEntries.length;
+  filesSelectAll.checked = allCount > 0 && count === allCount;
+}
+
+function showFilesError(msg) {
+  filesStatus.textContent = msg;
+  console.error(msg);
+}
+
+function kindMarker(k) {
+  switch (k) {
+    case "dir":
+      return "📁";
+    case "file":
+      return "📄";
+    case "symlink":
+      return "↪";
+    default:
+      return "?";
   }
 }
 
@@ -981,9 +1457,7 @@ async function downloadEntry(entry) {
     options: { defaultPath: entry.name },
   });
   if (!local) return;
-  // Reserve a transfer id locally so the progress event handler can
-  // route updates to us. Backend assigns its own; we adopt whatever it
-  // emits in its events for THIS files session.
+
   beginTransfer(`Downloading ${entry.name}`);
   try {
     const n = await invoke("sftp_download", {
@@ -1000,35 +1474,168 @@ async function downloadEntry(entry) {
   }
 }
 
+async function renameEntry(entry) {
+  const next = prompt(`Rename "${entry.name}" to:`, entry.name);
+  if (!next || next === entry.name) return;
+  try {
+    await invoke("sftp_rename", {
+      sftpId: filesSftpId,
+      from: joinPath(filesCurrentPath, entry.name),
+      to: joinPath(filesCurrentPath, next),
+    });
+    await navigateTo(filesCurrentPath);
+  } catch (e) {
+    showFilesError(`rename failed: ${e}`);
+  }
+}
+
+async function deleteEntry(entry) {
+  const target = joinPath(filesCurrentPath, entry.name);
+  if (!confirm(`Delete ${target}?`)) return;
+
+  const command = entry.kind === "dir" ? "sftp_remove_dir" : "sftp_remove";
+  try {
+    await invoke(command, {
+      sftpId: filesSftpId,
+      path: target,
+    });
+    await navigateTo(filesCurrentPath);
+  } catch (e) {
+    showFilesError(`delete failed: ${e}`);
+  }
+}
+
+async function deleteSelectedFiles() {
+  const picked = filesEntries.filter((e) => filesSelected.has(e.name));
+  if (picked.length === 0) return;
+  if (!confirm(`Delete ${picked.length} selected item(s)?`)) return;
+
+  for (const entry of picked) {
+    const path = joinPath(filesCurrentPath, entry.name);
+    const command = entry.kind === "dir" ? "sftp_remove_dir" : "sftp_remove";
+    try {
+      await invoke(command, { sftpId: filesSftpId, path });
+    } catch (e) {
+      showFilesError(`delete failed for ${entry.name}: ${e}`);
+      break;
+    }
+  }
+
+  await navigateTo(filesCurrentPath);
+}
+
 async function uploadHere() {
   const local = await invoke("plugin:dialog|open", {
     options: { multiple: false, directory: false },
   });
   if (!local) return;
-  const basename = String(local).split(/[\\/]/).pop();
-  const remote = joinPath(filesCurrentPath, basename);
-  beginTransfer(`Uploading ${basename}`);
+
+  await uploadLocalPath(String(local));
+  await navigateTo(filesCurrentPath);
+}
+
+async function uploadManyHere() {
+  const local = await invoke("plugin:dialog|open", {
+    options: { multiple: true, directory: false },
+  });
+  if (!local) return;
+
+  const paths = Array.isArray(local) ? local.map(String) : [String(local)];
+  for (const path of paths) {
+    await uploadLocalPath(path);
+  }
+
+  await navigateTo(filesCurrentPath);
+}
+
+async function uploadLocalPath(localPath) {
+  const name = basename(localPath);
+  const remote = joinPath(filesCurrentPath, name);
+
+  beginTransfer(`Uploading ${name}`);
   try {
     const n = await invoke("sftp_upload", {
       sftpId: filesSftpId,
-      local,
+      local: localPath,
       remote,
     });
-    filesStatus.textContent = `Uploaded ${basename} (${formatSize(n)}).`;
-    navigateTo(filesCurrentPath);
+    filesStatus.textContent = `Uploaded ${name} (${formatSize(n)}).`;
   } catch (e) {
-    showFilesError(`upload failed: ${e}`);
+    showFilesError(`upload failed for ${name}: ${e}`);
   } finally {
     hideProgress();
     activeTransferId = null;
   }
 }
 
+async function uploadDroppedFiles(fileList) {
+  for (const file of fileList) {
+    const remote = joinPath(filesCurrentPath, file.name || "dropped.bin");
+
+    try {
+      if (file.path) {
+        await uploadLocalPath(String(file.path));
+        continue;
+      }
+
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      beginTransfer(`Uploading ${file.name}`);
+      const n = await invoke("sftp_upload_bytes", {
+        sftpId: filesSftpId,
+        remote,
+        data: Array.from(bytes),
+        sourceLabel: file.name,
+      });
+      filesStatus.textContent = `Uploaded ${file.name} (${formatSize(n)}).`;
+    } catch (e) {
+      showFilesError(`drag upload failed for ${file.name}: ${e}`);
+    } finally {
+      hideProgress();
+      activeTransferId = null;
+    }
+  }
+
+  await navigateTo(filesCurrentPath);
+}
+
+async function downloadSelectedFiles() {
+  const picked = filesEntries.filter((e) => filesSelected.has(e.name) && e.kind === "file");
+  if (picked.length === 0) {
+    alert("Select at least one file (directories are skipped for bulk download).");
+    return;
+  }
+
+  const base = await invoke("plugin:dialog|open", {
+    options: { directory: true, multiple: false },
+  });
+  if (!base) return;
+
+  const folder = String(base);
+
+  for (const entry of picked) {
+    const remote = joinPath(filesCurrentPath, entry.name);
+    const local = localJoin(folder, entry.name);
+
+    beginTransfer(`Downloading ${entry.name}`);
+    try {
+      await invoke("sftp_download", {
+        sftpId: filesSftpId,
+        remote,
+        local,
+      });
+    } catch (e) {
+      showFilesError(`download failed for ${entry.name}: ${e}`);
+      break;
+    } finally {
+      hideProgress();
+      activeTransferId = null;
+    }
+  }
+
+  filesStatus.textContent = `Downloaded ${picked.length} file(s) to ${folder}.`;
+}
+
 function beginTransfer(label) {
-  // Backend assigns transferId; we'll latch onto the first event we
-  // see for the transfer that's currently running. Race window is
-  // tiny (Tauri commands serialize per-call), but to be safe we treat
-  // the FIRST progress event as binding for this session.
   activeTransferId = "pending";
   pendingCancel = false;
   progressLabel.textContent = label;
@@ -1037,7 +1644,7 @@ function beginTransfer(label) {
 }
 
 function showProgress(p) {
-  const verbing = p.kind === "upload" ? "Uploading" : "Downloading";
+  const verb = p.kind === "upload" ? "Uploading" : "Downloading";
   let suffix = "";
   if (p.bytesPerSec != null && p.bytesPerSec > 0) {
     suffix += ` · ${formatSize(p.bytesPerSec)}/s`;
@@ -1049,23 +1656,11 @@ function showProgress(p) {
   if (p.total != null && p.total > 0) {
     progressBar.max = 100;
     progressBar.value = (p.bytesDone / p.total) * 100;
-    progressLabel.textContent =
-      `${verbing} ${formatSize(p.bytesDone)} / ${formatSize(p.total)}${suffix}`;
+    progressLabel.textContent = `${verb} ${formatSize(p.bytesDone)} / ${formatSize(p.total)}${suffix}`;
   } else {
     progressBar.removeAttribute("value");
-    progressLabel.textContent = `${verbing} ${formatSize(p.bytesDone)}${suffix}`;
+    progressLabel.textContent = `${verb} ${formatSize(p.bytesDone)}${suffix}`;
   }
-}
-
-function formatEta(sec) {
-  if (sec >= 3600) {
-    const h = Math.floor(sec / 3600);
-    const m = Math.floor((sec % 3600) / 60);
-    return `${h}h${m.toString().padStart(2, "0")}m`;
-  }
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return `${m}:${String(s).padStart(2, "0")}`;
 }
 
 function hideProgress() {
@@ -1075,80 +1670,25 @@ function hideProgress() {
 
 function cancelActiveTransfer() {
   if (typeof activeTransferId === "number") {
-    invoke("sftp_cancel_transfer", { transferId: activeTransferId }).catch((e) =>
-      console.warn("cancel failed", e),
-    );
+    invoke("sftp_cancel_transfer", { transferId: activeTransferId }).catch(() => {});
   } else if (activeTransferId === "pending") {
-    // Backend hasn't assigned an id yet; queue the cancel for when the
-    // first progress event arrives and latches the real id.
     pendingCancel = true;
   }
 }
 
-progressCancel.addEventListener("click", cancelActiveTransfer);
-
-async function renameEntry(entry) {
-  const newName = prompt(`Rename "${entry.name}" to:`, entry.name);
-  if (!newName || newName === entry.name) return;
-  try {
-    await invoke("sftp_rename", {
-      sftpId: filesSftpId,
-      from: joinPath(filesCurrentPath, entry.name),
-      to: joinPath(filesCurrentPath, newName),
-    });
-    navigateTo(filesCurrentPath);
-  } catch (e) {
-    showFilesError(`rename failed: ${e}`);
+function formatEta(sec) {
+  if (sec >= 3600) {
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    return `${h}h${String(m).padStart(2, "0")}m`;
   }
-}
-
-async function deleteEntry(entry) {
-  const target = joinPath(filesCurrentPath, entry.name);
-  if (!confirm(`Delete ${target}?`)) return;
-  const command = entry.kind === "dir" ? "sftp_remove_dir" : "sftp_remove";
-  try {
-    await invoke(command, { sftpId: filesSftpId, path: target });
-    navigateTo(filesCurrentPath);
-  } catch (e) {
-    showFilesError(`delete failed: ${e}`);
-  }
-}
-
-function showFilesError(msg) {
-  filesStatus.textContent = msg;
-  console.error(msg);
-}
-
-function kindMarker(k) {
-  switch (k) {
-    case "dir": return "📁";
-    case "file": return "📄";
-    case "symlink": return "↪";
-    default: return "?";
-  }
-}
-
-function formatSize(n) {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
-  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
-}
-
-function joinPath(base, name) {
-  if (base.endsWith("/")) return base + name;
-  return base + "/" + name;
-}
-
-function parentPath(path) {
-  if (path === "/" || path === "") return "/";
-  const trimmed = path.replace(/\/+$/, "");
-  const idx = trimmed.lastIndexOf("/");
-  if (idx <= 0) return "/";
-  return trimmed.slice(0, idx);
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
 }
 
 // --------------------------------------------------------------------------
-// boot
+// Boot
 // --------------------------------------------------------------------------
+
 refreshVaultStatus();

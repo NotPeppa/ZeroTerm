@@ -47,6 +47,7 @@ pub enum HostAuth {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         passphrase: Option<String>,
     },
+    Agent,
 }
 
 /// Saved forward spec. Mirrors the subset of OpenSSH `-L`/`-D` syntax
@@ -116,6 +117,7 @@ impl Host {
                 pem: key_pem.clone(),
                 passphrase: passphrase.clone(),
             }],
+            HostAuth::Agent => vec![AuthMethod::Agent],
         }
     }
 }

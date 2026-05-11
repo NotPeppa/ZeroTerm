@@ -138,6 +138,21 @@ pub async fn forget_keychain() -> Result<(), String> {
     zeroterm_app::keychain::forget_master_password(&path).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub async fn open_new_window(app_handle: AppHandle) -> Result<(), String> {
+    let label = format!("window-{}", uuid::Uuid::new_v4());
+    tauri::WebviewWindowBuilder::new(
+        &app_handle,
+        label,
+        tauri::WebviewUrl::App("index.html".into()),
+    )
+    .title("ZeroTerm")
+    .inner_size(1360.0, 860.0)
+    .build()
+    .map(|_| ())
+    .map_err(|e| e.to_string())
+}
+
 // --------------------------------------------------------------------------
 // hosts
 // --------------------------------------------------------------------------
@@ -169,6 +184,7 @@ pub async fn list_hosts(state: State<'_, AppState>) -> Result<Vec<HostSummary>, 
             auth_type: match h.auth {
                 HostAuth::Password { .. } => "password",
                 HostAuth::PrivateKey { .. } => "key",
+                HostAuth::Agent => "agent",
             },
         })
         .collect())
@@ -198,6 +214,7 @@ pub enum HostAuthInput {
         key_pem: String,
         passphrase: Option<String>,
     },
+    Agent,
 }
 
 /// Wire shape for a forward, both incoming (`HostInput`) and outgoing
@@ -289,6 +306,7 @@ impl HostInput {
                     key_pem,
                     passphrase,
                 },
+                HostAuthInput::Agent => zeroterm_app::HostAuth::Agent,
             },
             forwards: self.forwards.into_iter().map(|f| f.into_app()).collect(),
             proxy_jump: self.proxy_jump,
@@ -379,6 +397,7 @@ pub async fn get_host(state: State<'_, AppState>, id: String) -> Result<HostFull
         zeroterm_app::HostAuth::PrivateKey { passphrase, .. } => {
             ("key", None, passphrase.clone())
         }
+        zeroterm_app::HostAuth::Agent => ("agent", None, None),
     };
 
     Ok(HostFull {
@@ -832,6 +851,48 @@ pub async fn sftp_upload(
             sftp.upload_from_reader(
                 &remote,
                 &mut file,
+                zeroterm_ssh::DEFAULT_CHUNK,
+                size_hint,
+                cancel,
+                progress_cb,
+            )
+            .await
+        },
+    )
+    .await;
+
+    forget_transfer(&state, transfer_id);
+    result.map_err(|e| e.to_string())
+}
+
+/// Upload a file payload already loaded in the frontend (e.g. drag-drop).
+/// Suitable for small/medium files where an extra in-memory copy is fine.
+#[tauri::command]
+pub async fn sftp_upload_bytes(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+    sftp_id: u64,
+    remote: String,
+    data: Vec<u8>,
+    source_label: Option<String>,
+) -> Result<u64, String> {
+    let sftp = lookup_sftp(&state, sftp_id)?;
+    let (transfer_id, cancel) = register_transfer(&state);
+
+    let size_hint = Some(data.len() as u64);
+    let source = source_label.unwrap_or_else(|| format!("dragged-bytes({})", data.len()));
+    let mut cursor = std::io::Cursor::new(data);
+
+    let result = run_with_progress(
+        &app_handle,
+        transfer_id,
+        "upload",
+        source,
+        remote.clone(),
+        move |progress_cb| async move {
+            sftp.upload_from_reader(
+                &remote,
+                &mut cursor,
                 zeroterm_ssh::DEFAULT_CHUNK,
                 size_hint,
                 cancel,

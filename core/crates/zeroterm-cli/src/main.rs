@@ -811,6 +811,7 @@ fn cmd_list(args: &Args, vault_path: &Path) -> Result<()> {
         let auth_tag = match h.auth {
             HostAuth::Password { .. } => "(password)",
             HostAuth::PrivateKey { .. } => "(key)",
+            HostAuth::Agent => "(agent)",
         };
         println!(
             "{:<width$}  {}@{}:{} {}",
@@ -836,7 +837,7 @@ fn cmd_add(
     let target = parse_target(target, port_override)?;
     let app = open_app(args, vault_path, /*create_if_missing*/ true)?;
 
-    let auth = build_host_auth(&target, identity)?;
+    let auth = build_host_auth(&target, identity, args.agent)?;
     let host = Host {
         id: String::new(),
         name: name.to_string(),
@@ -1087,7 +1088,14 @@ fn build_direct_auth_methods(args: &Args, target: &Target) -> Result<Vec<AuthMet
     Ok(methods)
 }
 
-fn build_host_auth(target: &Target, identity: Option<PathBuf>) -> Result<HostAuth> {
+fn build_host_auth(target: &Target, identity: Option<PathBuf>, use_agent: bool) -> Result<HostAuth> {
+    if use_agent {
+        if identity.is_some() {
+            bail!("`add` accepts either --agent or --identity, not both");
+        }
+        return Ok(HostAuth::Agent);
+    }
+
     if let Some(path) = identity {
         let pem = std::fs::read_to_string(&path)
             .with_context(|| format!("reading {}", path.display()))?;
