@@ -219,6 +219,7 @@ label.checkbox input[type="checkbox"] {
   padding: 8px 12px;
   border-bottom: 1px solid #2a3659;
   background: linear-gradient(180deg, #141f3a 0%, #111a30 100%);
+  min-width: 0;
 }
 
 .workspace-tab {
@@ -238,9 +239,17 @@ label.checkbox input[type="checkbox"] {
 }
 
 .workspace-term-strip {
-  flex: 1;
+  flex: 1 1 0%;
   min-width: 0;
+  width: 0;
   height: 38px;
+}
+
+.workspace-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
 }
 
 .workspace-icon-btn {
@@ -249,6 +258,10 @@ label.checkbox input[type="checkbox"] {
   padding: 0;
   border-radius: 11px;
   font-size: 14px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  flex: 0 0 38px;
 }
 
 .workspace-panels {
@@ -1013,17 +1026,6 @@ button.small {
 }
 
 @media (max-width: 1100px) {
-  .workspace-tabbar {
-    height: auto;
-    flex-wrap: wrap;
-    align-items: stretch;
-  }
-
-  .workspace-term-strip {
-    order: 10;
-    flex: 0 0 100%;
-  }
-
   .sftp-split {
     grid-template-columns: 1fr;
   }
@@ -1034,5 +1036,23 @@ button.small {
 
   #file-editor-content {
     height: min(52vh, 440px);
+  }
+}
+
+@media (max-width: 860px) {
+  .workspace-tabbar {
+    height: auto;
+    flex-wrap: wrap;
+    align-items: stretch;
+  }
+
+  .workspace-term-strip {
+    order: 10;
+    flex: 0 0 100%;
+    width: 100%;
+  }
+
+  .workspace-actions {
+    margin-left: auto;
   }
 }
