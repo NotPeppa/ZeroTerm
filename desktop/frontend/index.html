@@ -79,13 +79,16 @@
                     <select id="sftp-left-host"></select>
                     <button id="sftp-left-connect" type="button">Connect</button>
                   </header>
-                  <div class="sftp-pane-toolbar">
-                    <button id="sftp-left-up" type="button">Up</button>
-                    <button id="sftp-left-refresh" type="button">Refresh</button>
-                    <button id="sftp-left-mkdir" type="button">New Folder</button>
-                    <button id="sftp-left-upload" type="button">Upload</button>
+                  <div id="sftp-left-pathbar" class="sftp-pathbar">
+                    <div id="sftp-left-breadcrumbs" class="sftp-breadcrumbs"></div>
+                    <input
+                      id="sftp-left-path-input"
+                      class="sftp-path-input"
+                      type="text"
+                      autocomplete="off"
+                      spellcheck="false"
+                    />
                   </div>
-                  <div id="sftp-left-path" class="tiny muted sftp-path">/</div>
                   <div id="sftp-left-status" class="tiny muted sftp-status"></div>
                   <ul id="sftp-left-list" class="files-list"></ul>
                 </article>
@@ -96,21 +99,28 @@
                     <select id="sftp-right-host"></select>
                     <button id="sftp-right-connect" type="button">Connect</button>
                   </header>
-                  <div class="sftp-pane-toolbar">
-                    <button id="sftp-right-up" type="button">Up</button>
-                    <button id="sftp-right-refresh" type="button">Refresh</button>
-                    <button id="sftp-right-mkdir" type="button">New Folder</button>
-                    <button id="sftp-right-upload" type="button">Upload</button>
+                  <div id="sftp-right-pathbar" class="sftp-pathbar">
+                    <div id="sftp-right-breadcrumbs" class="sftp-breadcrumbs"></div>
+                    <input
+                      id="sftp-right-path-input"
+                      class="sftp-path-input"
+                      type="text"
+                      autocomplete="off"
+                      spellcheck="false"
+                    />
                   </div>
-                  <div id="sftp-right-path" class="tiny muted sftp-path">/</div>
                   <div id="sftp-right-status" class="tiny muted sftp-status"></div>
                   <ul id="sftp-right-list" class="files-list"></ul>
                 </article>
               </div>
               <div id="files-context-menu" class="files-context-menu" hidden>
+                <button id="files-menu-refresh" type="button">Refresh</button>
+                <button id="files-menu-mkdir" type="button">New Folder</button>
+                <button id="files-menu-upload" type="button">Upload</button>
+                <div id="files-menu-pane-separator" class="menu-separator"></div>
                 <button id="files-menu-edit" type="button">Edit</button>
                 <button id="files-menu-download" type="button">Download</button>
-                <div class="menu-separator"></div>
+                <div id="files-menu-entry-separator" class="menu-separator"></div>
                 <button id="files-menu-rename" type="button">Rename</button>
                 <button id="files-menu-delete" type="button" class="danger">Delete</button>
               </div>

@@ -30,14 +30,6 @@ function joinPath(base, name) {
   return base + "/" + name;
 }
 
-function parentPath(path) {
-  if (!path || path === "/") return "/";
-  const trimmed = path.replace(/\/+$/, "");
-  const idx = trimmed.lastIndexOf("/");
-  if (idx <= 0) return "/";
-  return trimmed.slice(0, idx);
-}
-
 function localJoin(base, leaf) {
   const sep = base.includes("\\") ? "\\" : "/";
   return base.replace(/[\\/]+$/, "") + sep + leaf;
@@ -83,6 +75,7 @@ const I18N = {
     "sftp.host.placeholder": "Select host...",
     "sftp.button.connect": "Connect",
     "sftp.button.disconnect": "Disconnect",
+    "sftp.path.placeholder": "Enter path and press Enter (e.g. /var/log)",
     "hosts.search.placeholder": "Find a host or ssh user@hostname...",
     "hosts.new_host": "+ New host",
     "hosts.empty.search": "No host matched your search.",
@@ -283,6 +276,7 @@ const I18N = {
     "sftp.host.placeholder": "选择主机...",
     "sftp.button.connect": "连接",
     "sftp.button.disconnect": "断开",
+    "sftp.path.placeholder": "输入路径后按回车跳转（例如 /var/log）",
     "hosts.search.placeholder": "搜索主机或 ssh user@hostname...",
     "hosts.new_host": "+ 新建主机",
     "hosts.empty.search": "没有匹配搜索条件的主机。",
@@ -863,14 +857,11 @@ function applyI18n() {
 
   setText("sftp-left-title", "sftp.side.left");
   setText("sftp-right-title", "sftp.side.right");
-  setText("sftp-left-up", "files.button.up");
-  setText("sftp-right-up", "files.button.up");
-  setText("sftp-left-refresh", "files.button.refresh");
-  setText("sftp-right-refresh", "files.button.refresh");
-  setText("sftp-left-mkdir", "files.button.new_folder");
-  setText("sftp-right-mkdir", "files.button.new_folder");
-  setText("sftp-left-upload", "files.button.upload");
-  setText("sftp-right-upload", "files.button.upload");
+  setPlaceholder("sftp-left-path-input", "sftp.path.placeholder");
+  setPlaceholder("sftp-right-path-input", "sftp.path.placeholder");
+  setText("files-menu-refresh", "files.button.refresh");
+  setText("files-menu-mkdir", "files.button.new_folder");
+  setText("files-menu-upload", "files.button.upload");
   setText("files-menu-edit", "files.menu.edit");
   setText("files-menu-download", "files.menu.download");
   setText("files-menu-rename", "files.menu.rename");
@@ -2083,8 +2074,13 @@ const fileEditorSaveButton = document.getElementById("file-editor-save");
 const fileEditorCancelButton = document.getElementById("file-editor-cancel");
 
 const filesContextMenu = document.getElementById("files-context-menu");
+const filesMenuRefresh = document.getElementById("files-menu-refresh");
+const filesMenuMkdir = document.getElementById("files-menu-mkdir");
+const filesMenuUpload = document.getElementById("files-menu-upload");
+const filesMenuPaneSeparator = document.getElementById("files-menu-pane-separator");
 const filesMenuEdit = document.getElementById("files-menu-edit");
 const filesMenuDownload = document.getElementById("files-menu-download");
+const filesMenuEntrySeparator = document.getElementById("files-menu-entry-separator");
 const filesMenuRename = document.getElementById("files-menu-rename");
 const filesMenuDelete = document.getElementById("files-menu-delete");
 
@@ -2098,13 +2094,12 @@ function buildSftpPane(key) {
     entries: [],
     hostSelect: document.getElementById(`sftp-${key}-host`),
     connectButton: document.getElementById(`sftp-${key}-connect`),
-    upButton: document.getElementById(`sftp-${key}-up`),
-    refreshButton: document.getElementById(`sftp-${key}-refresh`),
-    mkdirButton: document.getElementById(`sftp-${key}-mkdir`),
-    uploadButton: document.getElementById(`sftp-${key}-upload`),
-    pathEl: document.getElementById(`sftp-${key}-path`),
+    pathbarEl: document.getElementById(`sftp-${key}-pathbar`),
+    breadcrumbsEl: document.getElementById(`sftp-${key}-breadcrumbs`),
+    pathInputEl: document.getElementById(`sftp-${key}-path-input`),
     statusEl: document.getElementById(`sftp-${key}-status`),
     listEl: document.getElementById(`sftp-${key}-list`),
+    pathEditing: false,
   };
 }
 
@@ -2127,6 +2122,92 @@ const fileEditorState = {
 
 function getSftpPane(key) {
   return key === "right" ? sftpPanes.right : sftpPanes.left;
+}
+
+function normalizeAbsolutePath(path) {
+  const raw = String(path || "").trim();
+  if (!raw) return "/";
+  const isAbsolute = raw.startsWith("/");
+  const parts = raw.split("/");
+  const stack = [];
+  for (const part of parts) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      if (stack.length > 0) stack.pop();
+      continue;
+    }
+    stack.push(part);
+  }
+  const normalized = "/" + stack.join("/");
+  if (isAbsolute) return normalized;
+  return normalized;
+}
+
+function resolveSftpTargetPath(pane, rawInput) {
+  const raw = String(rawInput || "").trim();
+  if (!raw) return pane.path;
+  if (raw.startsWith("/")) {
+    return normalizeAbsolutePath(raw);
+  }
+  return normalizeAbsolutePath(joinPath(pane.path, raw));
+}
+
+function setSftpPathEditMode(pane, editing) {
+  pane.pathEditing = Boolean(editing);
+  if (pane.pathbarEl) {
+    pane.pathbarEl.classList.toggle("editing", pane.pathEditing);
+  }
+  if (!pane.pathInputEl) return;
+  if (pane.pathEditing) {
+    pane.pathInputEl.value = pane.path;
+    pane.pathInputEl.focus();
+    pane.pathInputEl.select();
+  } else {
+    pane.pathInputEl.value = pane.path;
+  }
+}
+
+function renderSftpPathBar(pane) {
+  if (!pane.breadcrumbsEl || !pane.pathInputEl) return;
+
+  if (!pane.pathEditing && document.activeElement !== pane.pathInputEl) {
+    pane.pathInputEl.value = pane.path;
+  }
+
+  pane.breadcrumbsEl.innerHTML = "";
+
+  const rootBtn = document.createElement("button");
+  rootBtn.type = "button";
+  rootBtn.className = "sftp-crumb-btn" + (pane.path === "/" ? " active" : "");
+  rootBtn.textContent = "/";
+  rootBtn.addEventListener("click", () => {
+    if (pane.sftpId === null || pane.path === "/") return;
+    navigateSftpPane(pane, "/");
+  });
+  pane.breadcrumbsEl.appendChild(rootBtn);
+
+  const parts = pane.path.split("/").filter(Boolean);
+  let current = "";
+  for (let i = 0; i < parts.length; i += 1) {
+    const part = parts[i];
+    current += `/${part}`;
+
+    const sep = document.createElement("span");
+    sep.className = "sftp-crumb-sep";
+    sep.textContent = "›";
+    pane.breadcrumbsEl.appendChild(sep);
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "sftp-crumb-btn" + (i === parts.length - 1 ? " active" : "");
+    btn.textContent = part;
+    const target = current || "/";
+    btn.addEventListener("click", () => {
+      if (pane.sftpId === null || pane.path === target) return;
+      navigateSftpPane(pane, target);
+    });
+    pane.breadcrumbsEl.appendChild(btn);
+  }
 }
 
 function syncSftpHostOptions() {
@@ -2182,8 +2263,9 @@ async function disconnectSftpPane(pane) {
   pane.sftpId = null;
   pane.entries = [];
   pane.path = "/";
-  pane.pathEl.textContent = "/";
+  setSftpPathEditMode(pane, false);
   pane.statusEl.textContent = t("sftp.status.not_connected");
+  renderSftpPathBar(pane);
   renderSftpPane(pane);
   updateSftpConnectButtons();
 }
@@ -2192,10 +2274,11 @@ async function navigateSftpPane(pane, path) {
   if (pane.sftpId === null) return;
   pane.statusEl.textContent = t("files.status.listing", { path });
   try {
+    setSftpPathEditMode(pane, false);
     const entries = await invoke("sftp_list", { sftpId: pane.sftpId, path });
     pane.path = path;
     pane.entries = entries;
-    pane.pathEl.textContent = path;
+    renderSftpPathBar(pane);
     pane.statusEl.textContent = pane.host ? t("sftp.status.connected", { name: pane.host.name }) : "";
     renderSftpPane(pane);
   } catch (e) {
@@ -2204,6 +2287,7 @@ async function navigateSftpPane(pane, path) {
 }
 
 function renderSftpPane(pane) {
+  renderSftpPathBar(pane);
   pane.listEl.innerHTML = "";
   if (pane.sftpId === null) {
     pane.statusEl.textContent = t("sftp.status.not_connected");
@@ -2292,16 +2376,34 @@ function kindMarker(kind) {
   return "?";
 }
 
+function setFilesContextNodeVisible(el, visible) {
+  if (!el) return;
+  el.hidden = !visible;
+}
+
 function showFilesContextMenu(pane, entry, x, y) {
   if (pane.sftpId === null) return;
-  filesContextEntry = entry;
+  const hasEntry = Boolean(entry);
+  filesContextEntry = hasEntry ? entry : null;
   filesContextPaneKey = pane.key;
 
-  const isFile = entry.kind === "file";
-  filesMenuEdit.disabled = !(isFile && canInlineEditEntry(entry));
-  filesMenuDownload.disabled = !isFile;
-  filesMenuRename.disabled = false;
-  filesMenuDelete.disabled = false;
+  setFilesContextNodeVisible(filesMenuRefresh, true);
+  setFilesContextNodeVisible(filesMenuMkdir, true);
+  setFilesContextNodeVisible(filesMenuUpload, true);
+  setFilesContextNodeVisible(filesMenuPaneSeparator, hasEntry);
+  setFilesContextNodeVisible(filesMenuEdit, hasEntry);
+  setFilesContextNodeVisible(filesMenuDownload, hasEntry);
+  setFilesContextNodeVisible(filesMenuEntrySeparator, hasEntry);
+  setFilesContextNodeVisible(filesMenuRename, hasEntry);
+  setFilesContextNodeVisible(filesMenuDelete, hasEntry);
+
+  if (hasEntry) {
+    const isFile = entry.kind === "file";
+    filesMenuEdit.disabled = !(isFile && canInlineEditEntry(entry));
+    filesMenuDownload.disabled = !isFile;
+    filesMenuRename.disabled = false;
+    filesMenuDelete.disabled = false;
+  }
 
   filesContextMenu.style.left = "0px";
   filesContextMenu.style.top = "0px";
@@ -2698,18 +2800,61 @@ for (const pane of Object.values(sftpPanes)) {
     await connectSftpPane(pane, host);
   });
 
-  pane.upButton.addEventListener("click", () => {
+  pane.pathbarEl.addEventListener("click", (ev) => {
     if (pane.sftpId === null) return;
-    navigateSftpPane(pane, parentPath(pane.path));
+    if (pane.pathEditing) return;
+    if (ev.target.closest(".sftp-crumb-btn")) return;
+    setSftpPathEditMode(pane, true);
   });
-  pane.refreshButton.addEventListener("click", () => {
+
+  pane.pathInputEl.addEventListener("keydown", async (ev) => {
+    if (ev.key === "Escape") {
+      ev.preventDefault();
+      setSftpPathEditMode(pane, false);
+      return;
+    }
+    if (ev.key !== "Enter") return;
+    ev.preventDefault();
+    if (pane.sftpId === null) {
+      setSftpPathEditMode(pane, false);
+      return;
+    }
+    const target = resolveSftpTargetPath(pane, pane.pathInputEl.value);
+    await navigateSftpPane(pane, target);
+  });
+  pane.pathInputEl.addEventListener("blur", () => {
+    setSftpPathEditMode(pane, false);
+  });
+
+  pane.listEl.addEventListener("contextmenu", (ev) => {
     if (pane.sftpId === null) return;
-    navigateSftpPane(pane, pane.path);
+    if (ev.target.closest(".sftp-row")) return;
+    ev.preventDefault();
+    showFilesContextMenu(pane, null, ev.clientX, ev.clientY);
   });
-  pane.mkdirButton.addEventListener("click", () => sftpMkdir(pane));
-  pane.uploadButton.addEventListener("click", () => sftpUpload(pane));
   pane.listEl.addEventListener("scroll", () => hideFilesContextMenu());
 }
+
+filesMenuRefresh.addEventListener("click", async () => {
+  const pane = filesContextPaneKey ? getSftpPane(filesContextPaneKey) : null;
+  hideFilesContextMenu();
+  if (!pane || pane.sftpId === null) return;
+  await navigateSftpPane(pane, pane.path);
+});
+
+filesMenuMkdir.addEventListener("click", async () => {
+  const pane = filesContextPaneKey ? getSftpPane(filesContextPaneKey) : null;
+  hideFilesContextMenu();
+  if (!pane || pane.sftpId === null) return;
+  await sftpMkdir(pane);
+});
+
+filesMenuUpload.addEventListener("click", async () => {
+  const pane = filesContextPaneKey ? getSftpPane(filesContextPaneKey) : null;
+  hideFilesContextMenu();
+  if (!pane || pane.sftpId === null) return;
+  await sftpUpload(pane);
+});
 
 filesMenuEdit.addEventListener("click", async () => {
   const entry = filesContextEntry;

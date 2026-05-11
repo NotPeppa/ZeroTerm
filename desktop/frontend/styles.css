@@ -567,18 +567,86 @@ label.checkbox input[type="checkbox"] {
   flex: 1;
 }
 
-.sftp-pane-toolbar {
+.sftp-pathbar {
+  position: relative;
+  margin: 10px 10px 2px;
+  min-height: 34px;
+  border: none;
+  border-radius: 8px;
+  background: #14203b;
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 8px 10px;
-  border-bottom: 1px solid #2a3658;
-  background: #18213a;
+  padding: 3px 8px;
+  cursor: text;
 }
 
-.sftp-path {
-  padding: 6px 10px 0;
+.sftp-pathbar:hover {
+  background: #182a4a;
+}
+
+.sftp-pathbar.editing {
+  background: #10213f;
+  box-shadow: inset 0 0 0 1px rgba(94, 144, 223, 0.42);
+}
+
+.sftp-breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: thin;
+}
+
+.sftp-pathbar.editing .sftp-breadcrumbs {
+  visibility: hidden;
+}
+
+.sftp-crumb-btn {
+  border: 1px solid #30476f;
+  background: #1d2b4a;
+  color: #d7e5ff;
+  border-radius: 7px;
+  padding: 3px 8px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.sftp-crumb-btn.active {
+  border-color: #4f79bc;
+  background: #29406d;
+  color: #f1f6ff;
+}
+
+.sftp-crumb-sep {
+  color: #7e96c3;
+  font-size: 12px;
+  user-select: none;
+  pointer-events: none;
+}
+
+.sftp-path-input {
+  position: absolute;
+  inset: 3px;
+  display: none;
+  width: calc(100% - 6px);
+  height: calc(100% - 6px);
+  font-size: 12px;
+  background: #14203b;
+  border: none;
+  border-radius: 6px;
+  color: #dbe7ff;
+  outline: none;
+}
+
+.sftp-pathbar.editing .sftp-path-input {
+  display: block;
+}
+
+.sftp-path-input:focus {
+  outline: none;
 }
 
 .sftp-status {
@@ -589,6 +657,32 @@ label.checkbox input[type="checkbox"] {
 .sftp-pane .files-list {
   flex: 1;
   min-height: 0;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: #4d6fa7 #111a2d;
+}
+
+.sftp-pane .files-list::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.sftp-pane .files-list::-webkit-scrollbar-track {
+  background: #111a2d;
+}
+
+.sftp-pane .files-list::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #577fbd 0%, #3f6196 100%);
+  border-radius: 8px;
+  border: 2px solid #111a2d;
+}
+
+.sftp-pane .files-list::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #6d98de 0%, #4f75b2 100%);
+}
+
+.sftp-pane .files-list::-webkit-scrollbar-corner {
+  background: #111a2d;
 }
 
 .files-drop-zone-wrap {
