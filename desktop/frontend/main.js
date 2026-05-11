@@ -52,6 +52,460 @@ function uniqueId(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+const LOCALE_STORAGE_KEY = "zeroterm.locale";
+
+const I18N = {
+  en: {
+    "unlock.checking": "checking vault...",
+    "unlock.enter_password": "Enter your master password to continue.",
+    "unlock.no_vault": "No vault yet. Choose a master password - it cannot be recovered.",
+    "unlock.label.master": "Master password",
+    "unlock.label.new_master": "New master password",
+    "unlock.remember": "Remember password (store in OS keychain)",
+    "unlock.button.unlock": "Unlock",
+    "unlock.button.create": "Create vault",
+    "unlock.confirm_placeholder": "Confirm master password",
+    "unlock.path": "vault: {path}",
+    "unlock.error.passwords_mismatch": "passwords do not match",
+    "common.error": "error: {error}",
+    "nav.hosts": "Hosts",
+    "nav.keychain": "Keychain",
+    "nav.port_forwarding": "Port Forwarding",
+    "nav.known_hosts": "Known Hosts",
+    "nav.logs": "Logs",
+    "sidebar.terminals": "Terminals",
+    "sidebar.new_window": "New Window",
+    "sidebar.settings": "Settings",
+    "sidebar.lock": "Lock Vault",
+    "hosts.search.placeholder": "Find a host or ssh user@hostname...",
+    "hosts.new_host": "+ New host",
+    "hosts.connect_selected": "Connect Selected",
+    "hosts.delete_selected": "Delete Selected",
+    "hosts.selection.count": "{count} selected",
+    "hosts.empty.search": "No host matched your search.",
+    "hosts.empty.default": "No saved hosts yet. Click + New host or add from CLI.",
+    "hosts.button.connect": "Connect",
+    "hosts.button.files": "Files",
+    "hosts.button.edit": "Edit",
+    "hosts.button.delete": "Delete",
+    "hosts.confirm.delete_selected": "Delete {count} selected host(s)?",
+    "hosts.error.delete_failed_for": "delete failed for {name}: {error}",
+    "hosts.confirm.delete_one": "Delete saved host \"{name}\"?",
+    "hosts.error.delete_failed": "delete failed: {error}",
+    "hosts.error.no_tabs": "No terminal tabs yet. Open a host first.",
+    "hosts.error.load_failed": "error: {error}",
+    "terminal.button.new_tab": "+ Tab",
+    "terminal.button.split_v": "Split V",
+    "terminal.button.split_h": "Split H",
+    "terminal.button.close_split": "Close Split",
+    "terminal.button.disconnect": "Disconnect Pane",
+    "terminal.button.new_window": "New Window",
+    "terminal.button.back_hosts": "Hosts",
+    "terminal.empty": "No open terminal tabs. Open one from Hosts.",
+    "terminal.new_tab_hint": "Select a host to open a new terminal tab.",
+    "terminal.pane.empty": "Empty pane",
+    "terminal.status.connecting": "connecting...",
+    "terminal.status.connected": "connected",
+    "terminal.status.disconnected": "disconnected",
+    "terminal.via": "via {jump}",
+    "terminal.error.connect_failed_status": "connect failed: {error}",
+    "terminal.error.connect_failed_term": "failed to connect: {error}",
+    "terminal.error.new_window_failed": "new window failed: {error}",
+    "terminal.error.split_limit": "Current split mode supports up to 2 panes.",
+    "terminal.error.no_host": "Active pane has no host to duplicate.",
+    "terminal.closed.remote_exited": "[remote exited with status {code}]",
+    "terminal.closed.disconnected": "[disconnected]",
+    "host_key.unknown_title": "Unknown host",
+    "host_key.unknown_body":
+      "The authenticity of '{host}:{port}' cannot be established. Trusting this key adds it to known_hosts.",
+    "host_key.changed_title": "Warning: host key changed",
+    "host_key.changed_body":
+      "This might indicate a man-in-the-middle attack. Trust only if you know why the key changed.",
+    "host_key.changed_server_now": "Server now offers:",
+    "host_key.changed_known_hosts_has": "known_hosts has:",
+    "host_key.unknown_value": "(unknown)",
+    "host_key.reject": "Cancel connection",
+    "host_key.accept": "Trust and connect",
+    "host_editor.title.add": "Add host",
+    "host_editor.title.edit": "Edit host",
+    "host_editor.label.name": "Name",
+    "host_editor.label.user": "User",
+    "host_editor.label.host": "Host",
+    "host_editor.placeholder.host": "hostname or IP",
+    "host_editor.label.port": "Port",
+    "host_editor.label.auth": "Authentication",
+    "host_editor.label.password": "Password",
+    "host_editor.label.private_key": "Private key",
+    "host_editor.label.passphrase": "Passphrase (optional)",
+    "host_editor.label.proxy_jump": "ProxyJump (saved alias)",
+    "host_editor.label.advanced": "ProxyJump and forwards",
+    "host_editor.label.port_forwards": "Port forwards",
+    "host_editor.button.add_forward": "+ Add forward",
+    "host_editor.hint.forwards": "Supports local forward (-L) and dynamic SOCKS5 (-D).",
+    "host_editor.button.choose_key": "Choose file...",
+    "host_editor.button.cancel": "Cancel",
+    "host_editor.button.save": "Save",
+    "host_editor.auth.password": "Password",
+    "host_editor.auth.key": "Private key",
+    "host_editor.auth.agent": "SSH agent",
+    "host_editor.key.none": "No key loaded",
+    "host_editor.key.existing": "Existing key kept (choose a file to replace)",
+    "host_editor.jump.none": "(none)",
+    "host_editor.forward.none": "(no forwards)",
+    "host_editor.forward.local": "Local (-L)",
+    "host_editor.forward.dynamic": "SOCKS5 (-D)",
+    "host_editor.forward.bind": "bind",
+    "host_editor.forward.port": "port",
+    "host_editor.forward.target_host": "target host",
+    "host_editor.forward.remove": "Remove",
+    "host_editor.key.pick_title": "Choose a private key",
+    "host_editor.key.loaded": "loaded {name} ({bytes} bytes)",
+    "host_editor.key.read_failed": "read failed: {error}",
+    "host_editor.error.pick_new_key": "Pick a new key file to replace existing key.",
+    "host_editor.error.pick_key_first": "Pick a private key file first.",
+    "host_editor.error.required_fields": "name, host and user are required",
+    "host_editor.error.load_failed": "load failed: {error}",
+    "host_editor.error.forward_bind_port": "forward {index}: invalid bind port",
+    "host_editor.error.forward_target_host": "forward {index}: target host required",
+    "host_editor.error.forward_target_port": "forward {index}: invalid target port",
+    "files.title": "Files",
+    "files.button.back": "Back",
+    "files.button.up": "Up",
+    "files.button.up_title": "Parent directory",
+    "files.button.refresh": "Refresh",
+    "files.button.new_folder": "New Folder",
+    "files.button.upload": "Upload",
+    "files.button.upload_many": "Upload Many",
+    "files.select_all": "Select all",
+    "files.button.download_selected": "Download Selected",
+    "files.button.delete_selected": "Delete Selected",
+    "files.drop.hint": "Drop files to upload to current directory",
+    "files.menu.edit": "Edit",
+    "files.menu.download": "Download",
+    "files.menu.rename": "Rename",
+    "files.menu.delete": "Delete",
+    "files.selection.count": "{count} selected",
+    "files.status.connecting": "Connecting...",
+    "files.status.listing": "Listing {path}...",
+    "files.error.mkdir_failed": "mkdir failed: {error}",
+    "files.prompt.new_folder": "New folder name:",
+    "files.empty": "(empty)",
+    "files.error.open_failed": "open failed: {error}",
+    "files.error.list_failed": "list failed: {error}",
+    "files.status.downloaded_one": "Downloaded {name} ({size}).",
+    "files.error.download_failed": "download failed: {error}",
+    "files.prompt.rename": "Rename \"{name}\" to:",
+    "files.error.rename_failed": "rename failed: {error}",
+    "files.confirm.delete_entry": "Delete {path}?",
+    "files.error.delete_failed": "delete failed: {error}",
+    "files.confirm.delete_selected": "Delete {count} selected item(s)?",
+    "files.error.delete_failed_for": "delete failed for {name}: {error}",
+    "files.status.uploaded_one": "Uploaded {name} ({size}).",
+    "files.error.upload_failed_for": "upload failed for {name}: {error}",
+    "files.error.drag_upload_failed_for": "drag upload failed for {name}: {error}",
+    "files.alert.download_selected_none":
+      "Select at least one file (directories are skipped for bulk download).",
+    "files.error.download_failed_for": "download failed for {name}: {error}",
+    "files.status.downloaded_many_to": "Downloaded {count} file(s) to {folder}.",
+    "files.progress.uploading": "Uploading",
+    "files.progress.downloading": "Downloading",
+    "files.progress.eta": "ETA {eta}",
+    "files.button.cancel": "Cancel",
+    "editor.title": "Edit Remote File",
+    "editor.title.dirty": "Edit Remote File *",
+    "editor.hint.default": "Supports common UTF-8 text files. Press Ctrl/Cmd + S to save.",
+    "editor.hint.loading": "Loading file content...",
+    "editor.hint.opening": "Opening...",
+    "editor.hint.unavailable": "Unable to open this file in the inline editor.",
+    "editor.hint.saved": "Saved {size} just now",
+    "editor.hint.replaced_one": "Replaced 1 occurrence.",
+    "editor.hint.replaced_many": "Replaced {count} occurrence(s).",
+    "editor.hint.utf8_info": "UTF-8 text · {lines} lines · Ctrl/Cmd + S to save",
+    "editor.find.placeholder": "Search...",
+    "editor.replace.placeholder": "Replace...",
+    "editor.match_case": "Match case",
+    "editor.button.prev": "Prev",
+    "editor.button.next": "Next",
+    "editor.button.replace": "Replace",
+    "editor.button.replace_all": "Replace All",
+    "editor.button.close": "Close",
+    "editor.button.save": "Save",
+    "editor.error.ace_load_failed": "Ace editor failed to load.",
+    "editor.error.enter_search": "Enter text in Search first.",
+    "editor.error.no_matches": "No matches found.",
+    "editor.error.no_matches_replace": "No matches found to replace.",
+    "editor.error.no_selected_match": "No match selected to replace.",
+    "editor.alert.unsupported":
+      "This file type is not in the inline-edit list, or the file is too large.",
+    "editor.alert.component_failed": "Editor component failed to load.",
+    "editor.confirm.discard": "Discard unsaved editor changes?",
+    "editor.confirm.close_unsaved": "You have unsaved changes. Close editor anyway?",
+    "editor.error.open_failed": "open failed: {error}",
+    "editor.error.save_failed": "save failed: {error}",
+    "files.status.saved_path": "Saved {path}.",
+    "settings.title": "Settings",
+    "settings.language.label": "Language",
+    "settings.language.hint": "Changes apply immediately and are saved locally.",
+    "settings.button.close": "Close",
+    "settings.language.zh": "Simplified Chinese",
+    "settings.language.en": "English",
+  },
+  "zh-CN": {
+    "unlock.checking": "正在检查保险库...",
+    "unlock.enter_password": "请输入主密码继续。",
+    "unlock.no_vault": "当前没有保险库。请设置主密码，主密码无法找回。",
+    "unlock.label.master": "主密码",
+    "unlock.label.new_master": "新主密码",
+    "unlock.remember": "记住密码（保存到系统钥匙串）",
+    "unlock.button.unlock": "解锁",
+    "unlock.button.create": "创建保险库",
+    "unlock.confirm_placeholder": "确认主密码",
+    "unlock.path": "保险库：{path}",
+    "unlock.error.passwords_mismatch": "两次输入的密码不一致",
+    "common.error": "错误：{error}",
+    "nav.hosts": "主机",
+    "nav.keychain": "钥匙串",
+    "nav.port_forwarding": "端口转发",
+    "nav.known_hosts": "已知主机",
+    "nav.logs": "日志",
+    "sidebar.terminals": "终端",
+    "sidebar.new_window": "新窗口",
+    "sidebar.settings": "设置",
+    "sidebar.lock": "锁定保险库",
+    "hosts.search.placeholder": "搜索主机或 ssh user@hostname...",
+    "hosts.new_host": "+ 新建主机",
+    "hosts.connect_selected": "连接所选",
+    "hosts.delete_selected": "删除所选",
+    "hosts.selection.count": "已选 {count} 项",
+    "hosts.empty.search": "没有匹配搜索条件的主机。",
+    "hosts.empty.default": "还没有保存的主机。点击 + 新建主机，或在 CLI 中添加。",
+    "hosts.button.connect": "连接",
+    "hosts.button.files": "文件",
+    "hosts.button.edit": "编辑",
+    "hosts.button.delete": "删除",
+    "hosts.confirm.delete_selected": "确认删除已选的 {count} 个主机？",
+    "hosts.error.delete_failed_for": "删除 {name} 失败：{error}",
+    "hosts.confirm.delete_one": "确认删除已保存主机“{name}”？",
+    "hosts.error.delete_failed": "删除失败：{error}",
+    "hosts.error.no_tabs": "当前没有终端标签页，请先打开一个主机。",
+    "hosts.error.load_failed": "错误：{error}",
+    "terminal.button.new_tab": "+ 标签页",
+    "terminal.button.split_v": "垂直分屏",
+    "terminal.button.split_h": "水平分屏",
+    "terminal.button.close_split": "关闭分屏",
+    "terminal.button.disconnect": "断开当前窗格",
+    "terminal.button.new_window": "新窗口",
+    "terminal.button.back_hosts": "主机",
+    "terminal.empty": "当前没有打开的终端标签页，请从主机页打开。",
+    "terminal.new_tab_hint": "请选择一个主机来打开新终端标签页。",
+    "terminal.pane.empty": "空窗格",
+    "terminal.status.connecting": "连接中...",
+    "terminal.status.connected": "已连接",
+    "terminal.status.disconnected": "已断开",
+    "terminal.via": "经由 {jump}",
+    "terminal.error.connect_failed_status": "连接失败：{error}",
+    "terminal.error.connect_failed_term": "连接失败：{error}",
+    "terminal.error.new_window_failed": "新窗口打开失败：{error}",
+    "terminal.error.split_limit": "当前分屏模式最多支持 2 个窗格。",
+    "terminal.error.no_host": "当前活动窗格没有可复制的主机。",
+    "terminal.closed.remote_exited": "[远端退出状态 {code}]",
+    "terminal.closed.disconnected": "[已断开]",
+    "host_key.unknown_title": "未知主机",
+    "host_key.unknown_body":
+      "无法确认“{host}:{port}”的真实性。信任后会将该主机密钥写入 known_hosts。",
+    "host_key.changed_title": "警告：主机密钥已变化",
+    "host_key.changed_body": "这可能是中间人攻击，请确认变更原因后再继续。",
+    "host_key.changed_server_now": "服务器当前提供：",
+    "host_key.changed_known_hosts_has": "known_hosts 中记录：",
+    "host_key.unknown_value": "（未知）",
+    "host_key.reject": "取消连接",
+    "host_key.accept": "信任并连接",
+    "host_editor.title.add": "新增主机",
+    "host_editor.title.edit": "编辑主机",
+    "host_editor.label.name": "名称",
+    "host_editor.label.user": "用户",
+    "host_editor.label.host": "主机",
+    "host_editor.placeholder.host": "主机名或 IP",
+    "host_editor.label.port": "端口",
+    "host_editor.label.auth": "认证方式",
+    "host_editor.label.password": "密码",
+    "host_editor.label.private_key": "私钥",
+    "host_editor.label.passphrase": "私钥口令（可选）",
+    "host_editor.label.proxy_jump": "ProxyJump（已保存别名）",
+    "host_editor.label.advanced": "ProxyJump 与转发",
+    "host_editor.label.port_forwards": "端口转发",
+    "host_editor.button.add_forward": "+ 添加转发",
+    "host_editor.hint.forwards": "支持本地转发（-L）和动态 SOCKS5（-D）。",
+    "host_editor.button.choose_key": "选择文件...",
+    "host_editor.button.cancel": "取消",
+    "host_editor.button.save": "保存",
+    "host_editor.auth.password": "密码",
+    "host_editor.auth.key": "私钥",
+    "host_editor.auth.agent": "SSH agent",
+    "host_editor.key.none": "尚未加载私钥",
+    "host_editor.key.existing": "保留已有私钥（选择文件可替换）",
+    "host_editor.jump.none": "（无）",
+    "host_editor.forward.none": "（无转发）",
+    "host_editor.forward.local": "本地转发 (-L)",
+    "host_editor.forward.dynamic": "SOCKS5 (-D)",
+    "host_editor.forward.bind": "监听地址",
+    "host_editor.forward.port": "端口",
+    "host_editor.forward.target_host": "目标主机",
+    "host_editor.forward.remove": "移除",
+    "host_editor.key.pick_title": "选择私钥文件",
+    "host_editor.key.loaded": "已加载 {name}（{bytes} 字节）",
+    "host_editor.key.read_failed": "读取失败：{error}",
+    "host_editor.error.pick_new_key": "请先选择新的私钥文件以替换已有私钥。",
+    "host_editor.error.pick_key_first": "请先选择私钥文件。",
+    "host_editor.error.required_fields": "名称、主机、用户为必填项",
+    "host_editor.error.load_failed": "加载失败：{error}",
+    "host_editor.error.forward_bind_port": "第 {index} 条转发：监听端口无效",
+    "host_editor.error.forward_target_host": "第 {index} 条转发：目标主机必填",
+    "host_editor.error.forward_target_port": "第 {index} 条转发：目标端口无效",
+    "files.title": "文件",
+    "files.button.back": "返回",
+    "files.button.up": "上级目录",
+    "files.button.up_title": "返回父目录",
+    "files.button.refresh": "刷新",
+    "files.button.new_folder": "新建文件夹",
+    "files.button.upload": "上传",
+    "files.button.upload_many": "批量上传",
+    "files.select_all": "全选",
+    "files.button.download_selected": "下载所选",
+    "files.button.delete_selected": "删除所选",
+    "files.drop.hint": "拖拽文件到此处上传到当前目录",
+    "files.menu.edit": "编辑",
+    "files.menu.download": "下载",
+    "files.menu.rename": "重命名",
+    "files.menu.delete": "删除",
+    "files.selection.count": "已选 {count} 项",
+    "files.status.connecting": "连接中...",
+    "files.status.listing": "正在列出 {path}...",
+    "files.error.mkdir_failed": "创建目录失败：{error}",
+    "files.prompt.new_folder": "新文件夹名称：",
+    "files.empty": "（空）",
+    "files.error.open_failed": "打开失败：{error}",
+    "files.error.list_failed": "列表读取失败：{error}",
+    "files.status.downloaded_one": "已下载 {name}（{size}）。",
+    "files.error.download_failed": "下载失败：{error}",
+    "files.prompt.rename": "将“{name}”重命名为：",
+    "files.error.rename_failed": "重命名失败：{error}",
+    "files.confirm.delete_entry": "确认删除 {path}？",
+    "files.error.delete_failed": "删除失败：{error}",
+    "files.confirm.delete_selected": "确认删除已选的 {count} 项？",
+    "files.error.delete_failed_for": "删除 {name} 失败：{error}",
+    "files.status.uploaded_one": "已上传 {name}（{size}）。",
+    "files.error.upload_failed_for": "上传 {name} 失败：{error}",
+    "files.error.drag_upload_failed_for": "拖拽上传 {name} 失败：{error}",
+    "files.alert.download_selected_none": "请至少选择一个文件（目录会被跳过）。",
+    "files.error.download_failed_for": "下载 {name} 失败：{error}",
+    "files.status.downloaded_many_to": "已下载 {count} 个文件到 {folder}。",
+    "files.progress.uploading": "上传中",
+    "files.progress.downloading": "下载中",
+    "files.progress.eta": "剩余 {eta}",
+    "files.button.cancel": "取消",
+    "editor.title": "编辑远程文件",
+    "editor.title.dirty": "编辑远程文件 *",
+    "editor.hint.default": "支持常见 UTF-8 文本文件。按 Ctrl/Cmd + S 保存。",
+    "editor.hint.loading": "正在加载文件内容...",
+    "editor.hint.opening": "正在打开...",
+    "editor.hint.unavailable": "无法在内置编辑器中打开该文件。",
+    "editor.hint.saved": "刚刚已保存 {size}",
+    "editor.hint.replaced_one": "已替换 1 处。",
+    "editor.hint.replaced_many": "已替换 {count} 处。",
+    "editor.hint.utf8_info": "UTF-8 文本 · {lines} 行 · Ctrl/Cmd + S 保存",
+    "editor.find.placeholder": "查找...",
+    "editor.replace.placeholder": "替换...",
+    "editor.match_case": "区分大小写",
+    "editor.button.prev": "上一个",
+    "editor.button.next": "下一个",
+    "editor.button.replace": "替换",
+    "editor.button.replace_all": "全部替换",
+    "editor.button.close": "关闭",
+    "editor.button.save": "保存",
+    "editor.error.ace_load_failed": "Ace 编辑器加载失败。",
+    "editor.error.enter_search": "请先输入要查找的文本。",
+    "editor.error.no_matches": "未找到匹配项。",
+    "editor.error.no_matches_replace": "没有可替换的匹配项。",
+    "editor.error.no_selected_match": "当前没有可替换的匹配项。",
+    "editor.alert.unsupported": "该文件类型不在内置编辑范围内，或文件过大。",
+    "editor.alert.component_failed": "编辑器组件加载失败。",
+    "editor.confirm.discard": "确认丢弃未保存的编辑内容？",
+    "editor.confirm.close_unsaved": "有未保存修改，仍要关闭编辑器吗？",
+    "editor.error.open_failed": "打开失败：{error}",
+    "editor.error.save_failed": "保存失败：{error}",
+    "files.status.saved_path": "已保存 {path}。",
+    "settings.title": "设置",
+    "settings.language.label": "语言",
+    "settings.language.hint": "修改立即生效，并会保存在本地。",
+    "settings.button.close": "关闭",
+    "settings.language.zh": "简体中文",
+    "settings.language.en": "English",
+  },
+};
+
+function detectInitialLocale() {
+  const saved = localStorage.getItem(LOCALE_STORAGE_KEY);
+  if (saved && I18N[saved]) return saved;
+  const langs = navigator.languages && navigator.languages.length
+    ? navigator.languages
+    : [navigator.language || "en"];
+  return langs.some((l) => String(l).toLowerCase().startsWith("zh")) ? "zh-CN" : "en";
+}
+
+let currentLocale = detectInitialLocale();
+
+function t(key, vars = {}) {
+  const dict = I18N[currentLocale] || I18N.en;
+  const template = dict[key] ?? I18N.en[key] ?? key;
+  return template.replace(/\{(\w+)\}/g, (_, name) => {
+    if (Object.prototype.hasOwnProperty.call(vars, name)) {
+      return String(vars[name]);
+    }
+    return `{${name}}`;
+  });
+}
+
+function setText(id, key, vars) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = t(key, vars);
+}
+
+function setPlaceholder(id, key, vars) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.placeholder = t(key, vars);
+}
+
+function setOptionText(selectId, value, key) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  const opt = Array.from(sel.options).find((o) => o.value === value);
+  if (!opt) return;
+  opt.textContent = t(key);
+}
+
+function setAttr(id, attr, key, vars) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.setAttribute(attr, t(key, vars));
+}
+
+function authTypeLabel(kind) {
+  if (kind === "password") return t("host_editor.auth.password");
+  if (kind === "key") return t("host_editor.auth.key");
+  if (kind === "agent") return t("host_editor.auth.agent");
+  return kind;
+}
+
+function setLocale(locale) {
+  if (!I18N[locale]) return;
+  currentLocale = locale;
+  localStorage.setItem(LOCALE_STORAGE_KEY, locale);
+  applyI18n();
+}
+
 const FILE_EDITOR_MAX_BYTES = 2 * 1024 * 1024;
 
 const EDITABLE_TEXT_EXTS = new Set([
@@ -166,7 +620,7 @@ async function refreshVaultStatus({ tryKeychain = true } = {}) {
   try {
     const status = await invoke("vault_status");
     vaultExists = status.exists;
-    unlockPath.textContent = `vault: ${status.path}`;
+    unlockPath.textContent = t("unlock.path", { path: status.path });
 
     if (status.unlocked) {
       await enterHosts();
@@ -186,15 +640,14 @@ async function refreshVaultStatus({ tryKeychain = true } = {}) {
         }
       }
 
-      unlockStatus.textContent = "Enter your master password to continue.";
-      unlockLabel.textContent = "Master password";
-      unlockButton.textContent = "Unlock";
+      unlockStatus.textContent = t("unlock.enter_password");
+      unlockLabel.textContent = t("unlock.label.master");
+      unlockButton.textContent = t("unlock.button.unlock");
       unlockConfirm.hidden = true;
     } else {
-      unlockStatus.textContent =
-        "No vault yet. Choose a master password — it cannot be recovered.";
-      unlockLabel.textContent = "New master password";
-      unlockButton.textContent = "Create vault";
+      unlockStatus.textContent = t("unlock.no_vault");
+      unlockLabel.textContent = t("unlock.label.new_master");
+      unlockButton.textContent = t("unlock.button.create");
       unlockConfirm.hidden = false;
     }
 
@@ -202,7 +655,7 @@ async function refreshVaultStatus({ tryKeychain = true } = {}) {
     unlockForm.hidden = false;
     unlockPassword.focus();
   } catch (e) {
-    unlockStatus.textContent = `error: ${e}`;
+    unlockStatus.textContent = t("common.error", { error: e });
   }
 }
 
@@ -218,7 +671,7 @@ unlockForm.addEventListener("submit", async (ev) => {
       await invoke("unlock_vault", { password, remember });
     } else {
       if (password !== unlockConfirm.value) {
-        throw new Error("passwords do not match");
+        throw new Error(t("unlock.error.passwords_mismatch"));
       }
       await invoke("create_vault", { password, remember });
     }
@@ -245,9 +698,147 @@ const hostsConnectSelected = document.getElementById("hosts-connect-selected");
 const hostsDeleteSelected = document.getElementById("hosts-delete-selected");
 const openTerminalsButton = document.getElementById("open-terminals-button");
 const newWindowButton = document.getElementById("new-window-button");
+const settingsButton = document.getElementById("settings-button");
+const settingsOverlay = document.getElementById("settings-overlay");
+const settingsCloseButton = document.getElementById("settings-close-button");
+const settingsLanguageSelect = document.getElementById("settings-language-select");
 
 let hostsCache = [];
 const selectedHostIds = new Set();
+
+function applyI18n() {
+  document.documentElement.lang = currentLocale === "zh-CN" ? "zh-CN" : "en";
+
+  setText("unlock-remember-text", "unlock.remember");
+  setPlaceholder("unlock-confirm", "unlock.confirm_placeholder");
+  if (unlockForm.hidden) {
+    setText("unlock-status", "unlock.checking");
+  } else if (vaultExists) {
+    setText("unlock-status", "unlock.enter_password");
+    setText("unlock-label", "unlock.label.master");
+    setText("unlock-button", "unlock.button.unlock");
+  } else {
+    setText("unlock-status", "unlock.no_vault");
+    setText("unlock-label", "unlock.label.new_master");
+    setText("unlock-button", "unlock.button.create");
+  }
+
+  setText("nav-hosts", "nav.hosts");
+  setText("nav-keychain", "nav.keychain");
+  setText("nav-port-forwarding", "nav.port_forwarding");
+  setText("nav-known-hosts", "nav.known_hosts");
+  setText("nav-logs", "nav.logs");
+  setText("open-terminals-button", "sidebar.terminals");
+  setText("new-window-button", "sidebar.new_window");
+  setText("settings-button", "sidebar.settings");
+  setText("lock-button", "sidebar.lock");
+
+  setPlaceholder("host-search", "hosts.search.placeholder");
+  setText("add-host-button", "hosts.new_host");
+  setText("hosts-connect-selected", "hosts.connect_selected");
+  setText("hosts-delete-selected", "hosts.delete_selected");
+
+  setText("new-tab-button", "terminal.button.new_tab");
+  setText("split-vertical-button", "terminal.button.split_v");
+  setText("split-horizontal-button", "terminal.button.split_h");
+  setText("close-split-button", "terminal.button.close_split");
+  setText("disconnect-button", "terminal.button.disconnect");
+  setText("term-new-window-button", "terminal.button.new_window");
+  setText("back-button", "terminal.button.back_hosts");
+
+  setText("files-title", "files.title");
+  setText("files-back", "files.button.back");
+  setText("files-up", "files.button.up");
+  setAttr("files-up", "title", "files.button.up_title");
+  setText("files-refresh", "files.button.refresh");
+  setText("files-mkdir", "files.button.new_folder");
+  setText("files-upload", "files.button.upload");
+  setText("files-upload-many", "files.button.upload_many");
+  setText("files-select-all-label", "files.select_all");
+  setText("files-download-selected", "files.button.download_selected");
+  setText("files-delete-selected", "files.button.delete_selected");
+  setText("progress-cancel", "files.button.cancel");
+  setText("files-drop-overlay", "files.drop.hint");
+  setText("files-menu-edit", "files.menu.edit");
+  setText("files-menu-download", "files.menu.download");
+  setText("files-menu-rename", "files.menu.rename");
+  setText("files-menu-delete", "files.menu.delete");
+
+  setText("hk-reject", "host_key.reject");
+  setText("hk-accept", "host_key.accept");
+
+  setText("hf-name-label", "host_editor.label.name");
+  setText("hf-user-label", "host_editor.label.user");
+  setText("hf-host-label", "host_editor.label.host");
+  setText("hf-port-label", "host_editor.label.port");
+  setText("hf-auth-label", "host_editor.label.auth");
+  setText("hf-password-label", "host_editor.label.password");
+  setText("hf-key-label", "host_editor.label.private_key");
+  setText("hf-key-passphrase-label", "host_editor.label.passphrase");
+  setText("hf-jump-label", "host_editor.label.proxy_jump");
+  setText("hf-advanced-legend", "host_editor.label.advanced");
+  setText("hf-forwards-label", "host_editor.label.port_forwards");
+  setText("hf-forward-add", "host_editor.button.add_forward");
+  setText("hf-forwards-hint", "host_editor.hint.forwards");
+  setText("hf-key-pick", "host_editor.button.choose_key");
+  setText("host-edit-cancel", "host_editor.button.cancel");
+  setText("host-edit-save", "host_editor.button.save");
+  setPlaceholder("hf-host", "host_editor.placeholder.host");
+  setOptionText("hf-auth-type", "password", "host_editor.auth.password");
+  setOptionText("hf-auth-type", "key", "host_editor.auth.key");
+  setOptionText("hf-auth-type", "agent", "host_editor.auth.agent");
+
+  setPlaceholder("file-editor-find", "editor.find.placeholder");
+  setPlaceholder("file-editor-replace", "editor.replace.placeholder");
+  setText("editor-match-case-label", "editor.match_case");
+  setText("file-editor-find-prev", "editor.button.prev");
+  setText("file-editor-find-next", "editor.button.next");
+  setText("file-editor-replace-one", "editor.button.replace");
+  setText("file-editor-replace-all", "editor.button.replace_all");
+  setText("file-editor-cancel", "editor.button.close");
+  setText("file-editor-save", "editor.button.save");
+
+  setText("settings-title", "settings.title");
+  setText("settings-language-label", "settings.language.label");
+  setText("settings-language-hint", "settings.language.hint");
+  setText("settings-close-button", "settings.button.close");
+  setOptionText("settings-language-select", "zh-CN", "settings.language.zh");
+  setOptionText("settings-language-select", "en", "settings.language.en");
+  if (settingsLanguageSelect) settingsLanguageSelect.value = currentLocale;
+
+  updateHostsSelectionState();
+  updateFilesSelectionState();
+
+  if (!views.hosts.hidden) renderHosts();
+  if (!views.terminal.hidden) renderTerminalWorkspace();
+  if (!views.files.hidden) {
+    renderFilesList(filesEntries);
+    if (filesHost) {
+      filesTitle.textContent = `${filesHost.name} (${filesHost.user}@${filesHost.host}:${filesHost.port})`;
+    }
+  }
+  if (!hostOverlay.hidden) {
+    hostTitle.textContent = editingHostId ? t("host_editor.title.edit") : t("host_editor.title.add");
+    if (!hfKeyPem && hfAuthType.value === "key") {
+      hfKeyStatus.textContent = editingHostId
+        ? t("host_editor.key.existing")
+        : t("host_editor.key.none");
+    }
+    renderForwards();
+  }
+
+  if (fileEditorOverlay.hidden) {
+    setText("file-editor-title", "editor.title");
+    setText("file-editor-hint", "editor.hint.default");
+  } else {
+    setText("file-editor-title", fileEditorState.dirty ? "editor.title.dirty" : "editor.title");
+    if (fileEditorState.open) {
+      setText("file-editor-hint", "editor.hint.utf8_info", {
+        lines: fileEditorGetValue().split(/\r?\n/).length,
+      });
+    }
+  }
+}
 
 hostSearch.addEventListener("input", () => renderHosts());
 
@@ -263,6 +854,21 @@ document.getElementById("lock-button").addEventListener("click", async () => {
 });
 
 document.getElementById("add-host-button").addEventListener("click", () => openHostEditor());
+settingsButton.addEventListener("click", () => {
+  settingsLanguageSelect.value = currentLocale;
+  settingsOverlay.hidden = false;
+});
+settingsCloseButton.addEventListener("click", () => {
+  settingsOverlay.hidden = true;
+});
+settingsOverlay.addEventListener("click", (ev) => {
+  if (ev.target === settingsOverlay) {
+    settingsOverlay.hidden = true;
+  }
+});
+settingsLanguageSelect.addEventListener("change", () => {
+  setLocale(settingsLanguageSelect.value);
+});
 
 hostsConnectSelected.addEventListener("click", async () => {
   const picked = hostsCache.filter((h) => selectedHostIds.has(h.id));
@@ -275,13 +881,13 @@ hostsConnectSelected.addEventListener("click", async () => {
 hostsDeleteSelected.addEventListener("click", async () => {
   const picked = hostsCache.filter((h) => selectedHostIds.has(h.id));
   if (picked.length === 0) return;
-  if (!confirm(`Delete ${picked.length} selected host(s)?`)) return;
+  if (!confirm(t("hosts.confirm.delete_selected", { count: picked.length }))) return;
 
   for (const host of picked) {
     try {
       await invoke("delete_host", { id: host.id });
     } catch (e) {
-      alert(`delete failed for ${host.name}: ${e}`);
+      alert(t("hosts.error.delete_failed_for", { name: host.name, error: e }));
       break;
     }
   }
@@ -290,7 +896,7 @@ hostsDeleteSelected.addEventListener("click", async () => {
 
 openTerminalsButton.addEventListener("click", () => {
   if (termState.tabs.length === 0) {
-    alert("No terminal tabs yet. Open a host first.");
+    alert(t("hosts.error.no_tabs"));
     return;
   }
   show("terminal");
@@ -298,7 +904,7 @@ openTerminalsButton.addEventListener("click", () => {
 });
 
 newWindowButton.addEventListener("click", () => {
-  invoke("open_new_window").catch((e) => alert(`new window failed: ${e}`));
+  invoke("open_new_window").catch((e) => alert(t("terminal.error.new_window_failed", { error: e })));
 });
 
 async function enterHosts() {
@@ -311,7 +917,7 @@ async function enterHosts() {
   } catch (e) {
     hostsCache = [];
     hostsEmpty.hidden = false;
-    hostsEmpty.textContent = `error: ${e}`;
+    hostsEmpty.textContent = t("hosts.error.load_failed", { error: e });
     return;
   }
 
@@ -331,8 +937,8 @@ function renderHosts() {
   if (rows.length === 0) {
     hostsEmpty.hidden = false;
     hostsEmpty.textContent = q
-      ? "No host matched your search."
-      : "No saved hosts yet. Click + New host or add from CLI.";
+      ? t("hosts.empty.search")
+      : t("hosts.empty.default");
   } else {
     hostsEmpty.hidden = true;
   }
@@ -369,7 +975,7 @@ function renderHosts() {
 
     const meta = document.createElement("div");
     meta.className = "meta";
-    meta.textContent = host.authType;
+    meta.textContent = authTypeLabel(host.authType);
 
     info.append(name, target, meta);
     top.append(pick, badge, info);
@@ -379,31 +985,31 @@ function renderHosts() {
 
     const connectBtn = document.createElement("button");
     connectBtn.type = "button";
-    connectBtn.textContent = "Connect";
+    connectBtn.textContent = t("hosts.button.connect");
     connectBtn.className = "primary";
     connectBtn.addEventListener("click", () => openHostInTerminal(host));
 
     const filesBtn = document.createElement("button");
     filesBtn.type = "button";
-    filesBtn.textContent = "Files";
+    filesBtn.textContent = t("hosts.button.files");
     filesBtn.addEventListener("click", () => openFiles(host));
 
     const editBtn = document.createElement("button");
     editBtn.type = "button";
-    editBtn.textContent = "Edit";
+    editBtn.textContent = t("hosts.button.edit");
     editBtn.addEventListener("click", () => openHostEditor(host.id));
 
     const delBtn = document.createElement("button");
     delBtn.type = "button";
-    delBtn.textContent = "Delete";
+    delBtn.textContent = t("hosts.button.delete");
     delBtn.className = "danger";
     delBtn.addEventListener("click", async () => {
-      if (!confirm(`Delete saved host "${host.name}"?`)) return;
+      if (!confirm(t("hosts.confirm.delete_one", { name: host.name }))) return;
       try {
         await invoke("delete_host", { id: host.id });
         await enterHosts();
       } catch (e) {
-        alert(`delete failed: ${e}`);
+        alert(t("hosts.error.delete_failed", { error: e }));
       }
     });
 
@@ -417,7 +1023,7 @@ function renderHosts() {
 
 function updateHostsSelectionState() {
   const count = selectedHostIds.size;
-  hostsSelectionHint.textContent = `${count} selected`;
+  hostsSelectionHint.textContent = t("hosts.selection.count", { count });
   hostsConnectSelected.disabled = count === 0;
   hostsDeleteSelected.disabled = count === 0;
 }
@@ -447,7 +1053,7 @@ backButton.addEventListener("click", () => {
 
 newTabButton.addEventListener("click", () => {
   show("hosts");
-  alert("Select a host to open a new terminal tab.");
+  alert(t("terminal.new_tab_hint"));
 });
 
 splitVerticalButton.addEventListener("click", () => splitActiveTab("vertical"));
@@ -465,7 +1071,7 @@ disconnectButton.addEventListener("click", async () => {
 });
 
 termNewWindowButton.addEventListener("click", () => {
-  invoke("open_new_window").catch((e) => alert(`new window failed: ${e}`));
+  invoke("open_new_window").catch((e) => alert(t("terminal.error.new_window_failed", { error: e })));
 });
 
 function getActiveTab() {
@@ -524,7 +1130,7 @@ function renderTerminalWorkspace() {
     terminalWorkspace.className = "terminal-workspace layout-single";
     const empty = document.createElement("div");
     empty.className = "term-empty";
-    empty.textContent = "No open terminal tabs. Open one from Hosts.";
+    empty.textContent = t("terminal.empty");
     terminalWorkspace.appendChild(empty);
     return;
   }
@@ -590,11 +1196,11 @@ function ensurePaneElements(pane, tab) {
   title.className = "pane-title";
   title.textContent = pane.host
     ? `${pane.host.name} (${pane.host.user}@${pane.host.host}:${pane.host.port})`
-    : "Empty pane";
+    : t("terminal.pane.empty");
 
   const status = document.createElement("span");
   status.className = "pane-status";
-  status.textContent = "connecting...";
+  status.textContent = t("terminal.status.connecting");
 
   const body = document.createElement("div");
   body.className = "pane-body";
@@ -684,14 +1290,14 @@ async function connectPaneSession(pane) {
       rows,
     });
     pane.sessionId = sessionId;
-    pane.statusEl.textContent = "connected";
+    pane.statusEl.textContent = t("terminal.status.connected");
 
     await wirePaneSessionEvents(pane, sessionId);
 
     try {
       const info = await invoke("session_info", { sessionId });
       const bits = [];
-      if (info.jump) bits.push(`via ${info.jump}`);
+      if (info.jump) bits.push(t("terminal.via", { jump: info.jump }));
       if (info.forwards.length > 0) bits.push(info.forwards.join(", "));
       if (bits.length > 0) {
         pane.statusEl.textContent = bits.join(" · ");
@@ -700,9 +1306,9 @@ async function connectPaneSession(pane) {
       console.warn("session_info failed", e);
     }
   } catch (e) {
-    pane.statusEl.textContent = `connect failed: ${e}`;
+    pane.statusEl.textContent = t("terminal.error.connect_failed_status", { error: e });
     if (pane.term) {
-      pane.term.write(`\x1b[31mfailed to connect: ${e}\x1b[0m\r\n`);
+      pane.term.write(`\x1b[31m${t("terminal.error.connect_failed_term", { error: e })}\x1b[0m\r\n`);
     }
   }
 }
@@ -728,11 +1334,11 @@ async function wirePaneSessionEvents(pane, sessionId) {
     const tail = ev.payload.message
       ? `\r\n\x1b[31m${ev.payload.message}\x1b[0m\r\n`
       : ev.payload.exitCode != null
-        ? `\r\n\x1b[2m[remote exited with status ${ev.payload.exitCode}]\x1b[0m\r\n`
-        : "\r\n\x1b[2m[disconnected]\x1b[0m\r\n";
+        ? `\r\n\x1b[2m${t("terminal.closed.remote_exited", { code: ev.payload.exitCode })}\x1b[0m\r\n`
+        : `\r\n\x1b[2m${t("terminal.closed.disconnected")}\x1b[0m\r\n`;
 
     pane.sessionId = null;
-    if (pane.statusEl) pane.statusEl.textContent = "disconnected";
+    if (pane.statusEl) pane.statusEl.textContent = t("terminal.status.disconnected");
     if (pane.term) pane.term.write(tail);
   });
 }
@@ -805,13 +1411,13 @@ async function splitActiveTab(orientation) {
   if (!tab) return;
 
   if (tab.panes.length >= 2) {
-    alert("Current split mode supports up to 2 panes.");
+    alert(t("terminal.error.split_limit"));
     return;
   }
 
   const source = getActivePane();
   if (!source || !source.host) {
-    alert("Active pane has no host to duplicate.");
+    alert(t("terminal.error.no_host"));
     return;
   }
 
@@ -857,18 +1463,18 @@ listen("host-key-prompt", (ev) => {
   currentHostKey = ev.payload;
 
   if (currentHostKey.kind === "unknown") {
-    hkTitle.textContent = "Unknown host";
-    hkBody.textContent =
-      `The authenticity of '${currentHostKey.host}:${currentHostKey.port}' cannot be established. ` +
-      "Trusting this key adds it to known_hosts.";
+    hkTitle.textContent = t("host_key.unknown_title");
+    hkBody.textContent = t("host_key.unknown_body", {
+      host: currentHostKey.host,
+      port: currentHostKey.port,
+    });
     hkDetail.textContent = `${currentHostKey.keyType}\n${currentHostKey.fingerprint}`;
   } else {
-    hkTitle.textContent = "Warning: host key changed";
-    hkBody.textContent =
-      "This might indicate a man-in-the-middle attack. Trust only if you know why the key changed.";
+    hkTitle.textContent = t("host_key.changed_title");
+    hkBody.textContent = t("host_key.changed_body");
     hkDetail.textContent =
-      `Server now offers:\n  ${currentHostKey.keyType} ${currentHostKey.fingerprint}\n` +
-      `known_hosts has:\n  ${currentHostKey.stored ?? "(unknown)"}`;
+      `${t("host_key.changed_server_now")}\n  ${currentHostKey.keyType} ${currentHostKey.fingerprint}\n` +
+      `${t("host_key.changed_known_hosts_has")}\n  ${currentHostKey.stored ?? t("host_key.unknown_value")}`;
   }
 
   hkOverlay.hidden = false;
@@ -939,7 +1545,7 @@ async function openHostEditor(id = null) {
   hostReadonly.hidden = true;
   hostReadonly.textContent = "";
   hfKeyPem = null;
-  hfKeyStatus.textContent = "No key loaded";
+  hfKeyStatus.textContent = t("host_editor.key.none");
   hfPassword.value = "";
   hfKeyPassphrase.value = "";
   hfForwards = [];
@@ -947,7 +1553,7 @@ async function openHostEditor(id = null) {
   await populateJumpOptions(id);
 
   if (id) {
-    hostTitle.textContent = "Edit host";
+    hostTitle.textContent = t("host_editor.title.edit");
     try {
       const h = await invoke("get_host", { id });
       hfName.value = h.name;
@@ -959,18 +1565,18 @@ async function openHostEditor(id = null) {
       if (h.authType === "password") {
         hfPassword.value = h.password ?? "";
       } else if (h.authType === "key") {
-        hfKeyStatus.textContent = "Existing key kept (choose a file to replace)";
+        hfKeyStatus.textContent = t("host_editor.key.existing");
         hfKeyPassphrase.value = h.keyPassphrase ?? "";
       }
 
       hfJump.value = h.proxyJump ?? "";
       hfForwards = h.forwards.map(forwardFromIO);
     } catch (e) {
-      hostError.textContent = `load failed: ${e}`;
+      hostError.textContent = t("host_editor.error.load_failed", { error: e });
       hostError.hidden = false;
     }
   } else {
-    hostTitle.textContent = "Add host";
+    hostTitle.textContent = t("host_editor.title.add");
     hfName.value = "";
     hfHost.value = "";
     hfPort.value = "22";
@@ -997,7 +1603,7 @@ async function populateJumpOptions(currentId) {
   hfJump.innerHTML = "";
   const none = document.createElement("option");
   none.value = "";
-  none.textContent = "(none)";
+  none.textContent = t("host_editor.jump.none");
   hfJump.appendChild(none);
 
   try {
@@ -1038,7 +1644,7 @@ function renderForwards() {
     const empty = document.createElement("li");
     empty.style.gridTemplateColumns = "1fr";
     empty.style.color = "var(--muted)";
-    empty.textContent = "(no forwards)";
+    empty.textContent = t("host_editor.forward.none");
     hfForwardsList.appendChild(empty);
     return;
   }
@@ -1047,7 +1653,7 @@ function renderForwards() {
     const li = document.createElement("li");
 
     const kind = document.createElement("select");
-    [["local", "Local (-L)"], ["dynamic", "SOCKS5 (-D)"]].forEach(([v, label]) => {
+    [["local", t("host_editor.forward.local")], ["dynamic", t("host_editor.forward.dynamic")]].forEach(([v, label]) => {
       const o = document.createElement("option");
       o.value = v;
       o.textContent = label;
@@ -1072,7 +1678,7 @@ function renderForwards() {
     const bind = document.createElement("input");
     bind.className = "bind";
     bind.type = "text";
-    bind.placeholder = "bind";
+    bind.placeholder = t("host_editor.forward.bind");
     bind.value = fwd.bindAddr;
     bind.addEventListener("input", () => (fwd.bindAddr = bind.value));
     fields.appendChild(bind);
@@ -1080,7 +1686,7 @@ function renderForwards() {
     const bp = document.createElement("input");
     bp.className = "short";
     bp.type = "number";
-    bp.placeholder = "port";
+    bp.placeholder = t("host_editor.forward.port");
     bp.min = 1;
     bp.max = 65535;
     bp.value = fwd.bindPort;
@@ -1097,7 +1703,7 @@ function renderForwards() {
       const th = document.createElement("input");
       th.className = "medium";
       th.type = "text";
-      th.placeholder = "target host";
+      th.placeholder = t("host_editor.forward.target_host");
       th.value = fwd.targetHost ?? "";
       th.addEventListener("input", () => (fwd.targetHost = th.value));
       fields.appendChild(th);
@@ -1105,7 +1711,7 @@ function renderForwards() {
       const tp = document.createElement("input");
       tp.className = "short";
       tp.type = "number";
-      tp.placeholder = "port";
+      tp.placeholder = t("host_editor.forward.port");
       tp.min = 1;
       tp.max = 65535;
       tp.value = fwd.targetPort ?? "";
@@ -1115,7 +1721,7 @@ function renderForwards() {
 
     const remove = document.createElement("button");
     remove.type = "button";
-    remove.textContent = "Remove";
+    remove.textContent = t("host_editor.forward.remove");
     remove.className = "danger";
     remove.addEventListener("click", () => {
       hfForwards.splice(idx, 1);
@@ -1138,7 +1744,7 @@ async function pickKeyFile() {
     options: {
       multiple: false,
       directory: false,
-      title: "Choose a private key",
+      title: t("host_editor.key.pick_title"),
     },
   });
 
@@ -1148,19 +1754,22 @@ async function pickKeyFile() {
   try {
     const text = await invoke("read_local_text_file", { path });
     hfKeyPem = text;
-    hfKeyStatus.textContent = `loaded ${basename(path)} (${text.length} bytes)`;
+    hfKeyStatus.textContent = t("host_editor.key.loaded", {
+      name: basename(path),
+      bytes: text.length,
+    });
   } catch (e) {
-    hfKeyStatus.textContent = `read failed: ${e}`;
+    hfKeyStatus.textContent = t("host_editor.key.read_failed", { error: e });
   }
 }
 
 async function buildKeyAuth() {
   if (editingHostId && !hfKeyPem) {
-    showHostError("Pick a new key file to replace existing key.");
+    showHostError(t("host_editor.error.pick_new_key"));
     return null;
   }
   if (!editingHostId && !hfKeyPem) {
-    showHostError("Pick a private key file first.");
+    showHostError(t("host_editor.error.pick_key_first"));
     return null;
   }
   return {
@@ -1193,18 +1802,18 @@ async function saveHostForm(ev) {
   for (const [i, fwd] of hfForwards.entries()) {
     const bindPort = parseInt(fwd.bindPort, 10);
     if (!bindPort || bindPort < 1 || bindPort > 65535) {
-      showHostError(`forward ${i + 1}: invalid bind port`);
+      showHostError(t("host_editor.error.forward_bind_port", { index: i + 1 }));
       return;
     }
 
     if (fwd.kind === "local") {
       if (!fwd.targetHost?.trim()) {
-        showHostError(`forward ${i + 1}: target host required`);
+        showHostError(t("host_editor.error.forward_target_host", { index: i + 1 }));
         return;
       }
       const targetPort = parseInt(fwd.targetPort, 10);
       if (!targetPort || targetPort < 1 || targetPort > 65535) {
-        showHostError(`forward ${i + 1}: invalid target port`);
+        showHostError(t("host_editor.error.forward_target_port", { index: i + 1 }));
         return;
       }
 
@@ -1235,7 +1844,7 @@ async function saveHostForm(ev) {
   };
 
   if (!input.name || !input.host || !input.user) {
-    showHostError("name, host and user are required");
+    showHostError(t("host_editor.error.required_fields"));
     return;
   }
 
@@ -1316,7 +1925,7 @@ function ensureFileEditorAce() {
   if (fileEditorAce) return true;
 
   if (!window.ace) {
-    setFileEditorError("Ace editor failed to load.");
+    setFileEditorError(t("editor.error.ace_load_failed"));
     return false;
   }
 
@@ -1440,7 +2049,7 @@ document.getElementById("files-refresh").addEventListener("click", () => {
 });
 document.getElementById("files-mkdir").addEventListener("click", async () => {
   if (!filesSftpId) return;
-  const name = prompt("New folder name:");
+  const name = prompt(t("files.prompt.new_folder"));
   if (!name) return;
   try {
     await invoke("sftp_mkdir", {
@@ -1449,7 +2058,7 @@ document.getElementById("files-mkdir").addEventListener("click", async () => {
     });
     await navigateTo(filesCurrentPath);
   } catch (e) {
-    showFilesError(`mkdir failed: ${e}`);
+    showFilesError(t("files.error.mkdir_failed", { error: e }));
   }
 });
 document.getElementById("files-upload").addEventListener("click", uploadHere);
@@ -1585,7 +2194,7 @@ function setFileEditorError(message) {
 
 function setFileEditorDirty(dirty) {
   fileEditorState.dirty = dirty;
-  fileEditorTitle.textContent = dirty ? "Edit Remote File *" : "Edit Remote File";
+  fileEditorTitle.textContent = dirty ? t("editor.title.dirty") : t("editor.title");
 }
 
 function editorSearchOptions({ backwards = false } = {}) {
@@ -1602,13 +2211,13 @@ function searchInEditor({ backwards = false } = {}) {
   if (!fileEditorState.open || !ensureFileEditorAce()) return false;
   const needle = fileEditorFindInput.value;
   if (!needle) {
-    setFileEditorError("Enter text in Search first.");
+    setFileEditorError(t("editor.error.enter_search"));
     return false;
   }
 
   const range = fileEditorAce.find(needle, editorSearchOptions({ backwards }));
   if (!range) {
-    setFileEditorError("No matches found.");
+    setFileEditorError(t("editor.error.no_matches"));
     return false;
   }
   setFileEditorError("");
@@ -1619,7 +2228,7 @@ function replaceInEditor({ all = false } = {}) {
   if (!fileEditorState.open || !ensureFileEditorAce()) return;
   const needle = fileEditorFindInput.value;
   if (!needle) {
-    setFileEditorError("Enter text in Search first.");
+    setFileEditorError(t("editor.error.enter_search"));
     return;
   }
 
@@ -1629,23 +2238,23 @@ function replaceInEditor({ all = false } = {}) {
   if (all) {
     const replaced = fileEditorAce.replaceAll(replacement, { ...opts, needle });
     if (!replaced) {
-      setFileEditorError("No matches found to replace.");
+      setFileEditorError(t("editor.error.no_matches_replace"));
       return;
     }
     setFileEditorError("");
-    fileEditorHint.textContent = `Replaced ${replaced} occurrence(s).`;
+    fileEditorHint.textContent = t("editor.hint.replaced_many", { count: replaced });
     return;
   }
 
   if (!searchInEditor({ backwards: false })) return;
   const replaced = fileEditorAce.replace(replacement);
   if (replaced == null) {
-    setFileEditorError("No match selected to replace.");
+    setFileEditorError(t("editor.error.no_selected_match"));
     return;
   }
 
   setFileEditorError("");
-  fileEditorHint.textContent = "Replaced 1 occurrence.";
+  fileEditorHint.textContent = t("editor.hint.replaced_one");
 }
 
 function resetFileEditorState() {
@@ -1666,33 +2275,33 @@ function resetFileEditorState() {
   fileEditorReplaceInput.value = "";
   fileEditorMatchCaseInput.checked = false;
   fileEditorPath.textContent = "";
-  fileEditorHint.textContent = "Supports common UTF-8 text files. Press Ctrl/Cmd + S to save.";
-  fileEditorTitle.textContent = "Edit Remote File";
+  fileEditorHint.textContent = t("editor.hint.default");
+  fileEditorTitle.textContent = t("editor.title");
   setFileEditorError("");
 }
 
 async function openRemoteEditor(entry) {
   if (!canInlineEditEntry(entry)) {
-    alert("This file type is not in the inline-edit list, or the file is too large.");
+    alert(t("editor.alert.unsupported"));
     return;
   }
   if (filesSftpId === null) return;
   if (!ensureFileEditorAce()) {
-    alert("Editor component failed to load.");
+    alert(t("editor.alert.component_failed"));
     return;
   }
 
   if (fileEditorState.open && fileEditorState.dirty) {
-    const ok = confirm("Discard unsaved editor changes?");
+    const ok = confirm(t("editor.confirm.discard"));
     if (!ok) return;
   }
 
   resetFileEditorState();
   const path = joinPath(filesCurrentPath, entry.name);
   fileEditorOverlay.hidden = false;
-  fileEditorTitle.textContent = "Opening...";
+  fileEditorTitle.textContent = t("editor.hint.opening");
   fileEditorPath.textContent = path;
-  fileEditorHint.textContent = "Loading file content...";
+  fileEditorHint.textContent = t("editor.hint.loading");
   refreshFileEditorLayout();
   fileEditorSetReadOnly(true);
   fileEditorSaveButton.disabled = true;
@@ -1710,8 +2319,9 @@ async function openRemoteEditor(entry) {
     fileEditorSetValue(doc.content);
     fileEditorSetModeByPath(doc.path);
     fileEditorPath.textContent = `${doc.path} · ${formatSize(doc.size)}`;
-    fileEditorHint.textContent =
-      `UTF-8 text · ${doc.content.split(/\r?\n/).length} lines · Ctrl/Cmd + S to save`;
+    fileEditorHint.textContent = t("editor.hint.utf8_info", {
+      lines: doc.content.split(/\r?\n/).length,
+    });
     fileEditorSetReadOnly(false);
     fileEditorSaveButton.disabled = false;
     setFileEditorDirty(false);
@@ -1719,9 +2329,9 @@ async function openRemoteEditor(entry) {
     fileEditorFocus();
   } catch (e) {
     fileEditorState.open = false;
-    setFileEditorError(`open failed: ${e}`);
-    fileEditorTitle.textContent = "Edit Remote File";
-    fileEditorHint.textContent = "Unable to open this file in the inline editor.";
+    setFileEditorError(t("editor.error.open_failed", { error: e }));
+    fileEditorTitle.textContent = t("editor.title");
+    fileEditorHint.textContent = t("editor.hint.unavailable");
   }
 }
 
@@ -1729,7 +2339,7 @@ function closeRemoteEditor({ force = false } = {}) {
   if (fileEditorOverlay.hidden) return true;
   if (!force && fileEditorState.saving) return false;
   if (!force && fileEditorState.open && fileEditorState.dirty && !fileEditorState.saving) {
-    const ok = confirm("You have unsaved changes. Close editor anyway?");
+    const ok = confirm(t("editor.confirm.close_unsaved"));
     if (!ok) return false;
   }
   fileEditorOverlay.hidden = true;
@@ -1754,11 +2364,11 @@ async function saveRemoteEditor() {
     });
     fileEditorState.originalContent = content;
     setFileEditorDirty(false);
-    fileEditorHint.textContent = `Saved ${formatSize(bytes)} just now`;
-    filesStatus.textContent = `Saved ${fileEditorState.path}.`;
+    fileEditorHint.textContent = t("editor.hint.saved", { size: formatSize(bytes) });
+    filesStatus.textContent = t("files.status.saved_path", { path: fileEditorState.path });
     await navigateTo(filesCurrentPath);
   } catch (e) {
-    setFileEditorError(`save failed: ${e}`);
+    setFileEditorError(t("editor.error.save_failed", { error: e }));
   } finally {
     fileEditorState.saving = false;
     fileEditorSaveButton.disabled = !fileEditorState.open;
@@ -1778,7 +2388,7 @@ async function openFiles(host) {
   filesTitle.textContent = `${host.name} (${host.user}@${host.host}:${host.port})`;
   filesPath.textContent = "/";
   filesList.innerHTML = "";
-  filesStatus.textContent = "Connecting...";
+  filesStatus.textContent = t("files.status.connecting");
 
   if (progressUnlisten) {
     progressUnlisten();
@@ -1809,7 +2419,7 @@ async function openFiles(host) {
     filesSftpId = await invoke("sftp_open", { hostId: host.id });
     await navigateTo("/");
   } catch (e) {
-    showFilesError(`open failed: ${e}`);
+    showFilesError(t("files.error.open_failed", { error: e }));
   }
 }
 
@@ -1846,7 +2456,7 @@ async function closeFiles() {
 async function navigateTo(path) {
   hideFilesContextMenu();
   if (filesSftpId === null) return;
-  filesStatus.textContent = `Listing ${path}...`;
+  filesStatus.textContent = t("files.status.listing", { path });
 
   try {
     const entries = await invoke("sftp_list", { sftpId: filesSftpId, path });
@@ -1860,7 +2470,7 @@ async function navigateTo(path) {
     updateFilesSelectionState();
     filesStatus.textContent = "";
   } catch (e) {
-    showFilesError(`list failed: ${e}`);
+    showFilesError(t("files.error.list_failed", { error: e }));
   }
 }
 
@@ -1873,7 +2483,7 @@ function renderFilesList(entries) {
     empty.style.gridTemplateColumns = "1fr";
     empty.style.justifyContent = "center";
     empty.style.color = "var(--muted)";
-    empty.textContent = "(empty)";
+    empty.textContent = t("files.empty");
     filesList.appendChild(empty);
     return;
   }
@@ -1916,7 +2526,7 @@ function renderFilesList(entries) {
 
 function updateFilesSelectionState() {
   const count = filesSelected.size;
-  filesSelectionHint.textContent = `${count} selected`;
+  filesSelectionHint.textContent = t("files.selection.count", { count });
   filesDownloadSelected.disabled = count === 0;
   filesDeleteSelected.disabled = count === 0;
 
@@ -1949,16 +2559,19 @@ async function downloadEntry(entry) {
   });
   if (!local) return;
 
-  beginTransfer(`Downloading ${entry.name}`);
+  beginTransfer(`${t("files.progress.downloading")} ${entry.name}`);
   try {
     const n = await invoke("sftp_download", {
       sftpId: filesSftpId,
       remote,
       local,
     });
-    filesStatus.textContent = `Downloaded ${entry.name} (${formatSize(n)}).`;
+    filesStatus.textContent = t("files.status.downloaded_one", {
+      name: entry.name,
+      size: formatSize(n),
+    });
   } catch (e) {
-    showFilesError(`download failed: ${e}`);
+    showFilesError(t("files.error.download_failed", { error: e }));
   } finally {
     hideProgress();
     activeTransferId = null;
@@ -1966,7 +2579,7 @@ async function downloadEntry(entry) {
 }
 
 async function renameEntry(entry) {
-  const next = prompt(`Rename "${entry.name}" to:`, entry.name);
+  const next = prompt(t("files.prompt.rename", { name: entry.name }), entry.name);
   if (!next || next === entry.name) return;
   try {
     await invoke("sftp_rename", {
@@ -1976,13 +2589,13 @@ async function renameEntry(entry) {
     });
     await navigateTo(filesCurrentPath);
   } catch (e) {
-    showFilesError(`rename failed: ${e}`);
+    showFilesError(t("files.error.rename_failed", { error: e }));
   }
 }
 
 async function deleteEntry(entry) {
   const target = joinPath(filesCurrentPath, entry.name);
-  if (!confirm(`Delete ${target}?`)) return;
+  if (!confirm(t("files.confirm.delete_entry", { path: target }))) return;
 
   const command = entry.kind === "dir" ? "sftp_remove_dir" : "sftp_remove";
   try {
@@ -1992,14 +2605,14 @@ async function deleteEntry(entry) {
     });
     await navigateTo(filesCurrentPath);
   } catch (e) {
-    showFilesError(`delete failed: ${e}`);
+    showFilesError(t("files.error.delete_failed", { error: e }));
   }
 }
 
 async function deleteSelectedFiles() {
   const picked = filesEntries.filter((e) => filesSelected.has(e.name));
   if (picked.length === 0) return;
-  if (!confirm(`Delete ${picked.length} selected item(s)?`)) return;
+  if (!confirm(t("files.confirm.delete_selected", { count: picked.length }))) return;
 
   for (const entry of picked) {
     const path = joinPath(filesCurrentPath, entry.name);
@@ -2007,7 +2620,7 @@ async function deleteSelectedFiles() {
     try {
       await invoke(command, { sftpId: filesSftpId, path });
     } catch (e) {
-      showFilesError(`delete failed for ${entry.name}: ${e}`);
+      showFilesError(t("files.error.delete_failed_for", { name: entry.name, error: e }));
       break;
     }
   }
@@ -2043,16 +2656,16 @@ async function uploadLocalPath(localPath) {
   const name = basename(localPath);
   const remote = joinPath(filesCurrentPath, name);
 
-  beginTransfer(`Uploading ${name}`);
+  beginTransfer(`${t("files.progress.uploading")} ${name}`);
   try {
     const n = await invoke("sftp_upload", {
       sftpId: filesSftpId,
       local: localPath,
       remote,
     });
-    filesStatus.textContent = `Uploaded ${name} (${formatSize(n)}).`;
+    filesStatus.textContent = t("files.status.uploaded_one", { name, size: formatSize(n) });
   } catch (e) {
-    showFilesError(`upload failed for ${name}: ${e}`);
+    showFilesError(t("files.error.upload_failed_for", { name, error: e }));
   } finally {
     hideProgress();
     activeTransferId = null;
@@ -2070,16 +2683,19 @@ async function uploadDroppedFiles(fileList) {
       }
 
       const bytes = new Uint8Array(await file.arrayBuffer());
-      beginTransfer(`Uploading ${file.name}`);
+      beginTransfer(`${t("files.progress.uploading")} ${file.name}`);
       const n = await invoke("sftp_upload_bytes", {
         sftpId: filesSftpId,
         remote,
         data: Array.from(bytes),
         sourceLabel: file.name,
       });
-      filesStatus.textContent = `Uploaded ${file.name} (${formatSize(n)}).`;
+      filesStatus.textContent = t("files.status.uploaded_one", {
+        name: file.name,
+        size: formatSize(n),
+      });
     } catch (e) {
-      showFilesError(`drag upload failed for ${file.name}: ${e}`);
+      showFilesError(t("files.error.drag_upload_failed_for", { name: file.name, error: e }));
     } finally {
       hideProgress();
       activeTransferId = null;
@@ -2092,7 +2708,7 @@ async function uploadDroppedFiles(fileList) {
 async function downloadSelectedFiles() {
   const picked = filesEntries.filter((e) => filesSelected.has(e.name) && e.kind === "file");
   if (picked.length === 0) {
-    alert("Select at least one file (directories are skipped for bulk download).");
+    alert(t("files.alert.download_selected_none"));
     return;
   }
 
@@ -2107,7 +2723,7 @@ async function downloadSelectedFiles() {
     const remote = joinPath(filesCurrentPath, entry.name);
     const local = localJoin(folder, entry.name);
 
-    beginTransfer(`Downloading ${entry.name}`);
+    beginTransfer(`${t("files.progress.downloading")} ${entry.name}`);
     try {
       await invoke("sftp_download", {
         sftpId: filesSftpId,
@@ -2115,7 +2731,7 @@ async function downloadSelectedFiles() {
         local,
       });
     } catch (e) {
-      showFilesError(`download failed for ${entry.name}: ${e}`);
+      showFilesError(t("files.error.download_failed_for", { name: entry.name, error: e }));
       break;
     } finally {
       hideProgress();
@@ -2123,7 +2739,10 @@ async function downloadSelectedFiles() {
     }
   }
 
-  filesStatus.textContent = `Downloaded ${picked.length} file(s) to ${folder}.`;
+  filesStatus.textContent = t("files.status.downloaded_many_to", {
+    count: picked.length,
+    folder,
+  });
 }
 
 function beginTransfer(label) {
@@ -2135,13 +2754,13 @@ function beginTransfer(label) {
 }
 
 function showProgress(p) {
-  const verb = p.kind === "upload" ? "Uploading" : "Downloading";
+  const verb = p.kind === "upload" ? t("files.progress.uploading") : t("files.progress.downloading");
   let suffix = "";
   if (p.bytesPerSec != null && p.bytesPerSec > 0) {
     suffix += ` · ${formatSize(p.bytesPerSec)}/s`;
   }
   if (p.etaSeconds != null) {
-    suffix += ` · ETA ${formatEta(p.etaSeconds)}`;
+    suffix += ` · ${t("files.progress.eta", { eta: formatEta(p.etaSeconds) })}`;
   }
 
   if (p.total != null && p.total > 0) {
@@ -2182,4 +2801,5 @@ function formatEta(sec) {
 // Boot
 // --------------------------------------------------------------------------
 
+applyI18n();
 refreshVaultStatus();

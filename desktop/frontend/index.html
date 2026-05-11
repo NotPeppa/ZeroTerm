@@ -27,7 +27,7 @@
             />
             <label class="checkbox">
               <input type="checkbox" id="unlock-remember" />
-              Remember password (store in OS keychain)
+              <span id="unlock-remember-text">Remember password (store in OS keychain)</span>
             </label>
             <button id="unlock-button" type="submit" class="primary">Unlock</button>
             <p id="unlock-error" class="error" hidden></p>
@@ -41,15 +41,16 @@
           <aside class="sidebar">
             <div class="brand">ZeroTerm</div>
             <nav class="nav-links">
-              <button type="button" class="nav-link active">Hosts</button>
-              <button type="button" class="nav-link">Keychain</button>
-              <button type="button" class="nav-link">Port Forwarding</button>
-              <button type="button" class="nav-link">Known Hosts</button>
-              <button type="button" class="nav-link">Logs</button>
+              <button id="nav-hosts" type="button" class="nav-link active">Hosts</button>
+              <button id="nav-keychain" type="button" class="nav-link">Keychain</button>
+              <button id="nav-port-forwarding" type="button" class="nav-link">Port Forwarding</button>
+              <button id="nav-known-hosts" type="button" class="nav-link">Known Hosts</button>
+              <button id="nav-logs" type="button" class="nav-link">Logs</button>
             </nav>
             <div class="sidebar-actions">
               <button id="open-terminals-button" type="button">Terminals</button>
               <button id="new-window-button" type="button">New Window</button>
+              <button id="settings-button" type="button">Settings</button>
               <button id="lock-button" type="button">Lock Vault</button>
             </div>
           </aside>
@@ -115,7 +116,7 @@
           <span class="grow"></span>
           <label class="checkbox slim">
             <input id="files-select-all" type="checkbox" />
-            Select all
+            <span id="files-select-all-label">Select all</span>
           </label>
           <button id="files-download-selected" type="button">Download Selected</button>
           <button id="files-delete-selected" type="button" class="danger">Delete Selected</button>
@@ -165,23 +166,23 @@
           <form id="host-edit-form">
             <div class="grid-2">
               <label>
-                <span>Name</span>
+                <span id="hf-name-label">Name</span>
                 <input id="hf-name" type="text" autocomplete="off" required />
               </label>
               <label>
-                <span>User</span>
+                <span id="hf-user-label">User</span>
                 <input id="hf-user" type="text" autocomplete="off" required />
               </label>
               <label class="grid-span-2">
-                <span>Host</span>
+                <span id="hf-host-label">Host</span>
                 <input id="hf-host" type="text" autocomplete="off" required placeholder="hostname or IP" />
               </label>
               <label>
-                <span>Port</span>
+                <span id="hf-port-label">Port</span>
                 <input id="hf-port" type="number" min="1" max="65535" value="22" required />
               </label>
               <label>
-                <span>Authentication</span>
+                <span id="hf-auth-label">Authentication</span>
                 <select id="hf-auth-type">
                   <option value="password">Password</option>
                   <option value="key">Private key</option>
@@ -192,39 +193,39 @@
 
             <div id="hf-password-block">
               <label>
-                <span>Password</span>
+                <span id="hf-password-label">Password</span>
                 <input id="hf-password" type="password" autocomplete="off" />
               </label>
             </div>
 
             <div id="hf-key-block" hidden>
               <label>
-                <span>Private key</span>
+                <span id="hf-key-label">Private key</span>
                 <div class="key-row">
                   <button id="hf-key-pick" type="button">Choose file...</button>
                   <span id="hf-key-status" class="muted tiny">No key loaded</span>
                 </div>
               </label>
               <label>
-                <span>Passphrase (optional)</span>
+                <span id="hf-key-passphrase-label">Passphrase (optional)</span>
                 <input id="hf-key-passphrase" type="password" autocomplete="off" />
               </label>
             </div>
 
             <fieldset class="advanced">
-              <legend>ProxyJump and forwards</legend>
+              <legend id="hf-advanced-legend">ProxyJump and forwards</legend>
               <label>
-                <span>ProxyJump (saved alias)</span>
+                <span id="hf-jump-label">ProxyJump (saved alias)</span>
                 <select id="hf-jump"></select>
               </label>
 
               <div class="forwards-block">
                 <div class="forwards-label">
-                  <span>Port forwards</span>
+                  <span id="hf-forwards-label">Port forwards</span>
                   <button id="hf-forward-add" type="button" class="small">+ Add forward</button>
                 </div>
                 <ul id="hf-forwards" class="forward-list"></ul>
-                <p class="muted tiny">
+                <p id="hf-forwards-hint" class="muted tiny">
                   Supports local forward (-L) and dynamic SOCKS5 (-D).
                 </p>
               </div>
@@ -253,7 +254,7 @@
             <input id="file-editor-replace" type="text" placeholder="Replace..." autocomplete="off" />
             <label class="checkbox slim">
               <input id="file-editor-match-case" type="checkbox" />
-              Match case
+              <span id="editor-match-case-label">Match case</span>
             </label>
             <button id="file-editor-find-prev" type="button">Prev</button>
             <button id="file-editor-find-next" type="button">Next</button>
@@ -265,6 +266,25 @@
           <div class="dialog-actions">
             <button id="file-editor-cancel" type="button">Close</button>
             <button id="file-editor-save" type="button" class="primary">Save</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="settings-overlay" class="overlay" hidden>
+        <div class="dialog settings-dialog">
+          <h3 id="settings-title">Settings</h3>
+          <label class="settings-field">
+            <span id="settings-language-label">Language</span>
+            <select id="settings-language-select">
+              <option value="zh-CN">简体中文</option>
+              <option value="en">English</option>
+            </select>
+          </label>
+          <p id="settings-language-hint" class="muted tiny">
+            Changes apply immediately and are saved locally.
+          </p>
+          <div class="dialog-actions">
+            <button id="settings-close-button" type="button">Close</button>
           </div>
         </div>
       </div>
