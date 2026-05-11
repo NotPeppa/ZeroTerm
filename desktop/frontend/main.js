@@ -1285,6 +1285,11 @@ const fileEditorReplaceAllButton = document.getElementById("file-editor-replace-
 const fileEditorError = document.getElementById("file-editor-error");
 const fileEditorSaveButton = document.getElementById("file-editor-save");
 const fileEditorCancelButton = document.getElementById("file-editor-cancel");
+const filesContextMenu = document.getElementById("files-context-menu");
+const filesMenuEdit = document.getElementById("files-menu-edit");
+const filesMenuDownload = document.getElementById("files-menu-download");
+const filesMenuRename = document.getElementById("files-menu-rename");
+const filesMenuDelete = document.getElementById("files-menu-delete");
 
 let filesSftpId = null;
 let filesCurrentPath = "/";
@@ -1295,6 +1300,7 @@ let activeTransferId = null;
 let pendingCancel = false;
 let progressUnlisten = null;
 let dragDepth = 0;
+let filesContextEntry = null;
 const fileEditorState = {
   open: false,
   path: "",
@@ -1381,6 +1387,48 @@ function fileEditorSetModeByPath(path) {
   fileEditorAce.session.setMode(`ace/mode/${mode}`);
 }
 
+function hideFilesContextMenu() {
+  filesContextMenu.hidden = true;
+  filesContextEntry = null;
+}
+
+function showFilesContextMenu(entry, x, y) {
+  if (!filesSftpId) return;
+  filesContextEntry = entry;
+
+  const isFile = entry.kind === "file";
+  filesMenuEdit.disabled = !(isFile && canInlineEditEntry(entry));
+  filesMenuDownload.disabled = !isFile;
+  filesMenuRename.disabled = false;
+  filesMenuDelete.disabled = false;
+
+  filesContextMenu.style.left = "0px";
+  filesContextMenu.style.top = "0px";
+  filesContextMenu.hidden = false;
+
+  const pad = 8;
+  const rect = filesContextMenu.getBoundingClientRect();
+  let left = x;
+  let top = y;
+  if (left + rect.width + pad > window.innerWidth) {
+    left = Math.max(pad, window.innerWidth - rect.width - pad);
+  }
+  if (top + rect.height + pad > window.innerHeight) {
+    top = Math.max(pad, window.innerHeight - rect.height - pad);
+  }
+  filesContextMenu.style.left = `${left}px`;
+  filesContextMenu.style.top = `${top}px`;
+}
+
+function refreshFileEditorLayout() {
+  if (!fileEditorAce) return;
+  requestAnimationFrame(() => {
+    if (!fileEditorAce) return;
+    fileEditorAce.resize(true);
+    fileEditorAce.renderer.updateFull();
+  });
+}
+
 document.getElementById("files-back").addEventListener("click", () => closeFiles());
 document.getElementById("files-up").addEventListener("click", () => {
   if (!filesSftpId) return;
@@ -1430,6 +1478,49 @@ fileEditorReplaceInput.addEventListener("keydown", (ev) => {
     ev.preventDefault();
     replaceInEditor({ all: ev.shiftKey });
   }
+});
+filesMenuEdit.addEventListener("click", async () => {
+  const entry = filesContextEntry;
+  hideFilesContextMenu();
+  if (!entry) return;
+  if (entry.kind === "file" && canInlineEditEntry(entry)) {
+    await openRemoteEditor(entry);
+  }
+});
+filesMenuDownload.addEventListener("click", async () => {
+  const entry = filesContextEntry;
+  hideFilesContextMenu();
+  if (!entry || entry.kind !== "file") return;
+  await downloadEntry(entry);
+});
+filesMenuRename.addEventListener("click", async () => {
+  const entry = filesContextEntry;
+  hideFilesContextMenu();
+  if (!entry) return;
+  await renameEntry(entry);
+});
+filesMenuDelete.addEventListener("click", async () => {
+  const entry = filesContextEntry;
+  hideFilesContextMenu();
+  if (!entry) return;
+  await deleteEntry(entry);
+});
+document.addEventListener("pointerdown", (ev) => {
+  if (filesContextMenu.hidden) return;
+  if (!filesContextMenu.contains(ev.target)) {
+    hideFilesContextMenu();
+  }
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && !filesContextMenu.hidden) {
+    hideFilesContextMenu();
+  }
+});
+filesList.addEventListener("scroll", () => {
+  if (!filesContextMenu.hidden) hideFilesContextMenu();
+});
+window.addEventListener("resize", () => {
+  if (!filesContextMenu.hidden) hideFilesContextMenu();
 });
 filesSelectAll.addEventListener("change", () => {
   if (filesSelectAll.checked) {
@@ -1563,7 +1654,7 @@ function resetFileEditorState() {
   fileEditorState.originalContent = "";
   fileEditorState.dirty = false;
   fileEditorState.saving = false;
-  if (ensureFileEditorAce()) {
+  if (fileEditorAce) {
     fileEditorSetValue("");
     fileEditorSetReadOnly(false);
     fileEditorAce.session.setMode("ace/mode/text");
@@ -1602,6 +1693,7 @@ async function openRemoteEditor(entry) {
   fileEditorTitle.textContent = "Opening...";
   fileEditorPath.textContent = path;
   fileEditorHint.textContent = "Loading file content...";
+  refreshFileEditorLayout();
   fileEditorSetReadOnly(true);
   fileEditorSaveButton.disabled = true;
 
@@ -1623,6 +1715,7 @@ async function openRemoteEditor(entry) {
     fileEditorSetReadOnly(false);
     fileEditorSaveButton.disabled = false;
     setFileEditorDirty(false);
+    refreshFileEditorLayout();
     fileEditorFocus();
   } catch (e) {
     fileEditorState.open = false;
@@ -1674,6 +1767,7 @@ async function saveRemoteEditor() {
 }
 
 async function openFiles(host) {
+  hideFilesContextMenu();
   filesHost = host;
   filesCurrentPath = "/";
   filesEntries = [];
@@ -1720,6 +1814,7 @@ async function openFiles(host) {
 }
 
 async function closeFiles() {
+  hideFilesContextMenu();
   if (!closeRemoteEditor()) return;
   cancelActiveTransfer();
   filesDropOverlay.hidden = true;
@@ -1749,6 +1844,7 @@ async function closeFiles() {
 }
 
 async function navigateTo(path) {
+  hideFilesContextMenu();
   if (filesSftpId === null) return;
   filesStatus.textContent = `Listing ${path}...`;
 
@@ -1785,6 +1881,10 @@ function renderFilesList(entries) {
   for (const entry of entries) {
     const row = document.createElement("li");
     row.className = `file-row${entry.kind === "dir" ? " dir" : ""}`;
+    row.addEventListener("contextmenu", (ev) => {
+      ev.preventDefault();
+      showFilesContextMenu(entry, ev.clientX, ev.clientY);
+    });
 
     const pick = document.createElement("input");
     pick.type = "checkbox";
@@ -1809,39 +1909,7 @@ function renderFilesList(entries) {
     size.className = "size";
     size.textContent = entry.kind === "dir" ? "—" : formatSize(entry.size);
 
-    const actions = document.createElement("span");
-    actions.className = "row-actions";
-
-    if (entry.kind === "file") {
-      if (canInlineEditEntry(entry)) {
-        const editBtn = document.createElement("button");
-        editBtn.type = "button";
-        editBtn.textContent = "Edit";
-        editBtn.addEventListener("click", () => openRemoteEditor(entry));
-        actions.appendChild(editBtn);
-      }
-
-      const downloadBtn = document.createElement("button");
-      downloadBtn.type = "button";
-      downloadBtn.textContent = "Download";
-      downloadBtn.addEventListener("click", () => downloadEntry(entry));
-      actions.appendChild(downloadBtn);
-    }
-
-    const renameBtn = document.createElement("button");
-    renameBtn.type = "button";
-    renameBtn.textContent = "Rename";
-    renameBtn.addEventListener("click", () => renameEntry(entry));
-
-    const delBtn = document.createElement("button");
-    delBtn.type = "button";
-    delBtn.textContent = "Delete";
-    delBtn.className = "danger";
-    delBtn.addEventListener("click", () => deleteEntry(entry));
-
-    actions.append(renameBtn, delBtn);
-
-    row.append(pick, marker, name, size, actions);
+    row.append(pick, marker, name, size);
     filesList.appendChild(row);
   }
 }

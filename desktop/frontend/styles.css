@@ -535,7 +535,7 @@ label.checkbox input[type="checkbox"] {
 
 .file-row {
   display: grid;
-  grid-template-columns: 24px 20px 1fr 100px auto;
+  grid-template-columns: 24px 20px 1fr 100px;
   align-items: center;
   gap: 10px;
   padding: 8px 14px;
@@ -563,16 +563,6 @@ label.checkbox input[type="checkbox"] {
   font-size: 12px;
 }
 
-.file-row .row-actions {
-  display: flex;
-  gap: 6px;
-}
-
-.file-row .row-actions button {
-  padding: 4px 8px;
-  font-size: 11px;
-}
-
 .files-drop-overlay {
   position: absolute;
   inset: 0;
@@ -587,6 +577,45 @@ label.checkbox input[type="checkbox"] {
   font-weight: 700;
   letter-spacing: 0.02em;
   z-index: 10;
+}
+
+.files-context-menu {
+  position: fixed;
+  min-width: 170px;
+  border: 1px solid #3d4f79;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #202c4a 0%, #1a2540 100%);
+  box-shadow: 0 16px 40px rgba(3, 8, 20, 0.55);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 220;
+}
+
+.files-context-menu button {
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 8px;
+  text-align: left;
+  padding: 7px 9px;
+  font-size: 12px;
+}
+
+.files-context-menu button:hover:not(:disabled) {
+  background: #2d3d64;
+  border-color: #4e6393;
+}
+
+.files-context-menu button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.files-context-menu .menu-separator {
+  height: 1px;
+  margin: 2px 4px;
+  background: #32466e;
 }
 
 /* Overlays */
@@ -657,8 +686,6 @@ label.checkbox input[type="checkbox"] {
 }
 
 #file-editor-content.ace_editor {
-  height: 100%;
-  width: 100%;
   border-radius: 10px;
 }
 
