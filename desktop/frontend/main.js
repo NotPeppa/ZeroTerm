@@ -9,12 +9,11 @@ const FitAddon = window.FitAddon.FitAddon;
 const views = {
   unlock: document.getElementById("view-unlock"),
   hosts: document.getElementById("view-hosts"),
-  terminal: document.getElementById("view-terminal"),
-  files: document.getElementById("view-files"),
 };
 
 function show(name) {
   for (const [key, el] of Object.entries(views)) {
+    if (!el) continue;
     el.hidden = key !== name;
   }
 }
@@ -77,19 +76,21 @@ const I18N = {
     "sidebar.new_window": "New Window",
     "sidebar.settings": "Settings",
     "sidebar.lock": "Lock Vault",
+    "workspace.tab.vaults": "Vaults",
+    "workspace.tab.sftp": "SFTP",
+    "sftp.side.left": "Left",
+    "sftp.side.right": "Right",
+    "sftp.host.placeholder": "Select host...",
+    "sftp.button.connect": "Connect",
+    "sftp.button.disconnect": "Disconnect",
     "hosts.search.placeholder": "Find a host or ssh user@hostname...",
     "hosts.new_host": "+ New host",
-    "hosts.connect_selected": "Connect Selected",
-    "hosts.delete_selected": "Delete Selected",
-    "hosts.selection.count": "{count} selected",
     "hosts.empty.search": "No host matched your search.",
     "hosts.empty.default": "No saved hosts yet. Click + New host or add from CLI.",
     "hosts.button.connect": "Connect",
     "hosts.button.files": "Files",
     "hosts.button.edit": "Edit",
     "hosts.button.delete": "Delete",
-    "hosts.confirm.delete_selected": "Delete {count} selected host(s)?",
-    "hosts.error.delete_failed_for": "delete failed for {name}: {error}",
     "hosts.confirm.delete_one": "Delete saved host \"{name}\"?",
     "hosts.error.delete_failed": "delete failed: {error}",
     "hosts.error.no_tabs": "No terminal tabs yet. Open a host first.",
@@ -98,7 +99,6 @@ const I18N = {
     "terminal.button.split_v": "Split V",
     "terminal.button.split_h": "Split H",
     "terminal.button.close_split": "Close Split",
-    "terminal.button.disconnect": "Disconnect Pane",
     "terminal.button.new_window": "New Window",
     "terminal.button.back_hosts": "Hosts",
     "terminal.empty": "No open terminal tabs. Open one from Hosts.",
@@ -243,6 +243,10 @@ const I18N = {
     "editor.error.open_failed": "open failed: {error}",
     "editor.error.save_failed": "save failed: {error}",
     "files.status.saved_path": "Saved {path}.",
+    "sftp.status.not_connected": "Not connected",
+    "sftp.status.connecting": "Connecting...",
+    "sftp.status.connected": "Connected: {name}",
+    "sftp.error.connect_failed": "connect failed: {error}",
     "settings.title": "Settings",
     "settings.language.label": "Language",
     "settings.language.hint": "Changes apply immediately and are saved locally.",
@@ -272,19 +276,21 @@ const I18N = {
     "sidebar.new_window": "新窗口",
     "sidebar.settings": "设置",
     "sidebar.lock": "锁定保险库",
+    "workspace.tab.vaults": "Vaults",
+    "workspace.tab.sftp": "SFTP",
+    "sftp.side.left": "左侧",
+    "sftp.side.right": "右侧",
+    "sftp.host.placeholder": "选择主机...",
+    "sftp.button.connect": "连接",
+    "sftp.button.disconnect": "断开",
     "hosts.search.placeholder": "搜索主机或 ssh user@hostname...",
     "hosts.new_host": "+ 新建主机",
-    "hosts.connect_selected": "连接所选",
-    "hosts.delete_selected": "删除所选",
-    "hosts.selection.count": "已选 {count} 项",
     "hosts.empty.search": "没有匹配搜索条件的主机。",
     "hosts.empty.default": "还没有保存的主机。点击 + 新建主机，或在 CLI 中添加。",
     "hosts.button.connect": "连接",
     "hosts.button.files": "文件",
     "hosts.button.edit": "编辑",
     "hosts.button.delete": "删除",
-    "hosts.confirm.delete_selected": "确认删除已选的 {count} 个主机？",
-    "hosts.error.delete_failed_for": "删除 {name} 失败：{error}",
     "hosts.confirm.delete_one": "确认删除已保存主机“{name}”？",
     "hosts.error.delete_failed": "删除失败：{error}",
     "hosts.error.no_tabs": "当前没有终端标签页，请先打开一个主机。",
@@ -293,7 +299,6 @@ const I18N = {
     "terminal.button.split_v": "垂直分屏",
     "terminal.button.split_h": "水平分屏",
     "terminal.button.close_split": "关闭分屏",
-    "terminal.button.disconnect": "断开当前窗格",
     "terminal.button.new_window": "新窗口",
     "terminal.button.back_hosts": "主机",
     "terminal.empty": "当前没有打开的终端标签页，请从主机页打开。",
@@ -435,6 +440,10 @@ const I18N = {
     "editor.error.open_failed": "打开失败：{error}",
     "editor.error.save_failed": "保存失败：{error}",
     "files.status.saved_path": "已保存 {path}。",
+    "sftp.status.not_connected": "未连接",
+    "sftp.status.connecting": "连接中...",
+    "sftp.status.connected": "已连接：{name}",
+    "sftp.error.connect_failed": "连接失败：{error}",
     "settings.title": "设置",
     "settings.language.label": "语言",
     "settings.language.hint": "修改立即生效，并会保存在本地。",
@@ -499,6 +508,89 @@ function authTypeLabel(kind) {
   return kind;
 }
 
+function detectHostOsBadge(host) {
+  const rawOsType = String(host?.osType || "").trim().toLowerCase();
+  const fromSaved = (() => {
+    switch (rawOsType) {
+      case "windows":
+        return { label: "Windows", iconClass: "devicon-windows11-original" };
+      case "ubuntu":
+        return { label: "Ubuntu", iconClass: "devicon-ubuntu-plain" };
+      case "debian":
+        return { label: "Debian", iconClass: "devicon-debian-plain" };
+      case "centos":
+        return { label: "CentOS", iconClass: "devicon-centos-plain" };
+      case "redhat":
+        return { label: "Red Hat", iconClass: "devicon-redhat-plain" };
+      case "fedora":
+        return { label: "Fedora", iconClass: "devicon-fedora-plain" };
+      case "archlinux":
+        return { label: "Arch Linux", iconClass: "devicon-archlinux-plain" };
+      case "rockylinux":
+        return { label: "Rocky Linux", iconClass: "devicon-rockylinux-plain" };
+      case "almalinux":
+        return { label: "AlmaLinux", iconClass: "devicon-almalinux-plain" };
+      case "opensuse":
+        return { label: "openSUSE", iconClass: "devicon-opensuse-plain" };
+      case "kalilinux":
+        return { label: "Kali Linux", iconClass: "devicon-kalilinux-plain" };
+      case "linuxmint":
+        return { label: "Linux Mint", iconClass: "devicon-linuxmint-plain" };
+      case "macos":
+        return { label: "macOS", iconClass: "devicon-apple-original" };
+      case "linux":
+        return { label: "Linux", iconClass: "devicon-linux-plain" };
+      default:
+        return null;
+    }
+  })();
+  if (fromSaved) return fromSaved;
+
+  const source = `${host?.name || ""} ${host?.host || ""}`.toLowerCase();
+  const has = (re) => re.test(source);
+
+  if (has(/\b(windows|win10|win11|win\d)\b/)) {
+    return { label: "Windows", iconClass: "devicon-windows11-original" };
+  }
+  if (has(/\b(ubuntu)\b/)) {
+    return { label: "Ubuntu", iconClass: "devicon-ubuntu-plain" };
+  }
+  if (has(/\b(debian)\b/)) {
+    return { label: "Debian", iconClass: "devicon-debian-plain" };
+  }
+  if (has(/\b(centos)\b/)) {
+    return { label: "CentOS", iconClass: "devicon-centos-plain" };
+  }
+  if (has(/\b(redhat|rhel)\b/)) {
+    return { label: "Red Hat", iconClass: "devicon-redhat-plain" };
+  }
+  if (has(/\b(fedora)\b/)) {
+    return { label: "Fedora", iconClass: "devicon-fedora-plain" };
+  }
+  if (has(/\b(arch|archlinux)\b/)) {
+    return { label: "Arch Linux", iconClass: "devicon-archlinux-plain" };
+  }
+  if (has(/\b(rocky|rockylinux)\b/)) {
+    return { label: "Rocky Linux", iconClass: "devicon-rockylinux-plain" };
+  }
+  if (has(/\b(alma|almalinux)\b/)) {
+    return { label: "AlmaLinux", iconClass: "devicon-almalinux-plain" };
+  }
+  if (has(/\b(opensuse|suse)\b/)) {
+    return { label: "openSUSE", iconClass: "devicon-opensuse-plain" };
+  }
+  if (has(/\b(kali)\b/)) {
+    return { label: "Kali Linux", iconClass: "devicon-kalilinux-plain" };
+  }
+  if (has(/\b(mint|linuxmint)\b/)) {
+    return { label: "Linux Mint", iconClass: "devicon-linuxmint-plain" };
+  }
+  if (has(/\b(mac|macos|osx|darwin)\b/)) {
+    return { label: "macOS", iconClass: "devicon-apple-original" };
+  }
+  return { label: "Linux", iconClass: "devicon-linux-plain" };
+}
+
 function setLocale(locale) {
   if (!I18N[locale]) return;
   currentLocale = locale;
@@ -523,6 +615,11 @@ const EDITABLE_TEXT_BASENAMES = new Set([
 ]);
 
 const ACE_BASE_PATH = "https://cdn.jsdelivr.net/npm/ace-builds@1.42.0/src-min-noconflict";
+const TERMINAL_FONT_STACK = [
+  '"ZeroTerm Meslo NF"',
+  "monospace",
+].join(", ");
+const TERMINAL_RESIZE_DEBOUNCE_MS = 56;
 
 const MODE_BY_EXTENSION = {
   txt: "text",
@@ -693,10 +790,11 @@ unlockForm.addEventListener("submit", async (ev) => {
 const hostsList = document.getElementById("hosts-list");
 const hostsEmpty = document.getElementById("hosts-empty");
 const hostSearch = document.getElementById("host-search");
-const hostsSelectionHint = document.getElementById("hosts-selection-hint");
-const hostsConnectSelected = document.getElementById("hosts-connect-selected");
-const hostsDeleteSelected = document.getElementById("hosts-delete-selected");
-const openTerminalsButton = document.getElementById("open-terminals-button");
+const workspaceTabVaults = document.getElementById("workspace-tab-vaults");
+const workspaceTabSftp = document.getElementById("workspace-tab-sftp");
+const panelVaults = document.getElementById("panel-vaults");
+const panelTerminal = document.getElementById("panel-terminal");
+const panelSftp = document.getElementById("panel-sftp");
 const newWindowButton = document.getElementById("new-window-button");
 const settingsButton = document.getElementById("settings-button");
 const settingsOverlay = document.getElementById("settings-overlay");
@@ -704,7 +802,38 @@ const settingsCloseButton = document.getElementById("settings-close-button");
 const settingsLanguageSelect = document.getElementById("settings-language-select");
 
 let hostsCache = [];
-const selectedHostIds = new Set();
+let workspaceMode = "vaults";
+
+async function refreshHostsCacheFromVault({ silent = false } = {}) {
+  try {
+    hostsCache = await invoke("list_hosts");
+    renderHosts();
+    syncSftpHostOptions();
+  } catch (e) {
+    if (silent) {
+      console.warn("refresh hosts cache failed", e);
+      return;
+    }
+    throw e;
+  }
+}
+
+function setWorkspaceMode(mode) {
+  workspaceMode = mode;
+  if (mode !== "sftp") {
+    hideFilesContextMenu();
+  }
+  panelVaults.hidden = mode !== "vaults";
+  panelTerminal.hidden = mode !== "terminal";
+  panelSftp.hidden = mode !== "sftp";
+  workspaceTabVaults.classList.toggle("active", mode === "vaults");
+  workspaceTabSftp.classList.toggle("active", mode === "sftp");
+  if (mode === "terminal") {
+    renderTerminalWorkspace();
+  } else if (mode === "sftp") {
+    renderAllSftpPanes();
+  }
+}
 
 function applyI18n() {
   document.documentElement.lang = currentLocale === "zh-CN" ? "zh-CN" : "en";
@@ -723,42 +852,25 @@ function applyI18n() {
     setText("unlock-button", "unlock.button.create");
   }
 
-  setText("nav-hosts", "nav.hosts");
-  setText("nav-keychain", "nav.keychain");
-  setText("nav-port-forwarding", "nav.port_forwarding");
-  setText("nav-known-hosts", "nav.known_hosts");
-  setText("nav-logs", "nav.logs");
-  setText("open-terminals-button", "sidebar.terminals");
-  setText("new-window-button", "sidebar.new_window");
-  setText("settings-button", "sidebar.settings");
-  setText("lock-button", "sidebar.lock");
+  setText("workspace-tab-vaults", "workspace.tab.vaults");
+  setText("workspace-tab-sftp", "workspace.tab.sftp");
+  setAttr("new-window-button", "title", "sidebar.new_window");
+  setAttr("settings-button", "title", "sidebar.settings");
+  setAttr("lock-button", "title", "sidebar.lock");
 
   setPlaceholder("host-search", "hosts.search.placeholder");
   setText("add-host-button", "hosts.new_host");
-  setText("hosts-connect-selected", "hosts.connect_selected");
-  setText("hosts-delete-selected", "hosts.delete_selected");
 
-  setText("new-tab-button", "terminal.button.new_tab");
-  setText("split-vertical-button", "terminal.button.split_v");
-  setText("split-horizontal-button", "terminal.button.split_h");
-  setText("close-split-button", "terminal.button.close_split");
-  setText("disconnect-button", "terminal.button.disconnect");
-  setText("term-new-window-button", "terminal.button.new_window");
-  setText("back-button", "terminal.button.back_hosts");
-
-  setText("files-title", "files.title");
-  setText("files-back", "files.button.back");
-  setText("files-up", "files.button.up");
-  setAttr("files-up", "title", "files.button.up_title");
-  setText("files-refresh", "files.button.refresh");
-  setText("files-mkdir", "files.button.new_folder");
-  setText("files-upload", "files.button.upload");
-  setText("files-upload-many", "files.button.upload_many");
-  setText("files-select-all-label", "files.select_all");
-  setText("files-download-selected", "files.button.download_selected");
-  setText("files-delete-selected", "files.button.delete_selected");
-  setText("progress-cancel", "files.button.cancel");
-  setText("files-drop-overlay", "files.drop.hint");
+  setText("sftp-left-title", "sftp.side.left");
+  setText("sftp-right-title", "sftp.side.right");
+  setText("sftp-left-up", "files.button.up");
+  setText("sftp-right-up", "files.button.up");
+  setText("sftp-left-refresh", "files.button.refresh");
+  setText("sftp-right-refresh", "files.button.refresh");
+  setText("sftp-left-mkdir", "files.button.new_folder");
+  setText("sftp-right-mkdir", "files.button.new_folder");
+  setText("sftp-left-upload", "files.button.upload");
+  setText("sftp-right-upload", "files.button.upload");
   setText("files-menu-edit", "files.menu.edit");
   setText("files-menu-download", "files.menu.download");
   setText("files-menu-rename", "files.menu.rename");
@@ -806,16 +918,10 @@ function applyI18n() {
   setOptionText("settings-language-select", "en", "settings.language.en");
   if (settingsLanguageSelect) settingsLanguageSelect.value = currentLocale;
 
-  updateHostsSelectionState();
-  updateFilesSelectionState();
-
-  if (!views.hosts.hidden) renderHosts();
-  if (!views.terminal.hidden) renderTerminalWorkspace();
-  if (!views.files.hidden) {
-    renderFilesList(filesEntries);
-    if (filesHost) {
-      filesTitle.textContent = `${filesHost.name} (${filesHost.user}@${filesHost.host}:${filesHost.port})`;
-    }
+  if (!views.hosts.hidden) {
+    renderHosts();
+    syncSftpHostOptions();
+    renderAllSftpPanes();
   }
   if (!hostOverlay.hidden) {
     hostTitle.textContent = editingHostId ? t("host_editor.title.edit") : t("host_editor.title.add");
@@ -838,11 +944,18 @@ function applyI18n() {
       });
     }
   }
+
+  updateSftpConnectButtons();
 }
 
 hostSearch.addEventListener("input", () => renderHosts());
+workspaceTabVaults.addEventListener("click", () => setWorkspaceMode("vaults"));
+workspaceTabSftp.addEventListener("click", () => setWorkspaceMode("sftp"));
 
 document.getElementById("lock-button").addEventListener("click", async () => {
+  for (const pane of Object.values(sftpPanes)) {
+    await disconnectSftpPane(pane);
+  }
   try {
     await invoke("forget_keychain");
   } catch (e) {
@@ -870,58 +983,23 @@ settingsLanguageSelect.addEventListener("change", () => {
   setLocale(settingsLanguageSelect.value);
 });
 
-hostsConnectSelected.addEventListener("click", async () => {
-  const picked = hostsCache.filter((h) => selectedHostIds.has(h.id));
-  if (picked.length === 0) return;
-  for (const host of picked) {
-    await openHostInTerminal(host);
-  }
-});
-
-hostsDeleteSelected.addEventListener("click", async () => {
-  const picked = hostsCache.filter((h) => selectedHostIds.has(h.id));
-  if (picked.length === 0) return;
-  if (!confirm(t("hosts.confirm.delete_selected", { count: picked.length }))) return;
-
-  for (const host of picked) {
-    try {
-      await invoke("delete_host", { id: host.id });
-    } catch (e) {
-      alert(t("hosts.error.delete_failed_for", { name: host.name, error: e }));
-      break;
-    }
-  }
-  await enterHosts();
-});
-
-openTerminalsButton.addEventListener("click", () => {
-  if (termState.tabs.length === 0) {
-    alert(t("hosts.error.no_tabs"));
-    return;
-  }
-  show("terminal");
-  renderTerminalWorkspace();
-});
-
 newWindowButton.addEventListener("click", () => {
   invoke("open_new_window").catch((e) => alert(t("terminal.error.new_window_failed", { error: e })));
 });
 
 async function enterHosts() {
   show("hosts");
-  selectedHostIds.clear();
+  setWorkspaceMode("vaults");
   hostSearch.value = "";
 
   try {
-    hostsCache = await invoke("list_hosts");
+    await refreshHostsCacheFromVault();
   } catch (e) {
     hostsCache = [];
     hostsEmpty.hidden = false;
     hostsEmpty.textContent = t("hosts.error.load_failed", { error: e });
     return;
   }
-
-  renderHosts();
 }
 
 function renderHosts() {
@@ -950,17 +1028,15 @@ function renderHosts() {
     const top = document.createElement("div");
     top.className = "row-top";
 
-    const pick = document.createElement("input");
-    pick.type = "checkbox";
-    pick.checked = selectedHostIds.has(host.id);
-    pick.addEventListener("change", () => {
-      if (pick.checked) selectedHostIds.add(host.id);
-      else selectedHostIds.delete(host.id);
-      updateHostsSelectionState();
-    });
-
     const badge = document.createElement("div");
-    badge.className = "badge";
+    badge.className = "badge os-badge";
+    const osBadge = detectHostOsBadge(host);
+    badge.title = osBadge.label;
+    badge.setAttribute("aria-label", osBadge.label);
+    const osIcon = document.createElement("i");
+    osIcon.className = `${osBadge.iconClass} colored host-os-icon`;
+    osIcon.setAttribute("aria-hidden", "true");
+    badge.appendChild(osIcon);
 
     const info = document.createElement("div");
     info.style.minWidth = "0";
@@ -978,7 +1054,7 @@ function renderHosts() {
     meta.textContent = authTypeLabel(host.authType);
 
     info.append(name, target, meta);
-    top.append(pick, badge, info);
+    top.append(badge, info);
 
     const actions = document.createElement("div");
     actions.className = "row-actions";
@@ -992,7 +1068,12 @@ function renderHosts() {
     const filesBtn = document.createElement("button");
     filesBtn.type = "button";
     filesBtn.textContent = t("hosts.button.files");
-    filesBtn.addEventListener("click", () => openFiles(host));
+    filesBtn.addEventListener("click", () => {
+      assignHostToSftpPane(host).catch((e) => {
+        console.warn("assignHostToSftpPane failed", e);
+      });
+      setWorkspaceMode("sftp");
+    });
 
     const editBtn = document.createElement("button");
     editBtn.type = "button";
@@ -1017,15 +1098,6 @@ function renderHosts() {
     li.append(top, actions);
     hostsList.appendChild(li);
   }
-
-  updateHostsSelectionState();
-}
-
-function updateHostsSelectionState() {
-  const count = selectedHostIds.size;
-  hostsSelectionHint.textContent = t("hosts.selection.count", { count });
-  hostsConnectSelected.disabled = count === 0;
-  hostsDeleteSelected.disabled = count === 0;
 }
 
 // --------------------------------------------------------------------------
@@ -1034,45 +1106,11 @@ function updateHostsSelectionState() {
 
 const termTabStrip = document.getElementById("term-tab-strip");
 const terminalWorkspace = document.getElementById("terminal-workspace");
-const backButton = document.getElementById("back-button");
-const newTabButton = document.getElementById("new-tab-button");
-const splitVerticalButton = document.getElementById("split-vertical-button");
-const splitHorizontalButton = document.getElementById("split-horizontal-button");
-const closeSplitButton = document.getElementById("close-split-button");
-const disconnectButton = document.getElementById("disconnect-button");
-const termNewWindowButton = document.getElementById("term-new-window-button");
 
 const termState = {
   tabs: [],
   activeTabId: null,
 };
-
-backButton.addEventListener("click", () => {
-  show("hosts");
-});
-
-newTabButton.addEventListener("click", () => {
-  show("hosts");
-  alert(t("terminal.new_tab_hint"));
-});
-
-splitVerticalButton.addEventListener("click", () => splitActiveTab("vertical"));
-splitHorizontalButton.addEventListener("click", () => splitActiveTab("horizontal"));
-closeSplitButton.addEventListener("click", closeActiveSplit);
-
-disconnectButton.addEventListener("click", async () => {
-  const pane = getActivePane();
-  if (!pane || pane.sessionId === null) return;
-  try {
-    await invoke("disconnect_session", { sessionId: pane.sessionId });
-  } catch (e) {
-    console.warn("disconnect session failed", e);
-  }
-});
-
-termNewWindowButton.addEventListener("click", () => {
-  invoke("open_new_window").catch((e) => alert(t("terminal.error.new_window_failed", { error: e })));
-});
 
 function getActiveTab() {
   return termState.tabs.find((t) => t.id === termState.activeTabId) || null;
@@ -1082,6 +1120,16 @@ function getActivePane() {
   const tab = getActiveTab();
   if (!tab) return null;
   return tab.panes.find((p) => p.id === tab.activePaneId) || tab.panes[0] || null;
+}
+
+function sanitizeTerminalTabs() {
+  const before = termState.tabs.length;
+  termState.tabs = termState.tabs.filter((tab) => Array.isArray(tab.panes) && tab.panes.length > 0);
+  if (before !== termState.tabs.length) {
+    if (!termState.tabs.find((tab) => tab.id === termState.activeTabId)) {
+      termState.activeTabId = termState.tabs[0]?.id ?? null;
+    }
+  }
 }
 
 function createPane(host) {
@@ -1098,6 +1146,10 @@ function createPane(host) {
     dataUnlisten: null,
     closedUnlisten: null,
     resizeObserver: null,
+    pendingResizeTimer: null,
+    pendingFitRaf: null,
+    lastSentCols: 0,
+    lastSentRows: 0,
   };
 }
 
@@ -1116,12 +1168,13 @@ async function openHostInTerminal(host) {
   termState.tabs.push(tab);
   termState.activeTabId = tab.id;
 
-  show("terminal");
+  setWorkspaceMode("terminal");
   renderTerminalWorkspace();
   await connectPaneSession(pane);
 }
 
 function renderTerminalWorkspace() {
+  sanitizeTerminalTabs();
   renderTabStrip();
 
   terminalWorkspace.innerHTML = "";
@@ -1143,14 +1196,32 @@ function renderTerminalWorkspace() {
   terminalWorkspace.className = `terminal-workspace ${layout}`;
 
   for (const pane of tab.panes) {
-    ensurePaneElements(pane, tab);
-    pane.rootEl.classList.toggle("active", pane.id === tab.activePaneId);
-    terminalWorkspace.appendChild(pane.rootEl);
+    try {
+      ensurePaneElements(pane, tab);
+      if (!pane.rootEl) continue;
+      pane.rootEl.classList.toggle("active", pane.id === tab.activePaneId);
+      terminalWorkspace.appendChild(pane.rootEl);
+      ensurePaneTerminal(pane);
+    } catch (e) {
+      console.warn("ensurePaneElements failed", e);
+    }
+  }
+
+  if (terminalWorkspace.children.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "term-empty";
+    empty.textContent = t("terminal.empty");
+    terminalWorkspace.appendChild(empty);
+    return;
   }
 
   requestAnimationFrame(() => {
     for (const pane of tab.panes) {
-      fitPane(pane);
+      requestPaneFit(pane, { immediate: true });
+    }
+    const active = getActivePane();
+    if (active?.term) {
+      active.term.focus();
     }
   });
 }
@@ -1170,12 +1241,15 @@ function renderTabStrip() {
     close.textContent = "✕";
     close.addEventListener("click", (ev) => {
       ev.stopPropagation();
-      closeTab(tab.id);
+      closeTab(tab.id).catch((e) => {
+        console.warn("closeTab failed", e);
+      });
     });
 
     el.append(title, close);
     el.addEventListener("click", () => {
       termState.activeTabId = tab.id;
+      setWorkspaceMode("terminal");
       renderTerminalWorkspace();
     });
 
@@ -1209,38 +1283,63 @@ function ensurePaneElements(pane, tab) {
   root.append(header, body);
 
   root.addEventListener("click", () => {
-    tab.activePaneId = pane.id;
-    renderTerminalWorkspace();
+    if (tab.activePaneId !== pane.id) {
+      tab.activePaneId = pane.id;
+      renderTerminalWorkspace();
+      return;
+    }
+    if (pane.term) pane.term.focus();
+  });
+  body.addEventListener("mousedown", () => {
+    if (pane.term) pane.term.focus();
   });
 
   pane.rootEl = root;
   pane.bodyEl = body;
   pane.titleEl = title;
   pane.statusEl = status;
-
-  ensurePaneTerminal(pane);
 }
 
 function ensurePaneTerminal(pane) {
-  if (pane.term || !pane.bodyEl) return;
+  if (pane.term || !pane.bodyEl || !pane.bodyEl.isConnected) return;
 
   pane.term = new Terminal({
-    fontFamily: '"JetBrains Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace',
+    fontFamily: TERMINAL_FONT_STACK,
     fontSize: 13,
+    fontWeight: "400",
+    fontWeightBold: "700",
     theme: {
       background: "#05080f",
       foreground: "#e7ecff",
       cursor: "#9cc3ff",
     },
     cursorBlink: true,
+    allowProposedApi: true,
+    customGlyphs: true,
+    rescaleOverlappingGlyphs: false,
     scrollback: 10000,
     convertEol: false,
+    reflowCursorLine: false,
   });
 
   pane.fitAddon = new FitAddon();
   pane.term.loadAddon(pane.fitAddon);
-  pane.term.open(pane.bodyEl);
-  pane.fitAddon.fit();
+  if (window.Unicode11Addon?.Unicode11Addon) {
+    try {
+      const unicode11Addon = new window.Unicode11Addon.Unicode11Addon();
+      pane.term.loadAddon(unicode11Addon);
+      pane.term.unicode.activeVersion = "11";
+    } catch (e) {
+      console.warn("unicode11 addon init failed", e);
+    }
+  }
+  try {
+    pane.term.open(pane.bodyEl);
+    requestPaneFit(pane, { immediate: true });
+    pane.term.focus();
+  } catch (e) {
+    console.warn("terminal open/fit failed", e);
+  }
 
   pane.term.onData((d) => {
     if (pane.sessionId === null) return;
@@ -1251,9 +1350,39 @@ function ensurePaneTerminal(pane) {
   });
 
   pane.resizeObserver = new ResizeObserver(() => {
-    fitPane(pane);
+    requestPaneFit(pane);
   });
   pane.resizeObserver.observe(pane.bodyEl);
+}
+
+function requestPaneFit(pane, { immediate = false } = {}) {
+  if (!pane) return;
+
+  if (immediate) {
+    if (pane.pendingResizeTimer !== null) {
+      clearTimeout(pane.pendingResizeTimer);
+      pane.pendingResizeTimer = null;
+    }
+    if (pane.pendingFitRaf !== null) {
+      cancelAnimationFrame(pane.pendingFitRaf);
+      pane.pendingFitRaf = null;
+    }
+    fitPane(pane);
+    return;
+  }
+
+  if (pane.pendingResizeTimer !== null) {
+    clearTimeout(pane.pendingResizeTimer);
+  }
+
+  pane.pendingResizeTimer = setTimeout(() => {
+    pane.pendingResizeTimer = null;
+    if (pane.pendingFitRaf !== null) return;
+    pane.pendingFitRaf = requestAnimationFrame(() => {
+      pane.pendingFitRaf = null;
+      fitPane(pane);
+    });
+  }, TERMINAL_RESIZE_DEBOUNCE_MS);
 }
 
 function fitPane(pane) {
@@ -1264,17 +1393,72 @@ function fitPane(pane) {
     return;
   }
   if (pane.sessionId !== null) {
+    const { cols, rows } = pane.term;
+    if (cols === pane.lastSentCols && rows === pane.lastSentRows) return;
+    pane.lastSentCols = cols;
+    pane.lastSentRows = rows;
     invoke("resize_session", {
       sessionId: pane.sessionId,
-      cols: pane.term.cols,
-      rows: pane.term.rows,
+      cols,
+      rows,
     }).catch(() => {});
+  }
+}
+
+function nextFrame() {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+let terminalFontsReadyPromise = null;
+
+async function waitForTerminalFonts() {
+  if (terminalFontsReadyPromise) return terminalFontsReadyPromise;
+  terminalFontsReadyPromise = (async () => {
+    if (!document.fonts || typeof document.fonts.ready === "undefined") return;
+    try {
+      await Promise.allSettled([
+        document.fonts.load('13px "ZeroTerm Meslo NF"'),
+        document.fonts.load('700 13px "ZeroTerm Meslo NF"'),
+        document.fonts.load('italic 13px "ZeroTerm Meslo NF"'),
+        document.fonts.load('italic 700 13px "ZeroTerm Meslo NF"'),
+      ]);
+      await Promise.race([
+        document.fonts.ready,
+        new Promise((resolve) => setTimeout(resolve, 1200)),
+      ]);
+    } catch {
+      // Ignore font readiness failures and continue with fallback metrics.
+    }
+  })();
+  return terminalFontsReadyPromise;
+}
+
+async function stabilizePaneSize(pane, rounds = 2) {
+  if (!pane.term || !pane.fitAddon) return;
+  for (let i = 0; i < rounds; i += 1) {
+    await nextFrame();
+    fitPane(pane);
   }
 }
 
 async function connectPaneSession(pane) {
   if (!pane.host) return;
+  if (!pane.bodyEl || !pane.bodyEl.isConnected) {
+    renderTerminalWorkspace();
+    await nextFrame();
+  }
   ensurePaneTerminal(pane);
+  if (!pane.term) {
+    renderTerminalWorkspace();
+    await nextFrame();
+    ensurePaneTerminal(pane);
+  }
+  if (!pane.term) {
+    if (pane.statusEl) pane.statusEl.textContent = t("terminal.error.connect_failed_status", { error: "terminal init failed" });
+    return;
+  }
+  await waitForTerminalFonts();
+  await stabilizePaneSize(pane, 2);
 
   if (pane.sessionId !== null) {
     await disconnectPaneSession(pane, { dispose: false });
@@ -1290,9 +1474,12 @@ async function connectPaneSession(pane) {
       rows,
     });
     pane.sessionId = sessionId;
+    pane.lastSentCols = cols;
+    pane.lastSentRows = rows;
     pane.statusEl.textContent = t("terminal.status.connected");
 
     await wirePaneSessionEvents(pane, sessionId);
+    await stabilizePaneSize(pane, 1);
 
     try {
       const info = await invoke("session_info", { sessionId });
@@ -1305,6 +1492,10 @@ async function connectPaneSession(pane) {
     } catch (e) {
       console.warn("session_info failed", e);
     }
+
+    // The backend may persist detected remote OS during connect.
+    // Pull latest host summaries so badges can refresh without restart.
+    refreshHostsCacheFromVault({ silent: true }).catch(() => {});
   } catch (e) {
     pane.statusEl.textContent = t("terminal.error.connect_failed_status", { error: e });
     if (pane.term) {
@@ -1346,6 +1537,8 @@ async function wirePaneSessionEvents(pane, sessionId) {
 async function disconnectPaneSession(pane, { dispose }) {
   const sid = pane.sessionId;
   pane.sessionId = null;
+  pane.lastSentCols = 0;
+  pane.lastSentRows = 0;
 
   if (sid !== null) {
     try {
@@ -1365,6 +1558,15 @@ async function disconnectPaneSession(pane, { dispose }) {
   }
 
   if (dispose) {
+    if (pane.pendingResizeTimer !== null) {
+      clearTimeout(pane.pendingResizeTimer);
+    }
+    pane.pendingResizeTimer = null;
+    if (pane.pendingFitRaf !== null) {
+      cancelAnimationFrame(pane.pendingFitRaf);
+    }
+    pane.pendingFitRaf = null;
+
     if (pane.resizeObserver && pane.bodyEl) {
       pane.resizeObserver.disconnect();
     }
@@ -1382,14 +1584,12 @@ async function disconnectPaneSession(pane, { dispose }) {
   }
 }
 
-function closeTab(tabId) {
+async function closeTab(tabId) {
   const idx = termState.tabs.findIndex((t) => t.id === tabId);
   if (idx < 0) return;
   const tab = termState.tabs[idx];
 
-  tab.panes.forEach((pane) => {
-    disconnectPaneSession(pane, { dispose: true });
-  });
+  await Promise.all(tab.panes.map((pane) => disconnectPaneSession(pane, { dispose: true })));
 
   termState.tabs.splice(idx, 1);
 
@@ -1399,8 +1599,10 @@ function closeTab(tabId) {
     termState.activeTabId = termState.tabs[Math.max(0, idx - 1)].id;
   }
 
+  renderTabStrip();
+
   if (termState.tabs.length === 0) {
-    show("hosts");
+    setWorkspaceMode("vaults");
   } else {
     renderTerminalWorkspace();
   }
@@ -1430,7 +1632,7 @@ async function splitActiveTab(orientation) {
   await connectPaneSession(newPane);
 }
 
-function closeActiveSplit() {
+async function closeActiveSplit() {
   const tab = getActiveTab();
   if (!tab || tab.panes.length <= 1) return;
 
@@ -1439,7 +1641,7 @@ function closeActiveSplit() {
   if (removeIndex < 0) removeIndex = tab.panes.length - 1;
   const pane = tab.panes[removeIndex];
 
-  disconnectPaneSession(pane, { dispose: true });
+  await disconnectPaneSession(pane, { dispose: true });
   tab.panes.splice(removeIndex, 1);
   tab.layout = "single";
   tab.activePaneId = tab.panes[0].id;
@@ -1862,28 +2064,13 @@ async function saveHostForm(ev) {
 }
 
 // --------------------------------------------------------------------------
-// Files view: bulk actions + drag and drop
+// SFTP split view + remote file editor
 // --------------------------------------------------------------------------
 
-const filesTitle = document.getElementById("files-title");
-const filesPath = document.getElementById("files-path");
-const filesList = document.getElementById("files-list");
-const filesStatus = document.getElementById("files-status");
-const filesProgress = document.getElementById("files-progress");
-const progressLabel = document.getElementById("progress-label");
-const progressBar = document.getElementById("progress-bar");
-const progressCancel = document.getElementById("progress-cancel");
-const filesDropOverlay = document.getElementById("files-drop-overlay");
-const filesSelectAll = document.getElementById("files-select-all");
-const filesUploadMany = document.getElementById("files-upload-many");
-const filesDownloadSelected = document.getElementById("files-download-selected");
-const filesDeleteSelected = document.getElementById("files-delete-selected");
-const filesSelectionHint = document.getElementById("files-selection-hint");
 const fileEditorOverlay = document.getElementById("file-editor-overlay");
 const fileEditorTitle = document.getElementById("file-editor-title");
 const fileEditorPath = document.getElementById("file-editor-path");
 const fileEditorHint = document.getElementById("file-editor-hint");
-const fileEditorContent = document.getElementById("file-editor-content");
 const fileEditorFindInput = document.getElementById("file-editor-find");
 const fileEditorReplaceInput = document.getElementById("file-editor-replace");
 const fileEditorMatchCaseInput = document.getElementById("file-editor-match-case");
@@ -1894,36 +2081,337 @@ const fileEditorReplaceAllButton = document.getElementById("file-editor-replace-
 const fileEditorError = document.getElementById("file-editor-error");
 const fileEditorSaveButton = document.getElementById("file-editor-save");
 const fileEditorCancelButton = document.getElementById("file-editor-cancel");
+
 const filesContextMenu = document.getElementById("files-context-menu");
 const filesMenuEdit = document.getElementById("files-menu-edit");
 const filesMenuDownload = document.getElementById("files-menu-download");
 const filesMenuRename = document.getElementById("files-menu-rename");
 const filesMenuDelete = document.getElementById("files-menu-delete");
 
-let filesSftpId = null;
-let filesCurrentPath = "/";
-let filesHost = null;
-let filesEntries = [];
-let filesSelected = new Set();
-let activeTransferId = null;
-let pendingCancel = false;
-let progressUnlisten = null;
-let dragDepth = 0;
+function buildSftpPane(key) {
+  return {
+    key,
+    hostId: "",
+    host: null,
+    sftpId: null,
+    path: "/",
+    entries: [],
+    hostSelect: document.getElementById(`sftp-${key}-host`),
+    connectButton: document.getElementById(`sftp-${key}-connect`),
+    upButton: document.getElementById(`sftp-${key}-up`),
+    refreshButton: document.getElementById(`sftp-${key}-refresh`),
+    mkdirButton: document.getElementById(`sftp-${key}-mkdir`),
+    uploadButton: document.getElementById(`sftp-${key}-upload`),
+    pathEl: document.getElementById(`sftp-${key}-path`),
+    statusEl: document.getElementById(`sftp-${key}-status`),
+    listEl: document.getElementById(`sftp-${key}-list`),
+  };
+}
+
+const sftpPanes = {
+  left: buildSftpPane("left"),
+  right: buildSftpPane("right"),
+};
+
 let filesContextEntry = null;
+let filesContextPaneKey = null;
+let fileEditorAce = null;
 const fileEditorState = {
   open: false,
+  paneKey: null,
   path: "",
   originalContent: "",
   dirty: false,
   saving: false,
 };
-let fileEditorAce = null;
 
-const filesDropTarget = document.querySelector(".files-drop-zone-wrap");
+function getSftpPane(key) {
+  return key === "right" ? sftpPanes.right : sftpPanes.left;
+}
+
+function syncSftpHostOptions() {
+  for (const pane of Object.values(sftpPanes)) {
+    const selected = pane.hostId || pane.host?.id || "";
+    pane.hostSelect.innerHTML = "";
+
+    const empty = document.createElement("option");
+    empty.value = "";
+    empty.textContent = t("sftp.host.placeholder");
+    pane.hostSelect.appendChild(empty);
+
+    for (const host of hostsCache) {
+      const opt = document.createElement("option");
+      opt.value = host.id;
+      opt.textContent = `${host.name} (${host.user}@${host.host}:${host.port})`;
+      pane.hostSelect.appendChild(opt);
+    }
+    pane.hostSelect.value = selected;
+  }
+}
+
+function updateSftpConnectButtons() {
+  for (const pane of Object.values(sftpPanes)) {
+    pane.connectButton.textContent = pane.sftpId ? t("sftp.button.disconnect") : t("sftp.button.connect");
+  }
+}
+
+async function connectSftpPane(pane, host) {
+  await disconnectSftpPane(pane);
+  pane.statusEl.textContent = t("sftp.status.connecting");
+  try {
+    pane.sftpId = await invoke("sftp_open", { hostId: host.id });
+    pane.hostId = host.id;
+    pane.host = host;
+    pane.path = "/";
+    pane.statusEl.textContent = t("sftp.status.connected", { name: host.name });
+    await navigateSftpPane(pane, "/");
+  } catch (e) {
+    pane.statusEl.textContent = t("sftp.error.connect_failed", { error: e });
+  }
+  updateSftpConnectButtons();
+}
+
+async function disconnectSftpPane(pane) {
+  if (pane.sftpId !== null) {
+    try {
+      await invoke("sftp_close", { sftpId: pane.sftpId });
+    } catch (e) {
+      console.warn("sftp_close failed", e);
+    }
+  }
+  pane.sftpId = null;
+  pane.entries = [];
+  pane.path = "/";
+  pane.pathEl.textContent = "/";
+  pane.statusEl.textContent = t("sftp.status.not_connected");
+  renderSftpPane(pane);
+  updateSftpConnectButtons();
+}
+
+async function navigateSftpPane(pane, path) {
+  if (pane.sftpId === null) return;
+  pane.statusEl.textContent = t("files.status.listing", { path });
+  try {
+    const entries = await invoke("sftp_list", { sftpId: pane.sftpId, path });
+    pane.path = path;
+    pane.entries = entries;
+    pane.pathEl.textContent = path;
+    pane.statusEl.textContent = pane.host ? t("sftp.status.connected", { name: pane.host.name }) : "";
+    renderSftpPane(pane);
+  } catch (e) {
+    pane.statusEl.textContent = t("files.error.list_failed", { error: e });
+  }
+}
+
+function renderSftpPane(pane) {
+  pane.listEl.innerHTML = "";
+  if (pane.sftpId === null) {
+    pane.statusEl.textContent = t("sftp.status.not_connected");
+  }
+  if (!pane.hostId) {
+    const empty = document.createElement("li");
+    empty.className = "file-row";
+    empty.style.gridTemplateColumns = "1fr";
+    empty.style.justifyContent = "center";
+    empty.style.color = "var(--muted)";
+    empty.textContent = t("sftp.host.placeholder");
+    pane.listEl.appendChild(empty);
+    return;
+  }
+
+  if (pane.entries.length === 0) {
+    const empty = document.createElement("li");
+    empty.className = "file-row";
+    empty.style.gridTemplateColumns = "1fr";
+    empty.style.justifyContent = "center";
+    empty.style.color = "var(--muted)";
+    empty.textContent = t("files.empty");
+    pane.listEl.appendChild(empty);
+    return;
+  }
+
+  for (const entry of pane.entries) {
+    const row = document.createElement("li");
+    row.className = `file-row sftp-row${entry.kind === "dir" ? " dir" : ""}`;
+    row.addEventListener("contextmenu", (ev) => {
+      ev.preventDefault();
+      showFilesContextMenu(pane, entry, ev.clientX, ev.clientY);
+    });
+
+    const marker = document.createElement("span");
+    marker.textContent = kindMarker(entry.kind);
+
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = entry.kind === "dir" ? `${entry.name}/` : entry.name;
+    if (entry.kind === "dir") {
+      name.addEventListener("click", () => navigateSftpPane(pane, joinPath(pane.path, entry.name)));
+    }
+
+    const size = document.createElement("span");
+    size.className = "size";
+    size.textContent = entry.kind === "dir" ? "—" : formatSize(entry.size);
+
+    row.append(marker, name, size);
+    pane.listEl.appendChild(row);
+  }
+}
+
+function renderAllSftpPanes() {
+  renderSftpPane(sftpPanes.left);
+  renderSftpPane(sftpPanes.right);
+}
+
+function pickSftpPaneForHost() {
+  if (!sftpPanes.left.hostId) return sftpPanes.left;
+  if (!sftpPanes.right.hostId) return sftpPanes.right;
+  return sftpPanes.left;
+}
+
+async function assignHostToSftpPane(host) {
+  const pane = pickSftpPaneForHost();
+  pane.hostId = host.id;
+  pane.host = host;
+  syncSftpHostOptions();
+  pane.hostSelect.value = host.id;
+  await connectSftpPane(pane, host);
+}
+
+function canInlineEditEntry(entry) {
+  return (
+    entry.kind === "file" &&
+    entry.size <= FILE_EDITOR_MAX_BYTES &&
+    isLikelyEditableTextName(entry.name)
+  );
+}
+
+function kindMarker(kind) {
+  if (kind === "dir") return "📁";
+  if (kind === "file") return "📄";
+  if (kind === "symlink") return "↪";
+  return "?";
+}
+
+function showFilesContextMenu(pane, entry, x, y) {
+  if (pane.sftpId === null) return;
+  filesContextEntry = entry;
+  filesContextPaneKey = pane.key;
+
+  const isFile = entry.kind === "file";
+  filesMenuEdit.disabled = !(isFile && canInlineEditEntry(entry));
+  filesMenuDownload.disabled = !isFile;
+  filesMenuRename.disabled = false;
+  filesMenuDelete.disabled = false;
+
+  filesContextMenu.style.left = "0px";
+  filesContextMenu.style.top = "0px";
+  filesContextMenu.hidden = false;
+
+  const pad = 8;
+  const rect = filesContextMenu.getBoundingClientRect();
+  let left = x;
+  let top = y;
+  if (left + rect.width + pad > window.innerWidth) {
+    left = Math.max(pad, window.innerWidth - rect.width - pad);
+  }
+  if (top + rect.height + pad > window.innerHeight) {
+    top = Math.max(pad, window.innerHeight - rect.height - pad);
+  }
+  filesContextMenu.style.left = `${left}px`;
+  filesContextMenu.style.top = `${top}px`;
+}
+
+function hideFilesContextMenu() {
+  filesContextMenu.hidden = true;
+  filesContextEntry = null;
+  filesContextPaneKey = null;
+}
+
+async function sftpDownloadFile(pane, entry) {
+  const local = await invoke("plugin:dialog|save", {
+    options: { defaultPath: entry.name },
+  });
+  if (!local) return;
+  try {
+    const n = await invoke("sftp_download", {
+      sftpId: pane.sftpId,
+      remote: joinPath(pane.path, entry.name),
+      local,
+    });
+    pane.statusEl.textContent = t("files.status.downloaded_one", { name: entry.name, size: formatSize(n) });
+  } catch (e) {
+    pane.statusEl.textContent = t("files.error.download_failed", { error: e });
+  }
+}
+
+async function sftpRenameEntry(pane, entry) {
+  const next = prompt(t("files.prompt.rename", { name: entry.name }), entry.name);
+  if (!next || next === entry.name) return;
+  try {
+    await invoke("sftp_rename", {
+      sftpId: pane.sftpId,
+      from: joinPath(pane.path, entry.name),
+      to: joinPath(pane.path, next),
+    });
+    await navigateSftpPane(pane, pane.path);
+  } catch (e) {
+    pane.statusEl.textContent = t("files.error.rename_failed", { error: e });
+  }
+}
+
+async function sftpDeleteEntry(pane, entry) {
+  const target = joinPath(pane.path, entry.name);
+  if (!confirm(t("files.confirm.delete_entry", { path: target }))) return;
+  const command = entry.kind === "dir" ? "sftp_remove_dir" : "sftp_remove";
+  try {
+    await invoke(command, { sftpId: pane.sftpId, path: target });
+    await navigateSftpPane(pane, pane.path);
+  } catch (e) {
+    pane.statusEl.textContent = t("files.error.delete_failed", { error: e });
+  }
+}
+
+async function sftpMkdir(pane) {
+  if (pane.sftpId === null) return;
+  const name = prompt(t("files.prompt.new_folder"));
+  if (!name) return;
+  try {
+    await invoke("sftp_mkdir", {
+      sftpId: pane.sftpId,
+      path: joinPath(pane.path, name),
+    });
+    await navigateSftpPane(pane, pane.path);
+  } catch (e) {
+    pane.statusEl.textContent = t("files.error.mkdir_failed", { error: e });
+  }
+}
+
+async function sftpUpload(pane) {
+  if (pane.sftpId === null) return;
+  const local = await invoke("plugin:dialog|open", {
+    options: { multiple: true, directory: false },
+  });
+  if (!local) return;
+  const paths = Array.isArray(local) ? local.map(String) : [String(local)];
+  for (const path of paths) {
+    const name = basename(path);
+    try {
+      const n = await invoke("sftp_upload", {
+        sftpId: pane.sftpId,
+        local: path,
+        remote: joinPath(pane.path, name),
+      });
+      pane.statusEl.textContent = t("files.status.uploaded_one", { name, size: formatSize(n) });
+    } catch (e) {
+      pane.statusEl.textContent = t("files.error.upload_failed_for", { name, error: e });
+      break;
+    }
+  }
+  await navigateSftpPane(pane, pane.path);
+}
 
 function ensureFileEditorAce() {
   if (fileEditorAce) return true;
-
   if (!window.ace) {
     setFileEditorError(t("editor.error.ace_load_failed"));
     return false;
@@ -1955,16 +2443,12 @@ function ensureFileEditorAce() {
   fileEditorAce.commands.addCommand({
     name: "saveRemoteFile",
     bindKey: { win: "Ctrl-S", mac: "Command-S" },
-    exec: () => {
-      saveRemoteEditor();
-    },
+    exec: () => saveRemoteEditor(),
   });
   fileEditorAce.commands.addCommand({
     name: "closeRemoteEditor",
     bindKey: { win: "Esc", mac: "Esc" },
-    exec: () => {
-      closeRemoteEditor();
-    },
+    exec: () => closeRemoteEditor(),
   });
 
   return true;
@@ -1985,48 +2469,15 @@ function fileEditorSetReadOnly(readOnly) {
   fileEditorAce.setReadOnly(readOnly);
 }
 
-function fileEditorFocus() {
-  if (!ensureFileEditorAce()) return;
-  fileEditorAce.focus();
-}
-
 function fileEditorSetModeByPath(path) {
   if (!ensureFileEditorAce()) return;
   const mode = detectAceModeByName(basename(path));
   fileEditorAce.session.setMode(`ace/mode/${mode}`);
 }
 
-function hideFilesContextMenu() {
-  filesContextMenu.hidden = true;
-  filesContextEntry = null;
-}
-
-function showFilesContextMenu(entry, x, y) {
-  if (!filesSftpId) return;
-  filesContextEntry = entry;
-
-  const isFile = entry.kind === "file";
-  filesMenuEdit.disabled = !(isFile && canInlineEditEntry(entry));
-  filesMenuDownload.disabled = !isFile;
-  filesMenuRename.disabled = false;
-  filesMenuDelete.disabled = false;
-
-  filesContextMenu.style.left = "0px";
-  filesContextMenu.style.top = "0px";
-  filesContextMenu.hidden = false;
-
-  const pad = 8;
-  const rect = filesContextMenu.getBoundingClientRect();
-  let left = x;
-  let top = y;
-  if (left + rect.width + pad > window.innerWidth) {
-    left = Math.max(pad, window.innerWidth - rect.width - pad);
-  }
-  if (top + rect.height + pad > window.innerHeight) {
-    top = Math.max(pad, window.innerHeight - rect.height - pad);
-  }
-  filesContextMenu.style.left = `${left}px`;
-  filesContextMenu.style.top = `${top}px`;
+function fileEditorFocus() {
+  if (!ensureFileEditorAce()) return;
+  fileEditorAce.focus();
 }
 
 function refreshFileEditorLayout() {
@@ -2036,150 +2487,6 @@ function refreshFileEditorLayout() {
     fileEditorAce.resize(true);
     fileEditorAce.renderer.updateFull();
   });
-}
-
-document.getElementById("files-back").addEventListener("click", () => closeFiles());
-document.getElementById("files-up").addEventListener("click", () => {
-  if (!filesSftpId) return;
-  navigateTo(parentPath(filesCurrentPath));
-});
-document.getElementById("files-refresh").addEventListener("click", () => {
-  if (!filesSftpId) return;
-  navigateTo(filesCurrentPath);
-});
-document.getElementById("files-mkdir").addEventListener("click", async () => {
-  if (!filesSftpId) return;
-  const name = prompt(t("files.prompt.new_folder"));
-  if (!name) return;
-  try {
-    await invoke("sftp_mkdir", {
-      sftpId: filesSftpId,
-      path: joinPath(filesCurrentPath, name),
-    });
-    await navigateTo(filesCurrentPath);
-  } catch (e) {
-    showFilesError(t("files.error.mkdir_failed", { error: e }));
-  }
-});
-document.getElementById("files-upload").addEventListener("click", uploadHere);
-filesUploadMany.addEventListener("click", uploadManyHere);
-filesDownloadSelected.addEventListener("click", downloadSelectedFiles);
-filesDeleteSelected.addEventListener("click", deleteSelectedFiles);
-fileEditorCancelButton.addEventListener("click", () => closeRemoteEditor());
-fileEditorSaveButton.addEventListener("click", () => saveRemoteEditor());
-fileEditorOverlay.addEventListener("click", (ev) => {
-  if (ev.target === fileEditorOverlay) {
-    closeRemoteEditor();
-  }
-});
-fileEditorFindPrevButton.addEventListener("click", () => searchInEditor({ backwards: true }));
-fileEditorFindNextButton.addEventListener("click", () => searchInEditor({ backwards: false }));
-fileEditorReplaceOneButton.addEventListener("click", () => replaceInEditor({ all: false }));
-fileEditorReplaceAllButton.addEventListener("click", () => replaceInEditor({ all: true }));
-fileEditorFindInput.addEventListener("keydown", (ev) => {
-  if (ev.key === "Enter") {
-    ev.preventDefault();
-    searchInEditor({ backwards: ev.shiftKey });
-  }
-});
-fileEditorReplaceInput.addEventListener("keydown", (ev) => {
-  if (ev.key === "Enter") {
-    ev.preventDefault();
-    replaceInEditor({ all: ev.shiftKey });
-  }
-});
-filesMenuEdit.addEventListener("click", async () => {
-  const entry = filesContextEntry;
-  hideFilesContextMenu();
-  if (!entry) return;
-  if (entry.kind === "file" && canInlineEditEntry(entry)) {
-    await openRemoteEditor(entry);
-  }
-});
-filesMenuDownload.addEventListener("click", async () => {
-  const entry = filesContextEntry;
-  hideFilesContextMenu();
-  if (!entry || entry.kind !== "file") return;
-  await downloadEntry(entry);
-});
-filesMenuRename.addEventListener("click", async () => {
-  const entry = filesContextEntry;
-  hideFilesContextMenu();
-  if (!entry) return;
-  await renameEntry(entry);
-});
-filesMenuDelete.addEventListener("click", async () => {
-  const entry = filesContextEntry;
-  hideFilesContextMenu();
-  if (!entry) return;
-  await deleteEntry(entry);
-});
-document.addEventListener("pointerdown", (ev) => {
-  if (filesContextMenu.hidden) return;
-  if (!filesContextMenu.contains(ev.target)) {
-    hideFilesContextMenu();
-  }
-});
-document.addEventListener("keydown", (ev) => {
-  if (ev.key === "Escape" && !filesContextMenu.hidden) {
-    hideFilesContextMenu();
-  }
-});
-filesList.addEventListener("scroll", () => {
-  if (!filesContextMenu.hidden) hideFilesContextMenu();
-});
-window.addEventListener("resize", () => {
-  if (!filesContextMenu.hidden) hideFilesContextMenu();
-});
-filesSelectAll.addEventListener("change", () => {
-  if (filesSelectAll.checked) {
-    for (const entry of filesEntries) filesSelected.add(entry.name);
-  } else {
-    filesSelected.clear();
-  }
-  renderFilesList(filesEntries);
-  updateFilesSelectionState();
-});
-
-progressCancel.addEventListener("click", cancelActiveTransfer);
-
-filesDropTarget.addEventListener("dragenter", (ev) => {
-  ev.preventDefault();
-  if (views.files.hidden) return;
-  dragDepth += 1;
-  filesDropOverlay.hidden = false;
-});
-
-filesDropTarget.addEventListener("dragover", (ev) => {
-  ev.preventDefault();
-  if (views.files.hidden) return;
-  filesDropOverlay.hidden = false;
-});
-
-filesDropTarget.addEventListener("dragleave", (ev) => {
-  ev.preventDefault();
-  dragDepth = Math.max(0, dragDepth - 1);
-  if (dragDepth === 0) filesDropOverlay.hidden = true;
-});
-
-filesDropTarget.addEventListener("drop", async (ev) => {
-  ev.preventDefault();
-  dragDepth = 0;
-  filesDropOverlay.hidden = true;
-  if (filesSftpId === null) return;
-
-  const dropped = Array.from(ev.dataTransfer?.files || []);
-  if (dropped.length === 0) return;
-
-  await uploadDroppedFiles(dropped);
-});
-
-function canInlineEditEntry(entry) {
-  return (
-    entry.kind === "file" &&
-    entry.size <= FILE_EDITOR_MAX_BYTES &&
-    isLikelyEditableTextName(entry.name)
-  );
 }
 
 function setFileEditorError(message) {
@@ -2214,7 +2521,6 @@ function searchInEditor({ backwards = false } = {}) {
     setFileEditorError(t("editor.error.enter_search"));
     return false;
   }
-
   const range = fileEditorAce.find(needle, editorSearchOptions({ backwards }));
   if (!range) {
     setFileEditorError(t("editor.error.no_matches"));
@@ -2234,7 +2540,6 @@ function replaceInEditor({ all = false } = {}) {
 
   const replacement = fileEditorReplaceInput.value ?? "";
   const opts = editorSearchOptions();
-
   if (all) {
     const replaced = fileEditorAce.replaceAll(replacement, { ...opts, needle });
     if (!replaced) {
@@ -2246,19 +2551,19 @@ function replaceInEditor({ all = false } = {}) {
     return;
   }
 
-  if (!searchInEditor({ backwards: false })) return;
+  if (!searchInEditor()) return;
   const replaced = fileEditorAce.replace(replacement);
   if (replaced == null) {
     setFileEditorError(t("editor.error.no_selected_match"));
     return;
   }
-
   setFileEditorError("");
   fileEditorHint.textContent = t("editor.hint.replaced_one");
 }
 
 function resetFileEditorState() {
   fileEditorState.open = false;
+  fileEditorState.paneKey = null;
   fileEditorState.path = "";
   fileEditorState.originalContent = "";
   fileEditorState.dirty = false;
@@ -2269,51 +2574,50 @@ function resetFileEditorState() {
     fileEditorAce.session.setMode("ace/mode/text");
     fileEditorAce.clearSelection();
   }
-  fileEditorSaveButton.disabled = false;
-  fileEditorCancelButton.disabled = false;
   fileEditorFindInput.value = "";
   fileEditorReplaceInput.value = "";
   fileEditorMatchCaseInput.checked = false;
   fileEditorPath.textContent = "";
   fileEditorHint.textContent = t("editor.hint.default");
   fileEditorTitle.textContent = t("editor.title");
+  fileEditorSaveButton.disabled = false;
+  fileEditorCancelButton.disabled = false;
   setFileEditorError("");
 }
 
-async function openRemoteEditor(entry) {
+async function openRemoteEditor(pane, entry) {
   if (!canInlineEditEntry(entry)) {
     alert(t("editor.alert.unsupported"));
     return;
   }
-  if (filesSftpId === null) return;
+  if (pane.sftpId === null) return;
   if (!ensureFileEditorAce()) {
     alert(t("editor.alert.component_failed"));
     return;
   }
-
   if (fileEditorState.open && fileEditorState.dirty) {
     const ok = confirm(t("editor.confirm.discard"));
     if (!ok) return;
   }
 
   resetFileEditorState();
-  const path = joinPath(filesCurrentPath, entry.name);
+  const path = joinPath(pane.path, entry.name);
   fileEditorOverlay.hidden = false;
   fileEditorTitle.textContent = t("editor.hint.opening");
   fileEditorPath.textContent = path;
   fileEditorHint.textContent = t("editor.hint.loading");
-  refreshFileEditorLayout();
   fileEditorSetReadOnly(true);
   fileEditorSaveButton.disabled = true;
+  refreshFileEditorLayout();
 
   try {
     const doc = await invoke("sftp_read_text", {
-      sftpId: filesSftpId,
+      sftpId: pane.sftpId,
       path,
       maxBytes: FILE_EDITOR_MAX_BYTES,
     });
-
     fileEditorState.open = true;
+    fileEditorState.paneKey = pane.key;
     fileEditorState.path = doc.path;
     fileEditorState.originalContent = doc.content;
     fileEditorSetValue(doc.content);
@@ -2330,8 +2634,8 @@ async function openRemoteEditor(entry) {
   } catch (e) {
     fileEditorState.open = false;
     setFileEditorError(t("editor.error.open_failed", { error: e }));
-    fileEditorTitle.textContent = t("editor.title");
     fileEditorHint.textContent = t("editor.hint.unavailable");
+    fileEditorTitle.textContent = t("editor.title");
   }
 }
 
@@ -2348,7 +2652,9 @@ function closeRemoteEditor({ force = false } = {}) {
 }
 
 async function saveRemoteEditor() {
-  if (!fileEditorState.open || fileEditorState.saving) return;
+  if (!fileEditorState.open || fileEditorState.saving || !fileEditorState.paneKey) return;
+  const pane = getSftpPane(fileEditorState.paneKey);
+  if (pane.sftpId === null) return;
 
   const content = fileEditorGetValue();
   fileEditorState.saving = true;
@@ -2358,15 +2664,15 @@ async function saveRemoteEditor() {
 
   try {
     const bytes = await invoke("sftp_write_text", {
-      sftpId: filesSftpId,
+      sftpId: pane.sftpId,
       path: fileEditorState.path,
       content,
     });
     fileEditorState.originalContent = content;
     setFileEditorDirty(false);
     fileEditorHint.textContent = t("editor.hint.saved", { size: formatSize(bytes) });
-    filesStatus.textContent = t("files.status.saved_path", { path: fileEditorState.path });
-    await navigateTo(filesCurrentPath);
+    pane.statusEl.textContent = t("files.status.saved_path", { path: fileEditorState.path });
+    await navigateSftpPane(pane, pane.path);
   } catch (e) {
     setFileEditorError(t("editor.error.save_failed", { error: e }));
   } finally {
@@ -2376,426 +2682,102 @@ async function saveRemoteEditor() {
   }
 }
 
-async function openFiles(host) {
-  hideFilesContextMenu();
-  filesHost = host;
-  filesCurrentPath = "/";
-  filesEntries = [];
-  filesSelected.clear();
-  filesSelectAll.checked = false;
+for (const pane of Object.values(sftpPanes)) {
+  pane.hostSelect.addEventListener("change", () => {
+    pane.hostId = pane.hostSelect.value;
+    pane.host = hostsCache.find((h) => h.id === pane.hostId) || null;
+  });
 
-  show("files");
-  filesTitle.textContent = `${host.name} (${host.user}@${host.host}:${host.port})`;
-  filesPath.textContent = "/";
-  filesList.innerHTML = "";
-  filesStatus.textContent = t("files.status.connecting");
-
-  if (progressUnlisten) {
-    progressUnlisten();
-    progressUnlisten = null;
-  }
-
-  progressUnlisten = await listen("sftp:progress", (ev) => {
-    const p = ev.payload;
-
-    if (activeTransferId === "pending") {
-      activeTransferId = p.transferId;
-      if (pendingCancel) {
-        pendingCancel = false;
-        invoke("sftp_cancel_transfer", { transferId: activeTransferId }).catch(() => {});
-      }
-    }
-
-    if (activeTransferId !== p.transferId) return;
-
-    if (p.finished) {
-      hideProgress();
+  pane.connectButton.addEventListener("click", async () => {
+    if (pane.sftpId !== null) {
+      await disconnectSftpPane(pane);
       return;
     }
-    showProgress(p);
+    const host = hostsCache.find((h) => h.id === pane.hostId);
+    if (!host) return;
+    await connectSftpPane(pane, host);
   });
 
-  try {
-    filesSftpId = await invoke("sftp_open", { hostId: host.id });
-    await navigateTo("/");
-  } catch (e) {
-    showFilesError(t("files.error.open_failed", { error: e }));
-  }
+  pane.upButton.addEventListener("click", () => {
+    if (pane.sftpId === null) return;
+    navigateSftpPane(pane, parentPath(pane.path));
+  });
+  pane.refreshButton.addEventListener("click", () => {
+    if (pane.sftpId === null) return;
+    navigateSftpPane(pane, pane.path);
+  });
+  pane.mkdirButton.addEventListener("click", () => sftpMkdir(pane));
+  pane.uploadButton.addEventListener("click", () => sftpUpload(pane));
+  pane.listEl.addEventListener("scroll", () => hideFilesContextMenu());
 }
 
-async function closeFiles() {
+filesMenuEdit.addEventListener("click", async () => {
+  const entry = filesContextEntry;
+  const pane = filesContextPaneKey ? getSftpPane(filesContextPaneKey) : null;
   hideFilesContextMenu();
-  if (!closeRemoteEditor()) return;
-  cancelActiveTransfer();
-  filesDropOverlay.hidden = true;
-  dragDepth = 0;
+  if (!pane || !entry || entry.kind !== "file") return;
+  await openRemoteEditor(pane, entry);
+});
 
-  if (progressUnlisten) {
-    progressUnlisten();
-    progressUnlisten = null;
-  }
-
-  if (filesSftpId !== null) {
-    try {
-      await invoke("sftp_close", { sftpId: filesSftpId });
-    } catch (e) {
-      console.warn("sftp_close failed", e);
-    }
-  }
-
-  filesSftpId = null;
-  filesHost = null;
-  filesEntries = [];
-  filesSelected.clear();
-  filesList.innerHTML = "";
-  hideProgress();
-
-  await enterHosts();
-}
-
-async function navigateTo(path) {
+filesMenuDownload.addEventListener("click", async () => {
+  const entry = filesContextEntry;
+  const pane = filesContextPaneKey ? getSftpPane(filesContextPaneKey) : null;
   hideFilesContextMenu();
-  if (filesSftpId === null) return;
-  filesStatus.textContent = t("files.status.listing", { path });
+  if (!pane || !entry || entry.kind !== "file") return;
+  await sftpDownloadFile(pane, entry);
+});
 
-  try {
-    const entries = await invoke("sftp_list", { sftpId: filesSftpId, path });
-    filesCurrentPath = path;
-    filesEntries = entries;
-    filesSelected.clear();
-    filesSelectAll.checked = false;
+filesMenuRename.addEventListener("click", async () => {
+  const entry = filesContextEntry;
+  const pane = filesContextPaneKey ? getSftpPane(filesContextPaneKey) : null;
+  hideFilesContextMenu();
+  if (!pane || !entry) return;
+  await sftpRenameEntry(pane, entry);
+});
 
-    filesPath.textContent = path;
-    renderFilesList(entries);
-    updateFilesSelectionState();
-    filesStatus.textContent = "";
-  } catch (e) {
-    showFilesError(t("files.error.list_failed", { error: e }));
+filesMenuDelete.addEventListener("click", async () => {
+  const entry = filesContextEntry;
+  const pane = filesContextPaneKey ? getSftpPane(filesContextPaneKey) : null;
+  hideFilesContextMenu();
+  if (!pane || !entry) return;
+  await sftpDeleteEntry(pane, entry);
+});
+
+fileEditorCancelButton.addEventListener("click", () => closeRemoteEditor());
+fileEditorSaveButton.addEventListener("click", () => saveRemoteEditor());
+fileEditorOverlay.addEventListener("click", (ev) => {
+  if (ev.target === fileEditorOverlay) closeRemoteEditor();
+});
+fileEditorFindPrevButton.addEventListener("click", () => searchInEditor({ backwards: true }));
+fileEditorFindNextButton.addEventListener("click", () => searchInEditor());
+fileEditorReplaceOneButton.addEventListener("click", () => replaceInEditor());
+fileEditorReplaceAllButton.addEventListener("click", () => replaceInEditor({ all: true }));
+fileEditorFindInput.addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter") {
+    ev.preventDefault();
+    searchInEditor({ backwards: ev.shiftKey });
   }
-}
-
-function renderFilesList(entries) {
-  filesList.innerHTML = "";
-
-  if (entries.length === 0) {
-    const empty = document.createElement("li");
-    empty.className = "file-row";
-    empty.style.gridTemplateColumns = "1fr";
-    empty.style.justifyContent = "center";
-    empty.style.color = "var(--muted)";
-    empty.textContent = t("files.empty");
-    filesList.appendChild(empty);
-    return;
+});
+fileEditorReplaceInput.addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter") {
+    ev.preventDefault();
+    replaceInEditor({ all: ev.shiftKey });
   }
+});
 
-  for (const entry of entries) {
-    const row = document.createElement("li");
-    row.className = `file-row${entry.kind === "dir" ? " dir" : ""}`;
-    row.addEventListener("contextmenu", (ev) => {
-      ev.preventDefault();
-      showFilesContextMenu(entry, ev.clientX, ev.clientY);
-    });
-
-    const pick = document.createElement("input");
-    pick.type = "checkbox";
-    pick.checked = filesSelected.has(entry.name);
-    pick.addEventListener("change", () => {
-      if (pick.checked) filesSelected.add(entry.name);
-      else filesSelected.delete(entry.name);
-      updateFilesSelectionState();
-    });
-
-    const marker = document.createElement("span");
-    marker.textContent = kindMarker(entry.kind);
-
-    const name = document.createElement("span");
-    name.className = "name";
-    name.textContent = entry.kind === "dir" ? `${entry.name}/` : entry.name;
-    if (entry.kind === "dir") {
-      name.addEventListener("click", () => navigateTo(joinPath(filesCurrentPath, entry.name)));
-    }
-
-    const size = document.createElement("span");
-    size.className = "size";
-    size.textContent = entry.kind === "dir" ? "—" : formatSize(entry.size);
-
-    row.append(pick, marker, name, size);
-    filesList.appendChild(row);
+document.addEventListener("pointerdown", (ev) => {
+  if (!filesContextMenu.hidden && !filesContextMenu.contains(ev.target)) {
+    hideFilesContextMenu();
   }
-}
-
-function updateFilesSelectionState() {
-  const count = filesSelected.size;
-  filesSelectionHint.textContent = t("files.selection.count", { count });
-  filesDownloadSelected.disabled = count === 0;
-  filesDeleteSelected.disabled = count === 0;
-
-  const allCount = filesEntries.length;
-  filesSelectAll.checked = allCount > 0 && count === allCount;
-}
-
-function showFilesError(msg) {
-  filesStatus.textContent = msg;
-  console.error(msg);
-}
-
-function kindMarker(k) {
-  switch (k) {
-    case "dir":
-      return "📁";
-    case "file":
-      return "📄";
-    case "symlink":
-      return "↪";
-    default:
-      return "?";
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && !filesContextMenu.hidden) {
+    hideFilesContextMenu();
   }
-}
-
-async function downloadEntry(entry) {
-  const remote = joinPath(filesCurrentPath, entry.name);
-  const local = await invoke("plugin:dialog|save", {
-    options: { defaultPath: entry.name },
-  });
-  if (!local) return;
-
-  beginTransfer(`${t("files.progress.downloading")} ${entry.name}`);
-  try {
-    const n = await invoke("sftp_download", {
-      sftpId: filesSftpId,
-      remote,
-      local,
-    });
-    filesStatus.textContent = t("files.status.downloaded_one", {
-      name: entry.name,
-      size: formatSize(n),
-    });
-  } catch (e) {
-    showFilesError(t("files.error.download_failed", { error: e }));
-  } finally {
-    hideProgress();
-    activeTransferId = null;
-  }
-}
-
-async function renameEntry(entry) {
-  const next = prompt(t("files.prompt.rename", { name: entry.name }), entry.name);
-  if (!next || next === entry.name) return;
-  try {
-    await invoke("sftp_rename", {
-      sftpId: filesSftpId,
-      from: joinPath(filesCurrentPath, entry.name),
-      to: joinPath(filesCurrentPath, next),
-    });
-    await navigateTo(filesCurrentPath);
-  } catch (e) {
-    showFilesError(t("files.error.rename_failed", { error: e }));
-  }
-}
-
-async function deleteEntry(entry) {
-  const target = joinPath(filesCurrentPath, entry.name);
-  if (!confirm(t("files.confirm.delete_entry", { path: target }))) return;
-
-  const command = entry.kind === "dir" ? "sftp_remove_dir" : "sftp_remove";
-  try {
-    await invoke(command, {
-      sftpId: filesSftpId,
-      path: target,
-    });
-    await navigateTo(filesCurrentPath);
-  } catch (e) {
-    showFilesError(t("files.error.delete_failed", { error: e }));
-  }
-}
-
-async function deleteSelectedFiles() {
-  const picked = filesEntries.filter((e) => filesSelected.has(e.name));
-  if (picked.length === 0) return;
-  if (!confirm(t("files.confirm.delete_selected", { count: picked.length }))) return;
-
-  for (const entry of picked) {
-    const path = joinPath(filesCurrentPath, entry.name);
-    const command = entry.kind === "dir" ? "sftp_remove_dir" : "sftp_remove";
-    try {
-      await invoke(command, { sftpId: filesSftpId, path });
-    } catch (e) {
-      showFilesError(t("files.error.delete_failed_for", { name: entry.name, error: e }));
-      break;
-    }
-  }
-
-  await navigateTo(filesCurrentPath);
-}
-
-async function uploadHere() {
-  const local = await invoke("plugin:dialog|open", {
-    options: { multiple: false, directory: false },
-  });
-  if (!local) return;
-
-  await uploadLocalPath(String(local));
-  await navigateTo(filesCurrentPath);
-}
-
-async function uploadManyHere() {
-  const local = await invoke("plugin:dialog|open", {
-    options: { multiple: true, directory: false },
-  });
-  if (!local) return;
-
-  const paths = Array.isArray(local) ? local.map(String) : [String(local)];
-  for (const path of paths) {
-    await uploadLocalPath(path);
-  }
-
-  await navigateTo(filesCurrentPath);
-}
-
-async function uploadLocalPath(localPath) {
-  const name = basename(localPath);
-  const remote = joinPath(filesCurrentPath, name);
-
-  beginTransfer(`${t("files.progress.uploading")} ${name}`);
-  try {
-    const n = await invoke("sftp_upload", {
-      sftpId: filesSftpId,
-      local: localPath,
-      remote,
-    });
-    filesStatus.textContent = t("files.status.uploaded_one", { name, size: formatSize(n) });
-  } catch (e) {
-    showFilesError(t("files.error.upload_failed_for", { name, error: e }));
-  } finally {
-    hideProgress();
-    activeTransferId = null;
-  }
-}
-
-async function uploadDroppedFiles(fileList) {
-  for (const file of fileList) {
-    const remote = joinPath(filesCurrentPath, file.name || "dropped.bin");
-
-    try {
-      if (file.path) {
-        await uploadLocalPath(String(file.path));
-        continue;
-      }
-
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      beginTransfer(`${t("files.progress.uploading")} ${file.name}`);
-      const n = await invoke("sftp_upload_bytes", {
-        sftpId: filesSftpId,
-        remote,
-        data: Array.from(bytes),
-        sourceLabel: file.name,
-      });
-      filesStatus.textContent = t("files.status.uploaded_one", {
-        name: file.name,
-        size: formatSize(n),
-      });
-    } catch (e) {
-      showFilesError(t("files.error.drag_upload_failed_for", { name: file.name, error: e }));
-    } finally {
-      hideProgress();
-      activeTransferId = null;
-    }
-  }
-
-  await navigateTo(filesCurrentPath);
-}
-
-async function downloadSelectedFiles() {
-  const picked = filesEntries.filter((e) => filesSelected.has(e.name) && e.kind === "file");
-  if (picked.length === 0) {
-    alert(t("files.alert.download_selected_none"));
-    return;
-  }
-
-  const base = await invoke("plugin:dialog|open", {
-    options: { directory: true, multiple: false },
-  });
-  if (!base) return;
-
-  const folder = String(base);
-
-  for (const entry of picked) {
-    const remote = joinPath(filesCurrentPath, entry.name);
-    const local = localJoin(folder, entry.name);
-
-    beginTransfer(`${t("files.progress.downloading")} ${entry.name}`);
-    try {
-      await invoke("sftp_download", {
-        sftpId: filesSftpId,
-        remote,
-        local,
-      });
-    } catch (e) {
-      showFilesError(t("files.error.download_failed_for", { name: entry.name, error: e }));
-      break;
-    } finally {
-      hideProgress();
-      activeTransferId = null;
-    }
-  }
-
-  filesStatus.textContent = t("files.status.downloaded_many_to", {
-    count: picked.length,
-    folder,
-  });
-}
-
-function beginTransfer(label) {
-  activeTransferId = "pending";
-  pendingCancel = false;
-  progressLabel.textContent = label;
-  progressBar.removeAttribute("value");
-  filesProgress.hidden = false;
-}
-
-function showProgress(p) {
-  const verb = p.kind === "upload" ? t("files.progress.uploading") : t("files.progress.downloading");
-  let suffix = "";
-  if (p.bytesPerSec != null && p.bytesPerSec > 0) {
-    suffix += ` · ${formatSize(p.bytesPerSec)}/s`;
-  }
-  if (p.etaSeconds != null) {
-    suffix += ` · ${t("files.progress.eta", { eta: formatEta(p.etaSeconds) })}`;
-  }
-
-  if (p.total != null && p.total > 0) {
-    progressBar.max = 100;
-    progressBar.value = (p.bytesDone / p.total) * 100;
-    progressLabel.textContent = `${verb} ${formatSize(p.bytesDone)} / ${formatSize(p.total)}${suffix}`;
-  } else {
-    progressBar.removeAttribute("value");
-    progressLabel.textContent = `${verb} ${formatSize(p.bytesDone)}${suffix}`;
-  }
-}
-
-function hideProgress() {
-  filesProgress.hidden = true;
-  progressBar.value = 0;
-}
-
-function cancelActiveTransfer() {
-  if (typeof activeTransferId === "number") {
-    invoke("sftp_cancel_transfer", { transferId: activeTransferId }).catch(() => {});
-  } else if (activeTransferId === "pending") {
-    pendingCancel = true;
-  }
-}
-
-function formatEta(sec) {
-  if (sec >= 3600) {
-    const h = Math.floor(sec / 3600);
-    const m = Math.floor((sec % 3600) / 60);
-    return `${h}h${String(m).padStart(2, "0")}m`;
-  }
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
+});
+window.addEventListener("resize", () => {
+  if (!filesContextMenu.hidden) hideFilesContextMenu();
+});
 
 // --------------------------------------------------------------------------
 // Boot

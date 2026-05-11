@@ -153,6 +153,7 @@ mod tests {
             auth: HostAuth::Password {
                 value: "hunter2".into(),
             },
+            os_type: None,
             forwards: Vec::new(),
             proxy_jump: None,
         }

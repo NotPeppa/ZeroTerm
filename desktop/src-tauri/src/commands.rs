@@ -166,6 +166,7 @@ pub struct HostSummary {
     pub port: u16,
     pub user: String,
     pub auth_type: &'static str,
+    pub os_type: Option<String>,
 }
 
 #[tauri::command]
@@ -186,6 +187,7 @@ pub async fn list_hosts(state: State<'_, AppState>) -> Result<Vec<HostSummary>, 
                 HostAuth::PrivateKey { .. } => "key",
                 HostAuth::Agent => "agent",
             },
+            os_type: h.os_type,
         })
         .collect())
 }
@@ -200,6 +202,8 @@ pub struct HostInput {
     pub port: u16,
     pub user: String,
     pub auth: HostAuthInput,
+    #[serde(default)]
+    pub os_type: Option<String>,
     #[serde(default)]
     pub forwards: Vec<ForwardSpecIO>,
     #[serde(default)]
@@ -239,6 +243,31 @@ pub enum ForwardSpecIO {
 
 fn default_bind_addr() -> String {
     "127.0.0.1".to_string()
+}
+
+fn normalize_os_type(raw: &str) -> Option<String> {
+    let key = raw.trim().to_lowercase().replace('_', "-");
+    if key.is_empty() {
+        return None;
+    }
+    let canonical = match key.as_str() {
+        "ubuntu" => "ubuntu",
+        "debian" => "debian",
+        "centos" => "centos",
+        "redhat" | "rhel" | "red-hat" | "red-hat-enterprise-linux" => "redhat",
+        "fedora" => "fedora",
+        "arch" | "archlinux" => "archlinux",
+        "rocky" | "rockylinux" | "rocky-linux" => "rockylinux",
+        "alma" | "almalinux" | "alma-linux" => "almalinux",
+        "opensuse" | "suse" | "opensuse-leap" | "opensuse-tumbleweed" => "opensuse",
+        "kali" | "kalilinux" | "kali-linux" => "kalilinux",
+        "mint" | "linuxmint" | "linux-mint" => "linuxmint",
+        "windows" | "windows10" | "windows11" | "win" | "win10" | "win11" => "windows",
+        "macos" | "osx" | "darwin" | "mac" => "macos",
+        "linux" => "linux",
+        _ => return None,
+    };
+    Some(canonical.to_string())
 }
 
 impl ForwardSpecIO {
@@ -308,6 +337,7 @@ impl HostInput {
                 },
                 HostAuthInput::Agent => zeroterm_app::HostAuth::Agent,
             },
+            os_type: self.os_type.and_then(|v| normalize_os_type(&v)),
             forwards: self.forwards.into_iter().map(|f| f.into_app()).collect(),
             proxy_jump: self.proxy_jump,
         }
@@ -323,6 +353,7 @@ pub struct HostFull {
     pub port: u16,
     pub user: String,
     pub auth_type: &'static str,
+    pub os_type: Option<String>,
     /// Only populated for `password` auth — keys never leave the vault
     /// over IPC for editing (you can replace the key but not view it).
     pub password: Option<String>,
@@ -352,18 +383,15 @@ pub async fn update_host(
     let app_lock = state.app.lock().unwrap();
     let app = app_lock.as_ref().ok_or("vault is locked")?;
 
-    // Confirm the host exists; the input fully replaces the saved
-    // record (including forwards / proxy_jump, which the editor now
-    // handles).
-    if app
+    let existing = app
         .find_host_by_id(&id)
         .map_err(|e| e.to_string())?
-        .is_none()
-    {
-        return Err(format!("no host with id {id}"));
-    }
+        .ok_or_else(|| format!("no host with id {id}"))?;
 
-    let new_host = input.into_app_host(id);
+    let mut new_host = input.into_app_host(id);
+    if new_host.os_type.is_none() {
+        new_host.os_type = existing.os_type;
+    }
     app.update_host(&new_host).map_err(|e| e.to_string())
 }
 
@@ -407,6 +435,7 @@ pub async fn get_host(state: State<'_, AppState>, id: String) -> Result<HostFull
         port: h.port,
         user: h.user,
         auth_type,
+        os_type: h.os_type,
         password,
         key_passphrase,
         forwards: h.forwards.iter().map(ForwardSpecIO::from_app).collect(),
@@ -471,6 +500,100 @@ fn build_connect_chain_for_host(
     Ok((host, cfg, jump_cfg))
 }
 
+fn parse_os_release_value(raw: &str) -> &str {
+    let v = raw.trim();
+    if v.len() >= 2 {
+        if (v.starts_with('"') && v.ends_with('"')) || (v.starts_with('\'') && v.ends_with('\'')) {
+            return &v[1..v.len() - 1];
+        }
+    }
+    v
+}
+
+fn detect_os_type_from_os_release(content: &str) -> Option<String> {
+    let mut id: Option<String> = None;
+    let mut id_like: Option<String> = None;
+
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((k, v)) = line.split_once('=') else {
+            continue;
+        };
+        let key = k.trim();
+        let value = parse_os_release_value(v).trim();
+        if value.is_empty() {
+            continue;
+        }
+        match key {
+            "ID" => id = Some(value.to_string()),
+            "ID_LIKE" => id_like = Some(value.to_string()),
+            _ => {}
+        }
+    }
+
+    if let Some(ref raw_id) = id {
+        if let Some(os) = normalize_os_type(raw_id) {
+            return Some(os);
+        }
+    }
+
+    if let Some(ref likes) = id_like {
+        for token in likes.split_whitespace() {
+            if let Some(os) = normalize_os_type(token) {
+                return Some(os);
+            }
+        }
+    }
+
+    None
+}
+
+async fn detect_remote_os_type(session: &mut Session) -> Option<String> {
+    let sftp = session.sftp().await.ok()?;
+
+    for path in ["/etc/os-release", "/usr/lib/os-release"] {
+        if let Ok(bytes) = sftp.download_to_vec(path).await {
+            if let Ok(text) = String::from_utf8(bytes) {
+                if let Some(os) = detect_os_type_from_os_release(&text) {
+                    return Some(os);
+                }
+            }
+        }
+    }
+
+    if sftp.stat("/etc/redhat-release").await.is_ok() {
+        return Some("redhat".to_string());
+    }
+    if sftp.stat("/etc/debian_version").await.is_ok() {
+        return Some("debian".to_string());
+    }
+    if sftp.stat("/etc/alpine-release").await.is_ok() {
+        return Some("linux".to_string());
+    }
+
+    None
+}
+
+fn persist_host_os_type(state: &AppState, host_id: &str, os_type: &str) -> Result<(), String> {
+    let app_lock = state.app.lock().unwrap();
+    let app = app_lock.as_ref().ok_or("vault is locked")?;
+
+    let mut host = app
+        .find_host_by_id(host_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("no host with id {host_id}"))?;
+
+    if host.os_type.as_deref() == Some(os_type) {
+        return Ok(());
+    }
+
+    host.os_type = Some(os_type.to_string());
+    app.update_host(&host).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn connect_host(
     state: State<'_, AppState>,
@@ -497,6 +620,24 @@ pub async fn connect_host(
             (None, s)
         }
     };
+
+    // Best effort: discover the remote OS once a connection is up, then
+    // persist it so host cards can render stable system badges.
+    match tokio::time::timeout(Duration::from_secs(3), detect_remote_os_type(&mut session)).await {
+        Ok(Some(detected)) => {
+            if host.os_type.as_deref() != Some(detected.as_str()) {
+                if let Err(e) = persist_host_os_type(&state, &host.id, &detected) {
+                    debug!(host_id = %host.id, error = %e, "persisting detected os_type failed");
+                } else {
+                    info!(host_id = %host.id, os_type = %detected, "detected remote os");
+                }
+            }
+        }
+        Ok(None) => {}
+        Err(_) => {
+            debug!(host_id = %host.id, "remote os detection timed out");
+        }
+    }
 
     // Saved forwards.
     let mut forwards: Vec<zeroterm_ssh::ForwardHandle> = Vec::new();

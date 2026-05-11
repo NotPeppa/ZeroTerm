@@ -20,6 +20,11 @@ pub struct Host {
     pub user: String,
     pub auth: HostAuth,
 
+    /// Canonical OS tag detected from the remote endpoint, for example
+    /// `ubuntu` / `debian` / `windows`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub os_type: Option<String>,
+
     /// Port forwards to start after this session authenticates. Empty
     /// for hosts saved before this field was introduced.
     #[serde(default)]

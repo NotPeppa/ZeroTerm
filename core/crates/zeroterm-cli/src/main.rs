@@ -845,6 +845,7 @@ fn cmd_add(
         port: target.port,
         user: target.user,
         auth,
+        os_type: None,
         forwards: Vec::new(),
         proxy_jump: None,
     };

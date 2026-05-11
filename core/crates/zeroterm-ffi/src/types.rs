@@ -103,6 +103,7 @@ pub(crate) fn host_input_to_host(input: HostInput) -> zeroterm_app::Host {
             }
             HostAuthInput::Agent => zeroterm_app::HostAuth::Agent,
         },
+        os_type: None,
         // FFI doesn't (yet) accept forward / ProxyJump configuration —
         // saved hosts coming from the FFI side are forward-less. Edit
         // via CLI to add them.

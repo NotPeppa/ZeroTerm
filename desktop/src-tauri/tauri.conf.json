@@ -18,6 +18,7 @@
         "minHeight": 480,
         "resizable": true,
         "fullscreen": false,
+        "theme": "Dark",
         "decorations": true
       }
     ],

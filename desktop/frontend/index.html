@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ZeroTerm</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/devicon.min.css" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -37,114 +38,84 @@
       </section>
 
       <section id="view-hosts" class="view" hidden>
-        <div class="workspace">
-          <aside class="sidebar">
-            <div class="brand">ZeroTerm</div>
-            <nav class="nav-links">
-              <button id="nav-hosts" type="button" class="nav-link active">Hosts</button>
-              <button id="nav-keychain" type="button" class="nav-link">Keychain</button>
-              <button id="nav-port-forwarding" type="button" class="nav-link">Port Forwarding</button>
-              <button id="nav-known-hosts" type="button" class="nav-link">Known Hosts</button>
-              <button id="nav-logs" type="button" class="nav-link">Logs</button>
-            </nav>
-            <div class="sidebar-actions">
-              <button id="open-terminals-button" type="button">Terminals</button>
-              <button id="new-window-button" type="button">New Window</button>
-              <button id="settings-button" type="button">Settings</button>
-              <button id="lock-button" type="button">Lock Vault</button>
-            </div>
-          </aside>
+        <div class="app-shell">
+          <header class="workspace-tabbar">
+            <button id="workspace-tab-vaults" type="button" class="workspace-tab active">Vaults</button>
+            <button id="workspace-tab-sftp" type="button" class="workspace-tab">SFTP</button>
+            <div id="term-tab-strip" class="tab-strip workspace-term-strip"></div>
+            <button id="new-window-button" type="button" class="workspace-icon-btn">+</button>
+            <button id="settings-button" type="button" class="workspace-icon-btn">⚙</button>
+            <button id="lock-button" type="button" class="workspace-icon-btn">🔒</button>
+          </header>
 
-          <div class="surface">
-            <header class="surface-topbar">
-              <input id="host-search" class="search" type="text" placeholder="Find a host or ssh user@hostname..." autocomplete="off" />
-              <div class="top-actions">
-                <button id="add-host-button" type="button" class="primary">+ New host</button>
+          <div class="workspace-panels">
+            <section id="panel-vaults" class="workspace-panel">
+              <div class="surface">
+                <header class="surface-topbar">
+                  <input id="host-search" class="search" type="text" placeholder="Find a host or ssh user@hostname..." autocomplete="off" />
+                  <div class="top-actions">
+                    <button id="add-host-button" type="button" class="primary">+ New host</button>
+                  </div>
+                </header>
+
+                <div class="hosts-grid-wrap">
+                  <ul id="hosts-list" class="host-cards"></ul>
+                  <p id="hosts-empty" class="muted" hidden>
+                    No saved hosts yet. Click <strong>+ New host</strong> or add from CLI.
+                  </p>
+                </div>
               </div>
-            </header>
+            </section>
 
-            <div class="hosts-toolbar">
-              <button id="hosts-connect-selected" type="button">Connect Selected</button>
-              <button id="hosts-delete-selected" type="button" class="danger">Delete Selected</button>
-              <span id="hosts-selection-hint" class="muted tiny">0 selected</span>
-            </div>
+            <section id="panel-terminal" class="workspace-panel" hidden>
+              <div id="terminal-workspace" class="terminal-workspace"></div>
+            </section>
 
-            <div class="hosts-grid-wrap">
-              <ul id="hosts-list" class="host-cards"></ul>
-              <p id="hosts-empty" class="muted" hidden>
-                No saved hosts yet. Click <strong>+ New host</strong> or add from CLI.
-              </p>
-            </div>
+            <section id="panel-sftp" class="workspace-panel" hidden>
+              <div class="sftp-split">
+                <article class="sftp-pane">
+                  <header class="sftp-pane-topbar">
+                    <span id="sftp-left-title" class="sftp-pane-title">Left</span>
+                    <select id="sftp-left-host"></select>
+                    <button id="sftp-left-connect" type="button">Connect</button>
+                  </header>
+                  <div class="sftp-pane-toolbar">
+                    <button id="sftp-left-up" type="button">Up</button>
+                    <button id="sftp-left-refresh" type="button">Refresh</button>
+                    <button id="sftp-left-mkdir" type="button">New Folder</button>
+                    <button id="sftp-left-upload" type="button">Upload</button>
+                  </div>
+                  <div id="sftp-left-path" class="tiny muted sftp-path">/</div>
+                  <div id="sftp-left-status" class="tiny muted sftp-status"></div>
+                  <ul id="sftp-left-list" class="files-list"></ul>
+                </article>
+
+                <article class="sftp-pane">
+                  <header class="sftp-pane-topbar">
+                    <span id="sftp-right-title" class="sftp-pane-title">Right</span>
+                    <select id="sftp-right-host"></select>
+                    <button id="sftp-right-connect" type="button">Connect</button>
+                  </header>
+                  <div class="sftp-pane-toolbar">
+                    <button id="sftp-right-up" type="button">Up</button>
+                    <button id="sftp-right-refresh" type="button">Refresh</button>
+                    <button id="sftp-right-mkdir" type="button">New Folder</button>
+                    <button id="sftp-right-upload" type="button">Upload</button>
+                  </div>
+                  <div id="sftp-right-path" class="tiny muted sftp-path">/</div>
+                  <div id="sftp-right-status" class="tiny muted sftp-status"></div>
+                  <ul id="sftp-right-list" class="files-list"></ul>
+                </article>
+              </div>
+              <div id="files-context-menu" class="files-context-menu" hidden>
+                <button id="files-menu-edit" type="button">Edit</button>
+                <button id="files-menu-download" type="button">Download</button>
+                <div class="menu-separator"></div>
+                <button id="files-menu-rename" type="button">Rename</button>
+                <button id="files-menu-delete" type="button" class="danger">Delete</button>
+              </div>
+            </section>
           </div>
-        </div>
-      </section>
-
-      <section id="view-terminal" class="view" hidden>
-        <header class="terminal-topbar">
-          <div id="term-tab-strip" class="tab-strip"></div>
-          <div class="term-actions">
-            <button id="new-tab-button" type="button">+ Tab</button>
-            <button id="split-vertical-button" type="button">Split V</button>
-            <button id="split-horizontal-button" type="button">Split H</button>
-            <button id="close-split-button" type="button">Close Split</button>
-            <button id="disconnect-button" type="button">Disconnect Pane</button>
-            <button id="term-new-window-button" type="button">New Window</button>
-            <button id="back-button" type="button">Hosts</button>
-          </div>
-        </header>
-
-        <div id="terminal-workspace" class="terminal-workspace"></div>
-      </section>
-
-      <section id="view-files" class="view" hidden>
-        <header class="files-topbar">
-          <div class="title-stack">
-            <h2 id="files-title">Files</h2>
-            <span id="files-path" class="muted tiny">/</span>
-          </div>
-          <div class="files-actions">
-            <button id="files-back" type="button">Back</button>
-          </div>
-        </header>
-
-        <div class="files-toolbar">
-          <button id="files-up" type="button" title="Parent directory">Up</button>
-          <button id="files-refresh" type="button">Refresh</button>
-          <button id="files-mkdir" type="button">New Folder</button>
-          <button id="files-upload" type="button">Upload</button>
-          <button id="files-upload-many" type="button">Upload Many</button>
-          <span class="grow"></span>
-          <label class="checkbox slim">
-            <input id="files-select-all" type="checkbox" />
-            <span id="files-select-all-label">Select all</span>
-          </label>
-          <button id="files-download-selected" type="button">Download Selected</button>
-          <button id="files-delete-selected" type="button" class="danger">Delete Selected</button>
-          <span id="files-selection-hint" class="muted tiny">0 selected</span>
-        </div>
-
-        <div id="files-status" class="files-status muted tiny"></div>
-
-        <div id="files-progress" class="files-progress" hidden>
-          <div class="files-progress-row">
-            <span id="progress-label">...</span>
-            <button id="progress-cancel" type="button">Cancel</button>
-          </div>
-          <progress id="progress-bar" value="0" max="100"></progress>
-        </div>
-
-        <div class="files-drop-zone-wrap">
-          <ul id="files-list" class="files-list"></ul>
-          <div id="files-drop-overlay" class="files-drop-overlay" hidden>
-            Drop files to upload to current directory
-          </div>
-        </div>
-        <div id="files-context-menu" class="files-context-menu" hidden>
-          <button id="files-menu-edit" type="button">Edit</button>
-          <button id="files-menu-download" type="button">Download</button>
-          <div class="menu-separator"></div>
-          <button id="files-menu-rename" type="button">Rename</button>
-          <button id="files-menu-delete" type="button" class="danger">Delete</button>
         </div>
       </section>
 
@@ -292,6 +263,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-unicode11@0.8.0/lib/addon-unicode11.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/ace-builds@1.42.0/src-min-noconflict/ace.js"></script>
     <script type="module" src="./main.js"></script>
   </body>
