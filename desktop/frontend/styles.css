@@ -212,56 +212,80 @@ label.checkbox input[type="checkbox"] {
 
 .workspace-tabbar {
   flex: 0 0 auto;
-  height: 54px;
+  height: 46px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-bottom: 1px solid #2a3659;
-  background: linear-gradient(180deg, #141f3a 0%, #111a30 100%);
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid #26385f;
+  background: #111b34;
   min-width: 0;
+}
+
+.platform-macos .workspace-tabbar {
+  padding-left: 88px;
 }
 
 .workspace-tab {
   flex: 0 0 auto;
-  height: 38px;
-  border-radius: 11px;
-  background: #222d4b;
-  border: 1px solid #33456f;
+  height: 34px;
+  border-radius: 10px;
+  background: #1b2948;
+  border: 1px solid #314a79;
   color: #c8d6ff;
-  padding: 0 14px;
+  padding: 0 13px;
+  font-weight: 600;
 }
 
 .workspace-tab.active {
-  background: #2d4678;
-  border-color: #557fcc;
+  background: #2a4f87;
+  border-color: #6293df;
   color: #eef3ff;
+}
+
+.workspace-tab:hover {
+  border-color: #476aa8;
+  background: #223963;
+}
+
+.workspace-tab.active:hover {
+  border-color: #79a8f0;
+  background: #3465a7;
 }
 
 .workspace-term-strip {
   flex: 1 1 0%;
   min-width: 0;
   width: 0;
-  height: 38px;
+  height: 34px;
+  align-items: center;
 }
 
 .workspace-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex: 0 0 auto;
 }
 
 .workspace-icon-btn {
-  width: 38px;
-  height: 38px;
+  width: 34px;
+  height: 34px;
   padding: 0;
-  border-radius: 11px;
+  border-radius: 10px;
+  border: 1px solid #314a79;
+  background: #1b2948;
+  color: #d5e3ff;
   font-size: 14px;
   line-height: 1;
   display: grid;
   place-items: center;
-  flex: 0 0 38px;
+  flex: 0 0 34px;
+}
+
+.workspace-icon-btn:hover {
+  border-color: #476aa8;
+  background: #223963;
 }
 
 .workspace-panels {
@@ -395,40 +419,52 @@ label.checkbox input[type="checkbox"] {
 .tab-strip {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   overflow-x: auto;
-  min-height: 40px;
+  min-height: 34px;
 }
 
 .tab-item {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border: 1px solid #364772;
-  border-radius: 11px;
-  padding: 7px 10px;
-  background: #243255;
+  height: 34px;
+  border: 1px solid #314a79;
+  border-radius: 10px;
+  padding: 0 11px;
+  background: #1b2948;
   cursor: pointer;
   white-space: nowrap;
+  color: #d6e3ff;
 }
 
 .tab-item.active {
-  background: #31508a;
-  border-color: #5d82cc;
+  background: #0f6a51;
+  border-color: #1f9d7a;
+  color: #d5ffef;
 }
 
 .tab-item .close {
   font-size: 11px;
-  color: #c8d5f5;
+  color: #b5c8ef;
+  opacity: 0.9;
+}
+
+.tab-item.active .close {
+  color: #cbffe9;
+}
+
+.tab-item .close:hover {
+  opacity: 1;
 }
 
 .terminal-workspace {
   flex: 1;
   min-height: 0;
   display: grid;
-  gap: 8px;
-  padding: 8px;
-  background: #0b1226;
+  gap: 0;
+  padding: 0;
+  background: #0a1122;
 }
 
 .terminal-workspace.layout-single {
@@ -447,9 +483,9 @@ label.checkbox input[type="checkbox"] {
 }
 
 .term-pane {
-  border: 1px solid #344366;
-  border-radius: 12px;
-  background: #0c1224;
+  border: none;
+  border-radius: 0;
+  background: #0a1223;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -458,8 +494,15 @@ label.checkbox input[type="checkbox"] {
 }
 
 .term-pane.active {
-  border-color: #5a84d5;
-  box-shadow: 0 0 0 1px rgba(93, 132, 213, 0.35);
+  box-shadow: none;
+}
+
+.terminal-workspace.layout-vertical .term-pane + .term-pane {
+  border-left: 1px solid #263658;
+}
+
+.terminal-workspace.layout-horizontal .term-pane + .term-pane {
+  border-top: 1px solid #263658;
 }
 
 .pane-header {
@@ -468,8 +511,8 @@ label.checkbox input[type="checkbox"] {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  background: #1a2744;
-  border-bottom: 1px solid #2d3d62;
+  background: #17233d;
+  border-bottom: 1px solid #263658;
   padding: 7px 10px;
 }
 
@@ -573,6 +616,10 @@ label.checkbox input[type="checkbox"] {
   min-width: 0;
 }
 
+.sftp-pane.sftp-pane-empty .sftp-pane-nav-row {
+  display: none;
+}
+
 .sftp-pane-head-row {
   min-width: 0;
   display: flex;
@@ -588,9 +635,9 @@ label.checkbox input[type="checkbox"] {
 }
 
 .sftp-host-selector {
-  min-width: 84px;
-  max-width: 140px;
-  flex: 0 1 126px;
+  min-width: 74px;
+  max-width: 132px;
+  flex: 0 1 118px;
   height: 30px;
   padding: 0 4px 0 0;
   border: none;
@@ -598,22 +645,13 @@ label.checkbox input[type="checkbox"] {
   background: transparent;
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 5px;
   overflow: hidden;
   cursor: pointer;
 }
 
 .sftp-host-selector:hover {
   background: transparent;
-}
-
-.sftp-host-dot {
-  width: 20px;
-  height: 20px;
-  border-radius: 10px;
-  background: radial-gradient(circle at 32% 28%, #ff6eb6 0%, #e30b79 58%, #7e1f58 100%);
-  box-shadow: 0 0 0 1px rgba(255, 91, 173, 0.35);
-  flex: 0 0 auto;
 }
 
 .sftp-host-select {
@@ -740,18 +778,21 @@ label.checkbox input[type="checkbox"] {
   color: #f2f6ff;
 }
 
-.sftp-inline-filter-input {
+.sftp-inline-filter-input[type="text"] {
   width: 0;
   min-width: 0;
   opacity: 0;
   border: none;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
   outline: none;
   background: transparent;
   color: #eaf2ff;
   font-size: 13px;
-  padding: 0;
+  padding: 0 0 2px;
   transition: width 180ms ease, opacity 120ms ease;
   pointer-events: none;
+  box-shadow: none;
 }
 
 .sftp-inline-filter-input::placeholder {
@@ -764,6 +805,14 @@ label.checkbox input[type="checkbox"] {
   width: 130px;
   opacity: 1;
   pointer-events: auto;
+  border-bottom-color: #4b6598;
+}
+
+.sftp-inline-filter-input[type="text"]:focus {
+  border: none;
+  border-bottom: 1px solid #7aa9ff;
+  outline: none;
+  box-shadow: none;
 }
 
 .sftp-host-select option {
@@ -907,12 +956,72 @@ label.checkbox input[type="checkbox"] {
   padding: 4px 10px 6px;
 }
 
+.sftp-empty-state {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 28px 24px;
+  text-align: center;
+}
+
+.sftp-empty-icon {
+  width: 60px;
+  height: 60px;
+  border-radius: 16px;
+  background: rgba(93, 122, 186, 0.2);
+  border: 1px solid rgba(122, 157, 230, 0.28);
+  box-shadow: inset 0 1px 0 rgba(198, 220, 255, 0.1);
+  display: grid;
+  place-items: center;
+  font-size: 28px;
+}
+
+.sftp-empty-title {
+  margin: 0;
+  color: #eef4ff;
+  font-size: 30px;
+  font-weight: 760;
+  letter-spacing: 0.01em;
+}
+
+.sftp-empty-desc {
+  margin: 0;
+  max-width: 340px;
+  color: #8fa1c5;
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+.sftp-empty-btn {
+  min-width: 132px;
+  height: 36px;
+  border-radius: 12px;
+  border: 1px solid #3d507b;
+  background: #2b3858;
+  color: #ecf3ff;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.sftp-empty-btn:hover {
+  border-color: #5772a8;
+  background: #33456c;
+}
+
 .sftp-pane .files-list {
   flex: 1;
   min-height: 0;
   scrollbar-gutter: stable;
   scrollbar-width: thin;
   scrollbar-color: #4d6fa7 #111a2d;
+}
+
+.sftp-pane.sftp-drop-target .files-list {
+  background: linear-gradient(180deg, rgba(90, 132, 214, 0.08) 0%, rgba(90, 132, 214, 0.02) 100%);
 }
 
 .sftp-pane .files-list::-webkit-scrollbar {
@@ -963,6 +1072,11 @@ label.checkbox input[type="checkbox"] {
 
 .file-row.sftp-row {
   grid-template-columns: 20px 1fr 100px;
+}
+
+.file-row.sftp-row.drop-target {
+  background: #2b416d;
+  box-shadow: inset 0 0 0 1px #5e8ee3;
 }
 
 .file-row:hover {

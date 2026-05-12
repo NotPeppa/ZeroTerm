@@ -39,14 +39,14 @@
 
       <section id="view-hosts" class="view" hidden>
         <div class="app-shell">
-          <header class="workspace-tabbar">
-            <button id="workspace-tab-vaults" type="button" class="workspace-tab active">Vaults</button>
-            <button id="workspace-tab-sftp" type="button" class="workspace-tab">SFTP</button>
-            <div id="term-tab-strip" class="tab-strip workspace-term-strip"></div>
+          <header id="workspace-titlebar" class="workspace-tabbar" data-tauri-drag-region>
+            <button id="workspace-tab-vaults" type="button" class="workspace-tab active" data-tauri-drag-region="false">Vaults</button>
+            <button id="workspace-tab-sftp" type="button" class="workspace-tab" data-tauri-drag-region="false">SFTP</button>
+            <div id="term-tab-strip" class="tab-strip workspace-term-strip" data-tauri-drag-region></div>
             <div class="workspace-actions">
-              <button id="new-window-button" type="button" class="workspace-icon-btn">+</button>
-              <button id="settings-button" type="button" class="workspace-icon-btn">⚙</button>
-              <button id="lock-button" type="button" class="workspace-icon-btn">🔒</button>
+              <button id="new-window-button" type="button" class="workspace-icon-btn" data-tauri-drag-region="false">+</button>
+              <button id="settings-button" type="button" class="workspace-icon-btn" data-tauri-drag-region="false">⚙</button>
+              <button id="lock-button" type="button" class="workspace-icon-btn" data-tauri-drag-region="false">🔒</button>
             </div>
           </header>
 
@@ -75,11 +75,10 @@
 
             <section id="panel-sftp" class="workspace-panel" hidden>
               <div class="sftp-split">
-                <article class="sftp-pane">
+                <article id="sftp-left-pane" class="sftp-pane">
                   <header class="sftp-pane-topbar">
                     <div class="sftp-pane-head-row">
                       <label class="sftp-host-selector">
-                        <span class="sftp-host-dot" aria-hidden="true"></span>
                         <select id="sftp-left-host" class="sftp-host-select"></select>
                         <span class="sftp-host-caret" aria-hidden="true">▾</span>
                       </label>
@@ -117,11 +116,10 @@
                   <ul id="sftp-left-list" class="files-list"></ul>
                 </article>
 
-                <article class="sftp-pane">
+                <article id="sftp-right-pane" class="sftp-pane">
                   <header class="sftp-pane-topbar">
                     <div class="sftp-pane-head-row">
                       <label class="sftp-host-selector">
-                        <span class="sftp-host-dot" aria-hidden="true"></span>
                         <select id="sftp-right-host" class="sftp-host-select"></select>
                         <span class="sftp-host-caret" aria-hidden="true">▾</span>
                       </label>
@@ -157,6 +155,14 @@
                   </header>
                   <div id="sftp-right-status" class="tiny muted sftp-status"></div>
                   <ul id="sftp-right-list" class="files-list"></ul>
+                  <div id="sftp-right-empty" class="sftp-empty-state" hidden>
+                    <div class="sftp-empty-icon" aria-hidden="true">🗂</div>
+                    <h3 id="sftp-right-empty-title" class="sftp-empty-title">Connect to host</h3>
+                    <p id="sftp-right-empty-desc" class="sftp-empty-desc">
+                      Start by connecting to a saved host to manage your files with SFTP.
+                    </p>
+                    <button id="sftp-right-empty-select" type="button" class="sftp-empty-btn">Select host</button>
+                  </div>
                 </article>
               </div>
               <div id="files-context-menu" class="files-context-menu" hidden>

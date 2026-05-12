@@ -9,6 +9,10 @@
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
@@ -836,6 +840,466 @@ fn kind_str(k: FileKind) -> &'static str {
         FileKind::Dir => "dir",
         FileKind::Symlink => "symlink",
         FileKind::Other => "other",
+    }
+}
+
+fn local_home_dir() -> Result<PathBuf, String> {
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(home) = std::env::var_os("USERPROFILE") {
+            return Ok(PathBuf::from(home));
+        }
+        let drive = std::env::var_os("HOMEDRIVE");
+        let path = std::env::var_os("HOMEPATH");
+        if let (Some(d), Some(p)) = (drive, path) {
+            let mut pb = PathBuf::from(d);
+            pb.push(p);
+            return Ok(pb);
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        if let Some(home) = std::env::var_os("HOME") {
+            return Ok(PathBuf::from(home));
+        }
+    }
+    std::env::current_dir().map_err(|e| format!("cannot resolve local home directory: {e}"))
+}
+
+fn local_kind_str(ft: &fs::FileType) -> &'static str {
+    if ft.is_dir() {
+        "dir"
+    } else if ft.is_file() {
+        "file"
+    } else if ft.is_symlink() {
+        "symlink"
+    } else {
+        "other"
+    }
+}
+
+#[tauri::command]
+pub async fn local_home_path() -> Result<String, String> {
+    let home = local_home_dir()?;
+    Ok(home.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn local_list(path: String) -> Result<Vec<DirEntryDto>, String> {
+    let pb = PathBuf::from(&path);
+    let mut out = Vec::new();
+    let rd = fs::read_dir(&pb).map_err(|e| format!("read_dir {}: {e}", pb.display()))?;
+
+    for item in rd {
+        let entry = item.map_err(|e| format!("read_dir entry {}: {e}", pb.display()))?;
+        let name = entry.file_name().to_string_lossy().to_string();
+        let full = entry.path();
+        let meta = fs::symlink_metadata(&full)
+            .map_err(|e| format!("symlink_metadata {}: {e}", full.display()))?;
+        let ft = meta.file_type();
+        let kind = local_kind_str(&ft);
+        let size = if ft.is_file() { meta.len() } else { 0 };
+        out.push(DirEntryDto { name, kind, size });
+    }
+
+    out.sort_by(|a, b| {
+        let order = |k: &str| if k == "dir" { 0 } else { 1 };
+        order(a.kind).cmp(&order(b.kind)).then_with(|| a.name.cmp(&b.name))
+    });
+    Ok(out)
+}
+
+#[tauri::command]
+pub async fn local_mkdir(path: String) -> Result<(), String> {
+    fs::create_dir(&path).map_err(|e| format!("mkdir {}: {e}", path))
+}
+
+#[tauri::command]
+pub async fn local_remove(path: String) -> Result<(), String> {
+    fs::remove_file(&path).map_err(|e| format!("remove file {}: {e}", path))
+}
+
+#[tauri::command]
+pub async fn local_remove_dir(path: String) -> Result<(), String> {
+    fs::remove_dir_all(&path).map_err(|e| format!("remove dir {}: {e}", path))
+}
+
+#[tauri::command]
+pub async fn local_rename(from: String, to: String) -> Result<(), String> {
+    fs::rename(&from, &to).map_err(|e| format!("rename {} -> {}: {e}", from, to))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CopyNodeKind {
+    File,
+    Dir,
+}
+
+fn remote_join_path(base: &str, leaf: &str) -> String {
+    if base.ends_with('/') {
+        format!("{base}{leaf}")
+    } else {
+        format!("{base}/{leaf}")
+    }
+}
+
+fn normalize_remote_path(path: &str) -> String {
+    let raw = path.trim();
+    if raw.is_empty() || raw == "/" {
+        return "/".to_string();
+    }
+    let mut out = String::from("/");
+    let mut first = true;
+    for seg in raw.split('/').filter(|s| !s.is_empty() && *s != ".") {
+        if !first {
+            out.push('/');
+        }
+        first = false;
+        out.push_str(seg);
+    }
+    if out.is_empty() { "/".to_string() } else { out }
+}
+
+fn is_remote_path_within(path: &str, parent: &str) -> bool {
+    let n_path = normalize_remote_path(path);
+    let n_parent = normalize_remote_path(parent);
+    if n_parent == "/" {
+        return n_path != "/";
+    }
+    n_path == n_parent || n_path.starts_with(&(n_parent.clone() + "/"))
+}
+
+fn detect_local_kind(path: &Path) -> Result<CopyNodeKind, String> {
+    let meta = fs::symlink_metadata(path)
+        .map_err(|e| format!("symlink_metadata {}: {e}", path.display()))?;
+    let ft = meta.file_type();
+    if ft.is_file() {
+        Ok(CopyNodeKind::File)
+    } else if ft.is_dir() {
+        Ok(CopyNodeKind::Dir)
+    } else if ft.is_symlink() {
+        Err(format!(
+            "symlink is not supported for copy yet: {}",
+            path.display()
+        ))
+    } else {
+        Err(format!("unsupported file type: {}", path.display()))
+    }
+}
+
+fn detect_remote_kind(path: &str, kind: FileKind) -> Result<CopyNodeKind, String> {
+    match kind {
+        FileKind::File => Ok(CopyNodeKind::File),
+        FileKind::Dir => Ok(CopyNodeKind::Dir),
+        FileKind::Symlink => Err(format!("symlink is not supported for copy yet: {path}")),
+        FileKind::Other => Err(format!("unsupported file type: {path}")),
+    }
+}
+
+fn copy_local_tree_to_local(source: &Path, target: &Path, root_kind: CopyNodeKind) -> Result<(), String> {
+    match root_kind {
+        CopyNodeKind::File => {
+            fs::copy(source, target).map_err(|e| {
+                format!("copy file {} -> {}: {e}", source.display(), target.display())
+            })?;
+            Ok(())
+        }
+        CopyNodeKind::Dir => {
+            fs::create_dir(target)
+                .map_err(|e| format!("mkdir {}: {e}", target.display()))?;
+
+            let mut stack: Vec<(PathBuf, PathBuf)> = vec![(source.to_path_buf(), target.to_path_buf())];
+            while let Some((src_dir, dst_dir)) = stack.pop() {
+                let rd = fs::read_dir(&src_dir)
+                    .map_err(|e| format!("read_dir {}: {e}", src_dir.display()))?;
+                for item in rd {
+                    let entry = item
+                        .map_err(|e| format!("read_dir entry {}: {e}", src_dir.display()))?;
+                    let name = entry.file_name();
+                    let child_src = entry.path();
+                    let child_dst = dst_dir.join(&name);
+                    let kind = detect_local_kind(&child_src)?;
+                    match kind {
+                        CopyNodeKind::File => {
+                            fs::copy(&child_src, &child_dst).map_err(|e| {
+                                format!(
+                                    "copy file {} -> {}: {e}",
+                                    child_src.display(),
+                                    child_dst.display()
+                                )
+                            })?;
+                        }
+                        CopyNodeKind::Dir => {
+                            fs::create_dir(&child_dst)
+                                .map_err(|e| format!("mkdir {}: {e}", child_dst.display()))?;
+                            stack.push((child_src, child_dst));
+                        }
+                    }
+                }
+            }
+            Ok(())
+        }
+    }
+}
+
+async fn copy_local_tree_to_remote(
+    source: &Path,
+    target_sftp: &zeroterm_ssh::Sftp,
+    target: &str,
+    root_kind: CopyNodeKind,
+) -> Result<(), String> {
+    match root_kind {
+        CopyNodeKind::File => {
+            let data = tokio::fs::read(source)
+                .await
+                .map_err(|e| format!("reading {}: {e}", source.display()))?;
+            target_sftp
+                .upload_from_slice(target, &data)
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        }
+        CopyNodeKind::Dir => {
+            target_sftp
+                .create_dir(target)
+                .await
+                .map_err(|e| e.to_string())?;
+
+            let mut stack: Vec<(PathBuf, String)> = vec![(source.to_path_buf(), target.to_string())];
+            while let Some((src_dir, dst_dir)) = stack.pop() {
+                let rd = fs::read_dir(&src_dir)
+                    .map_err(|e| format!("read_dir {}: {e}", src_dir.display()))?;
+                for item in rd {
+                    let entry = item
+                        .map_err(|e| format!("read_dir entry {}: {e}", src_dir.display()))?;
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    let child_src = entry.path();
+                    let child_dst = remote_join_path(&dst_dir, &name);
+                    let kind = detect_local_kind(&child_src)?;
+                    match kind {
+                        CopyNodeKind::File => {
+                            let data = tokio::fs::read(&child_src).await.map_err(|e| {
+                                format!("reading {}: {e}", child_src.display())
+                            })?;
+                            target_sftp
+                                .upload_from_slice(&child_dst, &data)
+                                .await
+                                .map_err(|e| e.to_string())?;
+                        }
+                        CopyNodeKind::Dir => {
+                            target_sftp
+                                .create_dir(&child_dst)
+                                .await
+                                .map_err(|e| e.to_string())?;
+                            stack.push((child_src, child_dst));
+                        }
+                    }
+                }
+            }
+            Ok(())
+        }
+    }
+}
+
+async fn copy_remote_tree_to_local(
+    source_sftp: &zeroterm_ssh::Sftp,
+    source: &str,
+    target: &Path,
+    root_kind: CopyNodeKind,
+) -> Result<(), String> {
+    match root_kind {
+        CopyNodeKind::File => {
+            let bytes = source_sftp
+                .download_to_vec(source)
+                .await
+                .map_err(|e| e.to_string())?;
+            tokio::fs::write(target, &bytes)
+                .await
+                .map_err(|e| format!("writing {}: {e}", target.display()))?;
+            Ok(())
+        }
+        CopyNodeKind::Dir => {
+            tokio::fs::create_dir(target)
+                .await
+                .map_err(|e| format!("mkdir {}: {e}", target.display()))?;
+            let mut stack: Vec<(String, PathBuf)> =
+                vec![(source.to_string(), target.to_path_buf())];
+            while let Some((src_dir, dst_dir)) = stack.pop() {
+                let entries = source_sftp
+                    .list(&src_dir)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                for entry in entries {
+                    if entry.name == "." || entry.name == ".." {
+                        continue;
+                    }
+                    let child_src = remote_join_path(&src_dir, &entry.name);
+                    let child_dst = dst_dir.join(&entry.name);
+                    let kind = detect_remote_kind(&child_src, entry.kind)?;
+                    match kind {
+                        CopyNodeKind::File => {
+                            let bytes = source_sftp
+                                .download_to_vec(&child_src)
+                                .await
+                                .map_err(|e| e.to_string())?;
+                            tokio::fs::write(&child_dst, &bytes)
+                                .await
+                                .map_err(|e| format!("writing {}: {e}", child_dst.display()))?;
+                        }
+                        CopyNodeKind::Dir => {
+                            tokio::fs::create_dir(&child_dst)
+                                .await
+                                .map_err(|e| format!("mkdir {}: {e}", child_dst.display()))?;
+                            stack.push((child_src, child_dst));
+                        }
+                    }
+                }
+            }
+            Ok(())
+        }
+    }
+}
+
+async fn copy_remote_tree_to_remote(
+    source_sftp: &zeroterm_ssh::Sftp,
+    source: &str,
+    target_sftp: &zeroterm_ssh::Sftp,
+    target: &str,
+    root_kind: CopyNodeKind,
+) -> Result<(), String> {
+    match root_kind {
+        CopyNodeKind::File => {
+            let data = source_sftp
+                .download_to_vec(source)
+                .await
+                .map_err(|e| e.to_string())?;
+            target_sftp
+                .upload_from_slice(target, &data)
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        }
+        CopyNodeKind::Dir => {
+            target_sftp
+                .create_dir(target)
+                .await
+                .map_err(|e| e.to_string())?;
+            let mut stack: Vec<(String, String)> = vec![(source.to_string(), target.to_string())];
+            while let Some((src_dir, dst_dir)) = stack.pop() {
+                let entries = source_sftp
+                    .list(&src_dir)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                for entry in entries {
+                    if entry.name == "." || entry.name == ".." {
+                        continue;
+                    }
+                    let child_src = remote_join_path(&src_dir, &entry.name);
+                    let child_dst = remote_join_path(&dst_dir, &entry.name);
+                    let kind = detect_remote_kind(&child_src, entry.kind)?;
+                    match kind {
+                        CopyNodeKind::File => {
+                            let data = source_sftp
+                                .download_to_vec(&child_src)
+                                .await
+                                .map_err(|e| e.to_string())?;
+                            target_sftp
+                                .upload_from_slice(&child_dst, &data)
+                                .await
+                                .map_err(|e| e.to_string())?;
+                        }
+                        CopyNodeKind::Dir => {
+                            target_sftp
+                                .create_dir(&child_dst)
+                                .await
+                                .map_err(|e| e.to_string())?;
+                            stack.push((child_src, child_dst));
+                        }
+                    }
+                }
+            }
+            Ok(())
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn sftp_copy_entry_between_panes(
+    state: State<'_, AppState>,
+    source_sftp_id: Option<u64>,
+    source_path: String,
+    destination_sftp_id: Option<u64>,
+    destination_dir: String,
+) -> Result<(), String> {
+    let source_name = Path::new(&source_path)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| format!("invalid source path: {source_path}"))?
+        .to_string();
+
+    if source_name == "." || source_name == ".." {
+        return Err("cannot copy pseudo entry".to_string());
+    }
+
+    match (source_sftp_id, destination_sftp_id) {
+        (None, None) => {
+            let src = PathBuf::from(&source_path);
+            let dst_dir = PathBuf::from(&destination_dir);
+            let dst = dst_dir.join(&source_name);
+
+            let root_kind = detect_local_kind(&src)?;
+            if root_kind == CopyNodeKind::Dir && dst.starts_with(&src) {
+                return Err("cannot copy a directory into itself".to_string());
+            }
+            if fs::symlink_metadata(&dst).is_ok() {
+                return Err(format!("destination already exists: {}", dst.display()));
+            }
+            copy_local_tree_to_local(&src, &dst, root_kind)
+        }
+        (None, Some(dst_id)) => {
+            let src = PathBuf::from(&source_path);
+            let dst_sftp = lookup_sftp(&state, dst_id)?;
+            let dst = remote_join_path(&destination_dir, &source_name);
+            if dst_sftp.stat(&dst).await.is_ok() {
+                return Err(format!("destination already exists: {dst}"));
+            }
+            let root_kind = detect_local_kind(&src)?;
+            copy_local_tree_to_remote(&src, &dst_sftp, &dst, root_kind).await
+        }
+        (Some(src_id), None) => {
+            let src_sftp = lookup_sftp(&state, src_id)?;
+            let dst_dir = PathBuf::from(&destination_dir);
+            let dst = dst_dir.join(&source_name);
+            if fs::symlink_metadata(&dst).is_ok() {
+                return Err(format!("destination already exists: {}", dst.display()));
+            }
+            let meta = src_sftp
+                .stat(&source_path)
+                .await
+                .map_err(|e| e.to_string())?;
+            let root_kind = detect_remote_kind(&source_path, meta.kind)?;
+            copy_remote_tree_to_local(&src_sftp, &source_path, &dst, root_kind).await
+        }
+        (Some(src_id), Some(dst_id)) => {
+            let src_sftp = lookup_sftp(&state, src_id)?;
+            let dst_sftp = lookup_sftp(&state, dst_id)?;
+            let dst = remote_join_path(&destination_dir, &source_name);
+
+            let meta = src_sftp
+                .stat(&source_path)
+                .await
+                .map_err(|e| e.to_string())?;
+            let root_kind = detect_remote_kind(&source_path, meta.kind)?;
+
+            if root_kind == CopyNodeKind::Dir && src_id == dst_id && is_remote_path_within(&dst, &source_path) {
+                return Err("cannot copy a directory into itself".to_string());
+            }
+            if dst_sftp.stat(&dst).await.is_ok() {
+                return Err(format!("destination already exists: {dst}"));
+            }
+            copy_remote_tree_to_remote(&src_sftp, &source_path, &dst_sftp, &dst, root_kind).await
+        }
     }
 }
 

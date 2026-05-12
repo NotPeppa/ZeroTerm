@@ -17,7 +17,7 @@ zeroterm-ssh   = { path = "../../core/crates/zeroterm-ssh" }
 zeroterm-vault = { path = "../../core/crates/zeroterm-vault" }
 zeroterm-app   = { path = "../../core/crates/zeroterm-app" }
 
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["macos-private-api"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 

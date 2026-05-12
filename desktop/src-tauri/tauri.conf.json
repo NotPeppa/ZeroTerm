@@ -8,6 +8,7 @@
   },
   "app": {
     "withGlobalTauri": true,
+    "macOSPrivateApi": true,
     "windows": [
       {
         "label": "main",
@@ -20,7 +21,12 @@
         "fullscreen": false,
         "theme": "Dark",
         "decorations": true,
-        "titleBarStyle": "Transparent",
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": {
+          "x": 14,
+          "y": 24
+        },
         "backgroundColor": "#0B1326"
       }
     ],

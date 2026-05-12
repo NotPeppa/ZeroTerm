@@ -39,6 +39,12 @@ pub fn run() {
             commands::disconnect_session,
             commands::session_info,
             commands::respond_host_key,
+            commands::local_home_path,
+            commands::local_list,
+            commands::local_mkdir,
+            commands::local_remove,
+            commands::local_remove_dir,
+            commands::local_rename,
             commands::sftp_open,
             commands::sftp_close,
             commands::sftp_list,
@@ -51,6 +57,7 @@ pub fn run() {
             commands::sftp_remove_dir,
             commands::sftp_rename,
             commands::sftp_mkdir,
+            commands::sftp_copy_entry_between_panes,
             commands::sftp_cancel_transfer,
         ])
         .run(tauri::generate_context!())
