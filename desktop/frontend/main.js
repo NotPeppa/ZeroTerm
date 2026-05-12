@@ -677,7 +677,7 @@ function setLocale(locale) {
   applyI18n();
 }
 
-const FILE_EDITOR_MAX_BYTES = 2 * 1024 * 1024;
+const FILE_EDITOR_MAX_BYTES = 5 * 1024 * 1024;
 
 const EDITABLE_TEXT_EXTS = new Set([
   "txt", "log", "md", "markdown", "json", "jsonc", "yaml", "yml", "toml",
@@ -2988,7 +2988,7 @@ function showFilesContextMenu(pane, entry, x, y) {
   filesMenuHidden.disabled = !connected;
   filesMenuPermissions.disabled = true;
   filesMenuSelectAll.disabled = !(connected && getVisibleEntriesForPane(pane).length > 0);
-  filesMenuEdit.disabled = !(connected && !local && canInlineEdit);
+  filesMenuEdit.disabled = !(connected && canInlineEdit);
   filesMenuDownload.disabled = !(connected && !local && isFile);
   filesMenuClose.disabled = false;
   filesMenuHidden.textContent = pane.showHidden ? t("files.menu.hide_hidden") : t("files.menu.show_hidden");
@@ -3344,7 +3344,7 @@ async function openRemoteEditor(pane, entry) {
     alert(t("editor.alert.unsupported"));
     return;
   }
-  if (pane.sftpId === null) return;
+  if (!isPaneConnected(pane)) return;
   if (!ensureFileEditorAce()) {
     alert(t("editor.alert.component_failed"));
     return;
@@ -3355,7 +3355,7 @@ async function openRemoteEditor(pane, entry) {
   }
 
   resetFileEditorState();
-  const path = joinPath(pane.path, entry.name);
+  const path = joinPanePath(pane, entry.name);
   fileEditorOverlay.hidden = false;
   fileEditorTitle.textContent = t("editor.hint.opening");
   fileEditorPath.textContent = path;
@@ -3365,11 +3365,18 @@ async function openRemoteEditor(pane, entry) {
   refreshFileEditorLayout();
 
   try {
-    const doc = await invoke("sftp_read_text", {
-      sftpId: pane.sftpId,
-      path,
-      maxBytes: FILE_EDITOR_MAX_BYTES,
-    });
+    const readCommand = isLocalPane(pane) ? "local_read_text" : "sftp_read_text";
+    const readArgs = isLocalPane(pane)
+      ? {
+        path,
+        maxBytes: FILE_EDITOR_MAX_BYTES,
+      }
+      : {
+        sftpId: pane.sftpId,
+        path,
+        maxBytes: FILE_EDITOR_MAX_BYTES,
+      };
+    const doc = await invoke(readCommand, readArgs);
     fileEditorState.open = true;
     fileEditorState.paneKey = pane.key;
     fileEditorState.path = doc.path;
@@ -3408,7 +3415,7 @@ function closeRemoteEditor({ force = false } = {}) {
 async function saveRemoteEditor() {
   if (!fileEditorState.open || fileEditorState.saving || !fileEditorState.paneKey) return;
   const pane = getSftpPane(fileEditorState.paneKey);
-  if (pane.sftpId === null) return;
+  if (!pane || !isPaneConnected(pane)) return;
 
   const content = fileEditorGetValue();
   fileEditorState.saving = true;
@@ -3417,11 +3424,18 @@ async function saveRemoteEditor() {
   setFileEditorError("");
 
   try {
-    const bytes = await invoke("sftp_write_text", {
-      sftpId: pane.sftpId,
-      path: fileEditorState.path,
-      content,
-    });
+    const writeCommand = isLocalPane(pane) ? "local_write_text" : "sftp_write_text";
+    const writeArgs = isLocalPane(pane)
+      ? {
+        path: fileEditorState.path,
+        content,
+      }
+      : {
+        sftpId: pane.sftpId,
+        path: fileEditorState.path,
+        content,
+      };
+    const bytes = await invoke(writeCommand, writeArgs);
     fileEditorState.originalContent = content;
     setFileEditorDirty(false);
     fileEditorHint.textContent = t("editor.hint.saved", { size: formatSize(bytes) });
@@ -3606,10 +3620,8 @@ async function openSftpEntry(pane, entry, { forceEditor = false } = {}) {
     await navigateSftpPane(pane, joinPath(pane.path, entry.name));
     return;
   }
-  if (isLocalPane(pane)) {
-    return;
-  }
   if (entry.kind !== "file") return;
+  const local = isLocalPane(pane);
   if (forceEditor || canInlineEditEntry(entry)) {
     if (!canInlineEditEntry(entry)) {
       alert(t("editor.alert.unsupported"));
@@ -3618,6 +3630,7 @@ async function openSftpEntry(pane, entry, { forceEditor = false } = {}) {
     await openRemoteEditor(pane, entry);
     return;
   }
+  if (local) return;
   await sftpDownloadFile(pane, entry);
 }
 

@@ -33,6 +33,8 @@ pub fn run() {
             commands::delete_host,
             commands::get_host,
             commands::read_local_text_file,
+            commands::local_read_text,
+            commands::local_write_text,
             commands::connect_host,
             commands::send_input,
             commands::resize_session,

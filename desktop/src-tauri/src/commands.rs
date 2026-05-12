@@ -415,6 +415,68 @@ pub async fn read_local_text_file(path: String) -> Result<String, String> {
     std::fs::read_to_string(&path).map_err(|e| format!("reading {path}: {e}"))
 }
 
+/// Read a local UTF-8 text file for inline editing.
+#[tauri::command]
+pub async fn local_read_text(
+    path: String,
+    max_bytes: Option<u64>,
+) -> Result<RemoteTextFileDto, String> {
+    let max_len = normalize_text_edit_limit(max_bytes);
+    let metadata = tokio::fs::metadata(&path)
+        .await
+        .map_err(|e| format!("stating {path}: {e}"))?;
+    if !metadata.is_file() {
+        return Err(format!("`{path}` is not a regular file"));
+    }
+    if metadata.len() > max_len {
+        return Err(format!(
+            "`{path}` is {} bytes, above editor limit {} bytes",
+            metadata.len(),
+            max_len
+        ));
+    }
+
+    let bytes = tokio::fs::read(&path)
+        .await
+        .map_err(|e| format!("reading {path}: {e}"))?;
+    if bytes.len() as u64 > max_len {
+        return Err(format!(
+            "`{path}` expanded to {} bytes, above editor limit {} bytes",
+            bytes.len(),
+            max_len
+        ));
+    }
+    if bytes.contains(&0) {
+        return Err(format!("`{path}` looks like binary data (contains NUL bytes)"));
+    }
+    let content =
+        String::from_utf8(bytes).map_err(|_| format!("`{path}` is not valid UTF-8 text"))?;
+
+    Ok(RemoteTextFileDto {
+        path,
+        size: metadata.len(),
+        content,
+    })
+}
+
+/// Save UTF-8 text content to a local file path.
+#[tauri::command]
+pub async fn local_write_text(path: String, content: String) -> Result<u64, String> {
+    let bytes = content.into_bytes();
+    let size = bytes.len() as u64;
+    if size > HARD_TEXT_EDIT_MAX_BYTES {
+        return Err(format!(
+            "editor payload is {} bytes, above hard limit {} bytes",
+            size, HARD_TEXT_EDIT_MAX_BYTES
+        ));
+    }
+
+    tokio::fs::write(&path, &bytes)
+        .await
+        .map_err(|e| format!("writing {path}: {e}"))?;
+    Ok(size)
+}
+
 #[tauri::command]
 pub async fn get_host(state: State<'_, AppState>, id: String) -> Result<HostFull, String> {
     let app_lock = state.app.lock().unwrap();
@@ -1303,7 +1365,7 @@ pub async fn sftp_copy_entry_between_panes(
     }
 }
 
-const DEFAULT_TEXT_EDIT_MAX_BYTES: u64 = 2 * 1024 * 1024;
+const DEFAULT_TEXT_EDIT_MAX_BYTES: u64 = 5 * 1024 * 1024;
 const HARD_TEXT_EDIT_MAX_BYTES: u64 = 8 * 1024 * 1024;
 
 fn normalize_text_edit_limit(max_bytes: Option<u64>) -> u64 {
