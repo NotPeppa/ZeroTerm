@@ -1139,6 +1139,16 @@ label.checkbox input[type="checkbox"] {
 
 .file-row.sftp-row {
   grid-template-columns: 20px 1fr 100px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.file-row.sftp-row[draggable="true"] {
+  cursor: grab;
+}
+
+.file-row.sftp-row[draggable="true"]:active {
+  cursor: grabbing;
 }
 
 .file-row.sftp-row.drop-target {

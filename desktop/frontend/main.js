@@ -49,9 +49,145 @@ function parentPath(path) {
   return normalized.slice(0, idx);
 }
 
+function isWindowsLocalPath(path) {
+  const raw = String(path || "");
+  return /^[A-Za-z]:([\\/]|$)/.test(raw) || raw.startsWith("\\\\") || raw.includes("\\");
+}
+
+function extractWindowsDriveRoot(path) {
+  const m = String(path || "").match(/^([A-Za-z]:)(?:[\\/]|$)/);
+  return m ? `${m[1].toUpperCase()}\\` : "";
+}
+
+function normalizeLocalPath(path, styleHint = null) {
+  const raw = String(path || "").trim();
+  if (!raw) return "/";
+
+  const useWindows =
+    styleHint === "windows" ||
+    isWindowsLocalPath(raw) ||
+    (styleHint !== "posix" && /^[A-Za-z]:/.test(raw));
+
+  if (!useWindows) {
+    return normalizeAbsolutePath(raw.startsWith("/") ? raw : `/${raw}`);
+  }
+
+  const cleaned = raw.replace(/\//g, "\\");
+
+  if (cleaned.startsWith("\\\\")) {
+    const tokens = cleaned.split("\\").filter(Boolean);
+    if (tokens.length < 2) return "\\\\";
+    const root = `\\\\${tokens[0]}\\${tokens[1]}`;
+    const stack = [];
+    for (const part of tokens.slice(2)) {
+      if (!part || part === ".") continue;
+      if (part === "..") {
+        if (stack.length > 0) stack.pop();
+        continue;
+      }
+      stack.push(part);
+    }
+    return stack.length > 0 ? `${root}\\${stack.join("\\")}` : root;
+  }
+
+  const driveMatch = cleaned.match(/^([A-Za-z]:)(?:\\(.*)|$)/);
+  if (driveMatch) {
+    const drive = driveMatch[1].toUpperCase();
+    const restRaw = driveMatch[2] || "";
+    const stack = [];
+    for (const part of restRaw.split("\\").filter(Boolean)) {
+      if (!part || part === ".") continue;
+      if (part === "..") {
+        if (stack.length > 0) stack.pop();
+        continue;
+      }
+      stack.push(part);
+    }
+    return stack.length > 0 ? `${drive}\\${stack.join("\\")}` : `${drive}\\`;
+  }
+
+  const stack = [];
+  for (const part of cleaned.split("\\").filter(Boolean)) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      if (stack.length > 0) stack.pop();
+      continue;
+    }
+    stack.push(part);
+  }
+  return `\\${stack.join("\\")}`;
+}
+
 function localJoin(base, leaf) {
-  const sep = base.includes("\\") ? "\\" : "/";
-  return base.replace(/[\\/]+$/, "") + sep + leaf;
+  const rawBase = String(base || "").trim();
+  const rawLeaf = String(leaf || "").replace(/^[\\/]+/, "");
+  if (!rawBase) return rawLeaf;
+  const windowsStyle = isWindowsLocalPath(rawBase);
+  const sep = windowsStyle ? "\\" : "/";
+  const joined = rawBase.replace(/[\\/]+$/, "") + sep + rawLeaf;
+  return normalizeLocalPath(joined, windowsStyle ? "windows" : "posix");
+}
+
+function resolveLocalTargetPath(basePath, rawInput) {
+  const base = normalizeLocalPath(basePath || "/");
+  const raw = String(rawInput || "").trim();
+  if (!raw) return base;
+
+  const windowsBase = isWindowsLocalPath(base);
+  const looksAbsolute =
+    raw.startsWith("/") ||
+    raw.startsWith("\\\\") ||
+    /^[A-Za-z]:([\\/]|$)/.test(raw) ||
+    (windowsBase && raw.startsWith("\\"));
+
+  if (looksAbsolute) {
+    if (windowsBase && (raw === "/" || raw === "\\")) {
+      const driveRoot = extractWindowsDriveRoot(base);
+      return driveRoot || "\\";
+    }
+    if (
+      windowsBase &&
+      raw.startsWith("/") &&
+      !raw.startsWith("//") &&
+      !/^[A-Za-z]:/.test(raw)
+    ) {
+      const driveRoot = extractWindowsDriveRoot(base);
+      if (driveRoot) {
+        return normalizeLocalPath(
+          `${driveRoot}${raw.replace(/^\/+/, "\\")}`,
+          "windows",
+        );
+      }
+    }
+    return normalizeLocalPath(raw, windowsBase ? "windows" : "posix");
+  }
+
+  return normalizeLocalPath(
+    localJoin(base, raw),
+    windowsBase ? "windows" : "posix",
+  );
+}
+
+function localParentPath(path) {
+  const normalized = normalizeLocalPath(path);
+  if (!isWindowsLocalPath(normalized)) return parentPath(normalized);
+
+  if (normalized.startsWith("\\\\")) {
+    const tokens = normalized.split("\\").filter(Boolean);
+    if (tokens.length < 2) return "\\\\";
+    const root = `\\\\${tokens[0]}\\${tokens[1]}`;
+    if (tokens.length <= 2) return root;
+    return `${root}\\${tokens.slice(2, -1).join("\\")}`;
+  }
+
+  const driveRoot = extractWindowsDriveRoot(normalized);
+  const lower = normalized.toLowerCase();
+  if (driveRoot && lower === driveRoot.toLowerCase()) return driveRoot;
+
+  const trimmed = normalized.replace(/[\\/]+$/, "");
+  const idx = trimmed.lastIndexOf("\\");
+  if (idx <= 2) return driveRoot || "\\";
+  return trimmed.slice(0, idx);
 }
 
 function basename(path) {
@@ -2419,6 +2555,7 @@ const sftpDragState = {
   targetPaneKey: null,
   targetDir: null,
 };
+const SFTP_DRAG_MIME = "application/x-zeroterm-sftp-drag";
 
 let filesContextEntry = null;
 let filesContextPaneKey = null;
@@ -2481,12 +2618,41 @@ function beginSftpDrag(pane, entryName, ev) {
 
   if (ev?.dataTransfer) {
     ev.dataTransfer.effectAllowed = "copy";
+    ev.dataTransfer.setData(
+      SFTP_DRAG_MIME,
+      JSON.stringify({ paneKey: pane.key, names }),
+    );
     ev.dataTransfer.setData("text/plain", names.join("\n"));
   }
   return true;
 }
 
-function canAcceptSftpDrag(targetPane) {
+function hydrateSftpDragStateFromEvent(ev) {
+  if (!ev?.dataTransfer) return;
+  if (sftpDragState.sourcePaneKey && sftpDragState.entryNames.length > 0) return;
+  let payload = "";
+  try {
+    payload = ev.dataTransfer.getData(SFTP_DRAG_MIME) || "";
+  } catch (_) {
+    return;
+  }
+  if (!payload) return;
+  try {
+    const parsed = JSON.parse(payload);
+    const paneKey = parsed?.paneKey === "right" ? "right" : parsed?.paneKey === "left" ? "left" : null;
+    const names = Array.isArray(parsed?.names)
+      ? parsed.names.map((n) => String(n || "").trim()).filter(Boolean)
+      : [];
+    if (!paneKey || names.length === 0) return;
+    sftpDragState.sourcePaneKey = paneKey;
+    sftpDragState.entryNames = names;
+  } catch (_) {
+    // ignore malformed payload
+  }
+}
+
+function canAcceptSftpDrag(targetPane, ev = null) {
+  hydrateSftpDragStateFromEvent(ev);
   return (
     Boolean(sftpDragState.sourcePaneKey) &&
     sftpDragState.entryNames.length > 0 &&
@@ -2576,13 +2742,97 @@ function normalizeAbsolutePath(path) {
   return normalized;
 }
 
+function normalizePanePath(pane, path) {
+  if (isLocalPane(pane)) {
+    const styleHint = isWindowsLocalPath(pane.path) ? "windows" : null;
+    return normalizeLocalPath(path, styleHint);
+  }
+  return normalizeAbsolutePath(path);
+}
+
+function samePanePath(pane, a, b) {
+  const left = normalizePanePath(pane, a);
+  const right = normalizePanePath(pane, b);
+  if (isLocalPane(pane) && (isWindowsLocalPath(left) || isWindowsLocalPath(right))) {
+    return left.toLowerCase() === right.toLowerCase();
+  }
+  return left === right;
+}
+
+function paneParentPath(pane, path) {
+  return isLocalPane(pane) ? localParentPath(path) : parentPath(path);
+}
+
 function resolveSftpTargetPath(pane, rawInput) {
+  if (isLocalPane(pane)) {
+    return resolveLocalTargetPath(pane.path, rawInput);
+  }
   const raw = String(rawInput || "").trim();
   if (!raw) return pane.path;
   if (raw.startsWith("/")) {
     return normalizeAbsolutePath(raw);
   }
   return normalizeAbsolutePath(joinPath(pane.path, raw));
+}
+
+function buildLocalBreadcrumbs(path) {
+  const normalized = normalizeLocalPath(path);
+  if (!isWindowsLocalPath(normalized)) {
+    const segments = [{ label: "/", target: "/" }];
+    const parts = normalized.split("/").filter(Boolean);
+    let current = "";
+    for (const part of parts) {
+      current += `/${part}`;
+      segments.push({ label: part, target: current || "/" });
+    }
+    return segments;
+  }
+
+  if (normalized.startsWith("\\\\")) {
+    const tokens = normalized.split("\\").filter(Boolean);
+    if (tokens.length < 2) return [{ label: "\\\\", target: "\\\\" }];
+    const root = `\\\\${tokens[0]}\\${tokens[1]}`;
+    const segments = [{ label: root, target: root }];
+    let current = root;
+    for (const part of tokens.slice(2)) {
+      current = `${current}\\${part}`;
+      segments.push({ label: part, target: current });
+    }
+    return segments;
+  }
+
+  const driveRoot = extractWindowsDriveRoot(normalized);
+  if (driveRoot) {
+    const segments = [{ label: driveRoot, target: driveRoot }];
+    const rest = normalized.slice(driveRoot.length).split("\\").filter(Boolean);
+    let current = driveRoot.replace(/\\$/, "");
+    for (const part of rest) {
+      current = `${current}\\${part}`;
+      segments.push({ label: part, target: current });
+    }
+    return segments;
+  }
+
+  const parts = normalized.split(/[\\/]+/).filter(Boolean);
+  const segments = [];
+  let current = "";
+  for (const part of parts) {
+    current = current ? `${current}\\${part}` : part;
+    segments.push({ label: part, target: current });
+  }
+  return segments;
+}
+
+function buildRemoteBreadcrumbs(path) {
+  const normalized = normalizeAbsolutePath(path);
+  const segments = [{ label: "/", target: "/" }];
+  const parts = normalized.split("/").filter(Boolean);
+  let current = "";
+  for (const part of parts) {
+    current += `/${part}`;
+    segments.push({ label: part, target: current || "/" });
+  }
+  return segments;
 }
 
 function setSftpPathEditMode(pane, editing) {
@@ -2608,36 +2858,26 @@ function renderSftpPathBar(pane) {
   }
 
   pane.breadcrumbsEl.innerHTML = "";
+  const crumbs = isLocalPane(pane)
+    ? buildLocalBreadcrumbs(pane.path)
+    : buildRemoteBreadcrumbs(pane.path);
 
-  const rootBtn = document.createElement("button");
-  rootBtn.type = "button";
-  rootBtn.className = "sftp-crumb-btn" + (pane.path === "/" ? " active" : "");
-  rootBtn.textContent = "/";
-  rootBtn.addEventListener("click", () => {
-    if (!isPaneConnected(pane) || pane.path === "/") return;
-    navigateSftpPane(pane, "/");
-  });
-  pane.breadcrumbsEl.appendChild(rootBtn);
-
-  const parts = pane.path.split("/").filter(Boolean);
-  let current = "";
-  for (let i = 0; i < parts.length; i += 1) {
-    const part = parts[i];
-    current += `/${part}`;
-
-    const sep = document.createElement("span");
-    sep.className = "sftp-crumb-sep";
-    sep.textContent = "›";
-    pane.breadcrumbsEl.appendChild(sep);
+  for (let i = 0; i < crumbs.length; i += 1) {
+    const crumb = crumbs[i];
+    if (i > 0) {
+      const sep = document.createElement("span");
+      sep.className = "sftp-crumb-sep";
+      sep.textContent = "›";
+      pane.breadcrumbsEl.appendChild(sep);
+    }
 
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "sftp-crumb-btn" + (i === parts.length - 1 ? " active" : "");
-    btn.textContent = part;
-    const target = current || "/";
+    btn.className = "sftp-crumb-btn" + (samePanePath(pane, pane.path, crumb.target) ? " active" : "");
+    btn.textContent = crumb.label;
     btn.addEventListener("click", () => {
-      if (!isPaneConnected(pane) || pane.path === target) return;
-      navigateSftpPane(pane, target);
+      if (!isPaneConnected(pane) || samePanePath(pane, pane.path, crumb.target)) return;
+      navigateSftpPane(pane, crumb.target);
     });
     pane.breadcrumbsEl.appendChild(btn);
   }
@@ -2855,7 +3095,7 @@ function renderSftpPane(pane) {
   updateSftpPaneFilterButton(pane);
   const connected = isPaneConnected(pane);
   const showRightEmpty = isRightPaneHostEmpty(pane);
-  pane.upButton.disabled = !connected || pane.path === "/";
+  pane.upButton.disabled = !connected || samePanePath(pane, pane.path, paneParentPath(pane, pane.path));
   pane.forwardButton.disabled = true;
   pane.listEl.innerHTML = "";
 
@@ -2908,7 +3148,13 @@ function renderSftpPane(pane) {
     row.className = `file-row sftp-row${entry.kind === "dir" ? " dir" : ""}${selectedClass}`;
     row.dataset.entryName = entry.name;
     row.dataset.entryKind = entry.kind;
-    row.draggable = entry.name !== ".." && entry.name !== ".";
+    const rowDraggable = entry.name !== ".." && entry.name !== ".";
+    row.draggable = rowDraggable;
+    if (rowDraggable) {
+      row.setAttribute("draggable", "true");
+    } else {
+      row.removeAttribute("draggable");
+    }
     row.addEventListener("click", (ev) => {
       if (ev.metaKey || ev.ctrlKey) {
         toggleEntrySelection(pane, entry.name);
@@ -2932,7 +3178,7 @@ function renderSftpPane(pane) {
       resetSftpDragState();
     });
     row.addEventListener("dragover", (ev) => {
-      if (!canAcceptSftpDrag(pane)) return;
+      if (!canAcceptSftpDrag(pane, ev)) return;
       ev.preventDefault();
       if (ev.dataTransfer) ev.dataTransfer.dropEffect = "copy";
       clearSftpDropVisuals();
@@ -2951,7 +3197,7 @@ function renderSftpPane(pane) {
       }
     });
     row.addEventListener("drop", async (ev) => {
-      if (!canAcceptSftpDrag(pane)) return;
+      if (!canAcceptSftpDrag(pane, ev)) return;
       ev.preventDefault();
       ev.stopPropagation();
       const sourcePane = getSftpPane(sftpDragState.sourcePaneKey);
@@ -2975,7 +3221,7 @@ function renderSftpPane(pane) {
     if (entry.kind === "dir") {
       name.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        navigateSftpPane(pane, joinPath(pane.path, entry.name));
+        navigateSftpPane(pane, joinPanePath(pane, entry.name));
       });
     }
 
@@ -3111,7 +3357,7 @@ async function sftpDownloadFile(pane, entry) {
   try {
     const n = await invoke("sftp_download", {
       sftpId: pane.sftpId,
-      remote: joinPath(pane.path, entry.name),
+      remote: joinPanePath(pane, entry.name),
       local,
     });
     pane.statusEl.textContent = t("files.status.downloaded_one", { name: entry.name, size: formatSize(n) });
@@ -3130,14 +3376,14 @@ async function sftpRenameEntry(pane, entry) {
   try {
     if (isLocalPane(pane)) {
       await invoke("local_rename", {
-        from: joinPath(pane.path, entry.name),
-        to: joinPath(pane.path, next),
+        from: joinPanePath(pane, entry.name),
+        to: joinPanePath(pane, next),
       });
     } else {
       await invoke("sftp_rename", {
         sftpId: pane.sftpId,
-        from: joinPath(pane.path, entry.name),
-        to: joinPath(pane.path, next),
+        from: joinPanePath(pane, entry.name),
+        to: joinPanePath(pane, next),
       });
     }
     await navigateSftpPane(pane, pane.path);
@@ -3147,7 +3393,7 @@ async function sftpRenameEntry(pane, entry) {
 }
 
 async function sftpDeleteEntry(pane, entry) {
-  const target = joinPath(pane.path, entry.name);
+  const target = joinPanePath(pane, entry.name);
   if (!confirm(t("files.confirm.delete_entry", { path: target }))) return;
   try {
     if (isLocalPane(pane)) {
@@ -3172,11 +3418,11 @@ async function sftpMkdir(pane) {
   if (!name) return;
   try {
     if (isLocalPane(pane)) {
-      await invoke("local_mkdir", { path: joinPath(pane.path, name) });
+      await invoke("local_mkdir", { path: joinPanePath(pane, name) });
     } else {
       await invoke("sftp_mkdir", {
         sftpId: pane.sftpId,
-        path: joinPath(pane.path, name),
+        path: joinPanePath(pane, name),
       });
     }
     await navigateSftpPane(pane, pane.path);
@@ -3198,7 +3444,7 @@ async function sftpUpload(pane) {
       const n = await invoke("sftp_upload", {
         sftpId: pane.sftpId,
         local: path,
-        remote: joinPath(pane.path, name),
+        remote: joinPanePath(pane, name),
       });
       pane.statusEl.textContent = t("files.status.uploaded_one", { name, size: formatSize(n) });
     } catch (e) {
@@ -3225,7 +3471,7 @@ async function sftpCopyEntry(pane, entry) {
   if (!rawTargetDir) return;
 
   const targetDir = resolveSftpTargetPath(pane, rawTargetDir);
-  const sourcePath = joinPath(pane.path, entry.name);
+  const sourcePath = joinPanePath(pane, entry.name);
   const targetPath = joinPath(targetDir, entry.name);
 
   try {
@@ -3595,7 +3841,7 @@ for (const pane of Object.values(sftpPanes)) {
 
   pane.upButton.addEventListener("click", async () => {
     if (!isPaneConnected(pane)) return;
-    await navigateSftpPane(pane, parentPath(pane.path));
+    await navigateSftpPane(pane, paneParentPath(pane, pane.path));
   });
 
   pane.forwardButton.addEventListener("click", (ev) => {
@@ -3648,7 +3894,7 @@ for (const pane of Object.values(sftpPanes)) {
     showFilesContextMenu(pane, null, ev.clientX, ev.clientY);
   });
   pane.listEl.addEventListener("dragover", (ev) => {
-    if (!canAcceptSftpDrag(pane)) return;
+    if (!canAcceptSftpDrag(pane, ev)) return;
     ev.preventDefault();
     if (ev.dataTransfer) ev.dataTransfer.dropEffect = "copy";
     const row = ev.target.closest(".sftp-row");
@@ -3659,7 +3905,7 @@ for (const pane of Object.values(sftpPanes)) {
     sftpDragState.targetDir = pane.path;
   });
   pane.listEl.addEventListener("drop", async (ev) => {
-    if (!canAcceptSftpDrag(pane)) return;
+    if (!canAcceptSftpDrag(pane, ev)) return;
     ev.preventDefault();
     const row = ev.target.closest(".sftp-row");
     if (row) return;
@@ -3703,7 +3949,7 @@ function getFilesContextDeleteEntries(pane) {
 async function openSftpEntry(pane, entry, { forceEditor = false } = {}) {
   if (!pane || !isPaneConnected(pane) || !entry) return;
   if (entry.kind === "dir") {
-    await navigateSftpPane(pane, joinPath(pane.path, entry.name));
+    await navigateSftpPane(pane, joinPanePath(pane, entry.name));
     return;
   }
   if (entry.kind !== "file") return;
@@ -3730,7 +3976,7 @@ async function sftpDeleteEntries(pane, entries) {
   if (!confirm(t("files.confirm.delete_selected", { count: entries.length }))) return;
 
   for (const entry of entries) {
-    const target = joinPath(pane.path, entry.name);
+    const target = joinPanePath(pane, entry.name);
     try {
       if (isLocalPane(pane)) {
         const command = entry.kind === "dir" ? "local_remove_dir" : "local_remove";
