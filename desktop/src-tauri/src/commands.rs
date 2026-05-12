@@ -145,16 +145,19 @@ pub async fn forget_keychain() -> Result<(), String> {
 #[tauri::command]
 pub async fn open_new_window(app_handle: AppHandle) -> Result<(), String> {
     let label = format!("window-{}", uuid::Uuid::new_v4());
-    tauri::WebviewWindowBuilder::new(
+    #[allow(unused_mut)]
+    let mut builder = tauri::WebviewWindowBuilder::new(
         &app_handle,
         label,
         tauri::WebviewUrl::App("index.html".into()),
     )
     .title("ZeroTerm")
-    .inner_size(1360.0, 860.0)
-    .build()
-    .map(|_| ())
-    .map_err(|e| e.to_string())
+    .inner_size(1360.0, 860.0);
+    #[cfg(target_os = "windows")]
+    {
+        builder = builder.decorations(false);
+    }
+    builder.build().map(|_| ()).map_err(|e| e.to_string())
 }
 
 // --------------------------------------------------------------------------

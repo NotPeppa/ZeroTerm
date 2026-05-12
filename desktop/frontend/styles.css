@@ -268,6 +268,38 @@ label.checkbox input[type="checkbox"] {
   flex: 0 0 auto;
 }
 
+.window-controls {
+  display: none;
+  align-items: center;
+  gap: 0;
+  margin-left: 8px;
+  flex: 0 0 auto;
+}
+
+.window-control-btn {
+  width: 42px;
+  height: 34px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: #d5e3ff;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+  display: grid;
+  place-items: center;
+}
+
+.window-control-btn:hover {
+  border: none;
+  background: rgba(94, 128, 194, 0.2);
+}
+
+.window-control-btn.danger:hover {
+  background: #c42b1c;
+  color: #ffffff;
+}
+
 .workspace-icon-btn {
   width: 34px;
   height: 34px;
@@ -286,6 +318,14 @@ label.checkbox input[type="checkbox"] {
 .workspace-icon-btn:hover {
   border-color: #476aa8;
   background: #223963;
+}
+
+.platform-windows .workspace-tabbar {
+  padding-right: 0;
+}
+
+.platform-windows .window-controls {
+  display: inline-flex;
 }
 
 .workspace-panels {

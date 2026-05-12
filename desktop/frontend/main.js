@@ -15,7 +15,11 @@ const views = {
 const isMacPlatform =
   /mac/i.test(navigator.userAgentData?.platform || "") ||
   /mac/i.test(navigator.platform || "");
+const isWindowsPlatform =
+  /win/i.test(navigator.userAgentData?.platform || "") ||
+  /win/i.test(navigator.platform || "");
 document.documentElement.classList.toggle("platform-macos", isMacPlatform);
+document.documentElement.classList.toggle("platform-windows", isWindowsPlatform);
 
 function show(name) {
   for (const [key, el] of Object.entries(views)) {
@@ -84,6 +88,9 @@ const I18N = {
     "sidebar.new_window": "New Window",
     "sidebar.settings": "Settings",
     "sidebar.lock": "Lock Vault",
+    "window.minimize": "Minimize",
+    "window.maximize": "Maximize",
+    "window.close": "Close",
     "workspace.tab.vaults": "Vaults",
     "workspace.tab.sftp": "SFTP",
     "sftp.side.left": "Left",
@@ -320,6 +327,9 @@ const I18N = {
     "sidebar.new_window": "新窗口",
     "sidebar.settings": "设置",
     "sidebar.lock": "锁定保险库",
+    "window.minimize": "最小化",
+    "window.maximize": "最大化",
+    "window.close": "关闭",
     "workspace.tab.vaults": "Vaults",
     "workspace.tab.sftp": "SFTP",
     "sftp.side.left": "左侧",
@@ -880,6 +890,10 @@ const settingsOverlay = document.getElementById("settings-overlay");
 const settingsCloseButton = document.getElementById("settings-close-button");
 const settingsLanguageSelect = document.getElementById("settings-language-select");
 const workspaceTitlebar = document.getElementById("workspace-titlebar");
+const windowControls = document.getElementById("window-controls");
+const windowMinimizeButton = document.getElementById("window-minimize");
+const windowMaximizeButton = document.getElementById("window-maximize");
+const windowCloseButton = document.getElementById("window-close");
 const textInputOverlay = document.getElementById("text-input-overlay");
 const textInputTitle = document.getElementById("text-input-title");
 const textInputMessage = document.getElementById("text-input-message");
@@ -908,6 +922,34 @@ if (workspaceTitlebar && appWindow?.startDragging) {
       console.warn("startDragging failed", e);
     });
   });
+}
+
+if (windowControls) {
+  windowControls.hidden = !isWindowsPlatform;
+}
+
+if (isWindowsPlatform && appWindow) {
+  if (windowMinimizeButton) {
+    windowMinimizeButton.addEventListener("click", () => {
+      appWindow.minimize().catch((e) => {
+        console.warn("minimize failed", e);
+      });
+    });
+  }
+  if (windowMaximizeButton) {
+    windowMaximizeButton.addEventListener("click", () => {
+      appWindow.toggleMaximize().catch((e) => {
+        console.warn("toggleMaximize failed", e);
+      });
+    });
+  }
+  if (windowCloseButton) {
+    windowCloseButton.addEventListener("click", () => {
+      appWindow.close().catch((e) => {
+        console.warn("close failed", e);
+      });
+    });
+  }
 }
 
 function closeTextInputDialog(result) {
@@ -992,6 +1034,9 @@ function applyI18n() {
   setAttr("new-window-button", "title", "sidebar.new_window");
   setAttr("settings-button", "title", "sidebar.settings");
   setAttr("lock-button", "title", "sidebar.lock");
+  setAttr("window-minimize", "title", "window.minimize");
+  setAttr("window-maximize", "title", "window.maximize");
+  setAttr("window-close", "title", "window.close");
 
   setPlaceholder("host-search", "hosts.search.placeholder");
   setText("add-host-button", "hosts.new_host");

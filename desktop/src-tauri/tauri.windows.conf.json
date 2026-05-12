@@ -1,0 +1,20 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "ZeroTerm",
+        "width": 1100,
+        "height": 720,
+        "minWidth": 700,
+        "minHeight": 480,
+        "resizable": true,
+        "fullscreen": false,
+        "theme": "Dark",
+        "decorations": false,
+        "backgroundColor": "#0B1326"
+      }
+    ]
+  }
+}
