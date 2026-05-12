@@ -536,7 +536,7 @@ label.checkbox input[type="checkbox"] {
 /* Files view */
 
 #panel-sftp {
-  padding: 10px;
+  padding: 0;
   min-height: 0;
 }
 
@@ -544,7 +544,7 @@ label.checkbox input[type="checkbox"] {
   height: 100%;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: 0;
 }
 
 .sftp-pane {
@@ -552,32 +552,230 @@ label.checkbox input[type="checkbox"] {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border: 1px solid #2f4168;
-  border-radius: 14px;
+  border: none;
+  border-radius: 0;
   background: #161f37;
   overflow: hidden;
 }
 
+.sftp-pane + .sftp-pane {
+  border-left: 1px solid #2a3658;
+}
+
 .sftp-pane-topbar {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: 8px;
   padding: 10px;
   border-bottom: 1px solid #2a3658;
   background: #1b2745;
-}
-
-.sftp-pane-title {
-  flex: 0 0 auto;
-  font-size: 11px;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.sftp-pane-topbar select {
   min-width: 0;
+}
+
+.sftp-pane-head-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sftp-pane-nav-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sftp-host-selector {
+  min-width: 84px;
+  max-width: 140px;
+  flex: 0 1 126px;
+  height: 30px;
+  padding: 0 4px 0 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.sftp-host-selector:hover {
+  background: transparent;
+}
+
+.sftp-host-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 10px;
+  background: radial-gradient(circle at 32% 28%, #ff6eb6 0%, #e30b79 58%, #7e1f58 100%);
+  box-shadow: 0 0 0 1px rgba(255, 91, 173, 0.35);
+  flex: 0 0 auto;
+}
+
+.sftp-host-select {
+  min-width: 0;
+  width: 100%;
   flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  padding: 0;
+  color: #f2f6ff;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.sftp-pane-tools {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 auto;
+}
+
+.sftp-pane-tool-btn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-size: 14px;
+  font-weight: 540;
+  color: #d4e0fa;
+  line-height: 1;
+  height: 24px;
+}
+
+.sftp-pane-tool-btn:hover {
+  border: none;
+  background: transparent;
+  color: #f2f6ff;
+}
+
+.sftp-nav-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+  font-size: 24px;
+  line-height: 1;
+  color: #d4e0fa;
+}
+
+.sftp-nav-btn:hover:not(:disabled) {
+  border: none;
+  background: transparent;
+  color: #ffffff;
+}
+
+.sftp-nav-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.sftp-pane-tool-actions::after {
+  content: " \25BE";
+  font-size: 10px;
+  color: #7e94c3;
+}
+
+.sftp-inline-filter {
+  min-width: 58px;
+  width: 58px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  cursor: text;
+  transition: width 180ms ease;
+}
+
+.sftp-inline-filter:hover,
+.sftp-inline-filter:focus-within {
+  width: 210px;
+}
+
+.sftp-inline-filter.active {
+  width: 210px;
+}
+
+.sftp-inline-filter-icon {
+  flex: 0 0 auto;
+  color: #d4e0fa;
+  font-size: 17px;
+  line-height: 1;
+  transition: transform 180ms ease;
+}
+
+.sftp-inline-filter:hover .sftp-inline-filter-icon,
+.sftp-inline-filter:focus-within .sftp-inline-filter-icon,
+.sftp-inline-filter.active .sftp-inline-filter-icon {
+  transform: translateX(-3px);
+}
+
+.sftp-inline-filter-label {
+  flex: 0 0 auto;
+  color: #d4e0fa;
+  font-size: 14px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.sftp-inline-filter:hover .sftp-inline-filter-label,
+.sftp-inline-filter:focus-within .sftp-inline-filter-label,
+.sftp-inline-filter.active .sftp-inline-filter-label {
+  color: #f2f6ff;
+}
+
+.sftp-inline-filter-input {
+  width: 0;
+  min-width: 0;
+  opacity: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: #eaf2ff;
+  font-size: 13px;
+  padding: 0;
+  transition: width 180ms ease, opacity 120ms ease;
+  pointer-events: none;
+}
+
+.sftp-inline-filter-input::placeholder {
+  color: #8da1cd;
+}
+
+.sftp-inline-filter:hover .sftp-inline-filter-input,
+.sftp-inline-filter:focus-within .sftp-inline-filter-input,
+.sftp-inline-filter.active .sftp-inline-filter-input {
+  width: 130px;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sftp-host-select option {
+  color: #f2f6ff;
+  background: #1b2745;
+}
+
+.sftp-host-caret {
+  color: #7e94c3;
+  font-size: 10px;
+  line-height: 1;
+  pointer-events: none;
 }
 
 .sftp-pathbar {
@@ -591,6 +789,48 @@ label.checkbox input[type="checkbox"] {
   align-items: center;
   padding: 3px 8px;
   cursor: text;
+}
+
+.sftp-pathbar-inline {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  min-height: 28px;
+  background: transparent;
+  border-radius: 10px;
+  padding: 0 2px;
+}
+
+.sftp-pathbar-inline:hover {
+  background: rgba(35, 58, 99, 0.45);
+}
+
+.sftp-pathbar-inline.editing {
+  background: rgba(43, 73, 123, 0.42);
+  box-shadow: none;
+}
+
+.sftp-pathbar-inline .sftp-crumb-btn {
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  padding: 0 1px;
+  color: #c7d7fa;
+}
+
+.sftp-pathbar-inline .sftp-crumb-btn.active {
+  border: none;
+  background: transparent;
+  color: #eef4ff;
+}
+
+.sftp-pathbar-inline .sftp-path-input {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border-radius: 10px;
+  padding: 0 4px;
 }
 
 .sftp-pathbar:hover {
@@ -729,6 +969,10 @@ label.checkbox input[type="checkbox"] {
   background: #1a2642;
 }
 
+.file-row.selected {
+  background: #223257;
+}
+
 .file-row .name {
   white-space: nowrap;
   overflow: hidden;
@@ -764,7 +1008,7 @@ label.checkbox input[type="checkbox"] {
 
 .files-context-menu {
   position: fixed;
-  min-width: 170px;
+  min-width: 220px;
   border: 1px solid #3d4f79;
   border-radius: 10px;
   background: linear-gradient(180deg, #202c4a 0%, #1a2540 100%);
@@ -783,6 +1027,7 @@ label.checkbox input[type="checkbox"] {
   text-align: left;
   padding: 7px 9px;
   font-size: 12px;
+  white-space: nowrap;
 }
 
 .files-context-menu button:hover:not(:disabled) {
@@ -793,6 +1038,15 @@ label.checkbox input[type="checkbox"] {
 .files-context-menu button:disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+.files-context-menu button.danger {
+  color: #ff8ea1;
+}
+
+.files-context-menu button.danger:hover:not(:disabled) {
+  background: #46283a;
+  border-color: #7b3f5a;
 }
 
 .files-context-menu .menu-separator {
@@ -828,6 +1082,21 @@ label.checkbox input[type="checkbox"] {
 
 .dialog.settings-dialog {
   width: min(460px, calc(100vw - 24px));
+}
+
+.dialog.text-input-dialog {
+  width: min(420px, calc(100vw - 24px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dialog.text-input-dialog p {
+  margin-bottom: 0;
+}
+
+.dialog.text-input-dialog input {
+  height: 38px;
 }
 
 .settings-field {
@@ -1026,16 +1295,23 @@ button.small {
 }
 
 @media (max-width: 1100px) {
-  .sftp-split {
-    grid-template-columns: 1fr;
-  }
-
   .host-cards {
     grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
   }
 
   #file-editor-content {
     height: min(52vh, 440px);
+  }
+}
+
+@media (max-width: 980px) {
+  .sftp-split {
+    grid-template-columns: 1fr;
+  }
+
+  .sftp-pane + .sftp-pane {
+    border-left: none;
+    border-top: 1px solid #2a3658;
   }
 }
 

@@ -30,6 +30,15 @@ function joinPath(base, name) {
   return base + "/" + name;
 }
 
+function parentPath(path) {
+  const raw = String(path || "").trim();
+  if (!raw || raw === "/") return "/";
+  const normalized = raw.replace(/\/+$/, "");
+  const idx = normalized.lastIndexOf("/");
+  if (idx <= 0) return "/";
+  return normalized.slice(0, idx);
+}
+
 function localJoin(base, leaf) {
   const sep = base.includes("\\") ? "\\" : "/";
   return base.replace(/[\\/]+$/, "") + sep + leaf;
@@ -59,6 +68,7 @@ const I18N = {
     "unlock.path": "vault: {path}",
     "unlock.error.passwords_mismatch": "passwords do not match",
     "common.error": "error: {error}",
+    "common.ok": "OK",
     "nav.hosts": "Hosts",
     "nav.keychain": "Keychain",
     "nav.port_forwarding": "Port Forwarding",
@@ -75,6 +85,11 @@ const I18N = {
     "sftp.host.placeholder": "Select host...",
     "sftp.button.connect": "Connect",
     "sftp.button.disconnect": "Disconnect",
+    "sftp.button.filter": "Filter",
+    "sftp.button.actions": "Actions",
+    "sftp.filter.title": "Filter",
+    "sftp.filter.prompt": "Filter current pane by file/folder name (empty to clear):",
+    "sftp.filter.placeholder": "e.g. log, conf, docker",
     "sftp.path.placeholder": "Enter path and press Enter (e.g. /var/log)",
     "hosts.search.placeholder": "Find a host or ssh user@hostname...",
     "hosts.new_host": "+ New host",
@@ -175,13 +190,22 @@ const I18N = {
     "files.drop.hint": "Drop files to upload to current directory",
     "files.menu.edit": "Edit",
     "files.menu.download": "Download",
+    "files.menu.open": "Open",
+    "files.menu.open_with": "Open with...",
+    "files.menu.copy_to_target": "Copy to target directory",
     "files.menu.rename": "Rename",
     "files.menu.delete": "Delete",
+    "files.menu.show_hidden": "Show Hidden Files",
+    "files.menu.hide_hidden": "Hide Hidden Files",
+    "files.menu.permissions": "Edit Permissions",
+    "files.menu.select_all": "Select All",
+    "files.menu.close": "Close",
     "files.selection.count": "{count} selected",
     "files.status.connecting": "Connecting...",
     "files.status.listing": "Listing {path}...",
     "files.error.mkdir_failed": "mkdir failed: {error}",
     "files.prompt.new_folder": "New folder name:",
+    "files.prompt.copy_target_dir": "Target directory path:",
     "files.empty": "(empty)",
     "files.error.open_failed": "open failed: {error}",
     "files.error.list_failed": "list failed: {error}",
@@ -200,6 +224,13 @@ const I18N = {
       "Select at least one file (directories are skipped for bulk download).",
     "files.error.download_failed_for": "download failed for {name}: {error}",
     "files.status.downloaded_many_to": "Downloaded {count} file(s) to {folder}.",
+    "files.status.copied_to": "Copied {name} to {path}.",
+    "files.status.hidden_shown": "Showing hidden files.",
+    "files.status.hidden_hidden": "Hidden files are now hidden.",
+    "files.status.selected_all": "Selected {count} item(s).",
+    "files.error.copy_not_supported": "Copy to target directory is not available for this item yet.",
+    "files.error.copy_failed": "copy failed: {error}",
+    "files.error.permissions_not_supported": "Editing permissions is not available yet.",
     "files.progress.uploading": "Uploading",
     "files.progress.downloading": "Downloading",
     "files.progress.eta": "ETA {eta}",
@@ -246,6 +277,10 @@ const I18N = {
     "settings.button.close": "Close",
     "settings.language.zh": "Simplified Chinese",
     "settings.language.en": "English",
+    "input.title": "Input",
+    "input.button.cancel": "Cancel",
+    "input.button.confirm": "OK",
+    "input.placeholder": "Enter value...",
   },
   "zh-CN": {
     "unlock.checking": "正在检查保险库...",
@@ -260,6 +295,7 @@ const I18N = {
     "unlock.path": "保险库：{path}",
     "unlock.error.passwords_mismatch": "两次输入的密码不一致",
     "common.error": "错误：{error}",
+    "common.ok": "确定",
     "nav.hosts": "主机",
     "nav.keychain": "钥匙串",
     "nav.port_forwarding": "端口转发",
@@ -276,6 +312,11 @@ const I18N = {
     "sftp.host.placeholder": "选择主机...",
     "sftp.button.connect": "连接",
     "sftp.button.disconnect": "断开",
+    "sftp.button.filter": "筛选",
+    "sftp.button.actions": "操作",
+    "sftp.filter.title": "筛选",
+    "sftp.filter.prompt": "按文件/目录名称筛选当前窗格（留空可清除）：",
+    "sftp.filter.placeholder": "例如 log、conf、docker",
     "sftp.path.placeholder": "输入路径后按回车跳转（例如 /var/log）",
     "hosts.search.placeholder": "搜索主机或 ssh user@hostname...",
     "hosts.new_host": "+ 新建主机",
@@ -375,13 +416,22 @@ const I18N = {
     "files.drop.hint": "拖拽文件到此处上传到当前目录",
     "files.menu.edit": "编辑",
     "files.menu.download": "下载",
+    "files.menu.open": "打开",
+    "files.menu.open_with": "打开方式...",
+    "files.menu.copy_to_target": "复制到目标目录",
     "files.menu.rename": "重命名",
     "files.menu.delete": "删除",
+    "files.menu.show_hidden": "显示隐藏文件",
+    "files.menu.hide_hidden": "不显示隐藏文件",
+    "files.menu.permissions": "编辑权限",
+    "files.menu.select_all": "全选",
+    "files.menu.close": "关闭",
     "files.selection.count": "已选 {count} 项",
     "files.status.connecting": "连接中...",
     "files.status.listing": "正在列出 {path}...",
     "files.error.mkdir_failed": "创建目录失败：{error}",
     "files.prompt.new_folder": "新文件夹名称：",
+    "files.prompt.copy_target_dir": "目标目录路径：",
     "files.empty": "（空）",
     "files.error.open_failed": "打开失败：{error}",
     "files.error.list_failed": "列表读取失败：{error}",
@@ -399,6 +449,13 @@ const I18N = {
     "files.alert.download_selected_none": "请至少选择一个文件（目录会被跳过）。",
     "files.error.download_failed_for": "下载 {name} 失败：{error}",
     "files.status.downloaded_many_to": "已下载 {count} 个文件到 {folder}。",
+    "files.status.copied_to": "已将 {name} 复制到 {path}。",
+    "files.status.hidden_shown": "已显示隐藏文件。",
+    "files.status.hidden_hidden": "已不显示隐藏文件。",
+    "files.status.selected_all": "已选择 {count} 项。",
+    "files.error.copy_not_supported": "当前项目暂不支持复制到目标目录。",
+    "files.error.copy_failed": "复制失败：{error}",
+    "files.error.permissions_not_supported": "暂不支持编辑权限。",
     "files.progress.uploading": "上传中",
     "files.progress.downloading": "下载中",
     "files.progress.eta": "剩余 {eta}",
@@ -444,6 +501,10 @@ const I18N = {
     "settings.button.close": "关闭",
     "settings.language.zh": "简体中文",
     "settings.language.en": "English",
+    "input.title": "输入",
+    "input.button.cancel": "取消",
+    "input.button.confirm": "确定",
+    "input.placeholder": "请输入内容...",
   },
 };
 
@@ -794,9 +855,45 @@ const settingsButton = document.getElementById("settings-button");
 const settingsOverlay = document.getElementById("settings-overlay");
 const settingsCloseButton = document.getElementById("settings-close-button");
 const settingsLanguageSelect = document.getElementById("settings-language-select");
+const textInputOverlay = document.getElementById("text-input-overlay");
+const textInputTitle = document.getElementById("text-input-title");
+const textInputMessage = document.getElementById("text-input-message");
+const textInputValue = document.getElementById("text-input-value");
+const textInputCancelButton = document.getElementById("text-input-cancel");
+const textInputConfirmButton = document.getElementById("text-input-confirm");
 
 let hostsCache = [];
 let workspaceMode = "vaults";
+let textInputResolver = null;
+
+function closeTextInputDialog(result) {
+  if (!textInputResolver) return;
+  const resolve = textInputResolver;
+  textInputResolver = null;
+  textInputOverlay.hidden = true;
+  textInputValue.value = "";
+  textInputMessage.textContent = "";
+  resolve(result);
+}
+
+function openTextInputDialog({ title, message = "", defaultValue = "", placeholder = "" }) {
+  if (textInputResolver) {
+    closeTextInputDialog(null);
+  }
+
+  return new Promise((resolve) => {
+    textInputResolver = resolve;
+    textInputTitle.textContent = title || t("input.title");
+    textInputMessage.textContent = message;
+    textInputValue.placeholder = placeholder || t("input.placeholder");
+    textInputValue.value = defaultValue;
+    textInputOverlay.hidden = false;
+    requestAnimationFrame(() => {
+      textInputValue.focus();
+      textInputValue.select();
+    });
+  });
+}
 
 async function refreshHostsCacheFromVault({ silent = false } = {}) {
   try {
@@ -855,17 +952,28 @@ function applyI18n() {
   setPlaceholder("host-search", "hosts.search.placeholder");
   setText("add-host-button", "hosts.new_host");
 
-  setText("sftp-left-title", "sftp.side.left");
-  setText("sftp-right-title", "sftp.side.right");
   setPlaceholder("sftp-left-path-input", "sftp.path.placeholder");
   setPlaceholder("sftp-right-path-input", "sftp.path.placeholder");
+  setText("sftp-left-filter-label", "sftp.button.filter");
+  setText("sftp-right-filter-label", "sftp.button.filter");
+  setPlaceholder("sftp-left-filter-input", "sftp.filter.placeholder");
+  setPlaceholder("sftp-right-filter-input", "sftp.filter.placeholder");
+  setText("sftp-left-actions", "sftp.button.actions");
+  setText("sftp-right-actions", "sftp.button.actions");
+  setText("files-menu-open", "files.menu.open");
+  setText("files-menu-open-with", "files.menu.open_with");
+  setText("files-menu-copy", "files.menu.copy_to_target");
   setText("files-menu-refresh", "files.button.refresh");
   setText("files-menu-mkdir", "files.button.new_folder");
   setText("files-menu-upload", "files.button.upload");
+  setText("files-menu-hidden", "files.menu.show_hidden");
+  setText("files-menu-permissions", "files.menu.permissions");
+  setText("files-menu-select-all", "files.menu.select_all");
   setText("files-menu-edit", "files.menu.edit");
   setText("files-menu-download", "files.menu.download");
   setText("files-menu-rename", "files.menu.rename");
   setText("files-menu-delete", "files.menu.delete");
+  setText("files-menu-close", "files.menu.close");
 
   setText("hk-reject", "host_key.reject");
   setText("hk-accept", "host_key.accept");
@@ -908,6 +1016,12 @@ function applyI18n() {
   setOptionText("settings-language-select", "zh-CN", "settings.language.zh");
   setOptionText("settings-language-select", "en", "settings.language.en");
   if (settingsLanguageSelect) settingsLanguageSelect.value = currentLocale;
+  if (textInputOverlay.hidden) {
+    setText("text-input-title", "input.title");
+  }
+  setText("text-input-cancel", "input.button.cancel");
+  setText("text-input-confirm", "input.button.confirm");
+  setPlaceholder("text-input-value", "input.placeholder");
 
   if (!views.hosts.hidden) {
     renderHosts();
@@ -972,6 +1086,26 @@ settingsOverlay.addEventListener("click", (ev) => {
 });
 settingsLanguageSelect.addEventListener("change", () => {
   setLocale(settingsLanguageSelect.value);
+});
+textInputCancelButton.addEventListener("click", () => closeTextInputDialog(null));
+textInputConfirmButton.addEventListener("click", () => {
+  closeTextInputDialog(textInputValue.value.trim());
+});
+textInputOverlay.addEventListener("click", (ev) => {
+  if (ev.target === textInputOverlay) {
+    closeTextInputDialog(null);
+  }
+});
+textInputValue.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape") {
+    ev.preventDefault();
+    closeTextInputDialog(null);
+    return;
+  }
+  if (ev.key === "Enter") {
+    ev.preventDefault();
+    closeTextInputDialog(textInputValue.value.trim());
+  }
 });
 
 newWindowButton.addEventListener("click", () => {
@@ -2074,32 +2208,50 @@ const fileEditorSaveButton = document.getElementById("file-editor-save");
 const fileEditorCancelButton = document.getElementById("file-editor-cancel");
 
 const filesContextMenu = document.getElementById("files-context-menu");
+const filesMenuOpen = document.getElementById("files-menu-open");
+const filesMenuOpenWith = document.getElementById("files-menu-open-with");
+const filesMenuCopy = document.getElementById("files-menu-copy");
+const filesMenuRename = document.getElementById("files-menu-rename");
+const filesMenuDelete = document.getElementById("files-menu-delete");
+const filesMenuEntrySeparator = document.getElementById("files-menu-entry-separator");
 const filesMenuRefresh = document.getElementById("files-menu-refresh");
 const filesMenuMkdir = document.getElementById("files-menu-mkdir");
 const filesMenuUpload = document.getElementById("files-menu-upload");
-const filesMenuPaneSeparator = document.getElementById("files-menu-pane-separator");
+const filesMenuHidden = document.getElementById("files-menu-hidden");
+const filesMenuPermissions = document.getElementById("files-menu-permissions");
+const filesMenuSelectAll = document.getElementById("files-menu-select-all");
 const filesMenuEdit = document.getElementById("files-menu-edit");
 const filesMenuDownload = document.getElementById("files-menu-download");
-const filesMenuEntrySeparator = document.getElementById("files-menu-entry-separator");
-const filesMenuRename = document.getElementById("files-menu-rename");
-const filesMenuDelete = document.getElementById("files-menu-delete");
+const filesMenuCloseSeparator = document.getElementById("files-menu-close-separator");
+const filesMenuClose = document.getElementById("files-menu-close");
 
 function buildSftpPane(key) {
+  const filterInput = document.getElementById(`sftp-${key}-filter-input`);
   return {
     key,
     hostId: "",
     host: null,
+    connectedHostId: null,
     sftpId: null,
     path: "/",
     entries: [],
     hostSelect: document.getElementById(`sftp-${key}-host`),
-    connectButton: document.getElementById(`sftp-${key}-connect`),
+    upButton: document.getElementById(`sftp-${key}-up`),
+    forwardButton: document.getElementById(`sftp-${key}-forward`),
     pathbarEl: document.getElementById(`sftp-${key}-pathbar`),
     breadcrumbsEl: document.getElementById(`sftp-${key}-breadcrumbs`),
     pathInputEl: document.getElementById(`sftp-${key}-path-input`),
+    filterLabel: document.getElementById(`sftp-${key}-filter-label`),
+    filterInput,
+    filterWrap: filterInput ? filterInput.closest(".sftp-inline-filter") : null,
+    actionsButton: document.getElementById(`sftp-${key}-actions`),
     statusEl: document.getElementById(`sftp-${key}-status`),
     listEl: document.getElementById(`sftp-${key}-list`),
     pathEditing: false,
+    filterQuery: "",
+    showHidden: false,
+    selectedEntries: new Set(),
+    autoConnectQueue: Promise.resolve(),
   };
 }
 
@@ -2223,17 +2375,80 @@ function syncSftpHostOptions() {
     for (const host of hostsCache) {
       const opt = document.createElement("option");
       opt.value = host.id;
-      opt.textContent = `${host.name} (${host.user}@${host.host}:${host.port})`;
+      opt.textContent = host.name;
+      opt.title = `${host.user}@${host.host}:${host.port}`;
       pane.hostSelect.appendChild(opt);
     }
     pane.hostSelect.value = selected;
+    if (!pane.hostSelect.value) pane.hostSelect.value = "";
+    const selectedHost = hostsCache.find((h) => h.id === pane.hostSelect.value) || null;
+    pane.hostSelect.title = selectedHost
+      ? `${selectedHost.user}@${selectedHost.host}:${selectedHost.port}`
+      : t("sftp.host.placeholder");
   }
 }
 
 function updateSftpConnectButtons() {
-  for (const pane of Object.values(sftpPanes)) {
-    pane.connectButton.textContent = pane.sftpId ? t("sftp.button.disconnect") : t("sftp.button.connect");
+  // Connection is now auto-managed by host selection.
+}
+
+function updateSftpPaneFilterButton(pane) {
+  if (!pane.filterWrap) return;
+  pane.filterWrap.classList.toggle("active", Boolean(pane.filterQuery));
+  pane.filterWrap.title = pane.filterQuery
+    ? `${t("sftp.button.filter")}: ${pane.filterQuery}`
+    : t("sftp.button.filter");
+  if (pane.filterInput && document.activeElement !== pane.filterInput) {
+    pane.filterInput.value = pane.filterQuery;
   }
+}
+
+function getVisibleEntriesForPane(pane) {
+  const filter = pane.filterQuery.trim().toLowerCase();
+  return pane.entries.filter((entry) => {
+    const name = String(entry.name || "");
+    if (!pane.showHidden && name.startsWith(".") && name !== "..") return false;
+    if (!filter) return true;
+    return name.toLowerCase().includes(filter);
+  });
+}
+
+function normalizePaneSelection(pane) {
+  if (!pane.selectedEntries || !(pane.selectedEntries instanceof Set)) {
+    pane.selectedEntries = new Set();
+    return;
+  }
+  const validNames = new Set(pane.entries.map((entry) => entry.name));
+  for (const name of pane.selectedEntries) {
+    if (!validNames.has(name)) {
+      pane.selectedEntries.delete(name);
+    }
+  }
+}
+
+function selectSingleEntry(pane, entryName) {
+  pane.selectedEntries = new Set([entryName]);
+}
+
+function toggleEntrySelection(pane, entryName) {
+  const next = new Set(pane.selectedEntries);
+  if (next.has(entryName)) {
+    next.delete(entryName);
+  } else {
+    next.add(entryName);
+  }
+  pane.selectedEntries = next;
+}
+
+function getSelectedEntries(pane) {
+  if (!pane.selectedEntries || pane.selectedEntries.size === 0) return [];
+  const selectedNames = pane.selectedEntries;
+  return pane.entries.filter((entry) => selectedNames.has(entry.name));
+}
+
+function getPrimarySelectedEntry(pane) {
+  const selected = getSelectedEntries(pane);
+  return selected.length === 1 ? selected[0] : null;
 }
 
 async function connectSftpPane(pane, host) {
@@ -2241,8 +2456,10 @@ async function connectSftpPane(pane, host) {
   pane.statusEl.textContent = t("sftp.status.connecting");
   try {
     pane.sftpId = await invoke("sftp_open", { hostId: host.id });
+    pane.connectedHostId = host.id;
     pane.hostId = host.id;
     pane.host = host;
+    pane.hostSelect.title = `${host.user}@${host.host}:${host.port}`;
     pane.path = "/";
     pane.statusEl.textContent = t("sftp.status.connected", { name: host.name });
     await navigateSftpPane(pane, "/");
@@ -2261,10 +2478,14 @@ async function disconnectSftpPane(pane) {
     }
   }
   pane.sftpId = null;
+  pane.connectedHostId = null;
   pane.entries = [];
+  pane.filterQuery = "";
+  pane.selectedEntries = new Set();
   pane.path = "/";
   setSftpPathEditMode(pane, false);
   pane.statusEl.textContent = t("sftp.status.not_connected");
+  updateSftpPaneFilterButton(pane);
   renderSftpPathBar(pane);
   renderSftpPane(pane);
   updateSftpConnectButtons();
@@ -2278,6 +2499,7 @@ async function navigateSftpPane(pane, path) {
     const entries = await invoke("sftp_list", { sftpId: pane.sftpId, path });
     pane.path = path;
     pane.entries = entries;
+    normalizePaneSelection(pane);
     renderSftpPathBar(pane);
     pane.statusEl.textContent = pane.host ? t("sftp.status.connected", { name: pane.host.name }) : "";
     renderSftpPane(pane);
@@ -2288,11 +2510,15 @@ async function navigateSftpPane(pane, path) {
 
 function renderSftpPane(pane) {
   renderSftpPathBar(pane);
+  updateSftpPaneFilterButton(pane);
+  pane.upButton.disabled = pane.sftpId === null || pane.path === "/";
+  pane.forwardButton.disabled = true;
   pane.listEl.innerHTML = "";
   if (pane.sftpId === null) {
     pane.statusEl.textContent = t("sftp.status.not_connected");
   }
   if (!pane.hostId) {
+    pane.selectedEntries = new Set();
     const empty = document.createElement("li");
     empty.className = "file-row";
     empty.style.gridTemplateColumns = "1fr";
@@ -2303,22 +2529,36 @@ function renderSftpPane(pane) {
     return;
   }
 
-  if (pane.entries.length === 0) {
+  normalizePaneSelection(pane);
+  const visibleEntries = getVisibleEntriesForPane(pane);
+
+  if (visibleEntries.length === 0) {
     const empty = document.createElement("li");
     empty.className = "file-row";
     empty.style.gridTemplateColumns = "1fr";
     empty.style.justifyContent = "center";
     empty.style.color = "var(--muted)";
-    empty.textContent = t("files.empty");
+    empty.textContent = pane.filterQuery ? `${t("files.empty")} · ${t("sftp.button.filter")}` : t("files.empty");
     pane.listEl.appendChild(empty);
     return;
   }
 
-  for (const entry of pane.entries) {
+  for (const entry of visibleEntries) {
     const row = document.createElement("li");
-    row.className = `file-row sftp-row${entry.kind === "dir" ? " dir" : ""}`;
+    const selectedClass = pane.selectedEntries.has(entry.name) ? " selected" : "";
+    row.className = `file-row sftp-row${entry.kind === "dir" ? " dir" : ""}${selectedClass}`;
+    row.addEventListener("click", (ev) => {
+      if (ev.metaKey || ev.ctrlKey) {
+        toggleEntrySelection(pane, entry.name);
+      } else {
+        selectSingleEntry(pane, entry.name);
+      }
+      renderSftpPane(pane);
+    });
     row.addEventListener("contextmenu", (ev) => {
       ev.preventDefault();
+      selectSingleEntry(pane, entry.name);
+      renderSftpPane(pane);
       showFilesContextMenu(pane, entry, ev.clientX, ev.clientY);
     });
 
@@ -2329,7 +2569,10 @@ function renderSftpPane(pane) {
     name.className = "name";
     name.textContent = entry.kind === "dir" ? `${entry.name}/` : entry.name;
     if (entry.kind === "dir") {
-      name.addEventListener("click", () => navigateSftpPane(pane, joinPath(pane.path, entry.name)));
+      name.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        navigateSftpPane(pane, joinPath(pane.path, entry.name));
+      });
     }
 
     const size = document.createElement("span");
@@ -2382,28 +2625,53 @@ function setFilesContextNodeVisible(el, visible) {
 }
 
 function showFilesContextMenu(pane, entry, x, y) {
-  if (pane.sftpId === null) return;
-  const hasEntry = Boolean(entry);
-  filesContextEntry = hasEntry ? entry : null;
+  const connected = pane.sftpId !== null;
+  const selectedEntries = connected ? getSelectedEntries(pane) : [];
+  let targetEntry = entry || null;
+  if (!targetEntry && selectedEntries.length === 1) {
+    targetEntry = selectedEntries[0];
+  }
+  const hasSingleTarget = Boolean(targetEntry);
+  const selectedCount = selectedEntries.length;
+  const hasDeleteTarget = hasSingleTarget || selectedCount > 0;
+  const isFile = hasSingleTarget && targetEntry.kind === "file";
+  const canInlineEdit = isFile && canInlineEditEntry(targetEntry);
+
+  filesContextEntry = targetEntry;
   filesContextPaneKey = pane.key;
 
+  setFilesContextNodeVisible(filesMenuOpen, true);
+  setFilesContextNodeVisible(filesMenuOpenWith, true);
+  setFilesContextNodeVisible(filesMenuCopy, true);
+  setFilesContextNodeVisible(filesMenuRename, true);
+  setFilesContextNodeVisible(filesMenuDelete, true);
+  setFilesContextNodeVisible(filesMenuEntrySeparator, true);
   setFilesContextNodeVisible(filesMenuRefresh, true);
   setFilesContextNodeVisible(filesMenuMkdir, true);
   setFilesContextNodeVisible(filesMenuUpload, true);
-  setFilesContextNodeVisible(filesMenuPaneSeparator, hasEntry);
-  setFilesContextNodeVisible(filesMenuEdit, hasEntry);
-  setFilesContextNodeVisible(filesMenuDownload, hasEntry);
-  setFilesContextNodeVisible(filesMenuEntrySeparator, hasEntry);
-  setFilesContextNodeVisible(filesMenuRename, hasEntry);
-  setFilesContextNodeVisible(filesMenuDelete, hasEntry);
+  setFilesContextNodeVisible(filesMenuHidden, true);
+  setFilesContextNodeVisible(filesMenuPermissions, true);
+  setFilesContextNodeVisible(filesMenuSelectAll, true);
+  setFilesContextNodeVisible(filesMenuEdit, true);
+  setFilesContextNodeVisible(filesMenuDownload, true);
+  setFilesContextNodeVisible(filesMenuCloseSeparator, true);
+  setFilesContextNodeVisible(filesMenuClose, true);
 
-  if (hasEntry) {
-    const isFile = entry.kind === "file";
-    filesMenuEdit.disabled = !(isFile && canInlineEditEntry(entry));
-    filesMenuDownload.disabled = !isFile;
-    filesMenuRename.disabled = false;
-    filesMenuDelete.disabled = false;
-  }
+  filesMenuOpen.disabled = !(connected && hasSingleTarget);
+  filesMenuOpenWith.disabled = !(connected && canInlineEdit);
+  filesMenuCopy.disabled = !(connected && hasSingleTarget && isFile);
+  filesMenuRename.disabled = !(connected && hasSingleTarget);
+  filesMenuDelete.disabled = !(connected && hasDeleteTarget);
+  filesMenuRefresh.disabled = !connected;
+  filesMenuMkdir.disabled = !connected;
+  filesMenuUpload.disabled = !connected;
+  filesMenuHidden.disabled = !connected;
+  filesMenuPermissions.disabled = !(connected && hasSingleTarget);
+  filesMenuSelectAll.disabled = !(connected && getVisibleEntriesForPane(pane).length > 0);
+  filesMenuEdit.disabled = !(connected && canInlineEdit);
+  filesMenuDownload.disabled = !(connected && isFile);
+  filesMenuClose.disabled = false;
+  filesMenuHidden.textContent = pane.showHidden ? t("files.menu.hide_hidden") : t("files.menu.show_hidden");
 
   filesContextMenu.style.left = "0px";
   filesContextMenu.style.top = "0px";
@@ -2447,7 +2715,11 @@ async function sftpDownloadFile(pane, entry) {
 }
 
 async function sftpRenameEntry(pane, entry) {
-  const next = prompt(t("files.prompt.rename", { name: entry.name }), entry.name);
+  const next = await openTextInputDialog({
+    title: t("files.menu.rename"),
+    message: t("files.prompt.rename", { name: entry.name }),
+    defaultValue: entry.name,
+  });
   if (!next || next === entry.name) return;
   try {
     await invoke("sftp_rename", {
@@ -2475,7 +2747,10 @@ async function sftpDeleteEntry(pane, entry) {
 
 async function sftpMkdir(pane) {
   if (pane.sftpId === null) return;
-  const name = prompt(t("files.prompt.new_folder"));
+  const name = await openTextInputDialog({
+    title: t("files.button.new_folder"),
+    message: t("files.prompt.new_folder"),
+  });
   if (!name) return;
   try {
     await invoke("sftp_mkdir", {
@@ -2510,6 +2785,47 @@ async function sftpUpload(pane) {
     }
   }
   await navigateSftpPane(pane, pane.path);
+}
+
+async function sftpCopyEntry(pane, entry) {
+  if (!pane || pane.sftpId === null || !entry || entry.kind !== "file") return;
+  if (!canInlineEditEntry(entry)) {
+    pane.statusEl.textContent = t("files.error.copy_not_supported");
+    return;
+  }
+
+  const rawTargetDir = await openTextInputDialog({
+    title: t("files.menu.copy_to_target"),
+    message: t("files.prompt.copy_target_dir"),
+    defaultValue: pane.path,
+    placeholder: pane.path,
+  });
+  if (!rawTargetDir) return;
+
+  const targetDir = resolveSftpTargetPath(pane, rawTargetDir);
+  const sourcePath = joinPath(pane.path, entry.name);
+  const targetPath = joinPath(targetDir, entry.name);
+
+  try {
+    const doc = await invoke("sftp_read_text", {
+      sftpId: pane.sftpId,
+      path: sourcePath,
+      maxBytes: FILE_EDITOR_MAX_BYTES,
+    });
+    const data = Array.from(new TextEncoder().encode(doc.content));
+    await invoke("sftp_upload_bytes", {
+      sftpId: pane.sftpId,
+      remote: targetPath,
+      data,
+      sourceLabel: `copy:${sourcePath}`,
+    });
+    pane.statusEl.textContent = t("files.status.copied_to", { name: entry.name, path: targetDir });
+    if (targetDir === pane.path) {
+      await navigateSftpPane(pane, pane.path);
+    }
+  } catch (e) {
+    pane.statusEl.textContent = t("files.error.copy_failed", { error: e });
+  }
 }
 
 function ensureFileEditorAce() {
@@ -2788,16 +3104,31 @@ for (const pane of Object.values(sftpPanes)) {
   pane.hostSelect.addEventListener("change", () => {
     pane.hostId = pane.hostSelect.value;
     pane.host = hostsCache.find((h) => h.id === pane.hostId) || null;
-  });
+    pane.hostSelect.title = pane.host
+      ? `${pane.host.user}@${pane.host.host}:${pane.host.port}`
+      : t("sftp.host.placeholder");
+    updateSftpConnectButtons();
 
-  pane.connectButton.addEventListener("click", async () => {
-    if (pane.sftpId !== null) {
-      await disconnectSftpPane(pane);
-      return;
-    }
-    const host = hostsCache.find((h) => h.id === pane.hostId);
-    if (!host) return;
-    await connectSftpPane(pane, host);
+    const selectedHostId = pane.hostId;
+    const selectedHost = pane.host;
+    pane.autoConnectQueue = pane.autoConnectQueue
+      .catch(() => {})
+      .then(async () => {
+        if (pane.hostId !== selectedHostId) return;
+        if (!selectedHost) {
+          if (pane.sftpId !== null) {
+            await disconnectSftpPane(pane);
+          }
+          return;
+        }
+        if (pane.sftpId !== null && pane.connectedHostId === selectedHost.id) {
+          return;
+        }
+        await connectSftpPane(pane, selectedHost);
+      })
+      .catch((e) => {
+        console.warn("auto connect failed", e);
+      });
   });
 
   pane.pathbarEl.addEventListener("click", (ev) => {
@@ -2805,6 +3136,36 @@ for (const pane of Object.values(sftpPanes)) {
     if (pane.pathEditing) return;
     if (ev.target.closest(".sftp-crumb-btn")) return;
     setSftpPathEditMode(pane, true);
+  });
+
+  pane.upButton.addEventListener("click", async () => {
+    if (pane.sftpId === null) return;
+    await navigateSftpPane(pane, parentPath(pane.path));
+  });
+
+  pane.forwardButton.addEventListener("click", (ev) => {
+    ev.preventDefault();
+  });
+
+  pane.filterInput.addEventListener("input", () => {
+    pane.filterQuery = pane.filterInput.value.trim();
+    renderSftpPane(pane);
+  });
+
+  pane.filterInput.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") {
+      pane.filterInput.value = "";
+      pane.filterQuery = "";
+      renderSftpPane(pane);
+      pane.filterInput.blur();
+      ev.preventDefault();
+    }
+  });
+
+  pane.actionsButton.addEventListener("click", (ev) => {
+    hideFilesContextMenu();
+    const rect = ev.currentTarget.getBoundingClientRect();
+    showFilesContextMenu(pane, null, rect.left, rect.bottom + 6);
   });
 
   pane.pathInputEl.addEventListener("keydown", async (ev) => {
@@ -2827,7 +3188,6 @@ for (const pane of Object.values(sftpPanes)) {
   });
 
   pane.listEl.addEventListener("contextmenu", (ev) => {
-    if (pane.sftpId === null) return;
     if (ev.target.closest(".sftp-row")) return;
     ev.preventDefault();
     showFilesContextMenu(pane, null, ev.clientX, ev.clientY);
@@ -2835,57 +3195,175 @@ for (const pane of Object.values(sftpPanes)) {
   pane.listEl.addEventListener("scroll", () => hideFilesContextMenu());
 }
 
-filesMenuRefresh.addEventListener("click", async () => {
-  const pane = filesContextPaneKey ? getSftpPane(filesContextPaneKey) : null;
-  hideFilesContextMenu();
-  if (!pane || pane.sftpId === null) return;
-  await navigateSftpPane(pane, pane.path);
-});
+function getFilesContextPane() {
+  return filesContextPaneKey ? getSftpPane(filesContextPaneKey) : null;
+}
 
-filesMenuMkdir.addEventListener("click", async () => {
-  const pane = filesContextPaneKey ? getSftpPane(filesContextPaneKey) : null;
-  hideFilesContextMenu();
-  if (!pane || pane.sftpId === null) return;
-  await sftpMkdir(pane);
-});
+function getFilesContextEntry(pane) {
+  if (!pane) return null;
+  if (filesContextEntry) {
+    const found = pane.entries.find((entry) => entry.name === filesContextEntry.name);
+    if (found) return found;
+  }
+  return getPrimarySelectedEntry(pane);
+}
 
-filesMenuUpload.addEventListener("click", async () => {
-  const pane = filesContextPaneKey ? getSftpPane(filesContextPaneKey) : null;
-  hideFilesContextMenu();
-  if (!pane || pane.sftpId === null) return;
-  await sftpUpload(pane);
-});
+function getFilesContextDeleteEntries(pane) {
+  if (!pane) return [];
+  const selected = getSelectedEntries(pane);
+  if (selected.length > 0) return selected;
+  const one = getFilesContextEntry(pane);
+  return one ? [one] : [];
+}
 
-filesMenuEdit.addEventListener("click", async () => {
-  const entry = filesContextEntry;
-  const pane = filesContextPaneKey ? getSftpPane(filesContextPaneKey) : null;
-  hideFilesContextMenu();
-  if (!pane || !entry || entry.kind !== "file") return;
-  await openRemoteEditor(pane, entry);
-});
-
-filesMenuDownload.addEventListener("click", async () => {
-  const entry = filesContextEntry;
-  const pane = filesContextPaneKey ? getSftpPane(filesContextPaneKey) : null;
-  hideFilesContextMenu();
-  if (!pane || !entry || entry.kind !== "file") return;
+async function openSftpEntry(pane, entry, { forceEditor = false } = {}) {
+  if (!pane || pane.sftpId === null || !entry) return;
+  if (entry.kind === "dir") {
+    await navigateSftpPane(pane, joinPath(pane.path, entry.name));
+    return;
+  }
+  if (entry.kind !== "file") return;
+  if (forceEditor || canInlineEditEntry(entry)) {
+    if (!canInlineEditEntry(entry)) {
+      alert(t("editor.alert.unsupported"));
+      return;
+    }
+    await openRemoteEditor(pane, entry);
+    return;
+  }
   await sftpDownloadFile(pane, entry);
+}
+
+async function sftpDeleteEntries(pane, entries) {
+  if (!pane || pane.sftpId === null || entries.length === 0) return;
+  if (entries.length === 1) {
+    await sftpDeleteEntry(pane, entries[0]);
+    pane.selectedEntries.delete(entries[0].name);
+    return;
+  }
+  if (!confirm(t("files.confirm.delete_selected", { count: entries.length }))) return;
+
+  for (const entry of entries) {
+    const target = joinPath(pane.path, entry.name);
+    const command = entry.kind === "dir" ? "sftp_remove_dir" : "sftp_remove";
+    try {
+      await invoke(command, { sftpId: pane.sftpId, path: target });
+      pane.selectedEntries.delete(entry.name);
+    } catch (e) {
+      pane.statusEl.textContent = t("files.error.delete_failed_for", { name: entry.name, error: e });
+      await navigateSftpPane(pane, pane.path);
+      return;
+    }
+  }
+
+  await navigateSftpPane(pane, pane.path);
+}
+
+filesMenuOpen.addEventListener("click", async () => {
+  const pane = getFilesContextPane();
+  const entry = getFilesContextEntry(pane);
+  hideFilesContextMenu();
+  if (!pane || !entry) return;
+  await openSftpEntry(pane, entry);
+});
+
+filesMenuOpenWith.addEventListener("click", async () => {
+  const pane = getFilesContextPane();
+  const entry = getFilesContextEntry(pane);
+  hideFilesContextMenu();
+  if (!pane || !entry || entry.kind !== "file") return;
+  await openSftpEntry(pane, entry, { forceEditor: true });
+});
+
+filesMenuCopy.addEventListener("click", async () => {
+  const pane = getFilesContextPane();
+  const entry = getFilesContextEntry(pane);
+  hideFilesContextMenu();
+  if (!pane || pane.sftpId === null || !entry) return;
+  await sftpCopyEntry(pane, entry);
 });
 
 filesMenuRename.addEventListener("click", async () => {
-  const entry = filesContextEntry;
-  const pane = filesContextPaneKey ? getSftpPane(filesContextPaneKey) : null;
+  const pane = getFilesContextPane();
+  const entry = getFilesContextEntry(pane);
   hideFilesContextMenu();
   if (!pane || !entry) return;
   await sftpRenameEntry(pane, entry);
 });
 
 filesMenuDelete.addEventListener("click", async () => {
-  const entry = filesContextEntry;
-  const pane = filesContextPaneKey ? getSftpPane(filesContextPaneKey) : null;
+  const pane = getFilesContextPane();
+  const entries = getFilesContextDeleteEntries(pane);
   hideFilesContextMenu();
-  if (!pane || !entry) return;
-  await sftpDeleteEntry(pane, entry);
+  if (!pane || entries.length === 0) return;
+  await sftpDeleteEntries(pane, entries);
+});
+
+filesMenuRefresh.addEventListener("click", async () => {
+  const pane = getFilesContextPane();
+  hideFilesContextMenu();
+  if (!pane || pane.sftpId === null) return;
+  await navigateSftpPane(pane, pane.path);
+});
+
+filesMenuMkdir.addEventListener("click", async () => {
+  const pane = getFilesContextPane();
+  hideFilesContextMenu();
+  if (!pane || pane.sftpId === null) return;
+  await sftpMkdir(pane);
+});
+
+filesMenuUpload.addEventListener("click", async () => {
+  const pane = getFilesContextPane();
+  hideFilesContextMenu();
+  if (!pane || pane.sftpId === null) return;
+  await sftpUpload(pane);
+});
+
+filesMenuHidden.addEventListener("click", () => {
+  const pane = getFilesContextPane();
+  hideFilesContextMenu();
+  if (!pane || pane.sftpId === null) return;
+  pane.showHidden = !pane.showHidden;
+  renderSftpPane(pane);
+  pane.statusEl.textContent = pane.showHidden ? t("files.status.hidden_shown") : t("files.status.hidden_hidden");
+});
+
+filesMenuPermissions.addEventListener("click", () => {
+  const pane = getFilesContextPane();
+  hideFilesContextMenu();
+  if (!pane || pane.sftpId === null) return;
+  pane.statusEl.textContent = t("files.error.permissions_not_supported");
+});
+
+filesMenuSelectAll.addEventListener("click", () => {
+  const pane = getFilesContextPane();
+  hideFilesContextMenu();
+  if (!pane || pane.sftpId === null) return;
+  const visible = getVisibleEntriesForPane(pane);
+  pane.selectedEntries = new Set(visible.map((entry) => entry.name));
+  renderSftpPane(pane);
+  pane.statusEl.textContent = t("files.status.selected_all", { count: pane.selectedEntries.size });
+});
+
+filesMenuEdit.addEventListener("click", async () => {
+  const pane = getFilesContextPane();
+  const entry = getFilesContextEntry(pane);
+  hideFilesContextMenu();
+  if (!pane || !entry || entry.kind !== "file") return;
+  await openRemoteEditor(pane, entry);
+});
+
+filesMenuDownload.addEventListener("click", async () => {
+  const pane = getFilesContextPane();
+  const entry = getFilesContextEntry(pane);
+  hideFilesContextMenu();
+  if (!pane || !entry || entry.kind !== "file") return;
+  await sftpDownloadFile(pane, entry);
+});
+
+filesMenuClose.addEventListener("click", () => {
+  hideFilesContextMenu();
 });
 
 fileEditorCancelButton.addEventListener("click", () => closeRemoteEditor());

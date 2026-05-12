@@ -77,54 +77,105 @@
               <div class="sftp-split">
                 <article class="sftp-pane">
                   <header class="sftp-pane-topbar">
-                    <span id="sftp-left-title" class="sftp-pane-title">Left</span>
-                    <select id="sftp-left-host"></select>
-                    <button id="sftp-left-connect" type="button">Connect</button>
+                    <div class="sftp-pane-head-row">
+                      <label class="sftp-host-selector">
+                        <span class="sftp-host-dot" aria-hidden="true"></span>
+                        <select id="sftp-left-host" class="sftp-host-select"></select>
+                        <span class="sftp-host-caret" aria-hidden="true">▾</span>
+                      </label>
+                      <div class="sftp-pane-tools">
+                        <label class="sftp-inline-filter">
+                          <span class="sftp-inline-filter-icon" aria-hidden="true">⌕</span>
+                          <span id="sftp-left-filter-label" class="sftp-inline-filter-label">Filter</span>
+                          <input
+                            id="sftp-left-filter-input"
+                            class="sftp-inline-filter-input"
+                            type="text"
+                            autocomplete="off"
+                            spellcheck="false"
+                          />
+                        </label>
+                        <button id="sftp-left-actions" type="button" class="sftp-pane-tool-btn sftp-pane-tool-actions">Actions</button>
+                      </div>
+                    </div>
+                    <div class="sftp-pane-nav-row">
+                      <button id="sftp-left-up" type="button" class="sftp-nav-btn" aria-label="Up">‹</button>
+                      <button id="sftp-left-forward" type="button" class="sftp-nav-btn" aria-label="Forward" disabled>›</button>
+                      <div id="sftp-left-pathbar" class="sftp-pathbar sftp-pathbar-inline">
+                        <div id="sftp-left-breadcrumbs" class="sftp-breadcrumbs"></div>
+                        <input
+                          id="sftp-left-path-input"
+                          class="sftp-path-input"
+                          type="text"
+                          autocomplete="off"
+                          spellcheck="false"
+                        />
+                      </div>
+                    </div>
                   </header>
-                  <div id="sftp-left-pathbar" class="sftp-pathbar">
-                    <div id="sftp-left-breadcrumbs" class="sftp-breadcrumbs"></div>
-                    <input
-                      id="sftp-left-path-input"
-                      class="sftp-path-input"
-                      type="text"
-                      autocomplete="off"
-                      spellcheck="false"
-                    />
-                  </div>
                   <div id="sftp-left-status" class="tiny muted sftp-status"></div>
                   <ul id="sftp-left-list" class="files-list"></ul>
                 </article>
 
                 <article class="sftp-pane">
                   <header class="sftp-pane-topbar">
-                    <span id="sftp-right-title" class="sftp-pane-title">Right</span>
-                    <select id="sftp-right-host"></select>
-                    <button id="sftp-right-connect" type="button">Connect</button>
+                    <div class="sftp-pane-head-row">
+                      <label class="sftp-host-selector">
+                        <span class="sftp-host-dot" aria-hidden="true"></span>
+                        <select id="sftp-right-host" class="sftp-host-select"></select>
+                        <span class="sftp-host-caret" aria-hidden="true">▾</span>
+                      </label>
+                      <div class="sftp-pane-tools">
+                        <label class="sftp-inline-filter">
+                          <span class="sftp-inline-filter-icon" aria-hidden="true">⌕</span>
+                          <span id="sftp-right-filter-label" class="sftp-inline-filter-label">Filter</span>
+                          <input
+                            id="sftp-right-filter-input"
+                            class="sftp-inline-filter-input"
+                            type="text"
+                            autocomplete="off"
+                            spellcheck="false"
+                          />
+                        </label>
+                        <button id="sftp-right-actions" type="button" class="sftp-pane-tool-btn sftp-pane-tool-actions">Actions</button>
+                      </div>
+                    </div>
+                    <div class="sftp-pane-nav-row">
+                      <button id="sftp-right-up" type="button" class="sftp-nav-btn" aria-label="Up">‹</button>
+                      <button id="sftp-right-forward" type="button" class="sftp-nav-btn" aria-label="Forward" disabled>›</button>
+                      <div id="sftp-right-pathbar" class="sftp-pathbar sftp-pathbar-inline">
+                        <div id="sftp-right-breadcrumbs" class="sftp-breadcrumbs"></div>
+                        <input
+                          id="sftp-right-path-input"
+                          class="sftp-path-input"
+                          type="text"
+                          autocomplete="off"
+                          spellcheck="false"
+                        />
+                      </div>
+                    </div>
                   </header>
-                  <div id="sftp-right-pathbar" class="sftp-pathbar">
-                    <div id="sftp-right-breadcrumbs" class="sftp-breadcrumbs"></div>
-                    <input
-                      id="sftp-right-path-input"
-                      class="sftp-path-input"
-                      type="text"
-                      autocomplete="off"
-                      spellcheck="false"
-                    />
-                  </div>
                   <div id="sftp-right-status" class="tiny muted sftp-status"></div>
                   <ul id="sftp-right-list" class="files-list"></ul>
                 </article>
               </div>
               <div id="files-context-menu" class="files-context-menu" hidden>
+                <button id="files-menu-open" type="button">Open</button>
+                <button id="files-menu-open-with" type="button">Open with...</button>
+                <button id="files-menu-copy" type="button">Copy to target directory</button>
+                <button id="files-menu-rename" type="button">Rename</button>
+                <button id="files-menu-delete" type="button">Delete</button>
+                <div id="files-menu-entry-separator" class="menu-separator"></div>
                 <button id="files-menu-refresh" type="button">Refresh</button>
                 <button id="files-menu-mkdir" type="button">New Folder</button>
                 <button id="files-menu-upload" type="button">Upload</button>
-                <div id="files-menu-pane-separator" class="menu-separator"></div>
+                <button id="files-menu-hidden" type="button">Show Hidden Files</button>
+                <button id="files-menu-permissions" type="button">Edit Permissions</button>
+                <button id="files-menu-select-all" type="button">Select All</button>
                 <button id="files-menu-edit" type="button">Edit</button>
                 <button id="files-menu-download" type="button">Download</button>
-                <div id="files-menu-entry-separator" class="menu-separator"></div>
-                <button id="files-menu-rename" type="button">Rename</button>
-                <button id="files-menu-delete" type="button" class="danger">Delete</button>
+                <div id="files-menu-close-separator" class="menu-separator"></div>
+                <button id="files-menu-close" type="button" class="danger">Close</button>
               </div>
             </section>
           </div>
@@ -268,6 +319,18 @@
           </p>
           <div class="dialog-actions">
             <button id="settings-close-button" type="button">Close</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="text-input-overlay" class="overlay" hidden>
+        <div class="dialog text-input-dialog">
+          <h3 id="text-input-title">Input</h3>
+          <p id="text-input-message" class="muted"></p>
+          <input id="text-input-value" type="text" autocomplete="off" />
+          <div class="dialog-actions">
+            <button id="text-input-cancel" type="button">Cancel</button>
+            <button id="text-input-confirm" type="button" class="primary">OK</button>
           </div>
         </div>
       </div>
