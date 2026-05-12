@@ -3177,6 +3177,11 @@ function renderSftpPane(pane) {
     row.addEventListener("dragend", () => {
       resetSftpDragState();
     });
+    row.addEventListener("dragenter", (ev) => {
+      if (!canAcceptSftpDrag(pane, ev)) return;
+      ev.preventDefault();
+      if (ev.dataTransfer) ev.dataTransfer.dropEffect = "copy";
+    });
     row.addEventListener("dragover", (ev) => {
       if (!canAcceptSftpDrag(pane, ev)) return;
       ev.preventDefault();
@@ -3783,6 +3788,30 @@ async function saveRemoteEditor() {
 }
 
 for (const pane of Object.values(sftpPanes)) {
+  pane.rootEl.addEventListener("dragenter", (ev) => {
+    if (!canAcceptSftpDrag(pane, ev)) return;
+    ev.preventDefault();
+    if (ev.dataTransfer) ev.dataTransfer.dropEffect = "copy";
+  });
+  pane.rootEl.addEventListener("dragover", (ev) => {
+    if (!canAcceptSftpDrag(pane, ev)) return;
+    ev.preventDefault();
+    if (ev.dataTransfer) ev.dataTransfer.dropEffect = "copy";
+  });
+  pane.rootEl.addEventListener("drop", async (ev) => {
+    if (!canAcceptSftpDrag(pane, ev)) return;
+    const listTarget = pane.listEl && pane.listEl.contains(ev.target);
+    if (listTarget) return;
+    ev.preventDefault();
+    const sourcePane = getSftpPane(sftpDragState.sourcePaneKey);
+    const targetDir = pane.path;
+    try {
+      await copyDraggedEntriesToPane(sourcePane, pane, targetDir);
+    } finally {
+      resetSftpDragState();
+    }
+  });
+
   pane.hostSelect.addEventListener("change", () => {
     pane.hostId = pane.hostSelect.value;
     pane.host = pane.hostId === LOCAL_HOST_ID
@@ -3892,6 +3921,11 @@ for (const pane of Object.values(sftpPanes)) {
     if (ev.target.closest(".sftp-row")) return;
     ev.preventDefault();
     showFilesContextMenu(pane, null, ev.clientX, ev.clientY);
+  });
+  pane.listEl.addEventListener("dragenter", (ev) => {
+    if (!canAcceptSftpDrag(pane, ev)) return;
+    ev.preventDefault();
+    if (ev.dataTransfer) ev.dataTransfer.dropEffect = "copy";
   });
   pane.listEl.addEventListener("dragover", (ev) => {
     if (!canAcceptSftpDrag(pane, ev)) return;

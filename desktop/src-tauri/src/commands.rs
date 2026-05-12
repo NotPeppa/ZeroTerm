@@ -155,7 +155,7 @@ pub async fn open_new_window(app_handle: AppHandle) -> Result<(), String> {
     .inner_size(1360.0, 860.0);
     #[cfg(target_os = "windows")]
     {
-        builder = builder.decorations(false);
+        builder = builder.decorations(false).disable_drag_drop_handler();
     }
     builder.build().map(|_| ()).map_err(|e| e.to_string())
 }
