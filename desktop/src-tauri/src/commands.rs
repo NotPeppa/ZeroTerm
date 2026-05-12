@@ -155,8 +155,9 @@ pub async fn open_new_window(app_handle: AppHandle) -> Result<(), String> {
     .inner_size(1360.0, 860.0);
     #[cfg(target_os = "windows")]
     {
-        builder = builder.decorations(false).disable_drag_drop_handler();
+        builder = builder.decorations(false);
     }
+    builder = builder.disable_drag_drop_handler();
     builder.build().map(|_| ()).map_err(|e| e.to_string())
 }
 
@@ -1709,6 +1710,43 @@ fn forget_transfer(state: &AppState, id: u64) {
     state.transfers.lock().unwrap().remove(&id);
 }
 
+async fn sftp_remove_dir_recursive(
+    sftp: &zeroterm_ssh::Sftp,
+    path: &str,
+) -> Result<(), String> {
+    let root = normalize_remote_path(path);
+    if root == "/" {
+        return Err("refusing to delete remote root directory `/`".to_string());
+    }
+
+    // Post-order traversal: remove files first, then remove each directory
+    // after all of its children have been processed.
+    let mut stack: Vec<(String, bool)> = vec![(root, false)];
+    while let Some((current, visited)) = stack.pop() {
+        if visited {
+            sftp.remove_dir(&current).await.map_err(|e| e.to_string())?;
+            continue;
+        }
+
+        stack.push((current.clone(), true));
+        let entries = sftp.list(&current).await.map_err(|e| e.to_string())?;
+        for entry in entries {
+            if entry.name == "." || entry.name == ".." {
+                continue;
+            }
+            let child = remote_join_path(&current, &entry.name);
+            match entry.kind {
+                FileKind::Dir => stack.push((child, false)),
+                FileKind::File | FileKind::Symlink | FileKind::Other => {
+                    sftp.remove_file(&child).await.map_err(|e| e.to_string())?;
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Wrap a streaming SFTP call so the progress callback emits Tauri
 /// `sftp:progress` events, throttled to ~10 per second so we don't
 /// drown the IPC bus on big files. Always emits a final `finished`
@@ -1841,7 +1879,7 @@ pub async fn sftp_remove_dir(
     path: String,
 ) -> Result<(), String> {
     let sftp = lookup_sftp(&state, sftp_id)?;
-    sftp.remove_dir(&path).await.map_err(|e| e.to_string())
+    sftp_remove_dir_recursive(&sftp, &path).await
 }
 
 #[tauri::command]

@@ -2660,6 +2660,226 @@ function canAcceptSftpDrag(targetPane, ev = null) {
   );
 }
 
+function hasExternalFileDrag(ev) {
+  const dt = ev?.dataTransfer;
+  if (!dt) return false;
+  const types = Array.from(dt.types || []).map((type) => String(type || ""));
+  if (
+    types.includes("Files") ||
+    types.some((type) => /file-url/i.test(type) || /public\.file-url/i.test(type))
+  ) {
+    return true;
+  }
+  if (dt.files && dt.files.length > 0) return true;
+  if (!dt.items || dt.items.length === 0) return false;
+  return Array.from(dt.items).some((item) => item.kind === "file");
+}
+
+function canAcceptExternalUploadDrop(targetPane, ev = null) {
+  return !isLocalPane(targetPane) && targetPane.sftpId !== null && hasExternalFileDrag(ev);
+}
+
+function canAcceptPaneDrop(targetPane, ev = null) {
+  return canAcceptSftpDrag(targetPane, ev) || canAcceptExternalUploadDrop(targetPane, ev);
+}
+
+function getDataTransferEntry(item) {
+  if (!item) return null;
+  if (typeof item.getAsEntry === "function") {
+    try {
+      return item.getAsEntry();
+    } catch (_) {
+      return null;
+    }
+  }
+  if (typeof item.webkitGetAsEntry === "function") {
+    try {
+      return item.webkitGetAsEntry();
+    } catch (_) {
+      return null;
+    }
+  }
+  return null;
+}
+
+function normalizeDroppedRelativePath(path) {
+  const raw = String(path || "").replace(/\\/g, "/").replace(/^\/+/, "");
+  const stack = [];
+  for (const part of raw.split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      if (stack.length > 0) stack.pop();
+      continue;
+    }
+    stack.push(part);
+  }
+  return stack.join("/");
+}
+
+function readFileFromFileEntry(entry) {
+  return new Promise((resolve, reject) => {
+    try {
+      entry.file(resolve, reject);
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+function readAllDirectoryEntries(reader) {
+  return new Promise((resolve, reject) => {
+    const out = [];
+    function pump() {
+      reader.readEntries(
+        (entries) => {
+          if (!entries || entries.length === 0) {
+            resolve(out);
+            return;
+          }
+          out.push(...entries);
+          pump();
+        },
+        (err) => reject(err),
+      );
+    }
+    pump();
+  });
+}
+
+async function collectDroppedUploadPayload(ev) {
+  const dt = ev?.dataTransfer;
+  const files = [];
+  const dirSet = new Set();
+  const seen = new Set();
+
+  const pushFile = (file, relPathHint = "") => {
+    if (!file) return;
+    const rel = normalizeDroppedRelativePath(
+      relPathHint || file.webkitRelativePath || file.name,
+    );
+    if (!rel) return;
+    const key = `${rel}::${file.size ?? -1}::${file.lastModified ?? -1}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    files.push({ file, relativePath: rel });
+  };
+
+  const walkEntry = async (entry) => {
+    if (!entry) return;
+    const relPath = normalizeDroppedRelativePath(entry.fullPath || entry.name);
+    if (entry.isDirectory) {
+      if (relPath) dirSet.add(relPath);
+      const reader = entry.createReader();
+      const children = await readAllDirectoryEntries(reader);
+      for (const child of children) {
+        await walkEntry(child);
+      }
+      return;
+    }
+    if (entry.isFile) {
+      const file = await readFileFromFileEntry(entry);
+      pushFile(file, relPath || entry.name || file?.name);
+    }
+  };
+
+  const items = Array.from(dt?.items || []).filter((item) => item.kind === "file");
+  let usedEntryApi = false;
+  for (const item of items) {
+    const entry = getDataTransferEntry(item);
+    if (!entry) continue;
+    usedEntryApi = true;
+    await walkEntry(entry);
+  }
+
+  if (!usedEntryApi) {
+    const directFiles = Array.from(dt?.files || []);
+    for (const file of directFiles) {
+      pushFile(file, file.webkitRelativePath || file.name);
+    }
+  }
+
+  return {
+    files,
+    directories: Array.from(dirSet).sort((a, b) => a.length - b.length || a.localeCompare(b)),
+  };
+}
+
+async function ensureRemoteDirectoryPath(sftpId, absolutePath, cache) {
+  const normalized = normalizeAbsolutePath(absolutePath);
+  if (normalized === "/") return;
+  const parts = normalized.split("/").filter(Boolean);
+  let current = "";
+  for (const part of parts) {
+    current += `/${part}`;
+    if (cache.has(current)) continue;
+    try {
+      await invoke("sftp_mkdir", { sftpId, path: current });
+    } catch (e) {
+      try {
+        await invoke("sftp_list", { sftpId, path: current });
+      } catch (_) {
+        throw e;
+      }
+    }
+    cache.add(current);
+  }
+}
+
+async function uploadDroppedPayloadToPane(pane, payload) {
+  if (!pane || pane.sftpId === null || !payload) return;
+  const remoteBase = normalizeAbsolutePath(pane.path);
+  const createdDirs = new Set();
+
+  for (const relDir of payload.directories || []) {
+    const targetDir = normalizeAbsolutePath(joinPath(remoteBase, relDir));
+    await ensureRemoteDirectoryPath(pane.sftpId, targetDir, createdDirs);
+  }
+
+  let uploaded = 0;
+  for (const item of payload.files || []) {
+    const relPath = normalizeDroppedRelativePath(item.relativePath || item.file?.name);
+    if (!relPath) continue;
+    const remotePath = normalizeAbsolutePath(joinPath(remoteBase, relPath));
+    const parentDir = parentPath(remotePath);
+    await ensureRemoteDirectoryPath(pane.sftpId, parentDir, createdDirs);
+
+    try {
+      const nativePath = typeof item.file?.path === "string" ? item.file.path : "";
+      if (nativePath) {
+        await invoke("sftp_upload", {
+          sftpId: pane.sftpId,
+          local: nativePath,
+          remote: remotePath,
+        });
+      } else {
+        const buf = await item.file.arrayBuffer();
+        const data = Array.from(new Uint8Array(buf));
+        await invoke("sftp_upload_bytes", {
+          sftpId: pane.sftpId,
+          remote: remotePath,
+          data,
+          sourceLabel: `drag:${relPath}`,
+        });
+      }
+      uploaded += 1;
+      pane.statusEl.textContent = t("files.status.uploaded_one", {
+        name: relPath,
+        size: formatSize(item.file?.size || 0),
+      });
+    } catch (e) {
+      pane.statusEl.textContent = t("files.error.drag_upload_failed_for", {
+        name: relPath,
+        error: e,
+      });
+      throw e;
+    }
+  }
+
+  if (uploaded > 0 || (payload.directories && payload.directories.length > 0)) {
+    await navigateSftpPane(pane, pane.path);
+  }
+}
+
 async function copyDraggedEntriesToPane(sourcePane, targetPane, targetDir) {
   const names = Array.from(new Set(sftpDragState.entryNames))
     .map((name) => String(name || "").trim())
@@ -3178,17 +3398,22 @@ function renderSftpPane(pane) {
       resetSftpDragState();
     });
     row.addEventListener("dragenter", (ev) => {
-      if (!canAcceptSftpDrag(pane, ev)) return;
+      if (!canAcceptPaneDrop(pane, ev)) return;
       ev.preventDefault();
       if (ev.dataTransfer) ev.dataTransfer.dropEffect = "copy";
     });
     row.addEventListener("dragover", (ev) => {
-      if (!canAcceptSftpDrag(pane, ev)) return;
+      if (!canAcceptPaneDrop(pane, ev)) return;
       ev.preventDefault();
       if (ev.dataTransfer) ev.dataTransfer.dropEffect = "copy";
       clearSftpDropVisuals();
       pane.rootEl?.classList.add("sftp-drop-target");
-      if (entry.kind === "dir" && entry.name !== ".." && entry.name !== ".") {
+      if (
+        canAcceptSftpDrag(pane, ev) &&
+        entry.kind === "dir" &&
+        entry.name !== ".." &&
+        entry.name !== "."
+      ) {
         row.classList.add("drop-target");
         sftpDragState.targetDir = joinPanePath(pane, entry.name);
       } else {
@@ -3202,16 +3427,21 @@ function renderSftpPane(pane) {
       }
     });
     row.addEventListener("drop", async (ev) => {
-      if (!canAcceptSftpDrag(pane, ev)) return;
+      if (!canAcceptPaneDrop(pane, ev)) return;
       ev.preventDefault();
       ev.stopPropagation();
-      const sourcePane = getSftpPane(sftpDragState.sourcePaneKey);
-      const targetDir =
-        entry.kind === "dir" && entry.name !== ".." && entry.name !== "."
-          ? joinPanePath(pane, entry.name)
-          : pane.path;
       try {
-        await copyDraggedEntriesToPane(sourcePane, pane, targetDir);
+        if (canAcceptSftpDrag(pane, ev)) {
+          const sourcePane = getSftpPane(sftpDragState.sourcePaneKey);
+          const targetDir =
+            entry.kind === "dir" && entry.name !== ".." && entry.name !== "."
+              ? joinPanePath(pane, entry.name)
+              : pane.path;
+          await copyDraggedEntriesToPane(sourcePane, pane, targetDir);
+        } else if (canAcceptExternalUploadDrop(pane, ev)) {
+          const payload = await collectDroppedUploadPayload(ev);
+          await uploadDroppedPayloadToPane(pane, payload);
+        }
       } finally {
         resetSftpDragState();
       }
@@ -3789,24 +4019,29 @@ async function saveRemoteEditor() {
 
 for (const pane of Object.values(sftpPanes)) {
   pane.rootEl.addEventListener("dragenter", (ev) => {
-    if (!canAcceptSftpDrag(pane, ev)) return;
+    if (!canAcceptPaneDrop(pane, ev)) return;
     ev.preventDefault();
     if (ev.dataTransfer) ev.dataTransfer.dropEffect = "copy";
   });
   pane.rootEl.addEventListener("dragover", (ev) => {
-    if (!canAcceptSftpDrag(pane, ev)) return;
+    if (!canAcceptPaneDrop(pane, ev)) return;
     ev.preventDefault();
     if (ev.dataTransfer) ev.dataTransfer.dropEffect = "copy";
   });
   pane.rootEl.addEventListener("drop", async (ev) => {
-    if (!canAcceptSftpDrag(pane, ev)) return;
+    if (!canAcceptPaneDrop(pane, ev)) return;
     const listTarget = pane.listEl && pane.listEl.contains(ev.target);
     if (listTarget) return;
     ev.preventDefault();
-    const sourcePane = getSftpPane(sftpDragState.sourcePaneKey);
-    const targetDir = pane.path;
     try {
-      await copyDraggedEntriesToPane(sourcePane, pane, targetDir);
+      if (canAcceptSftpDrag(pane, ev)) {
+        const sourcePane = getSftpPane(sftpDragState.sourcePaneKey);
+        const targetDir = pane.path;
+        await copyDraggedEntriesToPane(sourcePane, pane, targetDir);
+      } else if (canAcceptExternalUploadDrop(pane, ev)) {
+        const payload = await collectDroppedUploadPayload(ev);
+        await uploadDroppedPayloadToPane(pane, payload);
+      }
     } finally {
       resetSftpDragState();
     }
@@ -3923,30 +4158,35 @@ for (const pane of Object.values(sftpPanes)) {
     showFilesContextMenu(pane, null, ev.clientX, ev.clientY);
   });
   pane.listEl.addEventListener("dragenter", (ev) => {
-    if (!canAcceptSftpDrag(pane, ev)) return;
+    if (!canAcceptPaneDrop(pane, ev)) return;
     ev.preventDefault();
     if (ev.dataTransfer) ev.dataTransfer.dropEffect = "copy";
   });
   pane.listEl.addEventListener("dragover", (ev) => {
-    if (!canAcceptSftpDrag(pane, ev)) return;
+    if (!canAcceptPaneDrop(pane, ev)) return;
     ev.preventDefault();
     if (ev.dataTransfer) ev.dataTransfer.dropEffect = "copy";
     const row = ev.target.closest(".sftp-row");
-    if (row) return;
+    if (row && canAcceptSftpDrag(pane, ev)) return;
     clearSftpDropVisuals();
     pane.rootEl?.classList.add("sftp-drop-target");
     sftpDragState.targetPaneKey = pane.key;
     sftpDragState.targetDir = pane.path;
   });
   pane.listEl.addEventListener("drop", async (ev) => {
-    if (!canAcceptSftpDrag(pane, ev)) return;
+    if (!canAcceptPaneDrop(pane, ev)) return;
     ev.preventDefault();
     const row = ev.target.closest(".sftp-row");
-    if (row) return;
-    const sourcePane = getSftpPane(sftpDragState.sourcePaneKey);
-    const targetDir = sftpDragState.targetDir || pane.path;
+    if (row && canAcceptSftpDrag(pane, ev)) return;
     try {
-      await copyDraggedEntriesToPane(sourcePane, pane, targetDir);
+      if (canAcceptSftpDrag(pane, ev)) {
+        const sourcePane = getSftpPane(sftpDragState.sourcePaneKey);
+        const targetDir = sftpDragState.targetDir || pane.path;
+        await copyDraggedEntriesToPane(sourcePane, pane, targetDir);
+      } else if (canAcceptExternalUploadDrop(pane, ev)) {
+        const payload = await collectDroppedUploadPayload(ev);
+        await uploadDroppedPayloadToPane(pane, payload);
+      }
     } finally {
       resetSftpDragState();
     }
