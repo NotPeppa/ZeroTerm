@@ -295,6 +295,10 @@ label.checkbox input[type="checkbox"] {
   background: rgba(94, 128, 194, 0.2);
 }
 
+.window-control-btn:active {
+  transform: none;
+}
+
 .window-control-btn.danger:hover {
   background: #c42b1c;
   color: #ffffff;
@@ -321,11 +325,34 @@ label.checkbox input[type="checkbox"] {
 }
 
 .platform-windows .workspace-tabbar {
-  padding-right: 0;
+  height: 44px;
+  padding: 4px 0 4px 10px;
+  gap: 8px;
+}
+
+.platform-windows .workspace-term-strip {
+  height: 32px;
+}
+
+.platform-windows .workspace-actions {
+  gap: 8px;
+  margin-right: 8px;
 }
 
 .platform-windows .window-controls {
   display: inline-flex;
+  align-self: stretch;
+  margin-left: 4px;
+}
+
+.platform-windows .window-control-btn {
+  width: 46px;
+  height: 100%;
+  font-size: 12px;
+}
+
+.platform-windows .window-control-btn.danger:hover {
+  background: #e81123;
 }
 
 .workspace-panels {

@@ -90,6 +90,7 @@ const I18N = {
     "sidebar.lock": "Lock Vault",
     "window.minimize": "Minimize",
     "window.maximize": "Maximize",
+    "window.restore": "Restore",
     "window.close": "Close",
     "workspace.tab.vaults": "Vaults",
     "workspace.tab.sftp": "SFTP",
@@ -329,6 +330,7 @@ const I18N = {
     "sidebar.lock": "锁定保险库",
     "window.minimize": "最小化",
     "window.maximize": "最大化",
+    "window.restore": "还原",
     "window.close": "关闭",
     "workspace.tab.vaults": "Vaults",
     "workspace.tab.sftp": "SFTP",
@@ -904,6 +906,28 @@ const textInputConfirmButton = document.getElementById("text-input-confirm");
 let hostsCache = [];
 let workspaceMode = "vaults";
 let textInputResolver = null;
+let windowIsMaximized = false;
+
+function setWindowMaximizeButtonState(maximized) {
+  windowIsMaximized = Boolean(maximized);
+  if (!windowMaximizeButton) return;
+  windowMaximizeButton.dataset.maximized = windowIsMaximized ? "true" : "false";
+  windowMaximizeButton.textContent = windowIsMaximized ? "❐" : "□";
+  windowMaximizeButton.setAttribute("title", t(windowIsMaximized ? "window.restore" : "window.maximize"));
+}
+
+async function syncWindowMaximizeButtonState() {
+  if (!isWindowsPlatform || !appWindow || typeof appWindow.isMaximized !== "function") {
+    setWindowMaximizeButtonState(false);
+    return;
+  }
+  try {
+    const maximized = await appWindow.isMaximized();
+    setWindowMaximizeButtonState(maximized);
+  } catch (e) {
+    console.warn("isMaximized failed", e);
+  }
+}
 
 function isTitlebarInteractiveTarget(target) {
   if (!target || typeof target.closest !== "function") return false;
@@ -929,6 +953,20 @@ if (windowControls) {
 }
 
 if (isWindowsPlatform && appWindow) {
+  if (workspaceTitlebar) {
+    workspaceTitlebar.addEventListener("dblclick", (ev) => {
+      if (ev.button !== 0) return;
+      if (isTitlebarInteractiveTarget(ev.target)) return;
+      appWindow.toggleMaximize().catch((e) => {
+        console.warn("toggleMaximize failed", e);
+      }).finally(() => {
+        syncWindowMaximizeButtonState();
+      });
+    });
+  }
+  window.addEventListener("resize", () => {
+    syncWindowMaximizeButtonState();
+  });
   if (windowMinimizeButton) {
     windowMinimizeButton.addEventListener("click", () => {
       appWindow.minimize().catch((e) => {
@@ -940,6 +978,8 @@ if (isWindowsPlatform && appWindow) {
     windowMaximizeButton.addEventListener("click", () => {
       appWindow.toggleMaximize().catch((e) => {
         console.warn("toggleMaximize failed", e);
+      }).finally(() => {
+        syncWindowMaximizeButtonState();
       });
     });
   }
@@ -950,6 +990,7 @@ if (isWindowsPlatform && appWindow) {
       });
     });
   }
+  syncWindowMaximizeButtonState();
 }
 
 function closeTextInputDialog(result) {
@@ -1035,8 +1076,8 @@ function applyI18n() {
   setAttr("settings-button", "title", "sidebar.settings");
   setAttr("lock-button", "title", "sidebar.lock");
   setAttr("window-minimize", "title", "window.minimize");
-  setAttr("window-maximize", "title", "window.maximize");
   setAttr("window-close", "title", "window.close");
+  setWindowMaximizeButtonState(windowIsMaximized);
 
   setPlaceholder("host-search", "hosts.search.placeholder");
   setText("add-host-button", "hosts.new_host");
