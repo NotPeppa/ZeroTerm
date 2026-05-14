@@ -199,6 +199,9 @@ function uniqueId(prefix) {
 }
 
 const LOCALE_STORAGE_KEY = "zeroterm.locale";
+const GROUPS_STORAGE_KEY = "zeroterm.vault.groups";
+const GROUP_STATE_STORAGE_KEY = "zeroterm.vault.group.state";
+const HOST_GROUP_MAP_STORAGE_KEY = "zeroterm.vault.host.group.map";
 
 const I18N = {
   en: {
@@ -215,6 +218,7 @@ const I18N = {
     "unlock.error.passwords_mismatch": "passwords do not match",
     "common.error": "error: {error}",
     "common.ok": "OK",
+    "common.group": "Group",
     "nav.hosts": "Hosts",
     "nav.keychain": "Keychain",
     "nav.port_forwarding": "Port Forwarding",
@@ -456,6 +460,7 @@ const I18N = {
     "unlock.error.passwords_mismatch": "两次输入的密码不一致",
     "common.error": "错误：{error}",
     "common.ok": "确定",
+    "common.group": "分组",
     "nav.hosts": "主机",
     "nav.keychain": "钥匙串",
     "nav.port_forwarding": "端口转发",
@@ -1019,17 +1024,45 @@ unlockForm.addEventListener("submit", async (ev) => {
 const hostsList = document.getElementById("hosts-list");
 const hostsEmpty = document.getElementById("hosts-empty");
 const hostSearch = document.getElementById("host-search");
+const hostsContextMenu = document.getElementById("hosts-context-menu");
+const hostsMenuConnect = document.getElementById("hosts-menu-connect");
+const hostsMenuEdit = document.getElementById("hosts-menu-edit");
+const hostsMenuCopy = document.getElementById("hosts-menu-copy");
+const hostsMenuDelete = document.getElementById("hosts-menu-delete");
+const groupsContextMenu = document.getElementById("groups-context-menu");
+const groupsMenuAddHost = document.getElementById("groups-menu-add-host");
+const groupsMenuAddSub = document.getElementById("groups-menu-add-sub");
+const groupsMenuExpand = document.getElementById("groups-menu-expand");
+const groupsMenuExpandAll = document.getElementById("groups-menu-expand-all");
+const groupsMenuCollapse = document.getElementById("groups-menu-collapse");
+const groupsMenuCollapseAll = document.getElementById("groups-menu-collapse-all");
+const groupsMenuEdit = document.getElementById("groups-menu-edit");
+const groupsMenuDelete = document.getElementById("groups-menu-delete");
 const workspaceTabVaults = document.getElementById("workspace-tab-vaults");
 const workspaceTabSftp = document.getElementById("workspace-tab-sftp");
+const workspaceNavVaults = document.getElementById("workspace-nav-vaults");
+const workspaceNavSftp = document.getElementById("workspace-nav-sftp");
+const workspaceSidebarToggle = document.getElementById("workspace-sidebar-toggle");
+const workspaceSidebarToggleRight = document.getElementById("workspace-sidebar-toggle-right");
+const appShell = document.querySelector("#view-hosts .app-shell");
 const panelVaults = document.getElementById("panel-vaults");
 const panelTerminal = document.getElementById("panel-terminal");
 const panelSftp = document.getElementById("panel-sftp");
+const vaultWelcome = document.getElementById("vault-welcome");
+const vaultsContent = document.getElementById("vaults-content");
+const vaultLayout = document.querySelector(".vault-layout");
+const vaultSplitter = document.getElementById("vault-splitter");
+const sftpLeftContent = document.getElementById("sftp-left-content");
+const sftpRightContent = document.getElementById("sftp-right-content");
 const newWindowButton = document.getElementById("new-window-button");
 const settingsButton = document.getElementById("settings-button");
+const vaultBottomSettingsButton = document.getElementById("vault-bottom-settings");
 const settingsOverlay = document.getElementById("settings-overlay");
 const settingsCloseButton = document.getElementById("settings-close-button");
 const settingsLanguageSelect = document.getElementById("settings-language-select");
 const workspaceTitlebar = document.getElementById("workspace-titlebar");
+const vaultLeftTopbar = document.querySelector(".vault-left-topbar");
+const vaultRightTopbar = document.querySelector(".vault-right-topbar");
 const windowControls = document.getElementById("window-controls");
 const windowMinimizeButton = document.getElementById("window-minimize");
 const windowMaximizeButton = document.getElementById("window-maximize");
@@ -1045,6 +1078,80 @@ let hostsCache = [];
 let workspaceMode = "vaults";
 let textInputResolver = null;
 let windowIsMaximized = false;
+let workspaceSidebarCollapsed = false;
+let selectedVaultHostId = null;
+let vaultSidebarWidth = 360;
+let hostGroups = [];
+let groupExpandedState = {};
+let hostGroupMap = {};
+let draggingHostId = null;
+let hostsContextHostId = null;
+let groupsContextGroupId = null;
+
+const VAULT_SIDEBAR_MIN = 240;
+const VAULT_SIDEBAR_MAX = 700;
+
+function loadVaultGroupsState() {
+  try {
+    hostGroups = JSON.parse(localStorage.getItem(GROUPS_STORAGE_KEY) || "[]");
+    groupExpandedState = JSON.parse(localStorage.getItem(GROUP_STATE_STORAGE_KEY) || "{}");
+    hostGroupMap = JSON.parse(localStorage.getItem(HOST_GROUP_MAP_STORAGE_KEY) || "{}");
+    if (!Array.isArray(hostGroups)) hostGroups = [];
+    if (!groupExpandedState || typeof groupExpandedState !== "object") groupExpandedState = {};
+    if (!hostGroupMap || typeof hostGroupMap !== "object") hostGroupMap = {};
+  } catch {
+    hostGroups = [];
+    groupExpandedState = {};
+    hostGroupMap = {};
+  }
+}
+
+function saveVaultGroupsState() {
+  localStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify(hostGroups));
+  localStorage.setItem(GROUP_STATE_STORAGE_KEY, JSON.stringify(groupExpandedState));
+  localStorage.setItem(HOST_GROUP_MAP_STORAGE_KEY, JSON.stringify(hostGroupMap));
+}
+
+function migrateAutoSeededGroupsIfNeeded() {
+  if (!Array.isArray(hostGroups) || hostGroups.length !== 2) return;
+  const names = hostGroups.map((g) => g?.name).sort();
+  const looksSeeded = names[0] === "分组一" && names[1] === "分组二";
+  if (!looksSeeded) return;
+  const hasHostMapping = Object.keys(hostGroupMap || {}).length > 0;
+  if (hasHostMapping) return;
+  hostGroups = [];
+  groupExpandedState = {};
+  saveVaultGroupsState();
+}
+
+function populateHostGroupOptions(selectedGroupId = "") {
+  if (!hfGroup) return;
+  hfGroup.innerHTML = "";
+  const none = document.createElement("option");
+  none.value = "";
+  none.textContent = "(未分组)";
+  hfGroup.appendChild(none);
+
+  const roots = hostGroups.filter((g) => !g.parentId);
+  const appendGroup = (group, depth) => {
+    const opt = document.createElement("option");
+    opt.value = group.id;
+    opt.textContent = `${"  ".repeat(depth)}${group.name}`;
+    hfGroup.appendChild(opt);
+    for (const child of hostGroups.filter((g) => (g.parentId || "") === group.id)) {
+      appendGroup(child, depth + 1);
+    }
+  };
+  for (const g of roots) appendGroup(g, 0);
+  hfGroup.value = selectedGroupId || "";
+  syncCustomSelect("hf-group");
+}
+
+function applyVaultSidebarWidth(width) {
+  const clamped = Math.max(VAULT_SIDEBAR_MIN, Math.min(VAULT_SIDEBAR_MAX, Math.round(width)));
+  vaultSidebarWidth = clamped;
+  vaultLayout?.style.setProperty("--vault-sidebar-width", `${clamped}px`);
+}
 
 function setWindowMaximizeButtonState(maximized) {
   windowIsMaximized = Boolean(maximized);
@@ -1077,14 +1184,10 @@ function isTitlebarInteractiveTarget(target) {
 }
 
 if (workspaceTitlebar && appWindow?.startDragging) {
-  workspaceTitlebar.addEventListener("mousedown", (ev) => {
-    if (ev.button !== 0) return;
-    if (isTitlebarInteractiveTarget(ev.target)) return;
-    appWindow.startDragging().catch((e) => {
-      console.warn("startDragging failed", e);
-    });
-  });
+  bindDragOnBar(workspaceTitlebar);
 }
+bindDragOnBar(vaultLeftTopbar);
+bindDragOnBar(vaultRightTopbar);
 
 if (windowControls) {
   windowControls.hidden = !isWindowsPlatform;
@@ -1092,16 +1195,10 @@ if (windowControls) {
 
 if (isWindowsPlatform && appWindow) {
   if (workspaceTitlebar) {
-    workspaceTitlebar.addEventListener("dblclick", (ev) => {
-      if (ev.button !== 0) return;
-      if (isTitlebarInteractiveTarget(ev.target)) return;
-      appWindow.toggleMaximize().catch((e) => {
-        console.warn("toggleMaximize failed", e);
-      }).finally(() => {
-        syncWindowMaximizeButtonState();
-      });
-    });
+    bindDblclickMaximizeOnBar(workspaceTitlebar);
   }
+  bindDblclickMaximizeOnBar(vaultLeftTopbar);
+  bindDblclickMaximizeOnBar(vaultRightTopbar);
   window.addEventListener("resize", () => {
     syncWindowMaximizeButtonState();
   });
@@ -1179,16 +1276,206 @@ function setWorkspaceMode(mode) {
   if (mode !== "sftp") {
     hideFilesContextMenu();
   }
-  panelVaults.hidden = mode !== "vaults";
-  panelTerminal.hidden = mode !== "terminal";
+  const showingSftp = mode === "sftp";
+  const showingTerminal = mode === "terminal";
+  panelVaults.hidden = false;
+  panelTerminal.hidden = true;
   panelSftp.hidden = mode !== "sftp";
+  if (vaultWelcome) vaultWelcome.hidden = showingTerminal || showingSftp;
+  if (terminalWorkspace) terminalWorkspace.hidden = !showingTerminal;
   workspaceTabVaults.classList.toggle("active", mode === "vaults");
   workspaceTabSftp.classList.toggle("active", mode === "sftp");
+  workspaceNavVaults?.classList.toggle("active", mode === "vaults");
+  workspaceNavSftp?.classList.toggle("active", mode === "sftp");
   if (mode === "terminal") {
     renderTerminalWorkspace();
   } else if (mode === "sftp") {
     ensureDefaultSftpPaneState();
   }
+}
+
+function bindDragOnBar(el) {
+  if (!el || !appWindow?.startDragging) return;
+  el.addEventListener("mousedown", (ev) => {
+    if (ev.button !== 0) return;
+    if (isTitlebarInteractiveTarget(ev.target)) return;
+    appWindow.startDragging().catch((e) => {
+      console.warn("startDragging failed", e);
+    });
+  });
+}
+
+function bindDblclickMaximizeOnBar(el) {
+  if (!el || !isWindowsPlatform || !appWindow) return;
+  el.addEventListener("dblclick", (ev) => {
+    if (ev.button !== 0) return;
+    if (isTitlebarInteractiveTarget(ev.target)) return;
+    appWindow.toggleMaximize().catch((e) => {
+      console.warn("toggleMaximize failed", e);
+    }).finally(() => {
+      syncWindowMaximizeButtonState();
+    });
+  });
+}
+
+function setWorkspaceSidebarCollapsed(collapsed) {
+  workspaceSidebarCollapsed = Boolean(collapsed);
+  appShell?.classList.toggle("sidebar-collapsed", workspaceSidebarCollapsed);
+  if (workspaceSidebarToggle) {
+    workspaceSidebarToggle.textContent = workspaceSidebarCollapsed ? "⇥" : "⇤";
+    workspaceSidebarToggle.setAttribute("title", workspaceSidebarCollapsed ? "Expand" : "Collapse");
+    workspaceSidebarToggle.setAttribute("aria-label", workspaceSidebarCollapsed ? "Expand" : "Collapse");
+  }
+  if (workspaceSidebarToggleRight) {
+    workspaceSidebarToggleRight.textContent = workspaceSidebarCollapsed ? "⇥" : "⇤";
+    workspaceSidebarToggleRight.setAttribute("title", workspaceSidebarCollapsed ? "Expand" : "Collapse");
+    workspaceSidebarToggleRight.setAttribute("aria-label", workspaceSidebarCollapsed ? "Expand" : "Collapse");
+  }
+  if (!workspaceSidebarCollapsed) {
+    applyVaultSidebarWidth(vaultSidebarWidth);
+  }
+  if (vaultsContent) vaultsContent.hidden = workspaceSidebarCollapsed;
+}
+
+function hideHostsContextMenu() {
+  if (!hostsContextMenu) return;
+  hostsContextMenu.hidden = true;
+  hostsContextHostId = null;
+}
+
+function hideGroupsContextMenu() {
+  if (!groupsContextMenu) return;
+  groupsContextMenu.hidden = true;
+  groupsContextGroupId = null;
+}
+
+function showHostsContextMenu(host, ev) {
+  if (!hostsContextMenu || !host) return;
+  hostsContextHostId = host.id;
+  hostsContextMenu.hidden = false;
+  const pad = 8;
+  requestAnimationFrame(() => {
+    const rect = hostsContextMenu.getBoundingClientRect();
+    let left = ev.clientX;
+    let top = ev.clientY;
+    if (left + rect.width + pad > window.innerWidth) {
+      left = Math.max(pad, window.innerWidth - rect.width - pad);
+    }
+    if (top + rect.height + pad > window.innerHeight) {
+      top = Math.max(pad, window.innerHeight - rect.height - pad);
+    }
+    hostsContextMenu.style.left = `${left}px`;
+    hostsContextMenu.style.top = `${top}px`;
+  });
+}
+
+function showGroupsContextMenu(group, ev) {
+  if (!groupsContextMenu || !group) return;
+  groupsContextGroupId = group.id;
+  groupsContextMenu.hidden = false;
+  const pad = 8;
+  requestAnimationFrame(() => {
+    const rect = groupsContextMenu.getBoundingClientRect();
+    let left = ev.clientX;
+    let top = ev.clientY;
+    if (left + rect.width + pad > window.innerWidth) {
+      left = Math.max(pad, window.innerWidth - rect.width - pad);
+    }
+    if (top + rect.height + pad > window.innerHeight) {
+      top = Math.max(pad, window.innerHeight - rect.height - pad);
+    }
+    groupsContextMenu.style.left = `${left}px`;
+    groupsContextMenu.style.top = `${top}px`;
+  });
+}
+
+const customSelectState = {
+  openId: null,
+};
+
+function buildCustomSelect(selectEl) {
+  if (!selectEl || selectEl.dataset.customSelectBound === "1") return;
+  const wrap = document.createElement("div");
+  wrap.className = "zt-select-wrap";
+  const trigger = document.createElement("button");
+  trigger.type = "button";
+  trigger.className = "zt-select-trigger";
+  trigger.setAttribute("aria-haspopup", "listbox");
+  trigger.setAttribute("aria-expanded", "false");
+  const menu = document.createElement("div");
+  menu.className = "zt-select-menu";
+  menu.hidden = true;
+
+  const parent = selectEl.parentElement;
+  if (!parent) return;
+  selectEl.dataset.customSelectBound = "1";
+  selectEl.classList.add("zt-select-native");
+  parent.insertBefore(wrap, selectEl);
+  wrap.append(trigger, menu);
+  wrap.appendChild(selectEl);
+
+  const close = () => {
+    menu.hidden = true;
+    trigger.setAttribute("aria-expanded", "false");
+    if (customSelectState.openId === selectEl.id) {
+      customSelectState.openId = null;
+    }
+  };
+
+  const open = () => {
+    if (customSelectState.openId && customSelectState.openId !== selectEl.id) {
+      const current = document.querySelector(`select#${customSelectState.openId}`);
+      current?.dispatchEvent(new CustomEvent("zt-select-close"));
+    }
+    menu.hidden = false;
+    trigger.setAttribute("aria-expanded", "true");
+    customSelectState.openId = selectEl.id;
+  };
+
+  const sync = () => {
+    const opts = Array.from(selectEl.options);
+    const current = opts.find((o) => o.value === selectEl.value) || opts[0];
+    trigger.textContent = current ? current.textContent : "";
+    menu.innerHTML = "";
+    for (const opt of opts) {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "zt-select-option" + (opt.value === selectEl.value ? " active" : "");
+      item.textContent = opt.textContent;
+      item.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        selectEl.value = opt.value;
+        selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+        sync();
+        close();
+      });
+      menu.appendChild(item);
+    }
+  };
+
+  trigger.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (menu.hidden) open(); else close();
+  });
+  wrap.addEventListener("zt-select-close", close);
+  document.addEventListener("click", (ev) => {
+    if (!wrap.contains(ev.target)) close();
+  });
+  wrap.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") close();
+  });
+
+  selectEl.addEventListener("change", sync);
+  selectEl._ztSync = sync;
+  sync();
+}
+
+function syncCustomSelect(selectId) {
+  const el = document.getElementById(selectId);
+  if (!el) return;
+  if (typeof el._ztSync === "function") el._ztSync();
 }
 
 function applyI18n() {
@@ -1210,6 +1497,8 @@ function applyI18n() {
 
   setText("workspace-tab-vaults", "workspace.tab.vaults");
   setText("workspace-tab-sftp", "workspace.tab.sftp");
+  setAttr("workspace-nav-vaults", "title", "workspace.tab.vaults");
+  setAttr("workspace-nav-sftp", "title", "workspace.tab.sftp");
   setAttr("new-window-button", "title", "sidebar.new_window");
   setAttr("settings-button", "title", "sidebar.settings");
   setAttr("lock-button", "title", "sidebar.lock");
@@ -1218,7 +1507,7 @@ function applyI18n() {
   setWindowMaximizeButtonState(windowIsMaximized);
 
   setPlaceholder("host-search", "hosts.search.placeholder");
-  setText("add-host-button", "hosts.new_host");
+  setAttr("add-host-button", "title", "hosts.new_host");
 
   setPlaceholder("sftp-left-path-input", "sftp.path.placeholder");
   setPlaceholder("sftp-right-path-input", "sftp.path.placeholder");
@@ -1254,6 +1543,7 @@ function applyI18n() {
   setText("hf-host-label", "host_editor.label.host");
   setText("hf-port-label", "host_editor.label.port");
   setText("hf-auth-label", "host_editor.label.auth");
+  setText("hf-group-label", "common.group");
   setText("hf-password-label", "host_editor.label.password");
   setText("hf-key-label", "host_editor.label.private_key");
   setText("hf-key-passphrase-label", "host_editor.label.passphrase");
@@ -1269,6 +1559,7 @@ function applyI18n() {
   setOptionText("hf-auth-type", "password", "host_editor.auth.password");
   setOptionText("hf-auth-type", "key", "host_editor.auth.key");
   setOptionText("hf-auth-type", "agent", "host_editor.auth.agent");
+  syncCustomSelect("hf-auth-type");
 
   setPlaceholder("file-editor-find", "editor.find.placeholder");
   setPlaceholder("file-editor-replace", "editor.replace.placeholder");
@@ -1286,6 +1577,7 @@ function applyI18n() {
   setText("settings-close-button", "settings.button.close");
   setOptionText("settings-language-select", "zh-CN", "settings.language.zh");
   setOptionText("settings-language-select", "en", "settings.language.en");
+  syncCustomSelect("settings-language-select");
   if (settingsLanguageSelect) settingsLanguageSelect.value = currentLocale;
   if (textInputOverlay.hidden) {
     setText("text-input-title", "input.title");
@@ -1325,8 +1617,77 @@ function applyI18n() {
 }
 
 hostSearch.addEventListener("input", () => renderHosts());
+buildCustomSelect(document.getElementById("hf-auth-type"));
+buildCustomSelect(document.getElementById("hf-group"));
+buildCustomSelect(document.getElementById("hf-jump"));
+buildCustomSelect(document.getElementById("settings-language-select"));
+buildCustomSelect(document.getElementById("sftp-left-host"));
+buildCustomSelect(document.getElementById("sftp-right-host"));
 workspaceTabVaults.addEventListener("click", () => setWorkspaceMode("vaults"));
 workspaceTabSftp.addEventListener("click", () => setWorkspaceMode("sftp"));
+workspaceNavVaults?.addEventListener("click", () => setWorkspaceMode("vaults"));
+workspaceNavSftp?.addEventListener("click", () => setWorkspaceMode("sftp"));
+workspaceSidebarToggle?.addEventListener("click", () => {
+  setWorkspaceSidebarCollapsed(!workspaceSidebarCollapsed);
+});
+workspaceSidebarToggleRight?.addEventListener("click", () => {
+  setWorkspaceSidebarCollapsed(!workspaceSidebarCollapsed);
+});
+document.getElementById("add-group-button")?.addEventListener("click", async () => {
+  const name = await openTextInputDialog({
+    title: "添加分组",
+    message: "请输入分组名称",
+    placeholder: "例如：生产环境",
+  });
+  if (!name) return;
+  const g = { id: uniqueId("group"), name, parentId: "" };
+  hostGroups.push(g);
+  groupExpandedState[g.id] = true;
+  saveVaultGroupsState();
+  renderHosts();
+});
+
+if (vaultSplitter) {
+  vaultSplitter.addEventListener("mousedown", (ev) => {
+    if (workspaceSidebarCollapsed) return;
+    if (ev.button !== 0) return;
+    ev.preventDefault();
+    const startX = ev.clientX;
+    const startWidth = vaultSidebarWidth;
+    appShell?.classList.add("resizing-sidebar");
+
+    const onMove = (moveEv) => {
+      const delta = moveEv.clientX - startX;
+      applyVaultSidebarWidth(startWidth + delta);
+      const activeTab = getActiveTab();
+      if (activeTab?.panes?.length) {
+        for (const pane of activeTab.panes) {
+          requestPaneFit(pane);
+        }
+      }
+    };
+
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      appShell?.classList.remove("resizing-sidebar");
+      const activeTab = getActiveTab();
+      if (activeTab?.panes?.length) {
+        requestAnimationFrame(() => {
+          for (const pane of activeTab.panes) {
+            requestPaneFit(pane, { immediate: true });
+          }
+        });
+      }
+    };
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  });
+}
+
+applyVaultSidebarWidth(vaultSidebarWidth);
+setWorkspaceSidebarCollapsed(false);
 
 document.getElementById("lock-button").addEventListener("click", async () => {
   for (const pane of Object.values(sftpPanes)) {
@@ -1343,7 +1704,155 @@ document.getElementById("lock-button").addEventListener("click", async () => {
 });
 
 document.getElementById("add-host-button").addEventListener("click", () => openHostEditor());
+hostsMenuConnect?.addEventListener("click", () => {
+  const host = hostsCache.find((h) => h.id === hostsContextHostId);
+  hideHostsContextMenu();
+  if (!host) return;
+  openHostInTerminal(host);
+});
+hostsMenuEdit?.addEventListener("click", () => {
+  const id = hostsContextHostId;
+  hideHostsContextMenu();
+  if (!id) return;
+  openHostEditor(id);
+});
+hostsMenuCopy?.addEventListener("click", async () => {
+  const host = hostsCache.find((h) => h.id === hostsContextHostId);
+  hideHostsContextMenu();
+  if (!host) return;
+  const text = `${host.user}@${host.host}:${host.port}`;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    await openTextInputDialog({
+      title: "复制",
+      message: "连接信息",
+      defaultValue: text,
+      placeholder: "",
+    });
+  }
+});
+hostsMenuDelete?.addEventListener("click", async () => {
+  const host = hostsCache.find((h) => h.id === hostsContextHostId);
+  hideHostsContextMenu();
+  if (!host) return;
+  if (!confirm(t("hosts.confirm.delete_one", { name: host.name }))) return;
+  try {
+    await invoke("delete_host", { id: host.id });
+    await enterHosts();
+  } catch (e) {
+    alert(t("hosts.error.delete_failed", { error: e }));
+  }
+});
+
+groupsMenuAddHost?.addEventListener("click", () => {
+  hideGroupsContextMenu();
+  openHostEditor();
+});
+
+groupsMenuAddSub?.addEventListener("click", async () => {
+  const parentId = groupsContextGroupId;
+  hideGroupsContextMenu();
+  if (!parentId) return;
+  const parent = hostGroups.find((g) => g.id === parentId);
+  if (!parent) return;
+  const name = await openTextInputDialog({
+    title: "创建子分组",
+    message: `父分组：${parent.name}`,
+    placeholder: "请输入子分组名称",
+  });
+  if (!name) return;
+  const g = { id: uniqueId("group"), name, parentId };
+  hostGroups.push(g);
+  groupExpandedState[parentId] = true;
+  groupExpandedState[g.id] = true;
+  saveVaultGroupsState();
+  renderHosts();
+});
+
+groupsMenuExpand?.addEventListener("click", () => {
+  if (!groupsContextGroupId) return;
+  groupExpandedState[groupsContextGroupId] = true;
+  saveVaultGroupsState();
+  hideGroupsContextMenu();
+  renderHosts();
+});
+
+groupsMenuExpandAll?.addEventListener("click", () => {
+  for (const g of hostGroups) groupExpandedState[g.id] = true;
+  saveVaultGroupsState();
+  hideGroupsContextMenu();
+  renderHosts();
+});
+
+groupsMenuCollapse?.addEventListener("click", () => {
+  if (!groupsContextGroupId) return;
+  groupExpandedState[groupsContextGroupId] = false;
+  saveVaultGroupsState();
+  hideGroupsContextMenu();
+  renderHosts();
+});
+
+groupsMenuCollapseAll?.addEventListener("click", () => {
+  for (const g of hostGroups) groupExpandedState[g.id] = false;
+  saveVaultGroupsState();
+  hideGroupsContextMenu();
+  renderHosts();
+});
+
+groupsMenuEdit?.addEventListener("click", async () => {
+  const group = hostGroups.find((g) => g.id === groupsContextGroupId);
+  hideGroupsContextMenu();
+  if (!group) return;
+  const name = await openTextInputDialog({
+    title: "编辑分组",
+    message: "请输入新的分组名称",
+    defaultValue: group.name,
+  });
+  if (!name) return;
+  group.name = name;
+  saveVaultGroupsState();
+  renderHosts();
+});
+
+groupsMenuDelete?.addEventListener("click", () => {
+  const groupId = groupsContextGroupId;
+  const group = hostGroups.find((g) => g.id === groupId);
+  hideGroupsContextMenu();
+  if (!group) return;
+  if (!confirm(`删除分组 \"${group.name}\"?`)) return;
+  const toDelete = new Set([groupId]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const g of hostGroups) {
+      if (toDelete.has(g.id)) continue;
+      if (toDelete.has(g.parentId || "")) {
+        toDelete.add(g.id);
+        changed = true;
+      }
+    }
+  }
+  hostGroups = hostGroups.filter((g) => !toDelete.has(g.id));
+  for (const gid of toDelete) {
+    delete groupExpandedState[gid];
+  }
+  for (const key of Object.keys(hostGroupMap)) {
+    if (toDelete.has(hostGroupMap[key])) delete hostGroupMap[key];
+  }
+  saveVaultGroupsState();
+  renderHosts();
+});
+
+window.addEventListener("click", () => hideHostsContextMenu());
+window.addEventListener("click", () => hideGroupsContextMenu());
+window.addEventListener("blur", () => hideHostsContextMenu());
+window.addEventListener("blur", () => hideGroupsContextMenu());
 settingsButton.addEventListener("click", () => {
+  settingsLanguageSelect.value = currentLocale;
+  settingsOverlay.hidden = false;
+});
+vaultBottomSettingsButton?.addEventListener("click", () => {
   settingsLanguageSelect.value = currentLocale;
   settingsOverlay.hidden = false;
 });
@@ -1387,6 +1896,8 @@ async function enterHosts() {
   show("hosts");
   setWorkspaceMode("vaults");
   hostSearch.value = "";
+  loadVaultGroupsState();
+  migrateAutoSeededGroupsIfNeeded();
 
   try {
     await refreshHostsCacheFromVault();
@@ -1402,6 +1913,7 @@ function renderHosts() {
   hostsList.innerHTML = "";
 
   const q = hostSearch.value.trim().toLowerCase();
+  const searching = q.length > 0;
   const rows = q
     ? hostsCache.filter((h) =>
       `${h.name} ${h.user} ${h.host} ${h.port}`.toLowerCase().includes(q)
@@ -1417,9 +1929,18 @@ function renderHosts() {
     hostsEmpty.hidden = true;
   }
 
-  for (const host of rows) {
+  function renderHostItem(host, grouped = false) {
     const li = document.createElement("li");
     li.className = "host-card";
+    if (grouped) li.classList.add("host-card-grouped");
+    li.tabIndex = 0;
+    li.draggable = true;
+    li.dataset.hostId = host.id;
+    li.dataset.conn = `${host.user}@${host.host}:${host.port}`;
+    li.setAttribute("aria-label", `${host.name} ${host.user}@${host.host}:${host.port}`);
+    if (host.id === selectedVaultHostId) {
+      li.classList.add("selected");
+    }
 
     const top = document.createElement("div");
     top.className = "row-top";
@@ -1441,6 +1962,10 @@ function renderHosts() {
     name.className = "name";
     name.textContent = host.name;
 
+    const conn = document.createElement("span");
+    conn.className = "host-conn-inline";
+    conn.textContent = `${host.user}@${host.host}:${host.port}`;
+
     const target = document.createElement("div");
     target.className = "target";
     target.textContent = `${host.user}@${host.host}:${host.port}`;
@@ -1449,7 +1974,7 @@ function renderHosts() {
     meta.className = "meta";
     meta.textContent = authTypeLabel(host.authType);
 
-    info.append(name, target, meta);
+    info.append(name, conn, target, meta);
     top.append(badge, info);
 
     const actions = document.createElement("div");
@@ -1492,7 +2017,127 @@ function renderHosts() {
 
     actions.append(connectBtn, filesBtn, editBtn, delBtn);
     li.append(top, actions);
+    li.addEventListener("click", () => {
+      selectedVaultHostId = host.id;
+      renderHosts();
+    });
+    li.addEventListener("dblclick", () => {
+      openHostInTerminal(host);
+    });
+    li.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        openHostInTerminal(host);
+      }
+    });
+    li.addEventListener("contextmenu", (ev) => {
+      ev.preventDefault();
+      selectedVaultHostId = host.id;
+      renderHosts();
+      showHostsContextMenu(host, ev);
+    });
+    li.addEventListener("dragstart", (ev) => {
+      draggingHostId = host.id;
+      li.classList.add("dragging");
+      if (ev.dataTransfer) {
+        ev.dataTransfer.effectAllowed = "move";
+        ev.dataTransfer.setData("text/plain", host.id);
+      }
+    });
+    li.addEventListener("dragend", () => {
+      draggingHostId = null;
+      li.classList.remove("dragging");
+      for (const row of hostsList.querySelectorAll(".group-row.drop-target")) {
+        row.classList.remove("drop-target");
+      }
+    });
     hostsList.appendChild(li);
+  }
+
+  if (searching) {
+    for (const host of rows) {
+      renderHostItem(host, false);
+    }
+    return;
+  }
+
+  const groupedRows = new Map();
+  for (const g of hostGroups) groupedRows.set(g.id, []);
+  const ungroupedRows = [];
+
+  for (const host of rows) {
+    const gid = hostGroupMap[host.id];
+    if (gid && groupedRows.has(gid)) {
+      groupedRows.get(gid).push(host);
+    } else {
+      ungroupedRows.push(host);
+    }
+  }
+
+  function renderGroupNode(group, depth) {
+    const items = groupedRows.get(group.id) || [];
+    const expanded = groupExpandedState[group.id] !== false;
+
+    const row = document.createElement("li");
+    row.className = "group-row";
+    row.style.paddingLeft = `${4 + depth * 14}px`;
+    const left = document.createElement("span");
+    left.className = "group-left";
+    const caret = document.createElement("span");
+    caret.className = "group-caret";
+    caret.textContent = expanded ? "▾" : "▸";
+    const name = document.createElement("span");
+    name.textContent = group.name;
+    const count = document.createElement("span");
+    count.className = "group-count";
+    count.textContent = String(items.length);
+    left.append(caret, name);
+    row.append(left, count);
+    row.addEventListener("click", () => {
+      groupExpandedState[group.id] = !expanded;
+      saveVaultGroupsState();
+      renderHosts();
+    });
+    row.addEventListener("contextmenu", (ev) => {
+      ev.preventDefault();
+      hideHostsContextMenu();
+      showGroupsContextMenu(group, ev);
+    });
+    row.addEventListener("dragover", (ev) => {
+      if (!draggingHostId) return;
+      ev.preventDefault();
+      if (ev.dataTransfer) ev.dataTransfer.dropEffect = "move";
+      row.classList.add("drop-target");
+    });
+    row.addEventListener("dragleave", () => {
+      row.classList.remove("drop-target");
+    });
+    row.addEventListener("drop", (ev) => {
+      ev.preventDefault();
+      row.classList.remove("drop-target");
+      const hostId = (ev.dataTransfer && ev.dataTransfer.getData("text/plain")) || draggingHostId;
+      if (!hostId) return;
+      hostGroupMap[hostId] = group.id;
+      saveVaultGroupsState();
+      renderHosts();
+    });
+    hostsList.appendChild(row);
+
+    if (!expanded) return;
+    const children = hostGroups.filter((g) => (g.parentId || "") === group.id);
+    for (const child of children) renderGroupNode(child, depth + 1);
+    for (const host of items) {
+      renderHostItem(host, true);
+    }
+  }
+
+  if (hostGroups.length > 0) {
+    const roots = hostGroups.filter((g) => !g.parentId);
+    for (const group of roots) renderGroupNode(group, 0);
+  }
+
+  for (const host of ungroupedRows) {
+    renderHostItem(host, false);
   }
 }
 
@@ -1708,10 +2353,12 @@ function ensurePaneTerminal(pane) {
     fontWeight: "400",
     fontWeightBold: "700",
     theme: {
-      background: "#05080f",
+      background: "#00000000",
       foreground: "#e7ecff",
       cursor: "#9cc3ff",
+      selectionBackground: "#2d4a7a",
     },
+    allowTransparency: true,
     cursorBlink: true,
     allowProposedApi: true,
     customGlyphs: true,
@@ -2108,12 +2755,15 @@ const hfHost = document.getElementById("hf-host");
 const hfPort = document.getElementById("hf-port");
 const hfUser = document.getElementById("hf-user");
 const hfAuthType = document.getElementById("hf-auth-type");
+const hfGroup = document.getElementById("hf-group");
 const hfPasswordBlock = document.getElementById("hf-password-block");
 const hfPassword = document.getElementById("hf-password");
+const hfPasswordToggle = document.getElementById("hf-password-toggle");
 const hfKeyBlock = document.getElementById("hf-key-block");
 const hfKeyPick = document.getElementById("hf-key-pick");
 const hfKeyStatus = document.getElementById("hf-key-status");
 const hfKeyPassphrase = document.getElementById("hf-key-passphrase");
+const hfKeyPassphraseToggle = document.getElementById("hf-key-passphrase-toggle");
 const hfJump = document.getElementById("hf-jump");
 const hfForwardsList = document.getElementById("hf-forwards");
 const hfForwardAdd = document.getElementById("hf-forward-add");
@@ -2126,6 +2776,24 @@ let hfForwards = [];
 
 hfAuthType.addEventListener("change", () => syncAuthSections());
 hfKeyPick.addEventListener("click", pickKeyFile);
+function syncPasswordToggleButton(button, visible, labels) {
+  if (!button) return;
+  button.textContent = visible ? "🙈" : "👁";
+  const title = visible ? labels.hide : labels.show;
+  button.setAttribute("title", title);
+  button.setAttribute("aria-label", title);
+}
+
+hfPasswordToggle?.addEventListener("click", () => {
+  const show = hfPassword.type === "password";
+  hfPassword.type = show ? "text" : "password";
+  syncPasswordToggleButton(hfPasswordToggle, show, { show: "显示密码", hide: "隐藏密码" });
+});
+hfKeyPassphraseToggle?.addEventListener("click", () => {
+  const show = hfKeyPassphrase.type === "password";
+  hfKeyPassphrase.type = show ? "text" : "password";
+  syncPasswordToggleButton(hfKeyPassphraseToggle, show, { show: "显示口令", hide: "隐藏口令" });
+});
 hfForwardAdd.addEventListener("click", () => {
   hfForwards.push({
     kind: "local",
@@ -2149,7 +2817,12 @@ async function openHostEditor(id = null) {
   hfKeyStatus.textContent = t("host_editor.key.none");
   hfPassword.value = "";
   hfKeyPassphrase.value = "";
+  if (hfPassword) hfPassword.type = "password";
+  if (hfKeyPassphrase) hfKeyPassphrase.type = "password";
+  syncPasswordToggleButton(hfPasswordToggle, false, { show: "显示密码", hide: "隐藏密码" });
+  syncPasswordToggleButton(hfKeyPassphraseToggle, false, { show: "显示口令", hide: "隐藏口令" });
   hfForwards = [];
+  loadVaultGroupsState();
 
   await populateJumpOptions(id);
 
@@ -2170,6 +2843,8 @@ async function openHostEditor(id = null) {
         hfKeyPassphrase.value = h.keyPassphrase ?? "";
       }
 
+      populateHostGroupOptions(hostGroupMap[id] || "");
+
       hfJump.value = h.proxyJump ?? "";
       hfForwards = h.forwards.map(forwardFromIO);
     } catch (e) {
@@ -2183,6 +2858,7 @@ async function openHostEditor(id = null) {
     hfPort.value = "22";
     hfUser.value = "";
     hfAuthType.value = "password";
+    populateHostGroupOptions("");
     hfJump.value = "";
   }
 
@@ -2219,6 +2895,8 @@ async function populateJumpOptions(currentId) {
   } catch (e) {
     console.warn("populateJumpOptions failed", e);
   }
+
+  syncCustomSelect("hf-jump");
 }
 
 function forwardFromIO(spec) {
@@ -2272,6 +2950,7 @@ function renderForwards() {
       }
       renderForwards();
     });
+    buildCustomSelect(kind);
 
     const fields = document.createElement("div");
     fields.className = "fields";
@@ -2450,11 +3129,23 @@ async function saveHostForm(ev) {
   }
 
   try {
+    let savedHostId = editingHostId;
     if (editingHostId) {
       await invoke("update_host", { id: editingHostId, input });
     } else {
-      await invoke("save_host", { input });
+      savedHostId = await invoke("save_host", { input });
     }
+
+    if (savedHostId) {
+      const groupId = hfGroup?.value || "";
+      if (groupId) {
+        hostGroupMap[savedHostId] = groupId;
+      } else {
+        delete hostGroupMap[savedHostId];
+      }
+      saveVaultGroupsState();
+    }
+
     closeHostEditor();
     await enterHosts();
   } catch (e) {
