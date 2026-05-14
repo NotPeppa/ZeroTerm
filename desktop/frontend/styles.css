@@ -202,6 +202,17 @@ label.checkbox input[type="checkbox"] {
   font-size: 12px;
 }
 
+.unlock-card label.checkbox {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.unlock-card label.checkbox input[type="checkbox"] {
+  margin: 0;
+}
+
 /* Unified workspace */
 
 .app-shell {
