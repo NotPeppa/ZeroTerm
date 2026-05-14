@@ -364,6 +364,7 @@ const I18N = {
     "files.error.open_failed": "open failed: {error}",
     "files.error.list_failed": "list failed: {error}",
     "files.status.downloaded_one": "Downloaded {name} ({size}).",
+    "files.status.downloaded_dir_to": "Downloaded folder {name} to {folder}.",
     "files.error.download_failed": "download failed: {error}",
     "files.prompt.rename": "Rename \"{name}\" to:",
     "files.error.rename_failed": "rename failed: {error}",
@@ -603,6 +604,7 @@ const I18N = {
     "files.error.open_failed": "打开失败：{error}",
     "files.error.list_failed": "列表读取失败：{error}",
     "files.status.downloaded_one": "已下载 {name}（{size}）。",
+    "files.status.downloaded_dir_to": "已将文件夹 {name} 下载到 {folder}。",
     "files.error.download_failed": "下载失败：{error}",
     "files.prompt.rename": "将“{name}”重命名为：",
     "files.error.rename_failed": "重命名失败：{error}",
@@ -3522,6 +3524,7 @@ function showFilesContextMenu(pane, entry, x, y) {
   const selectedCount = selectedEntries.length;
   const hasDeleteTarget = hasSingleTarget || selectedCount > 0;
   const isFile = hasSingleTarget && targetEntry.kind === "file";
+  const canDownload = hasSingleTarget && (targetEntry.kind === "file" || targetEntry.kind === "dir");
   const canInlineEdit = isFile && canInlineEditEntry(targetEntry);
 
   filesContextEntry = targetEntry;
@@ -3556,7 +3559,7 @@ function showFilesContextMenu(pane, entry, x, y) {
   filesMenuPermissions.disabled = true;
   filesMenuSelectAll.disabled = !(connected && getVisibleEntriesForPane(pane).length > 0);
   filesMenuEdit.disabled = !(connected && canInlineEdit);
-  filesMenuDownload.disabled = !(connected && !local && isFile);
+  filesMenuDownload.disabled = !(connected && !local && canDownload);
   filesMenuClose.disabled = false;
   filesMenuHidden.textContent = pane.showHidden ? t("files.menu.hide_hidden") : t("files.menu.show_hidden");
 
@@ -3585,6 +3588,31 @@ function hideFilesContextMenu() {
 }
 
 async function sftpDownloadFile(pane, entry) {
+  if (!pane || pane.sftpId === null || !entry) return;
+  if (entry.kind === "dir") {
+    const destination = await invoke("plugin:dialog|open", {
+      options: { multiple: false, directory: true },
+    });
+    if (!destination) return;
+    const destinationDir = Array.isArray(destination) ? String(destination[0] || "") : String(destination);
+    if (!destinationDir) return;
+    try {
+      await invoke("sftp_copy_entry_between_panes", {
+        sourceSftpId: pane.sftpId,
+        sourcePath: joinPanePath(pane, entry.name),
+        destinationSftpId: null,
+        destinationDir,
+      });
+      pane.statusEl.textContent = t("files.status.downloaded_dir_to", {
+        name: entry.name,
+        folder: destinationDir,
+      });
+    } catch (e) {
+      pane.statusEl.textContent = t("files.error.download_failed", { error: e });
+    }
+    return;
+  }
+
   const local = await invoke("plugin:dialog|save", {
     options: { defaultPath: entry.name },
   });
@@ -4369,7 +4397,7 @@ filesMenuDownload.addEventListener("click", async () => {
   const pane = getFilesContextPane();
   const entry = getFilesContextEntry(pane);
   hideFilesContextMenu();
-  if (!pane || !entry || entry.kind !== "file") return;
+  if (!pane || !entry || (entry.kind !== "file" && entry.kind !== "dir")) return;
   await sftpDownloadFile(pane, entry);
 });
 

@@ -290,6 +290,12 @@ label.checkbox input[type="checkbox"] {
   place-items: center;
 }
 
+.window-control-btn.danger {
+  border: none;
+  background: transparent;
+  color: #d5e3ff;
+}
+
 .window-control-btn:hover {
   border: none;
   background: rgba(94, 128, 194, 0.2);
