@@ -137,6 +137,42 @@ impl KnownHosts {
         file.write_all(line.as_bytes())?;
         Ok(())
     }
+
+    /// Replace all entries matching `(host, port)` with a single fresh key.
+    pub fn replace(&self, host: &str, port: u16, key: &PublicKey) -> std::io::Result<()> {
+        let existing = match std::fs::read_to_string(&self.path) {
+            Ok(s) => s,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+            Err(e) => return Err(e),
+        };
+
+        let mut out = String::new();
+        for raw in existing.lines() {
+            let line = raw.trim();
+            if line.is_empty() || line.starts_with('#') {
+                out.push_str(raw);
+                out.push('\n');
+                continue;
+            }
+            let host_field = line.split_whitespace().next().unwrap_or("");
+            if !host_field_matches(host_field, host, port) {
+                out.push_str(raw);
+                out.push('\n');
+            }
+        }
+
+        if let Some(parent) = self.path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        let host_part = if port == 22 {
+            host.to_string()
+        } else {
+            format!("[{}]:{}", host, port)
+        };
+        out.push_str(&format!("{} {} {}\n", host_part, key.name(), key.public_key_base64()));
+        std::fs::write(&self.path, out)
+    }
 }
 
 /// Does `host_field` (a comma-separated list from a known_hosts line) match

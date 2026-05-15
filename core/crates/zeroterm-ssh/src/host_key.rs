@@ -12,6 +12,13 @@ use russh_keys::PublicKeyBase64;
 
 use crate::known_hosts::{KnownHostStatus, KnownHosts};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MismatchAction {
+    Reject,
+    AcceptOnce,
+    AcceptAndReplace,
+}
+
 /// Information surfaced to the UI when an unknown / mismatched key shows up.
 #[derive(Debug, Clone)]
 pub struct HostKeyInfo {
@@ -40,10 +47,8 @@ pub trait HostKeyPrompt: Send + Sync {
     /// New host, no record. Return `true` to accept and add to known_hosts.
     async fn on_unknown(&self, info: HostKeyInfo) -> bool;
 
-    /// Host already trusted with a *different* key. Return `true` to
-    /// accept this connection (one-shot — we do NOT auto-rewrite the
-    /// stored entry, that's a manual operation).
-    async fn on_mismatch(&self, info: HostKeyInfo, stored: String) -> bool;
+    /// Host already trusted with a *different* key.
+    async fn on_mismatch(&self, info: HostKeyInfo, stored: String) -> MismatchAction;
 }
 
 /// Trust strategy applied during the SSH handshake.
@@ -115,7 +120,28 @@ impl HostKeyPolicy {
                     }
                     KnownHostStatus::Mismatch { stored } => {
                         let info = HostKeyInfo::from_key(host, port, key);
-                        Ok(prompt.on_mismatch(info, stored).await)
+                        match prompt.on_mismatch(info, stored).await {
+                            MismatchAction::Reject => Ok(false),
+                            MismatchAction::AcceptOnce => Ok(true),
+                            MismatchAction::AcceptAndReplace => {
+                                store.replace(host, port, key).map_err(|e| {
+                                    std::io::Error::new(
+                                        e.kind(),
+                                        format!(
+                                            "failed to update known_hosts at {}: {e}",
+                                            store.path().display()
+                                        ),
+                                    )
+                                })?;
+                                tracing::info!(
+                                    host,
+                                    port,
+                                    path = %store.path().display(),
+                                    "updated mismatched known_hosts entry"
+                                );
+                                Ok(true)
+                            }
+                        }
                     }
                 }
             }

@@ -3,6 +3,8 @@ use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 
 use tokio::sync::{mpsc, oneshot};
+
+use crate::host_key::HostKeyResponse;
 use tokio_util::sync::CancellationToken;
 
 /// Backend state shared across Tauri commands.
@@ -27,7 +29,7 @@ pub struct AppState {
     /// task that triggered the prompt awaits a oneshot from this map;
     /// the `respond_host_key` command pulls the sender out and fulfills
     /// it.
-    pub pending_host_key: Mutex<HashMap<String, oneshot::Sender<bool>>>,
+    pub pending_host_key: Mutex<HashMap<String, oneshot::Sender<HostKeyResponse>>>,
 
     /// Active SFTP handles keyed by id assigned via `next_sftp_id`.
     /// Distinct from `sessions` because SFTP doesn't share the shell

@@ -872,6 +872,7 @@ pub async fn respond_host_key(
     state: State<'_, AppState>,
     request_id: String,
     accept: bool,
+    mode: Option<String>,
 ) -> Result<(), String> {
     let tx = {
         state
@@ -881,7 +882,15 @@ pub async fn respond_host_key(
             .remove(&request_id)
     };
     if let Some(tx) = tx {
-        let _ = tx.send(accept);
+        let response = if accept {
+            match mode.as_deref() {
+                Some("accept_and_replace") => crate::host_key::HostKeyResponse::AcceptAndReplace,
+                _ => crate::host_key::HostKeyResponse::AcceptOnce,
+            }
+        } else {
+            crate::host_key::HostKeyResponse::Reject
+        };
+        let _ = tx.send(response);
         Ok(())
     } else {
         Err(format!("no pending host-key prompt with id {request_id}"))

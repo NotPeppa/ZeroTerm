@@ -273,6 +273,7 @@ const I18N = {
     "terminal.status.connecting": "connecting...",
     "terminal.status.connected": "connected",
     "terminal.status.disconnected": "disconnected",
+    "terminal.button.reconnect": "Reconnect",
     "terminal.via": "via {jump}",
     "terminal.error.connect_failed_status": "connect failed: {error}",
     "terminal.error.connect_failed_term": "failed to connect: {error}",
@@ -291,7 +292,9 @@ const I18N = {
     "host_key.changed_known_hosts_has": "known_hosts has:",
     "host_key.unknown_value": "(unknown)",
     "host_key.reject": "Cancel connection",
+    "host_key.accept_once": "Connect once",
     "host_key.accept": "Trust and connect",
+    "host_key.accept_replace": "Trust and update key",
     "host_editor.title.add": "Add host",
     "host_editor.title.edit": "Edit host",
     "host_editor.label.name": "Name",
@@ -436,6 +439,7 @@ const I18N = {
     "sftp.status.local": "Local: {path}",
     "sftp.error.connect_failed": "connect failed: {error}",
     "settings.title": "Settings",
+    "settings.general.title": "General",
     "settings.language.label": "Language",
     "settings.language.hint": "Changes apply immediately and are saved locally.",
     "settings.button.close": "Close",
@@ -515,6 +519,7 @@ const I18N = {
     "terminal.status.connecting": "连接中...",
     "terminal.status.connected": "已连接",
     "terminal.status.disconnected": "已断开",
+    "terminal.button.reconnect": "重新连接",
     "terminal.via": "经由 {jump}",
     "terminal.error.connect_failed_status": "连接失败：{error}",
     "terminal.error.connect_failed_term": "连接失败：{error}",
@@ -532,7 +537,9 @@ const I18N = {
     "host_key.changed_known_hosts_has": "known_hosts 中记录：",
     "host_key.unknown_value": "（未知）",
     "host_key.reject": "取消连接",
+    "host_key.accept_once": "仅本次连接",
     "host_key.accept": "信任并连接",
+    "host_key.accept_replace": "信任并更新密钥",
     "host_editor.title.add": "新增主机",
     "host_editor.title.edit": "编辑主机",
     "host_editor.label.name": "名称",
@@ -675,6 +682,7 @@ const I18N = {
     "sftp.status.local": "本地：{path}",
     "sftp.error.connect_failed": "连接失败：{error}",
     "settings.title": "设置",
+    "settings.general.title": "常规",
     "settings.language.label": "语言",
     "settings.language.hint": "修改立即生效，并会保存在本地。",
     "settings.button.close": "关闭",
@@ -1048,6 +1056,7 @@ const appShell = document.querySelector("#view-hosts .app-shell");
 const panelVaults = document.getElementById("panel-vaults");
 const panelTerminal = document.getElementById("panel-terminal");
 const panelSftp = document.getElementById("panel-sftp");
+const settingsPage = document.getElementById("settings-page");
 const vaultWelcome = document.getElementById("vault-welcome");
 const vaultsContent = document.getElementById("vaults-content");
 const vaultLayout = document.querySelector(".vault-layout");
@@ -1057,8 +1066,7 @@ const sftpRightContent = document.getElementById("sftp-right-content");
 const newWindowButton = document.getElementById("new-window-button");
 const settingsButton = document.getElementById("settings-button");
 const vaultBottomSettingsButton = document.getElementById("vault-bottom-settings");
-const settingsOverlay = document.getElementById("settings-overlay");
-const settingsCloseButton = document.getElementById("settings-close-button");
+const vaultBottomSettingsRow = document.getElementById("vault-bottom-settings-row");
 const settingsLanguageSelect = document.getElementById("settings-language-select");
 const workspaceTitlebar = document.getElementById("workspace-titlebar");
 const vaultLeftTopbar = document.querySelector(".vault-left-topbar");
@@ -1278,10 +1286,12 @@ function setWorkspaceMode(mode) {
   }
   const showingSftp = mode === "sftp";
   const showingTerminal = mode === "terminal";
+  const showingSettings = mode === "settings";
   panelVaults.hidden = false;
   panelTerminal.hidden = true;
   panelSftp.hidden = mode !== "sftp";
-  if (vaultWelcome) vaultWelcome.hidden = showingTerminal || showingSftp;
+  if (settingsPage) settingsPage.hidden = !showingSettings;
+  if (vaultWelcome) vaultWelcome.hidden = showingTerminal || showingSftp || showingSettings;
   if (terminalWorkspace) terminalWorkspace.hidden = !showingTerminal;
   workspaceTabVaults.classList.toggle("active", mode === "vaults");
   workspaceTabSftp.classList.toggle("active", mode === "sftp");
@@ -1291,6 +1301,9 @@ function setWorkspaceMode(mode) {
     renderTerminalWorkspace();
   } else if (mode === "sftp") {
     ensureDefaultSftpPaneState();
+  } else if (mode === "settings") {
+    if (settingsLanguageSelect) settingsLanguageSelect.value = currentLocale;
+    syncCustomSelect("settings-language-select");
   }
 }
 
@@ -1318,19 +1331,29 @@ function bindDblclickMaximizeOnBar(el) {
   });
 }
 
+function sidebarToggleIconMarkup(collapsed) {
+  const arrowPath = collapsed ? "m10 7 4 5-4 5" : "m14 7-4 5 4 5";
+  return `
+    <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="3.5" y="4.5" width="17" height="15" rx="2.5"></rect>
+      <path d="M9.5 4.5v15"></path>
+      <path d="${arrowPath}"></path>
+    </svg>
+  `;
+}
+
+function syncSidebarToggleButton(button, collapsed) {
+  if (!button) return;
+  button.innerHTML = sidebarToggleIconMarkup(collapsed);
+  button.setAttribute("title", collapsed ? "Expand" : "Collapse");
+  button.setAttribute("aria-label", collapsed ? "Expand" : "Collapse");
+}
+
 function setWorkspaceSidebarCollapsed(collapsed) {
   workspaceSidebarCollapsed = Boolean(collapsed);
   appShell?.classList.toggle("sidebar-collapsed", workspaceSidebarCollapsed);
-  if (workspaceSidebarToggle) {
-    workspaceSidebarToggle.textContent = workspaceSidebarCollapsed ? "⇥" : "⇤";
-    workspaceSidebarToggle.setAttribute("title", workspaceSidebarCollapsed ? "Expand" : "Collapse");
-    workspaceSidebarToggle.setAttribute("aria-label", workspaceSidebarCollapsed ? "Expand" : "Collapse");
-  }
-  if (workspaceSidebarToggleRight) {
-    workspaceSidebarToggleRight.textContent = workspaceSidebarCollapsed ? "⇥" : "⇤";
-    workspaceSidebarToggleRight.setAttribute("title", workspaceSidebarCollapsed ? "Expand" : "Collapse");
-    workspaceSidebarToggleRight.setAttribute("aria-label", workspaceSidebarCollapsed ? "Expand" : "Collapse");
-  }
+  syncSidebarToggleButton(workspaceSidebarToggle, workspaceSidebarCollapsed);
+  syncSidebarToggleButton(workspaceSidebarToggleRight, workspaceSidebarCollapsed);
   if (!workspaceSidebarCollapsed) {
     applyVaultSidebarWidth(vaultSidebarWidth);
   }
@@ -1536,6 +1559,7 @@ function applyI18n() {
   setText("files-menu-close", "files.menu.close");
 
   setText("hk-reject", "host_key.reject");
+  setText("hk-accept-once", "host_key.accept_once");
   setText("hk-accept", "host_key.accept");
 
   setText("hf-name-label", "host_editor.label.name");
@@ -1572,9 +1596,9 @@ function applyI18n() {
   setText("file-editor-save", "editor.button.save");
 
   setText("settings-title", "settings.title");
+  setText("settings-general-title", "settings.general.title");
   setText("settings-language-label", "settings.language.label");
   setText("settings-language-hint", "settings.language.hint");
-  setText("settings-close-button", "settings.button.close");
   setOptionText("settings-language-select", "zh-CN", "settings.language.zh");
   setOptionText("settings-language-select", "en", "settings.language.en");
   syncCustomSelect("settings-language-select");
@@ -1848,21 +1872,16 @@ window.addEventListener("click", () => hideHostsContextMenu());
 window.addEventListener("click", () => hideGroupsContextMenu());
 window.addEventListener("blur", () => hideHostsContextMenu());
 window.addEventListener("blur", () => hideGroupsContextMenu());
-settingsButton.addEventListener("click", () => {
-  settingsLanguageSelect.value = currentLocale;
-  settingsOverlay.hidden = false;
+settingsButton.addEventListener("click", openSettingsPage);
+vaultBottomSettingsButton?.addEventListener("click", openSettingsPage);
+vaultBottomSettingsRow?.addEventListener("click", (ev) => {
+  if (ev.target?.closest?.("#vault-bottom-settings")) return;
+  openSettingsPage();
 });
-vaultBottomSettingsButton?.addEventListener("click", () => {
-  settingsLanguageSelect.value = currentLocale;
-  settingsOverlay.hidden = false;
-});
-settingsCloseButton.addEventListener("click", () => {
-  settingsOverlay.hidden = true;
-});
-settingsOverlay.addEventListener("click", (ev) => {
-  if (ev.target === settingsOverlay) {
-    settingsOverlay.hidden = true;
-  }
+vaultBottomSettingsRow?.addEventListener("keydown", (ev) => {
+  if (ev.key !== "Enter" && ev.key !== " ") return;
+  ev.preventDefault();
+  openSettingsPage();
 });
 settingsLanguageSelect.addEventListener("change", () => {
   setLocale(settingsLanguageSelect.value);
@@ -2182,6 +2201,7 @@ function createPane(host) {
     bodyEl: null,
     titleEl: null,
     statusEl: null,
+    reconnectBtn: null,
     term: null,
     fitAddon: null,
     dataUnlisten: null,
@@ -2240,6 +2260,7 @@ function renderTerminalWorkspace() {
     try {
       ensurePaneElements(pane, tab);
       if (!pane.rootEl) continue;
+      if (pane.reconnectBtn) pane.reconnectBtn.textContent = t("terminal.button.reconnect");
       pane.rootEl.classList.toggle("active", pane.id === tab.activePaneId);
       terminalWorkspace.appendChild(pane.rootEl);
       ensurePaneTerminal(pane);
@@ -2320,10 +2341,26 @@ function ensurePaneElements(pane, tab) {
   status.className = "pane-status";
   status.textContent = t("terminal.status.connecting");
 
+  const reconnectBtn = document.createElement("button");
+  reconnectBtn.type = "button";
+  reconnectBtn.className = "pane-reconnect-btn";
+  reconnectBtn.textContent = t("terminal.button.reconnect");
+  reconnectBtn.hidden = true;
+  reconnectBtn.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    connectPaneSession(pane).catch((e) => {
+      console.warn("reconnect failed", e);
+    });
+  });
+
+  const meta = document.createElement("div");
+  meta.className = "pane-meta";
+  meta.append(status, reconnectBtn);
+
   const body = document.createElement("div");
   body.className = "pane-body";
 
-  header.append(title, status);
+  header.append(title, meta);
   root.append(header, body);
 
   root.addEventListener("click", () => {
@@ -2342,6 +2379,7 @@ function ensurePaneElements(pane, tab) {
   pane.bodyEl = body;
   pane.titleEl = title;
   pane.statusEl = status;
+  pane.reconnectBtn = reconnectBtn;
 }
 
 function ensurePaneTerminal(pane) {
@@ -2523,6 +2561,7 @@ async function connectPaneSession(pane) {
     pane.lastSentCols = cols;
     pane.lastSentRows = rows;
     pane.statusEl.textContent = t("terminal.status.connected");
+    if (pane.reconnectBtn) pane.reconnectBtn.hidden = true;
 
     await wirePaneSessionEvents(pane, sessionId);
     await stabilizePaneSize(pane, 1);
@@ -2544,6 +2583,7 @@ async function connectPaneSession(pane) {
     refreshHostsCacheFromVault({ silent: true }).catch(() => {});
   } catch (e) {
     pane.statusEl.textContent = t("terminal.error.connect_failed_status", { error: e });
+    if (pane.reconnectBtn) pane.reconnectBtn.hidden = false;
     if (pane.term) {
       pane.term.write(`\x1b[31m${t("terminal.error.connect_failed_term", { error: e })}\x1b[0m\r\n`);
     }
@@ -2576,6 +2616,7 @@ async function wirePaneSessionEvents(pane, sessionId) {
 
     pane.sessionId = null;
     if (pane.statusEl) pane.statusEl.textContent = t("terminal.status.disconnected");
+    if (pane.reconnectBtn) pane.reconnectBtn.hidden = false;
     if (pane.term) pane.term.write(tail);
   });
 }
@@ -2627,6 +2668,7 @@ async function disconnectPaneSession(pane, { dispose }) {
     pane.bodyEl = null;
     pane.titleEl = null;
     pane.statusEl = null;
+    pane.reconnectBtn = null;
   }
 }
 
@@ -2703,6 +2745,7 @@ const hkTitle = document.getElementById("hk-title");
 const hkBody = document.getElementById("hk-body");
 const hkDetail = document.getElementById("hk-detail");
 const hkAccept = document.getElementById("hk-accept");
+const hkAcceptOnce = document.getElementById("hk-accept-once");
 const hkReject = document.getElementById("hk-reject");
 
 let currentHostKey = null;
@@ -2717,27 +2760,35 @@ listen("host-key-prompt", (ev) => {
       port: currentHostKey.port,
     });
     hkDetail.textContent = `${currentHostKey.keyType}\n${currentHostKey.fingerprint}`;
+    hkAcceptOnce.hidden = true;
+    hkAccept.textContent = t("host_key.accept");
   } else {
     hkTitle.textContent = t("host_key.changed_title");
     hkBody.textContent = t("host_key.changed_body");
     hkDetail.textContent =
       `${t("host_key.changed_server_now")}\n  ${currentHostKey.keyType} ${currentHostKey.fingerprint}\n` +
       `${t("host_key.changed_known_hosts_has")}\n  ${currentHostKey.stored ?? t("host_key.unknown_value")}`;
+    hkAcceptOnce.hidden = false;
+    hkAccept.textContent = t("host_key.accept_replace");
   }
 
   hkOverlay.hidden = false;
 });
 
-hkAccept.addEventListener("click", () => respondHostKey(true));
+hkAccept.addEventListener("click", () => {
+  const mode = currentHostKey?.kind === "mismatch" ? "accept_and_replace" : null;
+  respondHostKey(true, mode);
+});
+hkAcceptOnce?.addEventListener("click", () => respondHostKey(true, "accept_once"));
 hkReject.addEventListener("click", () => respondHostKey(false));
 
-async function respondHostKey(accept) {
+async function respondHostKey(accept, mode = null) {
   if (!currentHostKey) return;
   const id = currentHostKey.requestId;
   currentHostKey = null;
   hkOverlay.hidden = true;
   try {
-    await invoke("respond_host_key", { requestId: id, accept });
+    await invoke("respond_host_key", { requestId: id, accept, mode });
   } catch (e) {
     console.warn("respond_host_key failed", e);
   }
@@ -3833,6 +3884,11 @@ function syncSftpHostOptions() {
       : selectedHost
         ? `${selectedHost.user}@${selectedHost.host}:${selectedHost.port}`
         : t("sftp.host.placeholder");
+
+    // Keep custom select UI in sync after we rebuild native options.
+    if (pane.hostSelect?.id) {
+      syncCustomSelect(pane.hostSelect.id);
+    }
   }
 }
 
@@ -5145,3 +5201,6 @@ window.addEventListener("resize", () => {
 
 applyI18n();
 refreshVaultStatus();
+function openSettingsPage() {
+  setWorkspaceMode("settings");
+}

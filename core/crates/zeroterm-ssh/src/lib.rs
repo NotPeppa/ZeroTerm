@@ -21,7 +21,7 @@ mod sftp;
 
 pub use error::SshError;
 pub use forward::{forward_dynamic, forward_local, ForwardHandle};
-pub use host_key::{HostKeyInfo, HostKeyPolicy, HostKeyPrompt};
+pub use host_key::{HostKeyInfo, HostKeyPolicy, HostKeyPrompt, MismatchAction};
 pub use known_hosts::{KnownHostStatus, KnownHosts};
 pub use session::{AuthMethod, ChannelEvent, ConnectConfig, PtySize, Session, ShellChannel};
 pub use sftp::{DirEntry, FileKind, FileMetadata, ProgressTick, Sftp, DEFAULT_CHUNK};

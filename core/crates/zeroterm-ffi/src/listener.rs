@@ -66,8 +66,16 @@ impl zeroterm_ssh::HostKeyPrompt for ForeignHostKeyPrompt {
         self.ask(info, None).await
     }
 
-    async fn on_mismatch(&self, info: zeroterm_ssh::HostKeyInfo, stored: String) -> bool {
-        self.ask(info, Some(stored)).await
+    async fn on_mismatch(
+        &self,
+        info: zeroterm_ssh::HostKeyInfo,
+        stored: String,
+    ) -> zeroterm_ssh::MismatchAction {
+        if self.ask(info, Some(stored)).await {
+            zeroterm_ssh::MismatchAction::AcceptOnce
+        } else {
+            zeroterm_ssh::MismatchAction::Reject
+        }
     }
 }
 

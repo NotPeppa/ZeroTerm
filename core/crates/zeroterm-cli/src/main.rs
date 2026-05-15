@@ -38,7 +38,7 @@ use tracing::{debug, error, info, warn};
 use zeroterm_app::{default_vault_path, App, Host, HostAuth};
 use zeroterm_ssh::{
     AuthMethod, ChannelEvent, ConnectConfig, FileKind, HostKeyInfo, HostKeyPolicy, HostKeyPrompt,
-    KnownHosts, PtySize, Session,
+    KnownHosts, MismatchAction, PtySize, Session,
 };
 
 #[derive(Debug, Parser)]
@@ -1142,7 +1142,7 @@ impl HostKeyPrompt for StdioHostKeyPrompt {
         prompt_yes_no("Are you sure you want to continue connecting (yes/no)? ").await
     }
 
-    async fn on_mismatch(&self, info: HostKeyInfo, stored: String) -> bool {
+    async fn on_mismatch(&self, info: HostKeyInfo, stored: String) -> MismatchAction {
         eprintln!();
         eprintln!("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
         eprintln!("@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @");
@@ -1154,7 +1154,11 @@ impl HostKeyPrompt for StdioHostKeyPrompt {
         eprintln!("known_hosts has:    {}", stored);
         eprintln!("This could be a man-in-the-middle attack — refuse unless you");
         eprintln!("know exactly why the key changed (e.g. server reinstall).");
-        prompt_yes_no("Continue anyway just for this connection (yes/no)? ").await
+        if prompt_yes_no("Continue anyway just for this connection (yes/no)? ").await {
+            MismatchAction::AcceptOnce
+        } else {
+            MismatchAction::Reject
+        }
     }
 }
 

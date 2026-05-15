@@ -15,7 +15,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::oneshot;
 use tracing::warn;
 
-use zeroterm_ssh::{HostKeyInfo, HostKeyPrompt};
+use zeroterm_ssh::{HostKeyInfo, HostKeyPrompt, MismatchAction};
 
 use crate::state::AppState;
 
@@ -40,12 +40,20 @@ pub enum HostKeyKind {
     Mismatch,
 }
 
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HostKeyResponse {
+    Reject,
+    AcceptOnce,
+    AcceptAndReplace,
+}
+
 pub struct TauriHostKeyPrompt {
     pub app_handle: AppHandle,
 }
 
 impl TauriHostKeyPrompt {
-    async fn ask(&self, payload: HostKeyPromptPayload) -> bool {
+    async fn ask(&self, payload: HostKeyPromptPayload) -> HostKeyResponse {
         let request_id = payload.request_id.clone();
 
         let (tx, rx) = oneshot::channel();
@@ -54,7 +62,7 @@ impl TauriHostKeyPrompt {
                 Some(s) => s,
                 None => {
                     warn!("AppState missing — cannot prompt for host key");
-                    return false;
+                    return HostKeyResponse::Reject;
                 }
             };
             state
@@ -70,12 +78,12 @@ impl TauriHostKeyPrompt {
             if let Some(state) = self.app_handle.try_state::<AppState>() {
                 state.pending_host_key.lock().unwrap().remove(&request_id);
             }
-            return false;
+            return HostKeyResponse::Reject;
         }
 
         // Default to reject if the frontend disappears (window closed,
         // dropped sender, etc.). Better than silently auto-accepting.
-        rx.await.unwrap_or(false)
+        rx.await.unwrap_or(HostKeyResponse::Reject)
     }
 }
 
@@ -91,10 +99,10 @@ impl HostKeyPrompt for TauriHostKeyPrompt {
             fingerprint: info.fingerprint,
             stored: None,
         };
-        self.ask(payload).await
+        !matches!(self.ask(payload).await, HostKeyResponse::Reject)
     }
 
-    async fn on_mismatch(&self, info: HostKeyInfo, stored: String) -> bool {
+    async fn on_mismatch(&self, info: HostKeyInfo, stored: String) -> MismatchAction {
         let payload = HostKeyPromptPayload {
             request_id: uuid::Uuid::new_v4().to_string(),
             kind: HostKeyKind::Mismatch,
@@ -104,6 +112,10 @@ impl HostKeyPrompt for TauriHostKeyPrompt {
             fingerprint: info.fingerprint,
             stored: Some(stored),
         };
-        self.ask(payload).await
+        match self.ask(payload).await {
+            HostKeyResponse::Reject => MismatchAction::Reject,
+            HostKeyResponse::AcceptOnce => MismatchAction::AcceptOnce,
+            HostKeyResponse::AcceptAndReplace => MismatchAction::AcceptAndReplace,
+        }
     }
 }

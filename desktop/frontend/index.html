@@ -51,21 +51,58 @@
                   <aside class="vault-sidebar">
                     <header class="vault-left-topbar">
                       <div class="workspace-nav-left">
-                        <button id="workspace-sidebar-toggle" type="button" class="workspace-icon-btn" title="Collapse">⇤</button>
-                        <button id="workspace-nav-vaults" type="button" class="workspace-icon-btn workspace-nav-btn active" title="Vaults">⌂</button>
-                        <button id="workspace-nav-sftp" type="button" class="workspace-icon-btn workspace-nav-btn" title="SFTP">📁</button>
+                        <button id="workspace-sidebar-toggle" type="button" class="workspace-icon-btn" title="Collapse" aria-label="Collapse">
+                          <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M8 4v16"></path>
+                            <path d="m16 7-5 5 5 5"></path>
+                          </svg>
+                        </button>
                       </div>
                       <div class="top-actions">
-                        <button id="lock-button" type="button" class="workspace-icon-btn" title="Lock">🔒</button>
+                        <button id="workspace-nav-vaults" type="button" class="workspace-icon-btn workspace-nav-btn active" title="Vaults" aria-label="Vaults">
+                          <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="m3 10.5 9-7 9 7"></path>
+                            <path d="M6 9.5V20h12V9.5"></path>
+                            <path d="M10 20v-6h4v6"></path>
+                          </svg>
+                        </button>
+                        <button id="workspace-nav-sftp" type="button" class="workspace-icon-btn workspace-nav-btn" title="SFTP" aria-label="SFTP">
+                          <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M3 7.5h6l2 2h10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                          </svg>
+                        </button>
+                        <button id="lock-button" type="button" class="workspace-icon-btn" title="Lock" aria-label="Lock">
+                          <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <rect x="5" y="11" width="14" height="10" rx="2"></rect>
+                            <path d="M8 11V8a4 4 0 0 1 8 0v3"></path>
+                          </svg>
+                        </button>
                       </div>
                     </header>
                     <header class="surface-topbar">
                       <div class="vault-title-row">
                         <div class="vault-group-title">本地</div>
                         <div class="vault-title-actions">
-                          <button id="vault-import-button" type="button" class="workspace-icon-btn">⤶</button>
-                          <button id="add-host-button" type="button" class="workspace-icon-btn">+</button>
-                          <button id="add-group-button" type="button" class="workspace-icon-btn">📂</button>
+                          <button id="vault-import-button" type="button" class="workspace-icon-btn" aria-label="Import">
+                            <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                              <path d="M12 3v11"></path>
+                              <path d="m7 9 5 5 5-5"></path>
+                              <path d="M4 20h16"></path>
+                            </svg>
+                          </button>
+                          <button id="add-host-button" type="button" class="workspace-icon-btn" aria-label="Add host">
+                            <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                              <path d="M12 5v14"></path>
+                              <path d="M5 12h14"></path>
+                            </svg>
+                          </button>
+                          <button id="add-group-button" type="button" class="workspace-icon-btn" aria-label="Add group">
+                            <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                              <path d="M3 7.5h6l2 2h10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                              <path d="M15 14h4"></path>
+                              <path d="M17 12v4"></path>
+                            </svg>
+                          </button>
                         </div>
                       </div>
                       <input id="host-search" class="search" type="text" placeholder="搜索主机或分组..." autocomplete="off" />
@@ -98,8 +135,13 @@
                       <button id="groups-menu-delete" type="button" class="danger">删除分组</button>
                     </div>
 
-                    <footer class="vault-sidebar-footer">
-                      <button id="vault-bottom-settings" type="button" class="workspace-icon-btn">⚙</button>
+                    <footer id="vault-bottom-settings-row" class="vault-sidebar-footer" role="button" tabindex="0" aria-label="Settings">
+                      <button id="vault-bottom-settings" type="button" class="workspace-icon-btn" aria-label="Settings">
+                        <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                          <circle cx="12" cy="12" r="3.5"></circle>
+                          <path d="M12 2.8v2.4M12 18.8v2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M2.8 12h2.4M18.8 12h2.4M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"></path>
+                        </svg>
+                      </button>
                       <span>设置</span>
                     </footer>
                   </aside>
@@ -108,11 +150,26 @@
 
                   <section class="vault-main">
                     <header class="vault-right-topbar">
-                      <button id="workspace-sidebar-toggle-right" type="button" class="workspace-icon-btn" title="Collapse">⇤</button>
+                      <button id="workspace-sidebar-toggle-right" type="button" class="workspace-icon-btn" title="Collapse" aria-label="Collapse">
+                        <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M8 4v16"></path>
+                          <path d="m16 7-5 5 5 5"></path>
+                        </svg>
+                      </button>
                       <div id="term-tab-strip" class="tab-strip workspace-term-strip"></div>
                       <div class="workspace-actions topbar-hidden-actions" hidden>
-                        <button id="new-window-button" type="button" class="workspace-icon-btn">+</button>
-                        <button id="settings-button" type="button" class="workspace-icon-btn">⚙</button>
+                        <button id="new-window-button" type="button" class="workspace-icon-btn" aria-label="New window">
+                          <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M12 5v14"></path>
+                            <path d="M5 12h14"></path>
+                          </svg>
+                        </button>
+                        <button id="settings-button" type="button" class="workspace-icon-btn" aria-label="Settings">
+                          <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <circle cx="12" cy="12" r="3.5"></circle>
+                            <path d="M12 2.8v2.4M12 18.8v2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M2.8 12h2.4M18.8 12h2.4M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"></path>
+                          </svg>
+                        </button>
                       </div>
                       <div id="window-controls" class="window-controls">
                         <button id="window-minimize" type="button" class="window-control-btn" title="Minimize">—</button>
@@ -122,10 +179,28 @@
                     </header>
                     <div id="vault-welcome" class="vault-welcome">
                       <h2>ZeroTerm</h2>
-                      <p>高效的 SSH 终端管理工具</p>
-                      <p class="muted">从左侧资产树双击主机开始连接，或点击 + 新建标签页</p>
                     </div>
                     <div id="terminal-workspace" class="terminal-workspace" hidden></div>
+                    <div id="settings-page" class="settings-page" hidden>
+                      <header class="settings-page-head">
+                        <h2 id="settings-title">Settings</h2>
+                      </header>
+                      <div class="settings-page-body">
+                        <section class="settings-section">
+                          <h3 id="settings-general-title">General</h3>
+                          <label class="settings-field">
+                            <span id="settings-language-label">Language</span>
+                            <select id="settings-language-select">
+                              <option value="zh-CN">简体中文</option>
+                              <option value="en">English</option>
+                            </select>
+                          </label>
+                          <p id="settings-language-hint" class="muted tiny">
+                            Changes apply immediately and are saved locally.
+                          </p>
+                        </section>
+                      </div>
+                    </div>
                     <section id="panel-sftp" class="workspace-panel" hidden>
                       <div class="sftp-split">
                         <article id="sftp-left-pane" class="sftp-pane">
@@ -152,8 +227,16 @@
                                 </div>
                               </div>
                               <div class="sftp-pane-nav-row">
-                                <button id="sftp-left-up" type="button" class="sftp-nav-btn" aria-label="Up">‹</button>
-                                <button id="sftp-left-forward" type="button" class="sftp-nav-btn" aria-label="Forward" disabled>›</button>
+                                <button id="sftp-left-up" type="button" class="sftp-nav-btn" aria-label="Up">
+                                  <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="m14 6-6 6 6 6"></path>
+                                  </svg>
+                                </button>
+                                <button id="sftp-left-forward" type="button" class="sftp-nav-btn" aria-label="Forward" disabled>
+                                  <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="m10 6 6 6-6 6"></path>
+                                  </svg>
+                                </button>
                                 <div id="sftp-left-pathbar" class="sftp-pathbar sftp-pathbar-inline">
                                   <div id="sftp-left-breadcrumbs" class="sftp-breadcrumbs"></div>
                                   <input
@@ -195,8 +278,16 @@
                                 </div>
                               </div>
                               <div class="sftp-pane-nav-row">
-                                <button id="sftp-right-up" type="button" class="sftp-nav-btn" aria-label="Up">‹</button>
-                                <button id="sftp-right-forward" type="button" class="sftp-nav-btn" aria-label="Forward" disabled>›</button>
+                                <button id="sftp-right-up" type="button" class="sftp-nav-btn" aria-label="Up">
+                                  <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="m14 6-6 6 6 6"></path>
+                                  </svg>
+                                </button>
+                                <button id="sftp-right-forward" type="button" class="sftp-nav-btn" aria-label="Forward" disabled>
+                                  <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="m10 6 6 6-6 6"></path>
+                                  </svg>
+                                </button>
                                 <div id="sftp-right-pathbar" class="sftp-pathbar sftp-pathbar-inline">
                                   <div id="sftp-right-breadcrumbs" class="sftp-breadcrumbs"></div>
                                   <input
@@ -250,7 +341,6 @@
               <div class="terminal-workspace"></div>
             </section>
 
-            <section class="workspace-panel" hidden></section>
           </div>
         </div>
       </section>
@@ -262,6 +352,7 @@
           <pre id="hk-detail" class="hk-detail"></pre>
           <div class="dialog-actions">
             <button id="hk-reject" type="button">Cancel connection</button>
+            <button id="hk-accept-once" type="button" hidden>Connect once</button>
             <button id="hk-accept" type="button" class="primary">Trust and connect</button>
           </div>
         </div>
@@ -383,25 +474,6 @@
           <div class="dialog-actions">
             <button id="file-editor-cancel" type="button">Close</button>
             <button id="file-editor-save" type="button" class="primary">Save</button>
-          </div>
-        </div>
-      </div>
-
-      <div id="settings-overlay" class="overlay" hidden>
-        <div class="dialog settings-dialog">
-          <h3 id="settings-title">Settings</h3>
-          <label class="settings-field">
-            <span id="settings-language-label">Language</span>
-            <select id="settings-language-select">
-              <option value="zh-CN">简体中文</option>
-              <option value="en">English</option>
-            </select>
-          </label>
-          <p id="settings-language-hint" class="muted tiny">
-            Changes apply immediately and are saved locally.
-          </p>
-          <div class="dialog-actions">
-            <button id="settings-close-button" type="button">Close</button>
           </div>
         </div>
       </div>
