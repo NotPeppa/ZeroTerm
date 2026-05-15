@@ -152,7 +152,7 @@ pub async fn open_new_window(app_handle: AppHandle) -> Result<(), String> {
         tauri::WebviewUrl::App("index.html".into()),
     )
     .title("ZeroTerm")
-    .inner_size(1360.0, 860.0);
+    .inner_size(1500.0, 860.0);
     #[cfg(target_os = "windows")]
     {
         builder = builder.decorations(false);
@@ -1394,6 +1394,39 @@ pub struct RemoteTextFileDto {
     pub content: String,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SftpDirHelperStatusDto {
+    pub configured: bool,
+    pub marker_path: String,
+}
+
+const SFTP_FOLLOW_MARKER: &str = ".zeroterm_sftp_follow";
+const SFTP_FOLLOW_CWD_FILE: &str = ".zeroterm_sftp_follow_cwd";
+const SFTP_FOLLOW_BLOCK_BEGIN: &str = "# >>> zeroterm sftp follow >>>";
+const SFTP_FOLLOW_BLOCK_END: &str = "# <<< zeroterm sftp follow <<<";
+
+fn build_follow_block() -> String {
+    format!(
+        "{begin}\nexport ZEROTERM_SFTP_CWD_FILE=\"$HOME/{cwd}\"\nzeroterm_sftp_follow_pwd() {{ printf '%s\\n' \"$PWD\" > \"$ZEROTERM_SFTP_CWD_FILE\" 2>/dev/null || true; }}\ncase \":$PROMPT_COMMAND:\" in *:zeroterm_sftp_follow_pwd:*) ;; *) PROMPT_COMMAND=\"zeroterm_sftp_follow_pwd${{PROMPT_COMMAND:+;$PROMPT_COMMAND}}\" ;; esac\nzeroterm_sftp_follow_pwd\n{end}\n",
+        begin = SFTP_FOLLOW_BLOCK_BEGIN,
+        cwd = SFTP_FOLLOW_CWD_FILE,
+        end = SFTP_FOLLOW_BLOCK_END
+    )
+}
+
+fn merge_follow_block(existing: String) -> String {
+    if existing.contains(SFTP_FOLLOW_BLOCK_BEGIN) {
+        return existing;
+    }
+    let mut out = existing;
+    if !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str(&build_follow_block());
+    out
+}
+
 #[tauri::command]
 pub async fn sftp_open(
     state: State<'_, AppState>,
@@ -1428,6 +1461,56 @@ pub async fn sftp_open(
 
     info!(sftp_id, "sftp ready");
     Ok(sftp_id)
+}
+
+#[tauri::command]
+pub async fn sftp_detect_dir_helper(
+    state: State<'_, AppState>,
+    sftp_id: u64,
+) -> Result<SftpDirHelperStatusDto, String> {
+    let sftp = lookup_sftp(&state, sftp_id)?;
+    let marker = SFTP_FOLLOW_MARKER.to_string();
+    let configured = sftp.stat(&marker).await.is_ok();
+    Ok(SftpDirHelperStatusDto {
+        configured,
+        marker_path: marker,
+    })
+}
+
+#[tauri::command]
+pub async fn sftp_install_dir_helper(
+    state: State<'_, AppState>,
+    sftp_id: u64,
+) -> Result<SftpDirHelperStatusDto, String> {
+    let sftp = lookup_sftp(&state, sftp_id)?;
+    let marker = SFTP_FOLLOW_MARKER.to_string();
+    let marker_content = b"# ZeroTerm SFTP directory follow marker\n# Created by ZeroTerm on first-run setup\n";
+    sftp.upload_from_slice(&marker, marker_content)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    sftp
+        .upload_from_slice(SFTP_FOLLOW_CWD_FILE, b"/\n")
+        .await
+        .map_err(|e| e.to_string())?;
+
+    for rc in [".bashrc", ".zshrc"] {
+        let next = match sftp.download_to_vec(rc).await {
+            Ok(bytes) => {
+                let text = String::from_utf8_lossy(&bytes).to_string();
+                merge_follow_block(text)
+            }
+            Err(_) => build_follow_block(),
+        };
+        sftp.upload_from_slice(rc, next.as_bytes())
+            .await
+            .map_err(|e| format!("updating {rc}: {e}"))?;
+    }
+
+    Ok(SftpDirHelperStatusDto {
+        configured: true,
+        marker_path: marker,
+    })
 }
 
 #[tauri::command]

@@ -4,6 +4,7 @@ mod session;
 mod state;
 
 use crate::state::AppState;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -19,6 +20,12 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .manage(AppState::new())
+        .setup(|app| {
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.set_size(tauri::Size::Logical(tauri::LogicalSize::new(1500.0, 860.0)));
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::vault_status,
             commands::unlock_vault,
@@ -48,6 +55,8 @@ pub fn run() {
             commands::local_remove_dir,
             commands::local_rename,
             commands::sftp_open,
+            commands::sftp_detect_dir_helper,
+            commands::sftp_install_dir_helper,
             commands::sftp_close,
             commands::sftp_list,
             commands::sftp_download,

@@ -81,7 +81,7 @@
                     </header>
                     <header class="surface-topbar">
                       <div class="vault-title-row">
-                        <div class="vault-group-title">本地</div>
+                        <div id="vault-local-title" class="vault-group-title">本地</div>
                         <div class="vault-title-actions">
                           <button id="vault-import-button" type="button" class="workspace-icon-btn" aria-label="Import">
                             <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -146,7 +146,7 @@
                           <circle cx="8" cy="18" r="2"></circle>
                         </svg>
                       </button>
-                      <span>设置</span>
+                      <span id="vault-settings-text">设置</span>
                     </footer>
                   </aside>
 
@@ -190,23 +190,167 @@
                     </div>
                     <div id="terminal-workspace" class="terminal-workspace" hidden></div>
                     <div id="settings-page" class="settings-page" hidden>
-                      <header class="settings-page-head">
-                        <h2 id="settings-title">Settings</h2>
-                      </header>
-                      <div class="settings-page-body">
-                        <section class="settings-section">
-                          <h3 id="settings-general-title">General</h3>
-                          <label class="settings-field">
-                            <span id="settings-language-label">Language</span>
-                            <select id="settings-language-select">
-                              <option value="zh-CN">简体中文</option>
-                              <option value="en">English</option>
-                            </select>
-                          </label>
-                          <p id="settings-language-hint" class="muted tiny">
-                            Changes apply immediately and are saved locally.
-                          </p>
-                        </section>
+                      <div class="settings-layout">
+                        <aside class="settings-sidebar">
+                          <header class="settings-sidebar-head">
+                            <button id="settings-back" type="button" class="workspace-icon-btn" title="Back">←</button>
+                            <h2 id="settings-title">Settings</h2>
+                          </header>
+                          <div class="settings-nav-group">
+                            <div id="settings-nav-pref" class="settings-nav-label">偏好</div>
+                            <button id="settings-nav-general" type="button" class="settings-nav-item active">常规</button>
+                            <button id="settings-nav-terminal" type="button" class="settings-nav-item">终端</button>
+                          </div>
+                        </aside>
+                        <div class="settings-page-body">
+                          <header class="settings-page-head">
+                            <h3 id="settings-general-title">General</h3>
+                            <p id="settings-general-desc" class="muted">配置界面语言、会话历史和 SFTP 相关选项</p>
+                          </header>
+                          <section id="settings-general-panel" class="settings-panel">
+                            <div class="settings-subtabs">
+                              <button id="settings-general-subtab-basic" type="button" class="settings-subtab active">基础</button>
+                              <button id="settings-general-subtab-sftp" type="button" class="settings-subtab">SFTP</button>
+                            </div>
+                            <div id="settings-general-basic-section">
+                            <section class="settings-section">
+                            <h4 id="settings-language-label">Language</h4>
+                            <label class="settings-field">
+                              <select id="settings-language-select">
+                                <option value="zh-CN">简体中文</option>
+                                <option value="en">English</option>
+                              </select>
+                            </label>
+                            <p id="settings-language-hint" class="muted tiny">
+                              Changes apply immediately and are saved locally.
+                            </p>
+                            </section>
+                            </div>
+
+                            <div id="settings-general-sftp-section" hidden>
+                            <section class="settings-section">
+                            <h4 id="settings-sftp-title">SFTP</h4>
+                            <div class="settings-row">
+                              <div>
+                                <div id="settings-sftp-auto-label" class="settings-item-title">自动检测目录配置</div>
+                                <p id="settings-sftp-auto-hint" class="muted tiny">打开 SFTP 标签页时，自动检测远端 shell 是否已配置目录跟随，未配置时提示自动安装。</p>
+                              </div>
+                              <label class="settings-switch">
+                                <input id="settings-sftp-auto-detect" type="checkbox" />
+                                <span></span>
+                              </label>
+                            </div>
+                            <div class="settings-divider"></div>
+                            <div class="settings-row settings-row-dir">
+                              <div>
+                                <div id="settings-sftp-local-dir-label" class="settings-item-title">本地默认打开目录</div>
+                                <p id="settings-sftp-local-dir-hint" class="muted tiny">可选。打开 SFTP 工作区时，本地文件面板默认进入该目录；留空则使用用户主目录。</p>
+                              </div>
+                              <div class="settings-dir-inputs">
+                                <input id="settings-sftp-local-dir" type="text" placeholder="例如：/Users/username/Downloads" autocomplete="off" />
+                                <button id="settings-sftp-local-dir-browse" type="button">浏览</button>
+                              </div>
+                            </div>
+                            </section>
+                            </div>
+                          </section>
+
+                          <section id="settings-terminal-panel" class="settings-panel" hidden>
+                            <div class="settings-subtabs">
+                              <button id="settings-terminal-subtab-theme" type="button" class="settings-subtab active">主题</button>
+                              <button id="settings-terminal-subtab-font" type="button" class="settings-subtab">字体</button>
+                            </div>
+                            <section id="settings-terminal-theme-section" class="settings-section">
+                            <h4 id="settings-terminal-theme-title" class="settings-terminal-title">终端主题</h4>
+                            <div class="terminal-theme-grid">
+                                <div class="terminal-theme-column">
+                                  <div class="terminal-theme-column-head">
+                                    <span id="terminal-theme-light-title">亮色终端主题</span>
+                                    <button id="terminal-theme-add-light" type="button" class="terminal-theme-add">+ 新建</button>
+                                  </div>
+                                <div id="terminal-theme-list-light" class="terminal-theme-list">
+                                  <button type="button" class="terminal-theme-card" data-theme="tokyo-day">
+                                    <div class="terminal-theme-name">Tokyo Day</div>
+                                    <pre class="terminal-theme-preview light">root@termark$ ls
+drwxr-xr-x 1 root  boot
+drwxr-xr-x 1 root  data</pre>
+                                  </button>
+                                  <button type="button" class="terminal-theme-card" data-theme="catppuccin-latte">
+                                    <div class="terminal-theme-name">Catppuccin Latte</div>
+                                    <pre class="terminal-theme-preview light">root@termark$ ls
+drwxr-xr-x 1 root  boot
+drwxr-xr-x 1 root  data</pre>
+                                  </button>
+                                </div>
+                              </div>
+                              <div class="terminal-theme-column">
+                                <div class="terminal-theme-column-head">
+                                  <span id="terminal-theme-dark-title">暗色终端主题</span>
+                                  <button id="terminal-theme-add-dark" type="button" class="terminal-theme-add">+ 新建</button>
+                                </div>
+                                <div id="terminal-theme-list-dark" class="terminal-theme-list">
+                                  <button type="button" class="terminal-theme-card" data-theme="termark-dark">
+                                    <div class="terminal-theme-name">Termark Dark</div>
+                                    <pre class="terminal-theme-preview dark">root@termark$ ls
+drwxr-xr-x 1 root  boot
+drwxr-xr-x 1 root  data</pre>
+                                  </button>
+                                  <button type="button" class="terminal-theme-card" data-theme="kanagawa-wave">
+                                    <div class="terminal-theme-name">Kanagawa Wave</div>
+                                    <pre class="terminal-theme-preview dark">root@termark$ ls
+drwxr-xr-x 1 root  boot
+drwxr-xr-x 1 root  data</pre>
+                                  </button>
+                                  <button type="button" class="terminal-theme-card" data-theme="catppuccin-mocha">
+                                    <div class="terminal-theme-name">Catppuccin Mocha</div>
+                                    <pre class="terminal-theme-preview dark">root@termark$ ls
+drwxr-xr-x 1 root  boot
+drwxr-xr-x 1 root  data</pre>
+                                  </button>
+                                  <button type="button" class="terminal-theme-card" data-theme="nord">
+                                    <div class="terminal-theme-name">Nord</div>
+                                    <pre class="terminal-theme-preview dark">root@termark$ ls
+drwxr-xr-x 1 root  boot
+drwxr-xr-x 1 root  data</pre>
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                            </section>
+
+                            <section id="settings-terminal-font-section" class="settings-section" hidden>
+                              <h4 id="settings-terminal-font-title">字体配置</h4>
+                              <p id="settings-terminal-font-hint" class="muted tiny">字体、字号和行高在同一行设置，下方实时预览。</p>
+                              <div class="settings-row settings-font-row">
+                                <label class="settings-field">
+                                  <span id="settings-terminal-font-family-label">字体</span>
+                                  <select id="settings-terminal-font-family">
+                                    <option value='"ZeroTerm Meslo NF", monospace'>Meslo NF</option>
+                                    <option value='Menlo, Consolas, monospace'>Menlo</option>
+                                    <option value='"JetBrains Mono", Consolas, monospace'>JetBrains Mono</option>
+                                    <option value='Consolas, monospace'>Consolas</option>
+                                  </select>
+                                </label>
+                                <label class="settings-field settings-font-small">
+                                  <span id="settings-terminal-font-size-label">字号</span>
+                                  <input id="settings-terminal-font-size" type="number" min="10" max="24" step="1" />
+                                </label>
+                                <label class="settings-field settings-font-small">
+                                  <span id="settings-terminal-line-height-label">行高</span>
+                                  <input id="settings-terminal-line-height" type="number" min="1" max="2" step="0.05" />
+                                </label>
+                              </div>
+                              <div id="settings-terminal-font-preview" class="terminal-font-preview">
+                                <pre>$ ssh root@192.168.1.100
+$ npm run build && npm run start
+abcdefgHIJKLMNOPQRSTUVWXYZ
+0123456789 !@#$%^&*()[]{}<>
+$ ssh root@192.168.1.100
+$ npm run build && npm run start</pre>
+                              </div>
+                            </section>
+                          </section>
+                        </div>
                       </div>
                     </div>
                     <section id="panel-sftp" class="workspace-panel" hidden>
@@ -477,6 +621,11 @@
             <button id="file-editor-replace-one" type="button">Replace</button>
             <button id="file-editor-replace-all" type="button">Replace All</button>
           </div>
+          <div id="file-editor-tools-inline" class="file-editor-tools-inline" hidden>
+            <input id="file-editor-find-inline" type="text" placeholder="Search..." autocomplete="off" />
+            <input id="file-editor-replace-inline" type="text" placeholder="Replace..." autocomplete="off" />
+            <button id="file-editor-inline-close" type="button">✕</button>
+          </div>
           <div id="file-editor-content"></div>
           <p id="file-editor-error" class="error" hidden></p>
           <div class="dialog-actions">
@@ -495,6 +644,36 @@
             <button id="text-input-cancel" type="button">Cancel</button>
             <button id="text-input-confirm" type="button" class="primary">OK</button>
           </div>
+        </div>
+      </div>
+
+      <div id="theme-card-menu" class="hosts-context-menu" hidden>
+        <button id="theme-menu-edit" type="button">编辑主题</button>
+        <button id="theme-menu-duplicate" type="button">复制为自定义</button>
+        <button id="theme-menu-delete" type="button" class="danger">删除主题</button>
+      </div>
+
+      <div id="theme-edit-overlay" class="overlay" hidden>
+        <div class="dialog">
+          <h3 id="theme-edit-title">编辑主题</h3>
+          <form id="theme-edit-form">
+            <div class="theme-edit-preview" id="theme-edit-preview">
+              <div class="theme-edit-preview-title">root@termark$ ls</div>
+              <pre>drwxr-xr-x 1 root  boot
+drwxr-xr-x 1 root  data</pre>
+            </div>
+            <div class="theme-edit-grid">
+              <label><span>背景</span><div class="theme-edit-input-row"><input id="theme-color-bg" type="color" /><input id="theme-hex-bg" type="text" /></div></label>
+              <label><span>前景</span><div class="theme-edit-input-row"><input id="theme-color-fg" type="color" /><input id="theme-hex-fg" type="text" /></div></label>
+              <label><span>光标</span><div class="theme-edit-input-row"><input id="theme-color-cursor" type="color" /><input id="theme-hex-cursor" type="text" /></div></label>
+              <label><span>选区</span><div class="theme-edit-input-row"><input id="theme-color-selection" type="color" /><input id="theme-hex-selection" type="text" /></div></label>
+            </div>
+            <div class="dialog-actions">
+              <button id="theme-edit-reset" type="button">重置</button>
+              <button id="theme-edit-cancel" type="button">取消</button>
+              <button id="theme-edit-save" type="submit" class="primary">保存</button>
+            </div>
+          </form>
         </div>
       </div>
     </main>

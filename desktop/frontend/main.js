@@ -228,11 +228,13 @@ const I18N = {
     "sidebar.new_window": "New Window",
     "sidebar.settings": "Settings",
     "sidebar.lock": "Lock Vault",
+    "sidebar.collapse": "Collapse",
+    "sidebar.expand": "Expand",
     "window.minimize": "Minimize",
     "window.maximize": "Maximize",
     "window.restore": "Restore",
     "window.close": "Close",
-    "workspace.tab.vaults": "Vaults",
+    "workspace.tab.vaults": "Hosts",
     "workspace.tab.sftp": "SFTP",
     "sftp.side.left": "Left",
     "sftp.side.right": "Right",
@@ -242,6 +244,11 @@ const I18N = {
     "sftp.button.disconnect": "Disconnect",
     "sftp.button.filter": "Filter",
     "sftp.button.actions": "Actions",
+    "sftp.helper.install.prompt": "SFTP directory follow is not configured on this host. Install now?",
+    "sftp.helper.install.ok": "Install",
+    "sftp.helper.install.cancel": "Later",
+    "sftp.helper.install.success": "SFTP helper installed",
+    "sftp.helper.install.failed": "SFTP helper install failed: {error}",
     "sftp.empty.connect_title": "Connect to host",
     "sftp.empty.connect_desc": "Start by connecting to a saved host to manage your files with SFTP.",
     "sftp.empty.select_host": "Select host",
@@ -257,6 +264,27 @@ const I18N = {
     "hosts.button.files": "Files",
     "hosts.button.edit": "Edit",
     "hosts.button.delete": "Delete",
+    "hosts.menu.connect": "Connect",
+    "hosts.menu.edit": "Edit",
+    "hosts.menu.copy": "Copy",
+    "hosts.menu.delete": "Delete",
+    "groups.menu.add_host": "Add host",
+    "groups.menu.add_subgroup": "Create subgroup",
+    "groups.menu.expand": "Expand group",
+    "groups.menu.expand_all": "Expand all groups",
+    "groups.menu.collapse": "Collapse group",
+    "groups.menu.collapse_all": "Collapse all groups",
+    "groups.menu.edit": "Edit group",
+    "groups.menu.delete": "Delete group",
+    "groups.prompt.add.title": "Add group",
+    "groups.prompt.add.message": "Enter group name",
+    "groups.prompt.add.placeholder": "e.g. Production",
+    "groups.prompt.add_sub.title": "Create subgroup",
+    "groups.prompt.add_sub.message": "Parent group: {name}",
+    "groups.prompt.add_sub.placeholder": "Enter subgroup name",
+    "groups.confirm.delete": "Delete group \"{name}\"?",
+    "hosts.copy.title": "Copy",
+    "hosts.copy.message": "Connection info",
     "hosts.confirm.delete_one": "Delete saved host \"{name}\"?",
     "hosts.error.delete_failed": "delete failed: {error}",
     "hosts.error.no_tabs": "No terminal tabs yet. Open a host first.",
@@ -440,8 +468,29 @@ const I18N = {
     "sftp.error.connect_failed": "connect failed: {error}",
     "settings.title": "Settings",
     "settings.general.title": "General",
+    "settings.general.desc": "Configure language, session history, and SFTP-related options.",
+    "settings.nav.pref": "Preferences",
+    "settings.nav.general": "General",
+    "settings.nav.terminal": "Terminal",
+    "settings.nav.sftp": "SFTP",
+    "settings.nav.hotkeys": "Hotkeys",
+    "settings.terminal.desc": "Configure terminal themes and visual behavior.",
     "settings.language.label": "Language",
     "settings.language.hint": "Changes apply immediately and are saved locally.",
+    "settings.terminal_theme.title": "Terminal Theme",
+    "settings.terminal_theme.label": "Theme",
+    "settings.terminal_font.title": "Font Settings",
+    "settings.terminal_font.hint": "Set font family, size, and line height together with live preview.",
+    "settings.terminal_font.family": "Font",
+    "settings.terminal_font.size": "Size",
+    "settings.terminal_font.line_height": "Line Height",
+    "settings.sftp.title": "SFTP",
+    "settings.sftp.auto.label": "Auto-detect directory follow",
+    "settings.sftp.auto.hint": "When opening SFTP, detect whether remote shell has directory-follow configured and prompt to install if missing.",
+    "settings.sftp.local_dir.label": "Default local open directory",
+    "settings.sftp.local_dir.hint": "Optional. When opening SFTP workspace, local file pane starts here; empty uses user home.",
+    "settings.sftp.local_dir.placeholder": "e.g. /Users/username/Downloads",
+    "settings.sftp.local_dir.browse": "Browse",
     "settings.button.close": "Close",
     "settings.language.zh": "Simplified Chinese",
     "settings.language.en": "English",
@@ -474,11 +523,13 @@ const I18N = {
     "sidebar.new_window": "新窗口",
     "sidebar.settings": "设置",
     "sidebar.lock": "锁定保险库",
+    "sidebar.collapse": "收起",
+    "sidebar.expand": "展开",
     "window.minimize": "最小化",
     "window.maximize": "最大化",
     "window.restore": "还原",
     "window.close": "关闭",
-    "workspace.tab.vaults": "Vaults",
+    "workspace.tab.vaults": "主机",
     "workspace.tab.sftp": "SFTP",
     "sftp.side.left": "左侧",
     "sftp.side.right": "右侧",
@@ -488,6 +539,11 @@ const I18N = {
     "sftp.button.disconnect": "断开",
     "sftp.button.filter": "筛选",
     "sftp.button.actions": "操作",
+    "sftp.helper.install.prompt": "该主机尚未配置 SFTP 目录跟随，是否现在安装？",
+    "sftp.helper.install.ok": "安装",
+    "sftp.helper.install.cancel": "稍后",
+    "sftp.helper.install.success": "SFTP 辅助配置已安装",
+    "sftp.helper.install.failed": "SFTP 辅助配置安装失败：{error}",
     "sftp.empty.connect_title": "连接到主机",
     "sftp.empty.connect_desc": "先连接一个已保存主机，再通过 SFTP 管理远程文件。",
     "sftp.empty.select_host": "选择主机",
@@ -503,6 +559,27 @@ const I18N = {
     "hosts.button.files": "文件",
     "hosts.button.edit": "编辑",
     "hosts.button.delete": "删除",
+    "hosts.menu.connect": "连接",
+    "hosts.menu.edit": "编辑",
+    "hosts.menu.copy": "复制",
+    "hosts.menu.delete": "删除",
+    "groups.menu.add_host": "添加主机",
+    "groups.menu.add_subgroup": "创建子分组",
+    "groups.menu.expand": "展开分组",
+    "groups.menu.expand_all": "展开全部分组",
+    "groups.menu.collapse": "折叠分组",
+    "groups.menu.collapse_all": "折叠全部分组",
+    "groups.menu.edit": "编辑分组",
+    "groups.menu.delete": "删除分组",
+    "groups.prompt.add.title": "添加分组",
+    "groups.prompt.add.message": "请输入分组名称",
+    "groups.prompt.add.placeholder": "例如：生产环境",
+    "groups.prompt.add_sub.title": "创建子分组",
+    "groups.prompt.add_sub.message": "父分组：{name}",
+    "groups.prompt.add_sub.placeholder": "请输入子分组名称",
+    "groups.confirm.delete": "删除分组“{name}”？",
+    "hosts.copy.title": "复制",
+    "hosts.copy.message": "连接信息",
     "hosts.confirm.delete_one": "确认删除已保存主机“{name}”？",
     "hosts.error.delete_failed": "删除失败：{error}",
     "hosts.error.no_tabs": "当前没有终端标签页，请先打开一个主机。",
@@ -683,8 +760,29 @@ const I18N = {
     "sftp.error.connect_failed": "连接失败：{error}",
     "settings.title": "设置",
     "settings.general.title": "常规",
+    "settings.general.desc": "配置界面语言、会话历史和 SFTP 相关选项",
+    "settings.nav.pref": "偏好",
+    "settings.nav.general": "常规",
+    "settings.nav.terminal": "终端",
+    "settings.nav.sftp": "SFTP",
+    "settings.nav.hotkeys": "快捷键",
+    "settings.terminal.desc": "配置终端主题与视觉表现。",
     "settings.language.label": "语言",
     "settings.language.hint": "修改立即生效，并会保存在本地。",
+    "settings.terminal_theme.title": "终端主题",
+    "settings.terminal_theme.label": "主题",
+    "settings.terminal_font.title": "字体配置",
+    "settings.terminal_font.hint": "字体、字号和行高在同一行设置，下方实时预览。",
+    "settings.terminal_font.family": "字体",
+    "settings.terminal_font.size": "字号",
+    "settings.terminal_font.line_height": "行高",
+    "settings.sftp.title": "SFTP",
+    "settings.sftp.auto.label": "自动检测目录配置",
+    "settings.sftp.auto.hint": "打开 SFTP 标签页时，自动检测远端 shell 是否已配置目录跟随，未配置时提示自动安装。",
+    "settings.sftp.local_dir.label": "本地默认打开目录",
+    "settings.sftp.local_dir.hint": "可选。打开 SFTP 工作区时，本地文件面板默认进入该目录；留空则使用用户主目录。",
+    "settings.sftp.local_dir.placeholder": "例如：/Users/username/Downloads",
+    "settings.sftp.local_dir.browse": "浏览",
     "settings.button.close": "关闭",
     "settings.language.zh": "简体中文",
     "settings.language.en": "English",
@@ -1067,7 +1165,51 @@ const newWindowButton = document.getElementById("new-window-button");
 const settingsButton = document.getElementById("settings-button");
 const vaultBottomSettingsButton = document.getElementById("vault-bottom-settings");
 const vaultBottomSettingsRow = document.getElementById("vault-bottom-settings-row");
+const settingsBackButton = document.getElementById("settings-back");
+const settingsNavGeneral = document.getElementById("settings-nav-general");
+const settingsNavTerminal = document.getElementById("settings-nav-terminal");
+const settingsGeneralPanel = document.getElementById("settings-general-panel");
+const settingsTerminalPanel = document.getElementById("settings-terminal-panel");
+const settingsGeneralSubtabBasic = document.getElementById("settings-general-subtab-basic");
+const settingsGeneralSubtabSftp = document.getElementById("settings-general-subtab-sftp");
+const settingsGeneralBasicSection = document.getElementById("settings-general-basic-section");
+const settingsGeneralSftpSection = document.getElementById("settings-general-sftp-section");
+const settingsGeneralTitle = document.getElementById("settings-general-title");
+const settingsGeneralDesc = document.getElementById("settings-general-desc");
 const settingsLanguageSelect = document.getElementById("settings-language-select");
+const settingsTerminalTheme = document.getElementById("settings-terminal-theme");
+const settingsTerminalSubtabTheme = document.getElementById("settings-terminal-subtab-theme");
+const settingsTerminalSubtabFont = document.getElementById("settings-terminal-subtab-font");
+const settingsTerminalThemeSection = document.getElementById("settings-terminal-theme-section");
+const settingsTerminalFontSection = document.getElementById("settings-terminal-font-section");
+const settingsTerminalFontFamily = document.getElementById("settings-terminal-font-family");
+const settingsTerminalFontSize = document.getElementById("settings-terminal-font-size");
+const settingsTerminalLineHeight = document.getElementById("settings-terminal-line-height");
+const settingsTerminalFontPreview = document.getElementById("settings-terminal-font-preview");
+const terminalThemeListLight = document.getElementById("terminal-theme-list-light");
+const terminalThemeListDark = document.getElementById("terminal-theme-list-dark");
+const terminalThemeAddLight = document.getElementById("terminal-theme-add-light");
+const terminalThemeAddDark = document.getElementById("terminal-theme-add-dark");
+const themeCardMenu = document.getElementById("theme-card-menu");
+const themeMenuEdit = document.getElementById("theme-menu-edit");
+const themeMenuDuplicate = document.getElementById("theme-menu-duplicate");
+const themeMenuDelete = document.getElementById("theme-menu-delete");
+const themeEditOverlay = document.getElementById("theme-edit-overlay");
+const themeEditForm = document.getElementById("theme-edit-form");
+const themeEditCancel = document.getElementById("theme-edit-cancel");
+const themeEditReset = document.getElementById("theme-edit-reset");
+const themeEditPreview = document.getElementById("theme-edit-preview");
+const themeColorBg = document.getElementById("theme-color-bg");
+const themeColorFg = document.getElementById("theme-color-fg");
+const themeColorCursor = document.getElementById("theme-color-cursor");
+const themeColorSelection = document.getElementById("theme-color-selection");
+const themeHexBg = document.getElementById("theme-hex-bg");
+const themeHexFg = document.getElementById("theme-hex-fg");
+const themeHexCursor = document.getElementById("theme-hex-cursor");
+const themeHexSelection = document.getElementById("theme-hex-selection");
+const settingsSftpAutoDetect = document.getElementById("settings-sftp-auto-detect");
+const settingsSftpLocalDir = document.getElementById("settings-sftp-local-dir");
+const settingsSftpLocalDirBrowse = document.getElementById("settings-sftp-local-dir-browse");
 const workspaceTitlebar = document.getElementById("workspace-titlebar");
 const vaultLeftTopbar = document.querySelector(".vault-left-topbar");
 const vaultRightTopbar = document.querySelector(".vault-right-topbar");
@@ -1088,13 +1230,267 @@ let textInputResolver = null;
 let windowIsMaximized = false;
 let workspaceSidebarCollapsed = false;
 let selectedVaultHostId = null;
-let vaultSidebarWidth = 360;
+let vaultSidebarWidth = 320;
 let hostGroups = [];
 let groupExpandedState = {};
 let hostGroupMap = {};
 let draggingHostId = null;
 let hostsContextHostId = null;
 let groupsContextGroupId = null;
+let sftpFollowPollTimer = null;
+let sftpFollowPollingTick = false;
+const SETTINGS_KEY_SFTP_AUTO_DETECT = "zeroterm.settings.sftp.auto_detect";
+const SETTINGS_KEY_SFTP_LOCAL_DIR = "zeroterm.settings.sftp.local_dir";
+const SETTINGS_KEY_TERMINAL_THEME = "zeroterm.settings.terminal.theme";
+const SETTINGS_KEY_TERMINAL_CUSTOM_THEMES = "zeroterm.settings.terminal.custom_themes";
+const SETTINGS_KEY_TERMINAL_FONT_FAMILY = "zeroterm.settings.terminal.font_family";
+const SETTINGS_KEY_TERMINAL_FONT_SIZE = "zeroterm.settings.terminal.font_size";
+const SETTINGS_KEY_TERMINAL_LINE_HEIGHT = "zeroterm.settings.terminal.line_height";
+let settingsSection = "general";
+let settingsTerminalSubtab = "theme";
+let settingsGeneralSubtab = "basic";
+
+const TERMINAL_THEMES = {
+  "termark-dark": {
+    background: "#00000000",
+    foreground: "#e7ecff",
+    cursor: "#9cc3ff",
+    selectionBackground: "#2d4a7a",
+  },
+  "kanagawa-wave": {
+    background: "#00000000",
+    foreground: "#dcd7ba",
+    cursor: "#7e9cd8",
+    selectionBackground: "#2a2a37",
+  },
+  "catppuccin-mocha": {
+    background: "#00000000",
+    foreground: "#cdd6f4",
+    cursor: "#89b4fa",
+    selectionBackground: "#313244",
+  },
+  nord: {
+    background: "#00000000",
+    foreground: "#d8dee9",
+    cursor: "#88c0d0",
+    selectionBackground: "#3b4252",
+  },
+};
+
+const TERMINAL_THEME_META = {
+  "tokyo-day": { label: "Tokyo Day", group: "light" },
+  "catppuccin-latte": { label: "Catppuccin Latte", group: "light" },
+  "termark-dark": { label: "Termark Dark", group: "dark" },
+  "kanagawa-wave": { label: "Kanagawa Wave", group: "dark" },
+  "catppuccin-mocha": { label: "Catppuccin Mocha", group: "dark" },
+  nord: { label: "Nord", group: "dark" },
+};
+
+let terminalCustomThemes = [];
+let terminalEditingThemeId = null;
+let themeMenuTargetId = null;
+let themeEditOriginal = null;
+
+function loadCustomThemes() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY_TERMINAL_CUSTOM_THEMES) || "[]";
+    const parsed = JSON.parse(raw);
+    terminalCustomThemes = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    terminalCustomThemes = [];
+  }
+}
+
+function saveCustomThemes() {
+  localStorage.setItem(SETTINGS_KEY_TERMINAL_CUSTOM_THEMES, JSON.stringify(terminalCustomThemes));
+}
+
+function allTerminalThemes() {
+  const customMap = {};
+  for (const t of terminalCustomThemes) {
+    customMap[t.id] = t.theme;
+  }
+  return { ...TERMINAL_THEMES, ...customMap };
+}
+
+function getTerminalThemeName() {
+  const saved = localStorage.getItem(SETTINGS_KEY_TERMINAL_THEME) || "termark-dark";
+  return allTerminalThemes()[saved] ? saved : "termark-dark";
+}
+
+function getTerminalThemeConfig() {
+  return allTerminalThemes()[getTerminalThemeName()] || TERMINAL_THEMES["termark-dark"];
+}
+
+function getTerminalFontFamily() {
+  return localStorage.getItem(SETTINGS_KEY_TERMINAL_FONT_FAMILY) || TERMINAL_FONT_STACK;
+}
+
+function getTerminalFontSize() {
+  const n = Number(localStorage.getItem(SETTINGS_KEY_TERMINAL_FONT_SIZE) || 13);
+  return Number.isFinite(n) ? Math.min(24, Math.max(10, n)) : 13;
+}
+
+function getTerminalLineHeight() {
+  const n = Number(localStorage.getItem(SETTINGS_KEY_TERMINAL_LINE_HEIGHT) || 1.25);
+  return Number.isFinite(n) ? Math.min(2, Math.max(1, n)) : 1.25;
+}
+
+function applyTerminalThemeToAllPanes() {
+  const theme = getTerminalThemeConfig();
+  for (const tab of termState.tabs) {
+    for (const pane of tab.panes) {
+      if (!pane.term) continue;
+      pane.term.setOption("theme", theme);
+      pane.term.setOption("fontFamily", getTerminalFontFamily());
+      pane.term.setOption("fontSize", getTerminalFontSize());
+      pane.term.setOption("lineHeight", getTerminalLineHeight());
+      requestPaneFit(pane, { immediate: true });
+    }
+  }
+}
+
+function syncTerminalFontPreview() {
+  const pre = settingsTerminalFontPreview?.querySelector("pre");
+  if (!pre) return;
+  pre.style.fontFamily = getTerminalFontFamily();
+  pre.style.fontSize = `${getTerminalFontSize()}px`;
+  pre.style.lineHeight = String(getTerminalLineHeight());
+}
+
+function syncTerminalThemeCardsActive() {
+  const active = getTerminalThemeName();
+  const terminalThemeCards = Array.from(document.querySelectorAll(".terminal-theme-card"));
+  for (const card of terminalThemeCards) {
+    card.classList.toggle("active", card.dataset.theme === active);
+  }
+}
+
+function makeThemePreviewBlock(themeName, themeConfig) {
+  const p = document.createElement("pre");
+  p.className = "terminal-theme-preview " + (TERMINAL_THEME_META[themeName]?.group === "light" ? "light" : "dark");
+  p.textContent = "root@termark$ ls\ndrwxr-xr-x 1 root  boot\ndrwxr-xr-x 1 root  data";
+  if (themeConfig) {
+    p.style.background = toOpaqueHex(themeConfig.background);
+    p.style.color = toOpaqueHex(themeConfig.foreground);
+  }
+  return p;
+}
+
+function renderTerminalThemeCards() {
+  if (!terminalThemeListLight || !terminalThemeListDark) return;
+  terminalThemeListLight.innerHTML = "";
+  terminalThemeListDark.innerHTML = "";
+
+  const themes = allTerminalThemes();
+
+  const addCard = (id, label, group) => {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "terminal-theme-card";
+    card.dataset.theme = id;
+    const name = document.createElement("div");
+    name.className = "terminal-theme-name";
+    name.textContent = label;
+    card.append(name, makeThemePreviewBlock(id, themes[id]));
+    card.addEventListener("click", () => {
+      localStorage.setItem(SETTINGS_KEY_TERMINAL_THEME, id);
+      terminalEditingThemeId = id;
+      if (settingsTerminalTheme) {
+        settingsTerminalTheme.value = id;
+        syncCustomSelect("settings-terminal-theme");
+      }
+      applyTerminalThemeToAllPanes();
+      syncTerminalThemeCardsActive();
+      syncTerminalThemeEditor();
+    });
+    card.addEventListener("contextmenu", (ev) => {
+      ev.preventDefault();
+      themeMenuTargetId = id;
+      if (!themeCardMenu) return;
+      themeCardMenu.hidden = false;
+      themeCardMenu.style.left = `${ev.clientX}px`;
+      themeCardMenu.style.top = `${ev.clientY}px`;
+    });
+    (group === "light" ? terminalThemeListLight : terminalThemeListDark).appendChild(card);
+  };
+
+  Object.entries(TERMINAL_THEME_META).forEach(([id, meta]) => addCard(id, meta.label, meta.group));
+  terminalCustomThemes.forEach((t) => addCard(t.id, t.label, t.group));
+  syncTerminalThemeCardsActive();
+}
+
+function toOpaqueHex(color) {
+  if (!color) return "#000000";
+  if (color.length === 9) return color.slice(0, 7);
+  if (color.length === 7) return color;
+  return "#000000";
+}
+
+function syncTerminalThemeEditor() {
+  const currentId = terminalEditingThemeId || getTerminalThemeName();
+  const isCustom = terminalCustomThemes.some((t) => t.id === currentId);
+  const theme = allTerminalThemes()[currentId] || getTerminalThemeConfig();
+  if (themeColorBg) themeColorBg.value = toOpaqueHex(theme.background);
+  if (themeColorFg) themeColorFg.value = toOpaqueHex(theme.foreground);
+  if (themeColorCursor) themeColorCursor.value = toOpaqueHex(theme.cursor);
+  if (themeColorSelection) themeColorSelection.value = toOpaqueHex(theme.selectionBackground);
+  if (themeHexBg) themeHexBg.value = toOpaqueHex(theme.background);
+  if (themeHexFg) themeHexFg.value = toOpaqueHex(theme.foreground);
+  if (themeHexCursor) themeHexCursor.value = toOpaqueHex(theme.cursor);
+  if (themeHexSelection) themeHexSelection.value = toOpaqueHex(theme.selectionBackground);
+  if (themeMenuDelete) themeMenuDelete.disabled = !isCustom;
+  updateThemeEditPreview(theme);
+}
+
+function updateThemeEditPreview(theme) {
+  if (!themeEditPreview) return;
+  const pre = themeEditPreview.querySelector("pre");
+  if (!pre) return;
+  pre.style.background = toOpaqueHex(theme.background);
+  pre.style.color = toOpaqueHex(theme.foreground);
+}
+
+function updateCustomThemeColor(key, value) {
+  const currentId = terminalEditingThemeId || getTerminalThemeName();
+  const idx = terminalCustomThemes.findIndex((t) => t.id === currentId);
+  if (idx < 0) return;
+  terminalCustomThemes[idx].theme[key] = value;
+  updateThemeEditPreview(terminalCustomThemes[idx].theme);
+  saveCustomThemes();
+  applyTerminalThemeToAllPanes();
+  renderTerminalThemeCards();
+  syncTerminalThemeCardsActive();
+}
+
+function openThemeEditDialog(themeId) {
+  const idx = terminalCustomThemes.findIndex((t) => t.id === themeId);
+  if (idx < 0) return;
+  terminalEditingThemeId = themeId;
+  themeEditOriginal = JSON.parse(JSON.stringify(terminalCustomThemes[idx].theme));
+  syncTerminalThemeEditor();
+  if (themeEditOverlay) themeEditOverlay.hidden = false;
+}
+
+function rebuildTerminalThemeSelectOptions() {
+  if (!settingsTerminalTheme) return;
+  const selected = getTerminalThemeName();
+  settingsTerminalTheme.innerHTML = "";
+  Object.entries(TERMINAL_THEME_META).forEach(([id, meta]) => {
+    const o = document.createElement("option");
+    o.value = id;
+    o.textContent = meta.label;
+    settingsTerminalTheme.appendChild(o);
+  });
+  terminalCustomThemes.forEach((t) => {
+    const o = document.createElement("option");
+    o.value = t.id;
+    o.textContent = t.label;
+    settingsTerminalTheme.appendChild(o);
+  });
+  settingsTerminalTheme.value = selected;
+  syncCustomSelect("settings-terminal-theme");
+}
 
 const VAULT_SIDEBAR_MIN = 240;
 const VAULT_SIDEBAR_MAX = 700;
@@ -1302,9 +1698,67 @@ function setWorkspaceMode(mode) {
   } else if (mode === "sftp") {
     ensureDefaultSftpPaneState();
   } else if (mode === "settings") {
+    setSettingsSection(settingsSection);
     if (settingsLanguageSelect) settingsLanguageSelect.value = currentLocale;
     syncCustomSelect("settings-language-select");
+    if (settingsSftpAutoDetect) {
+      settingsSftpAutoDetect.checked = localStorage.getItem(SETTINGS_KEY_SFTP_AUTO_DETECT) !== "0";
+    }
+    if (settingsSftpLocalDir) {
+      settingsSftpLocalDir.value = localStorage.getItem(SETTINGS_KEY_SFTP_LOCAL_DIR) || "";
+    }
+    if (settingsTerminalTheme) {
+      settingsTerminalTheme.value = getTerminalThemeName();
+      syncCustomSelect("settings-terminal-theme");
+    }
+    if (settingsTerminalFontFamily) {
+      settingsTerminalFontFamily.value = getTerminalFontFamily();
+      syncCustomSelect("settings-terminal-font-family");
+    }
+    if (settingsTerminalFontSize) settingsTerminalFontSize.value = String(getTerminalFontSize());
+    if (settingsTerminalLineHeight) settingsTerminalLineHeight.value = String(getTerminalLineHeight());
+    syncTerminalFontPreview();
+    syncTerminalThemeCardsActive();
   }
+}
+
+function setSettingsSection(section) {
+  settingsSection = section === "terminal" ? "terminal" : "general";
+  settingsNavGeneral?.classList.toggle("active", settingsSection === "general");
+  settingsNavTerminal?.classList.toggle("active", settingsSection === "terminal");
+  if (settingsGeneralPanel) settingsGeneralPanel.hidden = settingsSection !== "general";
+  if (settingsTerminalPanel) settingsTerminalPanel.hidden = settingsSection !== "terminal";
+  if (settingsGeneralTitle) {
+    settingsGeneralTitle.textContent = settingsSection === "terminal"
+      ? t("settings.nav.terminal")
+      : t("settings.general.title");
+  }
+  if (settingsGeneralDesc) {
+    settingsGeneralDesc.textContent = settingsSection === "terminal"
+      ? t("settings.terminal.desc")
+      : t("settings.general.desc");
+  }
+  if (settingsSection === "terminal") {
+    setSettingsTerminalSubtab(settingsTerminalSubtab);
+  } else {
+    setSettingsGeneralSubtab(settingsGeneralSubtab);
+  }
+}
+
+function setSettingsGeneralSubtab(subtab) {
+  settingsGeneralSubtab = subtab === "sftp" ? "sftp" : "basic";
+  settingsGeneralSubtabBasic?.classList.toggle("active", settingsGeneralSubtab === "basic");
+  settingsGeneralSubtabSftp?.classList.toggle("active", settingsGeneralSubtab === "sftp");
+  if (settingsGeneralBasicSection) settingsGeneralBasicSection.hidden = settingsGeneralSubtab !== "basic";
+  if (settingsGeneralSftpSection) settingsGeneralSftpSection.hidden = settingsGeneralSubtab !== "sftp";
+}
+
+function setSettingsTerminalSubtab(subtab) {
+  settingsTerminalSubtab = subtab === "font" ? "font" : "theme";
+  settingsTerminalSubtabTheme?.classList.toggle("active", settingsTerminalSubtab === "theme");
+  settingsTerminalSubtabFont?.classList.toggle("active", settingsTerminalSubtab === "font");
+  if (settingsTerminalThemeSection) settingsTerminalThemeSection.hidden = settingsTerminalSubtab !== "theme";
+  if (settingsTerminalFontSection) settingsTerminalFontSection.hidden = settingsTerminalSubtab !== "font";
 }
 
 function bindDragOnBar(el) {
@@ -1345,8 +1799,9 @@ function sidebarToggleIconMarkup(collapsed) {
 function syncSidebarToggleButton(button, collapsed) {
   if (!button) return;
   button.innerHTML = sidebarToggleIconMarkup(collapsed);
-  button.setAttribute("title", collapsed ? "Expand" : "Collapse");
-  button.setAttribute("aria-label", collapsed ? "Expand" : "Collapse");
+  const labelKey = collapsed ? "sidebar.expand" : "sidebar.collapse";
+  button.setAttribute("title", t(labelKey));
+  button.setAttribute("aria-label", t(labelKey));
 }
 
 function setWorkspaceSidebarCollapsed(collapsed) {
@@ -1520,6 +1975,8 @@ function applyI18n() {
 
   setText("workspace-tab-vaults", "workspace.tab.vaults");
   setText("workspace-tab-sftp", "workspace.tab.sftp");
+  setText("vault-local-title", "sftp.host.local");
+  setText("vault-settings-text", "sidebar.settings");
   setAttr("workspace-nav-vaults", "title", "workspace.tab.vaults");
   setAttr("workspace-nav-sftp", "title", "workspace.tab.sftp");
   setAttr("new-window-button", "title", "sidebar.new_window");
@@ -1579,6 +2036,18 @@ function applyI18n() {
   setText("hf-key-pick", "host_editor.button.choose_key");
   setText("host-edit-cancel", "host_editor.button.cancel");
   setText("host-edit-save", "host_editor.button.save");
+  setText("hosts-menu-connect", "hosts.menu.connect");
+  setText("hosts-menu-edit", "hosts.menu.edit");
+  setText("hosts-menu-copy", "hosts.menu.copy");
+  setText("hosts-menu-delete", "hosts.menu.delete");
+  setText("groups-menu-add-host", "groups.menu.add_host");
+  setText("groups-menu-add-sub", "groups.menu.add_subgroup");
+  setText("groups-menu-expand", "groups.menu.expand");
+  setText("groups-menu-expand-all", "groups.menu.expand_all");
+  setText("groups-menu-collapse", "groups.menu.collapse");
+  setText("groups-menu-collapse-all", "groups.menu.collapse_all");
+  setText("groups-menu-edit", "groups.menu.edit");
+  setText("groups-menu-delete", "groups.menu.delete");
   setPlaceholder("hf-host", "host_editor.placeholder.host");
   setOptionText("hf-auth-type", "password", "host_editor.auth.password");
   setOptionText("hf-auth-type", "key", "host_editor.auth.key");
@@ -1597,8 +2066,28 @@ function applyI18n() {
 
   setText("settings-title", "settings.title");
   setText("settings-general-title", "settings.general.title");
+  setText("settings-general-desc", "settings.general.desc");
+  setText("settings-nav-pref", "settings.nav.pref");
+  setText("settings-nav-general", "settings.nav.general");
+  setText("settings-nav-terminal", "settings.nav.terminal");
+  setText("settings-nav-sftp", "settings.nav.sftp");
+  setText("settings-nav-hotkeys", "settings.nav.hotkeys");
   setText("settings-language-label", "settings.language.label");
   setText("settings-language-hint", "settings.language.hint");
+  setText("settings-terminal-theme-title", "settings.terminal_theme.title");
+  setText("settings-terminal-theme-label", "settings.terminal_theme.label");
+  setText("settings-terminal-font-title", "settings.terminal_font.title");
+  setText("settings-terminal-font-hint", "settings.terminal_font.hint");
+  setText("settings-terminal-font-family-label", "settings.terminal_font.family");
+  setText("settings-terminal-font-size-label", "settings.terminal_font.size");
+  setText("settings-terminal-line-height-label", "settings.terminal_font.line_height");
+  setText("settings-sftp-title", "settings.sftp.title");
+  setText("settings-sftp-auto-label", "settings.sftp.auto.label");
+  setText("settings-sftp-auto-hint", "settings.sftp.auto.hint");
+  setText("settings-sftp-local-dir-label", "settings.sftp.local_dir.label");
+  setText("settings-sftp-local-dir-hint", "settings.sftp.local_dir.hint");
+  setAttr("settings-sftp-local-dir", "placeholder", "settings.sftp.local_dir.placeholder");
+  setText("settings-sftp-local-dir-browse", "settings.sftp.local_dir.browse");
   setOptionText("settings-language-select", "zh-CN", "settings.language.zh");
   setOptionText("settings-language-select", "en", "settings.language.en");
   syncCustomSelect("settings-language-select");
@@ -1645,6 +2134,8 @@ buildCustomSelect(document.getElementById("hf-auth-type"));
 buildCustomSelect(document.getElementById("hf-group"));
 buildCustomSelect(document.getElementById("hf-jump"));
 buildCustomSelect(document.getElementById("settings-language-select"));
+buildCustomSelect(document.getElementById("settings-terminal-theme"));
+buildCustomSelect(document.getElementById("settings-terminal-font-family"));
 buildCustomSelect(document.getElementById("sftp-left-host"));
 buildCustomSelect(document.getElementById("sftp-right-host"));
 workspaceTabVaults.addEventListener("click", () => setWorkspaceMode("vaults"));
@@ -1657,11 +2148,40 @@ workspaceSidebarToggle?.addEventListener("click", () => {
 workspaceSidebarToggleRight?.addEventListener("click", () => {
   setWorkspaceSidebarCollapsed(!workspaceSidebarCollapsed);
 });
+terminalThemeAddLight?.addEventListener("click", async () => {
+  const label = await openTextInputDialog({
+    title: "新建主题",
+    message: "请输入主题名称",
+    placeholder: "例如：My Light",
+  });
+  if (!label) return;
+  const baseId = getTerminalThemeName();
+  const baseTheme = { ...getTerminalThemeConfig() };
+  const id = `custom-${Date.now()}`;
+  terminalCustomThemes.push({ id, label, group: "light", theme: baseTheme });
+  saveCustomThemes();
+  rebuildTerminalThemeSelectOptions();
+  renderTerminalThemeCards();
+});
+terminalThemeAddDark?.addEventListener("click", async () => {
+  const label = await openTextInputDialog({
+    title: "新建主题",
+    message: "请输入主题名称",
+    placeholder: "例如：My Dark",
+  });
+  if (!label) return;
+  const baseTheme = { ...getTerminalThemeConfig() };
+  const id = `custom-${Date.now()}`;
+  terminalCustomThemes.push({ id, label, group: "dark", theme: baseTheme });
+  saveCustomThemes();
+  rebuildTerminalThemeSelectOptions();
+  renderTerminalThemeCards();
+});
 document.getElementById("add-group-button")?.addEventListener("click", async () => {
   const name = await openTextInputDialog({
-    title: "添加分组",
-    message: "请输入分组名称",
-    placeholder: "例如：生产环境",
+    title: t("groups.prompt.add.title"),
+    message: t("groups.prompt.add.message"),
+    placeholder: t("groups.prompt.add.placeholder"),
   });
   if (!name) return;
   const g = { id: uniqueId("group"), name, parentId: "" };
@@ -1749,8 +2269,8 @@ hostsMenuCopy?.addEventListener("click", async () => {
     await navigator.clipboard.writeText(text);
   } catch {
     await openTextInputDialog({
-      title: "复制",
-      message: "连接信息",
+      title: t("hosts.copy.title"),
+      message: t("hosts.copy.message"),
       defaultValue: text,
       placeholder: "",
     });
@@ -1781,9 +2301,9 @@ groupsMenuAddSub?.addEventListener("click", async () => {
   const parent = hostGroups.find((g) => g.id === parentId);
   if (!parent) return;
   const name = await openTextInputDialog({
-    title: "创建子分组",
-    message: `父分组：${parent.name}`,
-    placeholder: "请输入子分组名称",
+    title: t("groups.prompt.add_sub.title"),
+    message: t("groups.prompt.add_sub.message", { name: parent.name }),
+    placeholder: t("groups.prompt.add_sub.placeholder"),
   });
   if (!name) return;
   const g = { id: uniqueId("group"), name, parentId };
@@ -1824,13 +2344,13 @@ groupsMenuCollapseAll?.addEventListener("click", () => {
   renderHosts();
 });
 
-groupsMenuEdit?.addEventListener("click", async () => {
+  groupsMenuEdit?.addEventListener("click", async () => {
   const group = hostGroups.find((g) => g.id === groupsContextGroupId);
   hideGroupsContextMenu();
   if (!group) return;
   const name = await openTextInputDialog({
-    title: "编辑分组",
-    message: "请输入新的分组名称",
+    title: t("groups.menu.edit"),
+    message: t("groups.menu.edit") + "：",
     defaultValue: group.name,
   });
   if (!name) return;
@@ -1844,7 +2364,7 @@ groupsMenuDelete?.addEventListener("click", () => {
   const group = hostGroups.find((g) => g.id === groupId);
   hideGroupsContextMenu();
   if (!group) return;
-  if (!confirm(`删除分组 \"${group.name}\"?`)) return;
+  if (!confirm(t("groups.confirm.delete", { name: group.name }))) return;
   const toDelete = new Set([groupId]);
   let changed = true;
   while (changed) {
@@ -1874,6 +2394,13 @@ window.addEventListener("blur", () => hideHostsContextMenu());
 window.addEventListener("blur", () => hideGroupsContextMenu());
 settingsButton.addEventListener("click", openSettingsPage);
 vaultBottomSettingsButton?.addEventListener("click", openSettingsPage);
+settingsBackButton?.addEventListener("click", () => setWorkspaceMode("vaults"));
+settingsNavGeneral?.addEventListener("click", () => setSettingsSection("general"));
+settingsNavTerminal?.addEventListener("click", () => setSettingsSection("terminal"));
+settingsGeneralSubtabBasic?.addEventListener("click", () => setSettingsGeneralSubtab("basic"));
+settingsGeneralSubtabSftp?.addEventListener("click", () => setSettingsGeneralSubtab("sftp"));
+settingsTerminalSubtabTheme?.addEventListener("click", () => setSettingsTerminalSubtab("theme"));
+settingsTerminalSubtabFont?.addEventListener("click", () => setSettingsTerminalSubtab("font"));
 vaultBottomSettingsRow?.addEventListener("click", (ev) => {
   if (ev.target?.closest?.("#vault-bottom-settings")) return;
   openSettingsPage();
@@ -1885,6 +2412,169 @@ vaultBottomSettingsRow?.addEventListener("keydown", (ev) => {
 });
 settingsLanguageSelect.addEventListener("change", () => {
   setLocale(settingsLanguageSelect.value);
+});
+settingsSftpAutoDetect?.addEventListener("change", () => {
+  localStorage.setItem(SETTINGS_KEY_SFTP_AUTO_DETECT, settingsSftpAutoDetect.checked ? "1" : "0");
+});
+settingsSftpLocalDir?.addEventListener("change", () => {
+  localStorage.setItem(SETTINGS_KEY_SFTP_LOCAL_DIR, settingsSftpLocalDir.value.trim());
+});
+settingsSftpLocalDirBrowse?.addEventListener("click", async () => {
+  const picked = await invoke("plugin:dialog|open", {
+    directory: true,
+    multiple: false,
+    title: t("settings.sftp.local_dir.browse"),
+  });
+  const resolved = Array.isArray(picked) ? picked[0] : picked;
+  if (!resolved || typeof resolved !== "string") return;
+  settingsSftpLocalDir.value = resolved;
+  localStorage.setItem(SETTINGS_KEY_SFTP_LOCAL_DIR, resolved);
+});
+settingsTerminalTheme?.addEventListener("change", () => {
+  const value = settingsTerminalTheme.value;
+  terminalEditingThemeId = value;
+  localStorage.setItem(SETTINGS_KEY_TERMINAL_THEME, allTerminalThemes()[value] ? value : "termark-dark");
+  applyTerminalThemeToAllPanes();
+  syncTerminalThemeCardsActive();
+  syncTerminalThemeEditor();
+});
+settingsTerminalFontFamily?.addEventListener("change", () => {
+  localStorage.setItem(SETTINGS_KEY_TERMINAL_FONT_FAMILY, settingsTerminalFontFamily.value);
+  applyTerminalThemeToAllPanes();
+  syncTerminalFontPreview();
+});
+settingsTerminalFontSize?.addEventListener("change", () => {
+  localStorage.setItem(SETTINGS_KEY_TERMINAL_FONT_SIZE, String(settingsTerminalFontSize.value || "13"));
+  applyTerminalThemeToAllPanes();
+  syncTerminalFontPreview();
+});
+settingsTerminalLineHeight?.addEventListener("change", () => {
+  localStorage.setItem(SETTINGS_KEY_TERMINAL_LINE_HEIGHT, String(settingsTerminalLineHeight.value || "1.25"));
+  applyTerminalThemeToAllPanes();
+  syncTerminalFontPreview();
+});
+loadCustomThemes();
+rebuildTerminalThemeSelectOptions();
+renderTerminalThemeCards();
+syncTerminalThemeEditor();
+
+themeColorBg?.addEventListener("input", () => updateCustomThemeColor("background", `${themeColorBg.value}00`));
+themeColorFg?.addEventListener("input", () => updateCustomThemeColor("foreground", themeColorFg.value));
+themeColorCursor?.addEventListener("input", () => updateCustomThemeColor("cursor", themeColorCursor.value));
+themeColorSelection?.addEventListener("input", () => updateCustomThemeColor("selectionBackground", themeColorSelection.value));
+themeColorBg?.addEventListener("input", () => { if (themeHexBg) themeHexBg.value = themeColorBg.value; });
+themeColorFg?.addEventListener("input", () => { if (themeHexFg) themeHexFg.value = themeColorFg.value; });
+themeColorCursor?.addEventListener("input", () => { if (themeHexCursor) themeHexCursor.value = themeColorCursor.value; });
+themeColorSelection?.addEventListener("input", () => { if (themeHexSelection) themeHexSelection.value = themeColorSelection.value; });
+
+function bindHexInput(hexEl, apply) {
+  hexEl?.addEventListener("change", () => {
+    const v = String(hexEl.value || "").trim();
+    if (!/^#[0-9a-fA-F]{6}$/.test(v)) return;
+    apply(v.toLowerCase());
+  });
+}
+bindHexInput(themeHexBg, (v) => {
+  if (themeColorBg) themeColorBg.value = v;
+  updateCustomThemeColor("background", `${v}00`);
+});
+bindHexInput(themeHexFg, (v) => {
+  if (themeColorFg) themeColorFg.value = v;
+  updateCustomThemeColor("foreground", v);
+});
+bindHexInput(themeHexCursor, (v) => {
+  if (themeColorCursor) themeColorCursor.value = v;
+  updateCustomThemeColor("cursor", v);
+});
+bindHexInput(themeHexSelection, (v) => {
+  if (themeColorSelection) themeColorSelection.value = v;
+  updateCustomThemeColor("selectionBackground", v);
+});
+
+themeMenuEdit?.addEventListener("click", () => {
+  const id = themeMenuTargetId;
+  themeCardMenu.hidden = true;
+  if (!id) return;
+  openThemeEditDialog(id);
+});
+
+themeMenuDuplicate?.addEventListener("click", async () => {
+  const id = themeMenuTargetId;
+  themeCardMenu.hidden = true;
+  if (!id) return;
+  const baseTheme = allTerminalThemes()[id];
+  if (!baseTheme) return;
+  const label = await openTextInputDialog({
+    title: "复制为自定义",
+    message: "请输入新主题名称",
+    placeholder: "例如：My Theme",
+  });
+  if (!label) return;
+  const newId = `custom-${Date.now()}`;
+  terminalCustomThemes.push({
+    id: newId,
+    label,
+    group: TERMINAL_THEME_META[id]?.group === "light" ? "light" : "dark",
+    theme: { ...baseTheme },
+  });
+  saveCustomThemes();
+  localStorage.setItem(SETTINGS_KEY_TERMINAL_THEME, newId);
+  terminalEditingThemeId = newId;
+  rebuildTerminalThemeSelectOptions();
+  renderTerminalThemeCards();
+  syncTerminalThemeEditor();
+  applyTerminalThemeToAllPanes();
+});
+
+themeMenuDelete?.addEventListener("click", () => {
+  const id = themeMenuTargetId;
+  themeCardMenu.hidden = true;
+  const target = terminalCustomThemes.find((t) => t.id === id);
+  if (!target) return;
+  if (!confirm(`删除自定义主题 \"${target.label}\"?`)) return;
+  terminalCustomThemes = terminalCustomThemes.filter((t) => t.id !== id);
+  saveCustomThemes();
+  const fallback = "termark-dark";
+  terminalEditingThemeId = fallback;
+  localStorage.setItem(SETTINGS_KEY_TERMINAL_THEME, fallback);
+  rebuildTerminalThemeSelectOptions();
+  renderTerminalThemeCards();
+  syncTerminalThemeEditor();
+  applyTerminalThemeToAllPanes();
+});
+
+themeEditCancel?.addEventListener("click", () => {
+  const id = terminalEditingThemeId;
+  const idx = terminalCustomThemes.findIndex((t) => t.id === id);
+  if (idx >= 0 && themeEditOriginal) {
+    terminalCustomThemes[idx].theme = JSON.parse(JSON.stringify(themeEditOriginal));
+    saveCustomThemes();
+    applyTerminalThemeToAllPanes();
+    syncTerminalThemeEditor();
+  }
+  if (themeEditOverlay) themeEditOverlay.hidden = true;
+});
+
+themeEditReset?.addEventListener("click", () => {
+  if (!themeEditOriginal) return;
+  const id = terminalEditingThemeId;
+  const idx = terminalCustomThemes.findIndex((t) => t.id === id);
+  if (idx < 0) return;
+  terminalCustomThemes[idx].theme = JSON.parse(JSON.stringify(themeEditOriginal));
+  saveCustomThemes();
+  applyTerminalThemeToAllPanes();
+  syncTerminalThemeEditor();
+});
+
+themeEditForm?.addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  if (themeEditOverlay) themeEditOverlay.hidden = true;
+});
+
+document.addEventListener("click", (ev) => {
+  if (!themeCardMenu || themeCardMenu.hidden) return;
+  if (themeCardMenu.contains(ev.target)) return;
+  themeCardMenu.hidden = true;
 });
 textInputCancelButton.addEventListener("click", () => closeTextInputDialog(null));
 textInputConfirmButton.addEventListener("click", () => {
@@ -2386,16 +3076,12 @@ function ensurePaneTerminal(pane) {
   if (pane.term || !pane.bodyEl || !pane.bodyEl.isConnected) return;
 
   pane.term = new Terminal({
-    fontFamily: TERMINAL_FONT_STACK,
-    fontSize: 13,
+    fontFamily: getTerminalFontFamily(),
+    fontSize: getTerminalFontSize(),
+    lineHeight: getTerminalLineHeight(),
     fontWeight: "400",
     fontWeightBold: "700",
-    theme: {
-      background: "#00000000",
-      foreground: "#e7ecff",
-      cursor: "#9cc3ff",
-      selectionBackground: "#2d4a7a",
-    },
+    theme: getTerminalThemeConfig(),
     allowTransparency: true,
     cursorBlink: true,
     allowProposedApi: true,
@@ -3214,6 +3900,10 @@ const fileEditorPath = document.getElementById("file-editor-path");
 const fileEditorHint = document.getElementById("file-editor-hint");
 const fileEditorFindInput = document.getElementById("file-editor-find");
 const fileEditorReplaceInput = document.getElementById("file-editor-replace");
+const fileEditorToolsInline = document.getElementById("file-editor-tools-inline");
+const fileEditorFindInline = document.getElementById("file-editor-find-inline");
+const fileEditorReplaceInline = document.getElementById("file-editor-replace-inline");
+const fileEditorInlineClose = document.getElementById("file-editor-inline-close");
 const fileEditorMatchCaseInput = document.getElementById("file-editor-match-case");
 const fileEditorFindPrevButton = document.getElementById("file-editor-find-prev");
 const fileEditorFindNextButton = document.getElementById("file-editor-find-next");
@@ -3284,6 +3974,7 @@ function buildSftpPane(key) {
     filterQuery: "",
     showHidden: false,
     selectedEntries: new Set(),
+    lastUserNavAt: 0,
     autoConnectQueue: Promise.resolve(),
   };
 }
@@ -3985,7 +4676,22 @@ async function connectSftpPane(pane, host) {
     pane.hostSelect.title = `${host.user}@${host.host}:${host.port}`;
     pane.path = "/";
     pane.statusEl.textContent = t("sftp.status.connected", { name: host.name });
+    try {
+      const detect = await invoke("sftp_detect_dir_helper", { sftpId: pane.sftpId });
+      const autoDetectEnabled = localStorage.getItem(SETTINGS_KEY_SFTP_AUTO_DETECT) !== "0";
+      if (autoDetectEnabled && !detect?.configured) {
+        const ok = confirm(t("sftp.helper.install.prompt"));
+        if (ok) {
+          await invoke("sftp_install_dir_helper", { sftpId: pane.sftpId });
+          pane.statusEl.textContent = t("sftp.helper.install.success");
+        }
+      }
+    } catch (e) {
+      console.warn("sftp helper detect/install failed", e);
+      pane.statusEl.textContent = t("sftp.helper.install.failed", { error: e });
+    }
     await navigateSftpPane(pane, "/");
+    startSftpFollowPolling();
   } catch (e) {
     pane.statusEl.textContent = t("sftp.error.connect_failed", { error: e });
   }
@@ -4001,8 +4707,9 @@ async function connectLocalPane(pane) {
   pane.hostSelect.title = t("sftp.host.local");
   pane.statusEl.textContent = t("sftp.status.connecting");
   try {
+    const configuredLocalPath = (localStorage.getItem(SETTINGS_KEY_SFTP_LOCAL_DIR) || "").trim();
     const home = await invoke("local_home_path");
-    pane.path = home || "/";
+    pane.path = configuredLocalPath || home || "/";
     await navigateSftpPane(pane, pane.path);
     pane.localConnected = true;
     renderSftpPane(pane);
@@ -4033,9 +4740,55 @@ async function disconnectSftpPane(pane) {
   renderSftpPathBar(pane);
   renderSftpPane(pane);
   updateSftpConnectButtons();
+  startSftpFollowPolling();
+}
+
+function stopSftpFollowPolling() {
+  if (sftpFollowPollTimer !== null) {
+    clearInterval(sftpFollowPollTimer);
+    sftpFollowPollTimer = null;
+  }
+}
+
+function startSftpFollowPolling() {
+  stopSftpFollowPolling();
+  sftpFollowPollTimer = setInterval(() => {
+    pollSftpFollowOnce().catch((e) => {
+      console.warn("pollSftpFollowOnce failed", e);
+    });
+  }, 1200);
+}
+
+async function pollSftpFollowOnce() {
+  if (workspaceMode !== "sftp") return;
+  const activePane = getActivePane();
+  const activeHostId = activePane?.host?.id || null;
+  sftpFollowPollingTick = true;
+  for (const pane of Object.values(sftpPanes)) {
+    if (!pane || isLocalPane(pane) || pane.sftpId === null || !pane.host) continue;
+    if (activeHostId && pane.host.id !== activeHostId) continue;
+    if (Date.now() - (pane.lastUserNavAt || 0) < 2200) continue;
+    try {
+      const doc = await invoke("sftp_read_text", {
+        sftpId: pane.sftpId,
+        path: ".zeroterm_sftp_follow_cwd",
+        maxBytes: 1024,
+      });
+      const remoteCwd = normalizeAbsolutePath((doc?.content || "").trim());
+      if (!remoteCwd || remoteCwd === "/") continue;
+      if (samePanePath(pane, pane.path, remoteCwd)) continue;
+      await navigateSftpPane(pane, remoteCwd);
+    } catch {
+      // Ignore missing/helper-not-ready errors.
+    }
+  }
+  sftpFollowPollingTick = false;
 }
 
 async function navigateSftpPane(pane, path) {
+  if (!sftpFollowPollingTick) {
+    pane.lastUserNavAt = Date.now();
+  }
   const local = isLocalPane(pane);
   if (!local && pane.sftpId === null) return;
   pane.statusEl.textContent = t("files.status.listing", { path });
@@ -4626,6 +5379,28 @@ function searchInEditor({ backwards = false } = {}) {
   return true;
 }
 
+function openEditorFindInline(withReplace = false) {
+  if (!fileEditorToolsInline) return;
+  fileEditorToolsInline.hidden = false;
+  if (fileEditorFindInline) {
+    fileEditorFindInline.value = fileEditorFindInput.value || "";
+  }
+  if (fileEditorReplaceInline) {
+    fileEditorReplaceInline.value = fileEditorReplaceInput.value || "";
+    fileEditorReplaceInline.style.display = withReplace ? "" : "none";
+  }
+  requestAnimationFrame(() => {
+    fileEditorFindInline?.focus();
+    fileEditorFindInline?.select();
+  });
+}
+
+function closeEditorFindInline() {
+  if (!fileEditorToolsInline) return;
+  fileEditorToolsInline.hidden = true;
+  if (fileEditorReplaceInline) fileEditorReplaceInline.style.display = "none";
+}
+
 function replaceInEditor({ all = false } = {}) {
   if (!fileEditorState.open || !ensureFileEditorAce()) return;
   const needle = fileEditorFindInput.value;
@@ -4672,6 +5447,9 @@ function resetFileEditorState() {
   }
   fileEditorFindInput.value = "";
   fileEditorReplaceInput.value = "";
+  if (fileEditorFindInline) fileEditorFindInline.value = "";
+  if (fileEditorReplaceInline) fileEditorReplaceInline.value = "";
+  closeEditorFindInline();
   fileEditorMatchCaseInput.checked = false;
   fileEditorPath.textContent = "";
   fileEditorHint.textContent = t("editor.hint.default");
@@ -5171,6 +5949,55 @@ fileEditorReplaceInput.addEventListener("keydown", (ev) => {
   if (ev.key === "Enter") {
     ev.preventDefault();
     replaceInEditor({ all: ev.shiftKey });
+  }
+});
+fileEditorInlineClose?.addEventListener("click", () => {
+  closeEditorFindInline();
+  fileEditorFocus();
+});
+fileEditorFindInline?.addEventListener("input", () => {
+  fileEditorFindInput.value = fileEditorFindInline.value;
+});
+fileEditorReplaceInline?.addEventListener("input", () => {
+  fileEditorReplaceInput.value = fileEditorReplaceInline.value;
+});
+fileEditorFindInline?.addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter") {
+    ev.preventDefault();
+    fileEditorFindInput.value = fileEditorFindInline.value;
+    searchInEditor({ backwards: ev.shiftKey });
+  }
+  if (ev.key === "Escape") {
+    ev.preventDefault();
+    closeEditorFindInline();
+    fileEditorFocus();
+  }
+});
+fileEditorReplaceInline?.addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter") {
+    ev.preventDefault();
+    fileEditorFindInput.value = fileEditorFindInline.value;
+    fileEditorReplaceInput.value = fileEditorReplaceInline.value;
+    replaceInEditor({ all: ev.shiftKey });
+  }
+  if (ev.key === "Escape") {
+    ev.preventDefault();
+    closeEditorFindInline();
+    fileEditorFocus();
+  }
+});
+
+document.addEventListener("keydown", (ev) => {
+  if (fileEditorOverlay.hidden) return;
+  const key = ev.key.toLowerCase();
+  if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && key === "f") {
+    ev.preventDefault();
+    openEditorFindInline(false);
+    return;
+  }
+  if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && key === "r") {
+    ev.preventDefault();
+    openEditorFindInline(true);
   }
 });
 
