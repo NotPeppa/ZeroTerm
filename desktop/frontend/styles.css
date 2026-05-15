@@ -1050,9 +1050,9 @@ label.checkbox input[type="checkbox"] {
 .vault-sidebar-footer .workspace-icon-btn {
   width: 30px;
   height: 30px;
-  border: 1px solid #3a4050;
+  border: none;
   border-radius: 8px;
-  background: #242933;
+  background: transparent;
 }
 
 #panel-terminal {
