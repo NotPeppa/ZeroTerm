@@ -7,6 +7,7 @@ members = [
     "crates/zeroterm-vault",
     "crates/zeroterm-app",
     "crates/zeroterm-ffi",
+    "crates/zeroterm-sync",
 ]
 
 [workspace.package]

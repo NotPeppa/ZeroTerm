@@ -7,11 +7,13 @@
 mod app;
 mod error;
 mod host;
+mod sync;
 pub mod keychain;
 
 pub use app::App;
 pub use error::AppError;
 pub use host::{ForwardSpec, Host, HostAuth};
+pub use sync::{SyncBackendKind, SyncProfile};
 
 // Re-exported so consumers can pattern-match on the inner vault error
 // without taking a direct dependency on `zeroterm-vault`.

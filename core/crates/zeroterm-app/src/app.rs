@@ -17,7 +17,7 @@ use crate::host::Host;
 const HOST_KIND: &str = "host";
 
 pub struct App {
-    vault: Vault,
+    pub(crate) vault: Vault,
 }
 
 impl App {

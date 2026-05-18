@@ -44,6 +44,8 @@ pub struct AppState {
     pub transfers: Mutex<HashMap<u64, CancellationToken>>,
 
     pub next_transfer_id: AtomicU64,
+
+    pub local_sessions: Mutex<HashMap<u64, LocalSessionHandle>>,
 }
 
 impl AppState {
@@ -57,6 +59,7 @@ impl AppState {
             next_sftp_id: AtomicU64::new(1),
             transfers: Mutex::new(HashMap::new()),
             next_transfer_id: AtomicU64::new(1),
+            local_sessions: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -89,6 +92,12 @@ pub enum SessionCommand {
     Input(Vec<u8>),
     Resize(u16, u16),
     Disconnect,
+}
+
+pub struct LocalSessionHandle {
+    pub writer_tx: mpsc::Sender<Vec<u8>>,
+    pub resize_tx: mpsc::Sender<(u16, u16)>,
+    pub shutdown_tx: mpsc::Sender<()>,
 }
 
 /// Owns an SFTP channel along with the SSH session it rides on. Both

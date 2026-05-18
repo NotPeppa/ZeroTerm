@@ -9,22 +9,31 @@
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
+#[cfg(target_os = "windows")]
+use std::process::Command;
+#[cfg(not(target_os = "windows"))]
+use tokio::process::Command;
 use std::{
     fs,
     path::{Path, PathBuf},
 };
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::mpsc;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
+use portable_pty::{CommandBuilder, PtySize as LocalPtySize};
+use std::io::{Read, Write};
+use std::sync::Mutex as StdMutex;
 
-use zeroterm_app::{App, HostAuth};
+use zeroterm_app::{App, HostAuth, SyncBackendKind, SyncProfile};
 use zeroterm_ssh::{FileKind, HostKeyPolicy, KnownHosts, PtySize, Session};
+use zeroterm_sync::SyncAdapter;
+use tauri_plugin_updater::UpdaterExt;
 
 use crate::host_key::TauriHostKeyPrompt;
 use crate::session::{run as run_session, ClosedEvent};
-use crate::state::{AppState, SessionCommand, SessionHandle, SftpHandle};
+use crate::state::{AppState, LocalSessionHandle, SessionCommand, SessionHandle, SftpHandle};
 
 // --------------------------------------------------------------------------
 // vault
@@ -161,6 +170,72 @@ pub async fn open_new_window(app_handle: AppHandle) -> Result<(), String> {
     builder.build().map(|_| ()).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub async fn app_version() -> Result<String, String> {
+    Ok(env!("CARGO_PKG_VERSION").to_string())
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateInfo {
+    pub available: bool,
+    pub current_version: String,
+    pub version: Option<String>,
+    pub notes: Option<String>,
+}
+
+#[tauri::command]
+pub async fn check_for_update(app_handle: AppHandle) -> Result<UpdateInfo, String> {
+    let updater = app_handle
+        .updater()
+        .map_err(|e| format!("updater init failed: {e}"))?;
+    let pending = updater
+        .check()
+        .await
+        .map_err(|e| format!("check update failed: {e}"))?;
+
+    let current_version = env!("CARGO_PKG_VERSION").to_string();
+    if let Some(update) = pending {
+        Ok(UpdateInfo {
+            available: true,
+            current_version,
+            version: Some(update.version.clone()),
+            notes: update.body.clone(),
+        })
+    } else {
+        Ok(UpdateInfo {
+            available: false,
+            current_version,
+            version: None,
+            notes: None,
+        })
+    }
+}
+
+#[tauri::command]
+pub async fn install_update(app_handle: AppHandle) -> Result<String, String> {
+    let updater = app_handle
+        .updater()
+        .map_err(|e| format!("updater init failed: {e}"))?;
+    let pending = updater
+        .check()
+        .await
+        .map_err(|e| format!("check update failed: {e}"))?;
+    let Some(update) = pending else {
+        return Ok("already_latest".to_string());
+    };
+
+    update
+        .download_and_install(
+            |_, _| {},
+            || {},
+        )
+        .await
+        .map_err(|e| format!("install update failed: {e}"))?;
+
+    app_handle.restart();
+}
+
 // --------------------------------------------------------------------------
 // hosts
 // --------------------------------------------------------------------------
@@ -198,6 +273,489 @@ pub async fn list_hosts(state: State<'_, AppState>) -> Result<Vec<HostSummary>, 
             os_type: h.os_type,
         })
         .collect())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncProfileIO {
+    pub id: String,
+    pub name: String,
+    pub backend: String,
+    pub root: Option<String>,
+    pub endpoint: Option<String>,
+    pub bucket: Option<String>,
+    pub region: Option<String>,
+    pub username: Option<String>,
+    pub password: Option<String>,
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncProfileInput {
+    pub name: String,
+    pub backend: String,
+    pub root: Option<String>,
+    pub endpoint: Option<String>,
+    pub bucket: Option<String>,
+    pub region: Option<String>,
+    pub username: Option<String>,
+    pub password: Option<String>,
+    pub path: Option<String>,
+}
+
+fn backend_from_str(v: &str) -> Result<SyncBackendKind, String> {
+    match v {
+        "filesystem" => Ok(SyncBackendKind::Filesystem),
+        "webdav" => Ok(SyncBackendKind::WebDav),
+        "s3" => Ok(SyncBackendKind::S3),
+        _ => Err(format!("unsupported sync backend: {v}")),
+    }
+}
+
+fn backend_to_str(v: &SyncBackendKind) -> &'static str {
+    match v {
+        SyncBackendKind::Filesystem => "filesystem",
+        SyncBackendKind::WebDav => "webdav",
+        SyncBackendKind::S3 => "s3",
+    }
+}
+
+fn profile_to_io(p: SyncProfile) -> SyncProfileIO {
+    SyncProfileIO {
+        id: p.id,
+        name: p.name,
+        backend: backend_to_str(&p.backend).to_string(),
+        root: p.root,
+        endpoint: p.endpoint,
+        bucket: p.bucket,
+        region: p.region,
+        username: p.username,
+        password: None,
+        path: p.path,
+    }
+}
+
+fn profile_from_input(id: String, input: SyncProfileInput) -> Result<SyncProfile, String> {
+    Ok(SyncProfile {
+        id,
+        name: input.name,
+        backend: backend_from_str(&input.backend)?,
+        root: input.root,
+        endpoint: input.endpoint,
+        bucket: input.bucket,
+        region: input.region,
+        username: input.username,
+        password: input.password,
+        path: input.path,
+    })
+}
+
+#[tauri::command]
+pub async fn list_sync_profiles(state: State<'_, AppState>) -> Result<Vec<SyncProfileIO>, String> {
+    let app_lock = state.app.lock().unwrap();
+    let app = app_lock.as_ref().ok_or("vault is locked")?;
+    let profiles = app.list_sync_profiles().map_err(|e| e.to_string())?;
+    Ok(profiles.into_iter().map(profile_to_io).collect())
+}
+
+#[tauri::command]
+pub async fn save_sync_profile(state: State<'_, AppState>, input: SyncProfileInput) -> Result<String, String> {
+    let app_lock = state.app.lock().unwrap();
+    let app = app_lock.as_ref().ok_or("vault is locked")?;
+    let mut p = profile_from_input(String::new(), input)?;
+    let secret = p.password.take();
+    let id = app.save_sync_profile(&p).map_err(|e| e.to_string())?;
+    if let Some(s) = secret {
+        let _ = zeroterm_app::keychain::save_sync_profile_secret(&id, &s);
+    }
+    Ok(id)
+}
+
+#[tauri::command]
+pub async fn update_sync_profile(
+    state: State<'_, AppState>,
+    id: String,
+    input: SyncProfileInput,
+) -> Result<(), String> {
+    let app_lock = state.app.lock().unwrap();
+    let app = app_lock.as_ref().ok_or("vault is locked")?;
+    let mut p = profile_from_input(id, input)?;
+    let secret = p.password.take();
+    app.update_sync_profile(&p).map_err(|e| e.to_string())?;
+    if let Some(s) = secret {
+        let _ = zeroterm_app::keychain::save_sync_profile_secret(&p.id, &s);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn delete_sync_profile(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let app_lock = state.app.lock().unwrap();
+    let app = app_lock.as_ref().ok_or("vault is locked")?;
+    app.delete_sync_profile(&id).map_err(|e| e.to_string())?;
+    let _ = zeroterm_app::keychain::forget_sync_profile_secret(&id);
+    Ok(())
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncPreview {
+    pub events: usize,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncApplyResult {
+    pub events: usize,
+    pub applied: usize,
+    pub skipped: usize,
+    pub client_state_json: Option<String>,
+    pub backup_path: Option<String>,
+}
+
+fn backup_vault_before_apply() -> Result<Option<String>, String> {
+    let vault = zeroterm_app::default_vault_path()
+        .ok_or_else(|| "no default vault path on this OS".to_string())?;
+    if !vault.exists() {
+        return Ok(None);
+    }
+    let parent = vault
+        .parent()
+        .ok_or_else(|| "vault has no parent directory".to_string())?;
+    let backup_dir = parent.join("sync-backups");
+    std::fs::create_dir_all(&backup_dir).map_err(|e| format!("create backup dir failed: {e}"))?;
+    let ts = chrono_like_now_compact();
+    let backup = backup_dir.join(format!("zeroterm-{ts}.vault"));
+    std::fs::copy(&vault, &backup).map_err(|e| format!("backup vault failed: {e}"))?;
+    Ok(Some(backup.display().to_string()))
+}
+
+fn chrono_like_now_compact() -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    format!("{now}")
+}
+
+fn apply_host_events_to_vault(
+    app: &App,
+    events: &[zeroterm_sync::EncryptedEvent],
+) -> Result<(usize, usize, std::collections::HashMap<String, String>), String> {
+    let mut applied = 0usize;
+    let mut skipped = 0usize;
+    let mut id_remap = std::collections::HashMap::new();
+    for ev in events {
+        if ev.object_type != "host" {
+            skipped += 1;
+            continue;
+        }
+        if ev.op != "upsert" {
+            skipped += 1;
+            continue;
+        }
+        let mut host: zeroterm_app::Host = match serde_json::from_str(&ev.ciphertext_b64) {
+            Ok(h) => h,
+            Err(_) => {
+                skipped += 1;
+                continue;
+            }
+        };
+        if host.id.is_empty() {
+            host.id = ev.object_id.clone();
+        }
+        let source_id = host.id.clone();
+        match app.find_host_by_id(&host.id).map_err(|e| e.to_string())? {
+            Some(existing) => {
+                host.id = existing.id.clone();
+                if source_id != host.id {
+                    id_remap.insert(source_id.clone(), host.id.clone());
+                }
+                app.update_host(&host).map_err(|e| e.to_string())?
+            }
+            None => {
+                match app.save_host(&host) {
+                    Ok(new_id) => {
+                        if source_id != new_id {
+                            id_remap.insert(source_id.clone(), new_id.clone());
+                        }
+                    }
+                    Err(zeroterm_app::AppError::HostNameTaken(_)) => {
+                        // Merge-by-name fallback for first-time apply into a
+                        // vault that already has a same-named host created
+                        // locally. We update that record instead of failing.
+                        let existing = app
+                            .find_host_by_name(&host.name)
+                            .map_err(|e| e.to_string())?
+                            .ok_or_else(|| format!("host name conflict but not found: {}", host.name))?;
+                        host.id = existing.id;
+                        if source_id != host.id {
+                            id_remap.insert(source_id.clone(), host.id.clone());
+                        }
+                        app.update_host(&host).map_err(|e| e.to_string())?;
+                    }
+                    Err(e) => return Err(e.to_string()),
+                }
+            }
+        }
+        applied += 1;
+    }
+    Ok((applied, skipped, id_remap))
+}
+
+fn latest_client_state(events: &[zeroterm_sync::EncryptedEvent]) -> Option<String> {
+    events
+        .iter()
+        .filter(|e| e.object_type == "client_state" && e.op == "upsert")
+        .max_by_key(|e| (e.created_at, e.logical_clock as i64))
+        .map(|e| e.ciphertext_b64.clone())
+}
+
+fn remap_client_state_host_ids(
+    json: &str,
+    remap: &std::collections::HashMap<String, String>,
+) -> Option<String> {
+    if remap.is_empty() {
+        return Some(json.to_string());
+    }
+    let mut v: serde_json::Value = serde_json::from_str(json).ok()?;
+    let Some(obj) = v.as_object_mut() else { return Some(json.to_string()); };
+    let Some(map_val) = obj.get_mut("hostGroupMap") else { return Some(json.to_string()); };
+    let Some(map_obj) = map_val.as_object() else { return Some(json.to_string()); };
+
+    let mut new_map = serde_json::Map::new();
+    for (k, val) in map_obj {
+        let nk = remap.get(k).cloned().unwrap_or_else(|| k.clone());
+        new_map.insert(nk, val.clone());
+    }
+    *map_val = serde_json::Value::Object(new_map);
+    serde_json::to_string(&v).ok()
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncTestResult {
+    pub backend: String,
+}
+
+#[tauri::command]
+pub async fn sync_test_connection(state: State<'_, AppState>, profile_id: String) -> Result<SyncTestResult, String> {
+    let profile = {
+        let app_lock = state.app.lock().unwrap();
+        let app = app_lock.as_ref().ok_or("vault is locked")?;
+        app.list_sync_profiles()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .find(|p| p.id == profile_id)
+            .ok_or_else(|| format!("no sync profile with id {profile_id}"))?
+    };
+
+    match profile.backend {
+        SyncBackendKind::Filesystem => {
+            let root = profile.root.as_deref().ok_or("filesystem root is required")?;
+            let adapter = zeroterm_sync::FsAdapter::new(root);
+            let _ = adapter.list_prefix("events").await.map_err(|e| e.to_string())?;
+            Ok(SyncTestResult { backend: "filesystem".to_string() })
+        }
+        SyncBackendKind::WebDav => {
+            let endpoint = profile.endpoint.as_deref().ok_or("webdav endpoint is required")?;
+            let path = profile.path.as_deref().unwrap_or("zeroterm");
+            let user = profile.username.as_deref().ok_or("webdav username is required")?;
+            let pass_owned = zeroterm_app::keychain::get_sync_profile_secret(&profile.id)
+                .map_err(|e| e.to_string())?
+                .ok_or("webdav password is required")?;
+            let adapter = zeroterm_sync::WebDavAdapter::new(endpoint, path, user, pass_owned.as_str())
+                .map_err(|e| e.to_string())?;
+            let _ = adapter.list_prefix("events").await.map_err(|e| e.to_string())?;
+            Ok(SyncTestResult { backend: "webdav".to_string() })
+        }
+        SyncBackendKind::S3 => {
+            let bucket = profile.bucket.as_deref().ok_or("s3 bucket is required")?;
+            let region = profile.region.as_deref().unwrap_or("us-east-1");
+            let prefix = profile.path.as_deref().unwrap_or("zeroterm");
+            let adapter = zeroterm_sync::S3Adapter::new(region, bucket, prefix).await.map_err(|e| e.to_string())?;
+            let _ = adapter.list_prefix("events").await.map_err(|e| e.to_string())?;
+            Ok(SyncTestResult { backend: "s3".to_string() })
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn sync_pull_preview(state: State<'_, AppState>, profile_id: String) -> Result<SyncPreview, String> {
+    let profile = {
+        let app_lock = state.app.lock().unwrap();
+        let app = app_lock.as_ref().ok_or("vault is locked")?;
+        app.list_sync_profiles()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .find(|p| p.id == profile_id)
+            .ok_or_else(|| format!("no sync profile with id {profile_id}"))?
+    };
+
+    let events = match profile.backend {
+        SyncBackendKind::Filesystem => {
+            let root = profile.root.as_deref().ok_or("filesystem root is required")?;
+            let engine = zeroterm_sync::SyncEngine::new(zeroterm_sync::FsAdapter::new(root));
+            engine.pull_events_under_prefix("events").await.map_err(|e| e.to_string())?
+        }
+        SyncBackendKind::WebDav => {
+            let endpoint = profile.endpoint.as_deref().ok_or("webdav endpoint is required")?;
+            let path = profile.path.as_deref().unwrap_or("zeroterm");
+            let user = profile.username.as_deref().ok_or("webdav username is required")?;
+            let pass_owned = zeroterm_app::keychain::get_sync_profile_secret(&profile.id)
+                .map_err(|e| e.to_string())?
+                .ok_or("webdav password is required")?;
+            let pass = pass_owned.as_str();
+            let adapter = zeroterm_sync::WebDavAdapter::new(endpoint, path, user, pass).map_err(|e| e.to_string())?;
+            let engine = zeroterm_sync::SyncEngine::new(adapter);
+            engine.pull_events_under_prefix("events").await.map_err(|e| e.to_string())?
+        }
+        SyncBackendKind::S3 => {
+            let bucket = profile.bucket.as_deref().ok_or("s3 bucket is required")?;
+            let region = profile.region.as_deref().unwrap_or("us-east-1");
+            let prefix = profile.path.as_deref().unwrap_or("zeroterm");
+            let adapter = zeroterm_sync::S3Adapter::new(region, bucket, prefix).await.map_err(|e| e.to_string())?;
+            let engine = zeroterm_sync::SyncEngine::new(adapter);
+            engine.pull_events_under_prefix("events").await.map_err(|e| e.to_string())?
+        }
+    };
+    Ok(SyncPreview { events: events.len() })
+}
+
+#[tauri::command]
+pub async fn sync_push_preview(
+    state: State<'_, AppState>,
+    profile_id: String,
+    client_state_json: Option<String>,
+) -> Result<SyncPreview, String> {
+    let (profile, hosts) = {
+        let app_lock = state.app.lock().unwrap();
+        let app = app_lock.as_ref().ok_or("vault is locked")?;
+        let profile = app.list_sync_profiles()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .find(|p| p.id == profile_id)
+            .ok_or_else(|| format!("no sync profile with id {profile_id}"))?;
+        let hosts = app.list_hosts().map_err(|e| e.to_string())?;
+        (profile, hosts)
+    };
+
+    let mut events = Vec::with_capacity(hosts.len());
+    for (i, host) in hosts.iter().enumerate() {
+        let plaintext = serde_json::to_vec(host).map_err(|e| e.to_string())?;
+        events.push(zeroterm_sync::new_event(
+            "local-device",
+            i as u64 + 1,
+            "host",
+            host.id.clone(),
+            "upsert",
+            "",
+            String::from_utf8_lossy(&plaintext).to_string(),
+            1,
+        ));
+    }
+    if let Some(state_json) = client_state_json {
+        events.push(zeroterm_sync::new_event(
+            "local-device",
+            hosts.len() as u64 + 1,
+            "client_state",
+            "desktop_groups",
+            "upsert",
+            "",
+            state_json,
+            1,
+        ));
+    }
+
+    match profile.backend {
+        SyncBackendKind::Filesystem => {
+            let root = profile.root.as_deref().ok_or("filesystem root is required")?;
+            let engine = zeroterm_sync::SyncEngine::new(zeroterm_sync::FsAdapter::new(root));
+            engine.push_events(&events).await.map_err(|e| e.to_string())?;
+        }
+        SyncBackendKind::WebDav => {
+            let endpoint = profile.endpoint.as_deref().ok_or("webdav endpoint is required")?;
+            let path = profile.path.as_deref().unwrap_or("zeroterm");
+            let user = profile.username.as_deref().ok_or("webdav username is required")?;
+            let pass_owned = zeroterm_app::keychain::get_sync_profile_secret(&profile.id)
+                .map_err(|e| e.to_string())?
+                .ok_or("webdav password is required")?;
+            let pass = pass_owned.as_str();
+            let adapter = zeroterm_sync::WebDavAdapter::new(endpoint, path, user, pass).map_err(|e| e.to_string())?;
+            let engine = zeroterm_sync::SyncEngine::new(adapter);
+            engine.push_events(&events).await.map_err(|e| e.to_string())?;
+        }
+        SyncBackendKind::S3 => {
+            let bucket = profile.bucket.as_deref().ok_or("s3 bucket is required")?;
+            let region = profile.region.as_deref().unwrap_or("us-east-1");
+            let prefix = profile.path.as_deref().unwrap_or("zeroterm");
+            let adapter = zeroterm_sync::S3Adapter::new(region, bucket, prefix).await.map_err(|e| e.to_string())?;
+            let engine = zeroterm_sync::SyncEngine::new(adapter);
+            engine.push_events(&events).await.map_err(|e| e.to_string())?;
+        }
+    }
+
+    Ok(SyncPreview { events: events.len() })
+}
+
+#[tauri::command]
+pub async fn sync_apply_pull(state: State<'_, AppState>, profile_id: String) -> Result<SyncApplyResult, String> {
+    let backup_path = backup_vault_before_apply()?;
+
+    let profile = {
+        let app_lock = state.app.lock().unwrap();
+        let app = app_lock.as_ref().ok_or("vault is locked")?;
+        app.list_sync_profiles()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .find(|p| p.id == profile_id)
+            .ok_or_else(|| format!("no sync profile with id {profile_id}"))?
+    };
+
+    let events = match profile.backend {
+        SyncBackendKind::Filesystem => {
+            let root = profile.root.as_deref().ok_or("filesystem root is required")?;
+            let engine = zeroterm_sync::SyncEngine::new(zeroterm_sync::FsAdapter::new(root));
+            engine.pull_events_under_prefix("events").await.map_err(|e| e.to_string())?
+        }
+        SyncBackendKind::WebDav => {
+            let endpoint = profile.endpoint.as_deref().ok_or("webdav endpoint is required")?;
+            let path = profile.path.as_deref().unwrap_or("zeroterm");
+            let user = profile.username.as_deref().ok_or("webdav username is required")?;
+            let pass_owned = zeroterm_app::keychain::get_sync_profile_secret(&profile.id)
+                .map_err(|e| e.to_string())?
+                .ok_or("webdav password is required")?;
+            let adapter = zeroterm_sync::WebDavAdapter::new(endpoint, path, user, pass_owned.as_str())
+                .map_err(|e| e.to_string())?;
+            let engine = zeroterm_sync::SyncEngine::new(adapter);
+            engine.pull_events_under_prefix("events").await.map_err(|e| e.to_string())?
+        }
+        SyncBackendKind::S3 => {
+            let bucket = profile.bucket.as_deref().ok_or("s3 bucket is required")?;
+            let region = profile.region.as_deref().unwrap_or("us-east-1");
+            let prefix = profile.path.as_deref().unwrap_or("zeroterm");
+            let adapter = zeroterm_sync::S3Adapter::new(region, bucket, prefix).await.map_err(|e| e.to_string())?;
+            let engine = zeroterm_sync::SyncEngine::new(adapter);
+            engine.pull_events_under_prefix("events").await.map_err(|e| e.to_string())?
+        }
+    };
+
+    let (applied, skipped, id_remap) = {
+        let app_lock = state.app.lock().unwrap();
+        let app = app_lock.as_ref().ok_or("vault is locked")?;
+        apply_host_events_to_vault(app, &events)?
+    };
+    let client_state_json = latest_client_state(&events)
+        .and_then(|j| remap_client_state_host_ids(&j, &id_remap));
+
+    Ok(SyncApplyResult {
+        events: events.len(),
+        applied,
+        skipped,
+        client_state_json,
+        backup_path,
+    })
 }
 
 // ---- host CRUD -----------------------------------------------------------
@@ -570,6 +1128,52 @@ fn build_connect_chain_for_host(
     Ok((host, cfg, jump_cfg))
 }
 
+fn build_connect_chain_for_host_strict(
+    state: &AppState,
+    host_id: &str,
+) -> Result<
+    (
+        zeroterm_app::Host,
+        zeroterm_ssh::ConnectConfig,
+        Option<zeroterm_ssh::ConnectConfig>,
+    ),
+    String,
+> {
+    let app_lock = state.app.lock().unwrap();
+    let app = app_lock.as_ref().ok_or("vault is locked")?;
+
+    let host = app
+        .find_host_by_id(host_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("no host with id {host_id}"))?;
+
+    let known_hosts = KnownHosts::at_default()
+        .ok_or_else(|| "could not locate $HOME for known_hosts".to_string())?;
+
+    let cfg = app.connect_config(
+        &host,
+        HostKeyPolicy::Strict(known_hosts.clone()),
+        Some(Duration::from_secs(15)),
+    );
+
+    let jump_cfg = if let Some(alias) = host.proxy_jump.as_deref() {
+        let jump_host = app
+            .find_host_by_name(alias)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("ProxyJump alias '{alias}' not found in vault"))?;
+        Some(app.connect_config(
+            &jump_host,
+            HostKeyPolicy::Strict(known_hosts),
+            Some(Duration::from_secs(15)),
+        ))
+    } else {
+        None
+    };
+
+    Ok((host, cfg, jump_cfg))
+}
+
+#[allow(dead_code)]
 fn parse_os_release_value(raw: &str) -> &str {
     let v = raw.trim();
     if v.len() >= 2 {
@@ -580,6 +1184,7 @@ fn parse_os_release_value(raw: &str) -> &str {
     v
 }
 
+#[allow(dead_code)]
 fn detect_os_type_from_os_release(content: &str) -> Option<String> {
     let mut id: Option<String> = None;
     let mut id_like: Option<String> = None;
@@ -621,6 +1226,7 @@ fn detect_os_type_from_os_release(content: &str) -> Option<String> {
     None
 }
 
+#[allow(dead_code)]
 async fn detect_remote_os_type(session: &mut Session) -> Option<String> {
     let sftp = session.sftp().await.ok()?;
 
@@ -647,6 +1253,7 @@ async fn detect_remote_os_type(session: &mut Session) -> Option<String> {
     None
 }
 
+#[allow(dead_code)]
 fn persist_host_os_type(state: &AppState, host_id: &str, os_type: &str) -> Result<(), String> {
     let app_lock = state.app.lock().unwrap();
     let app = app_lock.as_ref().ok_or("vault is locked")?;
@@ -662,6 +1269,75 @@ fn persist_host_os_type(state: &AppState, host_id: &str, os_type: &str) -> Resul
 
     host.os_type = Some(os_type.to_string());
     app.update_host(&host).map_err(|e| e.to_string())
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct HostOsTypeUpdatedEvent {
+    host_id: String,
+    os_type: String,
+}
+
+async fn detect_and_persist_host_os_type(app_handle: AppHandle, host_id: String) {
+    let (host, cfg, jump_cfg) = {
+        let state = app_handle.state::<AppState>();
+        match build_connect_chain_for_host_strict(&state, &host_id) {
+            Ok(v) => v,
+            Err(e) => {
+                debug!(host_id = %host_id, error = %e, "skip os detect: build chain failed");
+                return;
+            }
+        }
+    };
+
+    let (jump_session, mut session) = match jump_cfg {
+        Some(jcfg) => match Session::connect(jcfg).await {
+            Ok(j) => match Session::connect_via(cfg, &j).await {
+                Ok(s) => (Some(j), s),
+                Err(e) => {
+                    debug!(host_id = %host_id, error = %e, "skip os detect: connect via jump failed");
+                    return;
+                }
+            },
+            Err(e) => {
+                debug!(host_id = %host_id, error = %e, "skip os detect: jump connect failed");
+                return;
+            }
+        },
+        None => match Session::connect(cfg).await {
+            Ok(s) => (None, s),
+            Err(e) => {
+                debug!(host_id = %host_id, error = %e, "skip os detect: direct connect failed");
+                return;
+            }
+        },
+    };
+
+    let detected = detect_remote_os_type(&mut session).await;
+    drop(session);
+    drop(jump_session);
+
+    let Some(os_type) = detected else {
+        debug!(host_id = %host_id, "os detect produced no result");
+        return;
+    };
+
+    {
+        let state = app_handle.state::<AppState>();
+        if let Err(e) = persist_host_os_type(&state, &host_id, &os_type) {
+            warn!(host_id = %host_id, error = %e, "persist detected os type failed");
+            return;
+        }
+    }
+
+    let _ = app_handle.emit(
+        "host:os_type_updated",
+        HostOsTypeUpdatedEvent {
+            host_id,
+            os_type,
+        },
+    );
+    info!(host = %host.name, "detected and persisted host os type");
 }
 
 #[tauri::command]
@@ -691,23 +1367,11 @@ pub async fn connect_host(
         }
     };
 
-    // Best effort: discover the remote OS once a connection is up, then
-    // persist it so host cards can render stable system badges.
-    match tokio::time::timeout(Duration::from_secs(3), detect_remote_os_type(&mut session)).await {
-        Ok(Some(detected)) => {
-            if host.os_type.as_deref() != Some(detected.as_str()) {
-                if let Err(e) = persist_host_os_type(&state, &host.id, &detected) {
-                    debug!(host_id = %host.id, error = %e, "persisting detected os_type failed");
-                } else {
-                    info!(host_id = %host.id, os_type = %detected, "detected remote os");
-                }
-            }
-        }
-        Ok(None) => {}
-        Err(_) => {
-            debug!(host_id = %host.id, "remote os detection timed out");
-        }
-    }
+    // NOTE: compatibility-first path.
+    // Some embedded SSH servers (notably on OpenWRT variants) behave
+    // poorly when extra channels (SFTP probe) are opened immediately after
+    // auth but before interactive shell startup. We skip eager OS probing
+    // here to keep shell startup reliable.
 
     // Saved forwards.
     let mut forwards: Vec<zeroterm_ssh::ForwardHandle> = Vec::new();
@@ -741,7 +1405,7 @@ pub async fn connect_host(
         forward_summaries.push(summary);
     }
 
-    let pty = PtySize::new(cols.unwrap_or(80), rows.unwrap_or(24));
+    let pty = PtySize::new(cols.unwrap_or(80).max(1), rows.unwrap_or(24).max(1));
     let channel = session.open_shell(pty).await.map_err(|e| e.to_string())?;
 
     let session_id = state.next_session_id.fetch_add(1, Ordering::SeqCst);
@@ -771,6 +1435,285 @@ pub async fn connect_host(
     );
 
     info!(session_id, "session ready");
+
+    // Best-effort background OS detection and persistence so host badges
+    // can update without requiring app restart.
+    let os_detect_handle = app_handle.clone();
+    let os_detect_host_id = host_id.clone();
+    tokio::spawn(async move {
+        detect_and_persist_host_os_type(os_detect_handle, os_detect_host_id).await;
+    });
+
+    Ok(session_id)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickConnectInput {
+    pub user: String,
+    pub host: String,
+    pub port: Option<u16>,
+    pub auth: QuickConnectAuthInput,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum QuickConnectAuthInput {
+    Password { value: String },
+    PrivateKey {
+        key_pem: String,
+        passphrase: Option<String>,
+    },
+    Agent,
+}
+
+#[tauri::command]
+pub async fn connect_quick_host(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+    input: QuickConnectInput,
+    cols: Option<u16>,
+    rows: Option<u16>,
+) -> Result<u64, String> {
+    let user = input.user.trim();
+    let host = input.host.trim();
+    if user.is_empty() || host.is_empty() {
+        return Err("user and host are required".to_string());
+    }
+    let auth_methods = match input.auth {
+        QuickConnectAuthInput::Password { value } => {
+            if value.is_empty() {
+                return Err("password is required".to_string());
+            }
+            vec![zeroterm_ssh::AuthMethod::Password(value)]
+        }
+        QuickConnectAuthInput::PrivateKey {
+            key_pem,
+            passphrase,
+        } => {
+            if key_pem.trim().is_empty() {
+                return Err("private key is required".to_string());
+            }
+            vec![zeroterm_ssh::AuthMethod::PrivateKeyData {
+                pem: key_pem,
+                passphrase,
+            }]
+        }
+        QuickConnectAuthInput::Agent => vec![zeroterm_ssh::AuthMethod::Agent],
+    };
+
+    let known_hosts = KnownHosts::at_default()
+        .ok_or_else(|| "could not locate $HOME for known_hosts".to_string())?;
+    let prompt = Arc::new(TauriHostKeyPrompt {
+        app_handle: app_handle.clone(),
+    });
+    let policy = HostKeyPolicy::Interactive {
+        store: known_hosts,
+        prompt,
+    };
+
+    let cfg = zeroterm_ssh::ConnectConfig {
+        host: host.to_string(),
+        port: input.port.unwrap_or(22),
+        username: user.to_string(),
+        auth_methods,
+        connect_timeout: Some(Duration::from_secs(15)),
+        host_key_policy: policy,
+    };
+
+    let mut session = Session::connect(cfg).await.map_err(|e| e.to_string())?;
+    let forwards: Vec<zeroterm_ssh::ForwardHandle> = Vec::new();
+    let forward_summaries: Vec<String> = Vec::new();
+    let jump_summary = None;
+
+    let pty = PtySize::new(cols.unwrap_or(80).max(1), rows.unwrap_or(24).max(1));
+    let channel = session.open_shell(pty).await.map_err(|e| e.to_string())?;
+
+    let session_id = state.next_session_id.fetch_add(1, Ordering::SeqCst);
+    let (control_tx, control_rx) = mpsc::channel::<SessionCommand>(64);
+    let handle_clone = app_handle.clone();
+    tokio::spawn(async move {
+        run_session(
+            session_id,
+            session,
+            None,
+            forwards,
+            channel,
+            control_rx,
+            handle_clone,
+        )
+        .await;
+    });
+
+    state.sessions.lock().unwrap().insert(
+        session_id,
+        SessionHandle {
+            control_tx,
+            forward_summaries,
+            jump_summary,
+        },
+    );
+
+    Ok(session_id)
+}
+
+#[tauri::command]
+pub async fn open_local_terminal() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg("-a")
+            .arg("Terminal")
+            .spawn()
+            .map_err(|e| format!("open Terminal failed: {e}"))?;
+        return Ok(());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("cmd")
+            .args(["/C", "start", "wt"])
+            .spawn()
+            .or_else(|_| Command::new("cmd").args(["/C", "start", "cmd"]).spawn())
+            .map_err(|e| format!("open local terminal failed: {e}"))?;
+        return Ok(());
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        Command::new("x-terminal-emulator")
+            .spawn()
+            .or_else(|_| Command::new("gnome-terminal").spawn())
+            .or_else(|_| Command::new("konsole").spawn())
+            .map_err(|e| format!("open local terminal failed: {e}"))?;
+        return Ok(());
+    }
+}
+
+
+#[tauri::command]
+pub async fn create_local_terminal_session(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+    cols: Option<u16>,
+    rows: Option<u16>,
+) -> Result<u64, String> {
+    let pty_system = portable_pty::native_pty_system();
+    let pair = pty_system
+        .openpty(LocalPtySize {
+            rows: rows.unwrap_or(24),
+            cols: cols.unwrap_or(80),
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .map_err(|e| format!("open pty failed: {e}"))?;
+
+    #[cfg(target_os = "windows")]
+    let mut cmd = CommandBuilder::new("cmd.exe");
+    #[cfg(not(target_os = "windows"))]
+    let mut cmd = {
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+        CommandBuilder::new(shell)
+    };
+    #[cfg(not(target_os = "windows"))]
+    cmd.arg("-l");
+
+    let child = pair
+        .slave
+        .spawn_command(cmd)
+        .map_err(|e| format!("spawn local shell failed: {e}"))?;
+
+    let mut reader = pair
+        .master
+        .try_clone_reader()
+        .map_err(|e| format!("clone pty reader failed: {e}"))?;
+    let writer = pair
+        .master
+        .take_writer()
+        .map_err(|e| format!("open pty writer failed: {e}"))?;
+    let master = pair.master;
+
+    let session_id = state.next_session_id.fetch_add(1, Ordering::SeqCst);
+    let (writer_tx, mut writer_rx) = mpsc::channel::<Vec<u8>>(128);
+    let (resize_tx, mut resize_rx) = mpsc::channel::<(u16, u16)>(32);
+    let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(2);
+
+    let writer = Arc::new(StdMutex::new(writer));
+    let writer_ref = Arc::clone(&writer);
+    tokio::spawn(async move {
+        while let Some(bytes) = writer_rx.recv().await {
+            let writer_ref = Arc::clone(&writer_ref);
+            let _ = tokio::task::spawn_blocking(move || {
+                if let Ok(mut w) = writer_ref.lock() {
+                    let _ = w.write_all(&bytes);
+                    let _ = w.flush();
+                }
+            })
+            .await;
+        }
+    });
+
+    let master_ref = Arc::new(StdMutex::new(master));
+    let master_resize_ref = Arc::clone(&master_ref);
+    tokio::spawn(async move {
+        while let Some((c, r)) = resize_rx.recv().await {
+            let master_resize_ref = Arc::clone(&master_resize_ref);
+            let _ = tokio::task::spawn_blocking(move || {
+                if let Ok(m) = master_resize_ref.lock() {
+                    let _ = m.resize(LocalPtySize {
+                        rows: r.max(1),
+                        cols: c.max(1),
+                        pixel_width: 0,
+                        pixel_height: 0,
+                    });
+                }
+            })
+            .await;
+        }
+    });
+
+    let app_for_read = app_handle.clone();
+    tokio::task::spawn_blocking(move || {
+        let mut buf = vec![0u8; 8192];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    let _ = app_for_read.emit(
+                        "session:data",
+                        crate::session::DataEvent {
+                            session_id,
+                            data: buf[..n].to_vec(),
+                        },
+                    );
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    let app_for_close = app_handle.clone();
+    tokio::spawn(async move {
+        tokio::select! {
+            _ = shutdown_rx.recv() => {}
+            _ = tokio::task::spawn_blocking(move || {
+                let mut child = child;
+                let _ = child.wait();
+            }) => {}
+        }
+        let _ = app_for_close.emit(
+            "session:closed",
+            ClosedEvent { session_id, exit_code: None, message: None },
+        );
+    });
+
+    state.local_sessions.lock().unwrap().insert(
+        session_id,
+        LocalSessionHandle {
+            writer_tx,
+            resize_tx,
+            shutdown_tx,
+        },
+    );
+
     Ok(session_id)
 }
 
@@ -780,6 +1723,17 @@ pub async fn send_input(
     session_id: u64,
     data: Vec<u8>,
 ) -> Result<(), String> {
+    let local_tx = {
+        let locals = state.local_sessions.lock().unwrap();
+        locals.get(&session_id).map(|h| h.writer_tx.clone())
+    };
+    if let Some(tx) = local_tx {
+        tx.send(data)
+            .await
+            .map_err(|_| "local session task closed".to_string())?;
+        return Ok(());
+    }
+
     let tx = {
         let sessions = state.sessions.lock().unwrap();
         sessions
@@ -801,6 +1755,15 @@ pub async fn resize_session(
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
+    let local_tx = {
+        let locals = state.local_sessions.lock().unwrap();
+        locals.get(&session_id).map(|h| h.resize_tx.clone())
+    };
+    if let Some(tx) = local_tx {
+        let _ = tx.send((cols, rows)).await;
+        return Ok(());
+    }
+
     let tx = {
         let sessions = state.sessions.lock().unwrap();
         match sessions.get(&session_id) {
@@ -818,6 +1781,16 @@ pub async fn disconnect_session(
     app_handle: AppHandle,
     session_id: u64,
 ) -> Result<(), String> {
+    let local_tx_opt = {
+        let mut locals = state.local_sessions.lock().unwrap();
+        locals.remove(&session_id).map(|h| h.shutdown_tx)
+    };
+    if let Some(tx) = local_tx_opt {
+        let _ = tx.send(()).await;
+        debug!(session_id, "local disconnect requested");
+        return Ok(());
+    }
+
     let tx_opt = {
         let sessions = state.sessions.lock().unwrap();
         sessions.get(&session_id).map(|h| h.control_tx.clone())

@@ -8,6 +8,7 @@ description = "Orchestration layer: vault-aware host management on top of zerote
 [dependencies]
 zeroterm-ssh = { path = "../zeroterm-ssh" }
 zeroterm-vault = { path = "../zeroterm-vault" }
+zeroterm-sync = { path = "../zeroterm-sync" }
 
 serde = { workspace = true }
 serde_json = { workspace = true }

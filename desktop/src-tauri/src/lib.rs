@@ -19,6 +19,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState::new())
         .setup(|app| {
             if let Some(win) = app.get_webview_window("main") {
@@ -34,15 +35,29 @@ pub fn run() {
             commands::try_keychain_unlock,
             commands::forget_keychain,
             commands::open_new_window,
+            commands::app_version,
+            commands::check_for_update,
+            commands::install_update,
             commands::list_hosts,
+            commands::list_sync_profiles,
             commands::save_host,
+            commands::save_sync_profile,
             commands::update_host,
+            commands::update_sync_profile,
             commands::delete_host,
+            commands::delete_sync_profile,
             commands::get_host,
+            commands::sync_pull_preview,
+            commands::sync_push_preview,
+            commands::sync_test_connection,
+            commands::sync_apply_pull,
             commands::read_local_text_file,
             commands::local_read_text,
             commands::local_write_text,
             commands::connect_host,
+            commands::connect_quick_host,
+            commands::open_local_terminal,
+            commands::create_local_terminal_session,
             commands::send_input,
             commands::resize_session,
             commands::disconnect_session,

@@ -4,6 +4,7 @@
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::mpsc;
+use tokio::time::{self, Duration};
 use tracing::{debug, warn};
 
 use zeroterm_ssh::{ChannelEvent, ForwardHandle, PtySize, Session, ShellChannel};
@@ -27,6 +28,13 @@ pub struct ClosedEvent {
     pub message: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LatencyEvent {
+    pub session_id: u64,
+    pub rtt_ms: u32,
+}
+
 pub async fn run(
     session_id: u64,
     session: Session,
@@ -39,10 +47,15 @@ pub async fn run(
     let mut last_exit: Option<u32> = None;
     let mut error_msg: Option<String> = None;
 
+    let mut latency_enabled = false;
+    let mut latency_tick = time::interval(Duration::from_secs(3));
+    latency_tick.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+
     loop {
         tokio::select! {
             ev = channel.recv() => match ev {
                 ChannelEvent::Data(bytes) | ChannelEvent::Stderr(bytes) => {
+                    latency_enabled = true;
                     let _ = app_handle.emit(
                         "session:data",
                         DataEvent { session_id, data: bytes },
@@ -75,7 +88,21 @@ pub async fn run(
                     debug!(session_id, "disconnect requested");
                     break;
                 }
-            }
+            },
+            probe_tick = latency_tick.tick(), if latency_enabled => {
+                let _ = probe_tick;
+                match session.probe_rtt_ms().await {
+                    Ok(rtt_ms) => {
+                        let _ = app_handle.emit(
+                            "session:latency",
+                            LatencyEvent { session_id, rtt_ms },
+                        );
+                    }
+                    Err(e) => {
+                        debug!(session_id, error = %e, "latency probe failed");
+                    }
+                }
+            },
         }
     }
 

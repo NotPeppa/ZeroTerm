@@ -526,6 +526,10 @@ label.checkbox input[type="checkbox"] {
   width: 100%;
 }
 
+.platform-macos .app-shell.sidebar-collapsed .vault-right-topbar {
+  padding-left: 84px;
+}
+
 .vault-right-topbar #lock-button {
   margin-left: 2px;
 }
@@ -1159,10 +1163,10 @@ label.checkbox input[type="checkbox"] {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  background: #17233d;
+  gap: 10px;
+  background: linear-gradient(180deg, #172747 0%, #14213d 100%);
   border-bottom: 1px solid #263658;
-  padding: 7px 10px;
+  padding: 6px 10px;
 }
 
 .pane-title {
@@ -1180,10 +1184,16 @@ label.checkbox input[type="checkbox"] {
   white-space: nowrap;
 }
 
+.pane-latency {
+  font-size: 11px;
+  color: #9dd3ff;
+  white-space: nowrap;
+}
+
 .pane-meta {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .pane-reconnect-btn {
@@ -1206,6 +1216,57 @@ label.checkbox input[type="checkbox"] {
   flex: 1;
   min-height: 0;
   background: transparent;
+}
+
+.term-pane {
+  position: relative;
+}
+
+.pane-findbar {
+  position: absolute;
+  top: 42px;
+  right: 12px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid #36538a;
+  background: rgba(16, 30, 56, 0.92);
+  box-shadow: 0 8px 20px rgba(8, 14, 28, 0.42);
+}
+
+.pane-findbar input {
+  width: 180px;
+  height: 26px;
+  border: 1px solid #425f93;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e8f1ff;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.pane-findbar-count {
+  min-width: 44px;
+  text-align: center;
+  color: #c7d7f7;
+  font-size: 11px;
+}
+
+.pane-findbar button {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  border: 1px solid #486aa4;
+  background: #1c3665;
+  color: #e8f1ff;
+  padding: 0;
+}
+
+.pane-findbar button:hover {
+  background: #26467c;
 }
 
 .pane-body .terminal {
@@ -2103,6 +2164,76 @@ label.checkbox input[type="checkbox"] {
   gap: 16px;
 }
 
+.settings-sync-card {
+  max-width: 980px;
+  background: linear-gradient(180deg, rgba(34, 45, 73, 0.72) 0%, rgba(27, 35, 58, 0.72) 100%);
+  border: 1px solid #355187;
+}
+
+.settings-sync-grid {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.settings-sync-grid input,
+.settings-sync-grid .zt-select-wrap,
+.settings-sync-grid select {
+  width: 100%;
+}
+
+#settings-sync-profile + .zt-select-wrap .zt-select-trigger,
+.settings-sync-grid .zt-select-wrap .zt-select-trigger {
+  min-height: 40px;
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+
+.settings-sync-grid input {
+  height: 36px;
+  border: 1px solid #3d5a8e;
+  border-radius: 10px;
+  background: rgba(21, 33, 61, 0.8);
+  color: #e9f1ff;
+  padding: 0 10px;
+}
+
+.settings-sync-grid input:disabled {
+  opacity: 0.55;
+}
+
+.settings-sync-actions {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-sync-actions button {
+  height: 34px;
+  border-radius: 9px;
+  border: 1px solid #4868a1;
+  background: rgba(31, 50, 90, 0.85);
+  color: #e9f1ff;
+  padding: 0 12px;
+  font-weight: 640;
+}
+
+.settings-sync-actions button.primary {
+  border-color: #63a2ff;
+  background: linear-gradient(180deg, #3770cb 0%, #2f5ca8 100%);
+}
+
+.settings-sync-actions button:hover {
+  background: rgba(47, 71, 121, 0.92);
+}
+
+#settings-sync-status {
+  margin-top: 10px;
+  min-height: 18px;
+}
+
 .settings-row > :first-child {
   flex: 1 1 auto;
   min-width: 0;
@@ -2132,11 +2263,24 @@ label.checkbox input[type="checkbox"] {
   border-radius: 5px;
   background: #2a2f3b;
   display: inline-block;
+  position: relative;
 }
 
 .settings-switch input:checked + span {
-  background: #5ca2ff;
-  border-color: #5ca2ff;
+  background: #2b4f84;
+  border-color: #6ea6ff;
+}
+
+.settings-switch input:checked + span::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 1px;
+  width: 5px;
+  height: 10px;
+  border: solid #eaf3ff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
 }
 
 .settings-divider {

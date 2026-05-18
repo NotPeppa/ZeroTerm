@@ -14,6 +14,15 @@ pub enum AppError {
     #[error("vault record was not valid host JSON: {0}")]
     BadHostRecord(serde_json::Error),
 
+    #[error("vault record was not valid sync profile JSON: {0}")]
+    BadSyncProfile(serde_json::Error),
+
+    #[error("sync config error: {0}")]
+    SyncConfig(String),
+
+    #[error("sync error: {0}")]
+    Sync(zeroterm_sync::SyncError),
+
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 }

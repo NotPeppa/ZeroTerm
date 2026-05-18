@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+use std::time::Instant;
 
 use async_trait::async_trait;
 use russh::client::{self, Handle, Handler};
@@ -196,7 +197,7 @@ impl Session {
 
         channel
             .request_pty(
-                false,
+                true,
                 "xterm-256color",
                 size.cols as u32,
                 size.rows as u32,
@@ -206,7 +207,7 @@ impl Session {
             )
             .await?;
 
-        channel.request_shell(false).await?;
+        channel.request_shell(true).await?;
 
         Ok(ShellChannel { inner: channel })
     }
@@ -227,6 +228,14 @@ impl Session {
             .disconnect(Disconnect::ByApplication, "bye", "en")
             .await?;
         Ok(())
+    }
+
+    /// Lightweight RTT probe against the SSH transport.
+    pub async fn probe_rtt_ms(&self) -> Result<u32, SshError> {
+        let start = Instant::now();
+        let channel = self.handle.channel_open_session().await?;
+        drop(channel);
+        Ok(start.elapsed().as_millis().min(u32::MAX as u128) as u32)
     }
 }
 

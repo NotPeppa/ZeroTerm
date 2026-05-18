@@ -6,6 +6,8 @@ const appWindow = window.__TAURI__.window?.getCurrentWindow?.() || null;
 
 const Terminal = window.Terminal;
 const FitAddon = window.FitAddon.FitAddon;
+const SearchAddon = window.SearchAddon?.SearchAddon || null;
+const WebLinksAddon = window.WebLinksAddon?.WebLinksAddon || null;
 
 const views = {
   unlock: document.getElementById("view-unlock"),
@@ -227,6 +229,8 @@ const I18N = {
     "sidebar.terminals": "Terminals",
     "sidebar.new_window": "New Window",
     "sidebar.settings": "Settings",
+    "sidebar.quick_connect": "Quick connect",
+    "sidebar.local_terminal": "Local terminal",
     "sidebar.lock": "Lock Vault",
     "sidebar.collapse": "Collapse",
     "sidebar.expand": "Expand",
@@ -250,7 +254,7 @@ const I18N = {
     "sftp.helper.install.success": "SFTP helper installed",
     "sftp.helper.install.failed": "SFTP helper install failed: {error}",
     "sftp.empty.connect_title": "Connect to host",
-    "sftp.empty.connect_desc": "Start by connecting to a saved host to manage your files with SFTP.",
+    "sftp.empty.connect_desc": "Please choose the host to connect above.",
     "sftp.empty.select_host": "Select host",
     "sftp.filter.title": "Filter",
     "sftp.filter.prompt": "Filter current pane by file/folder name (empty to clear):",
@@ -276,6 +280,7 @@ const I18N = {
     "groups.menu.collapse_all": "Collapse all groups",
     "groups.menu.edit": "Edit group",
     "groups.menu.delete": "Delete group",
+    "groups.option.ungrouped": "(Ungrouped)",
     "groups.prompt.add.title": "Add group",
     "groups.prompt.add.message": "Enter group name",
     "groups.prompt.add.placeholder": "e.g. Production",
@@ -302,6 +307,9 @@ const I18N = {
     "terminal.status.connected": "connected",
     "terminal.status.disconnected": "disconnected",
     "terminal.button.reconnect": "Reconnect",
+    "terminal.status.local": "local",
+    "terminal.pane.local_title": "Local Terminal",
+    "terminal.search.unavailable": "Search unavailable",
     "terminal.via": "via {jump}",
     "terminal.error.connect_failed_status": "connect failed: {error}",
     "terminal.error.connect_failed_term": "failed to connect: {error}",
@@ -342,6 +350,24 @@ const I18N = {
     "host_editor.button.choose_key": "Choose file...",
     "host_editor.button.cancel": "Cancel",
     "host_editor.button.save": "Save",
+    "quick_connect.title": "Quick connect",
+    "quick_connect.user": "User",
+    "quick_connect.host": "Host",
+    "quick_connect.port": "Port",
+    "quick_connect.auth": "Authentication",
+    "quick_connect.auth.password": "Password",
+    "quick_connect.auth.key": "Private key",
+    "quick_connect.auth.agent": "SSH agent",
+    "quick_connect.password": "Password",
+    "quick_connect.key": "Private key",
+    "quick_connect.key_passphrase": "Passphrase (optional)",
+    "quick_connect.key.pick": "Choose file...",
+    "quick_connect.key.none": "No key loaded",
+    "quick_connect.error.pick_key": "Please choose a private key file",
+    "quick_connect.error.required_password": "user / host / password required",
+    "quick_connect.error.required_host_user": "user / host required",
+    "quick_connect.cancel": "Cancel",
+    "quick_connect.connect": "Connect",
     "host_editor.auth.password": "Password",
     "host_editor.auth.key": "Private key",
     "host_editor.auth.agent": "SSH agent",
@@ -448,6 +474,7 @@ const I18N = {
     "editor.button.replace_all": "Replace All",
     "editor.button.close": "Close",
     "editor.button.save": "Save",
+    "editor.button.close_inline": "✕",
     "editor.error.ace_load_failed": "Ace editor failed to load.",
     "editor.error.enter_search": "Enter text in Search first.",
     "editor.error.no_matches": "No matches found.",
@@ -472,18 +499,82 @@ const I18N = {
     "settings.nav.pref": "Preferences",
     "settings.nav.general": "General",
     "settings.nav.terminal": "Terminal",
+    "settings.nav.sync": "Sync",
+    "settings.nav.about": "About",
+    "settings.general.subtab.basic": "Basic",
+    "settings.general.subtab.sftp": "SFTP",
+    "settings.sync.desc": "Manage sync profiles and run preview pull/push.",
+    "settings.sync.placeholder.no_profile": "No sync profile",
+    "settings.sync.status.loaded": "Loaded {count} profile(s)",
+    "settings.sync.status.none": "No sync profile",
+    "settings.sync.status.creating": "Creating new profile",
+    "settings.sync.status.saved": "Profile saved",
+    "settings.sync.status.updated": "Profile updated",
+    "settings.sync.status.deleted": "Profile deleted",
+    "settings.sync.status.conn_ok": "Connection OK ({backend})",
+    "settings.sync.status.conn_fail": "Connection failed: {error}",
+    "settings.sync.status.pull_preview": "Pull preview events: {events}",
+    "settings.sync.status.push": "Push events: {events}",
+    "settings.sync.status.apply": "Apply Pull: events={events}, applied={applied}, skipped={skipped}{backup}",
+    "settings.sync.status.last": "Last sync: {action} · events={events} · {when}",
+    "settings.sync.backup.suffix": ", backup={path}",
+    "settings.sync.action.push": "push",
+    "settings.sync.action.pull_preview": "pull preview",
+    "settings.sync.action.apply_pull": "apply pull",
+    "settings.sync.title": "Sync",
+    "settings.sync.profile": "Profile",
+    "settings.sync.button.refresh": "Refresh",
+    "settings.sync.button.new": "New",
+    "settings.sync.button.save": "Save",
+    "settings.sync.button.delete": "Delete",
+    "settings.sync.button.test": "Test Connection",
+    "settings.sync.button.apply": "Apply Pull",
+    "settings.sync.button.pull": "Preview Pull",
+    "settings.sync.button.push": "Push",
+    "settings.sync.backend.filesystem": "Local Folder",
+    "settings.sync.backend.webdav": "WebDAV",
+    "settings.sync.backend.s3": "S3 Object Storage",
+    "settings.sync.placeholder.name": "Profile name",
+    "settings.sync.placeholder.root": "Local sync directory (e.g. /Users/you/ZeroTermSync)",
+    "settings.sync.placeholder.root_s3": "prefix path (optional, e.g. zeroterm/team-a)",
+    "settings.sync.placeholder.root_webdav": "remote path (e.g. remote.php/dav/files/you/zeroterm)",
+    "settings.sync.placeholder.endpoint": "endpoint (webdav)",
+    "settings.sync.placeholder.bucket": "bucket (s3)",
+    "settings.sync.placeholder.region": "region (s3, default us-east-1)",
+    "settings.sync.placeholder.username": "username (webdav)",
+    "settings.sync.placeholder.password": "password (webdav)",
+    "settings.sync.tip.local": "Local Folder mode requires iCloud/Dropbox/Syncthing (or similar) to sync across devices.",
+    "theme.menu.edit": "Edit theme",
+    "theme.menu.duplicate": "Duplicate as custom",
+    "theme.menu.delete": "Delete theme",
+    "theme.edit.title": "Edit theme",
+    "theme.edit.reset": "Reset",
+    "theme.edit.cancel": "Cancel",
+    "theme.edit.save": "Save",
     "settings.nav.sftp": "SFTP",
     "settings.nav.hotkeys": "Hotkeys",
     "settings.terminal.desc": "Configure terminal themes and visual behavior.",
     "settings.language.label": "Language",
     "settings.language.hint": "Changes apply immediately and are saved locally.",
+    "settings.version.label": "Version",
+    "settings.about.title": "About",
+    "settings.update.check": "Check Updates",
+    "settings.update.install": "Install & Restart",
+    "settings.update.latest": "You are on the latest version ({version}).",
+    "settings.update.available": "Update available: {current} -> {latest}",
+    "settings.update.failed": "Update failed: {error}",
     "settings.terminal_theme.title": "Terminal Theme",
+    "settings.terminal_theme.light_title": "Light Terminal Themes",
+    "settings.terminal_theme.dark_title": "Dark Terminal Themes",
+    "settings.terminal_theme.add": "+ New",
     "settings.terminal_theme.label": "Theme",
     "settings.terminal_font.title": "Font Settings",
     "settings.terminal_font.hint": "Set font family, size, and line height together with live preview.",
     "settings.terminal_font.family": "Font",
     "settings.terminal_font.size": "Size",
     "settings.terminal_font.line_height": "Line Height",
+    "settings.terminal.subtab.theme": "Theme",
+    "settings.terminal.subtab.font": "Font",
     "settings.sftp.title": "SFTP",
     "settings.sftp.auto.label": "Auto-detect directory follow",
     "settings.sftp.auto.hint": "When opening SFTP, detect whether remote shell has directory-follow configured and prompt to install if missing.",
@@ -522,6 +613,8 @@ const I18N = {
     "sidebar.terminals": "终端",
     "sidebar.new_window": "新窗口",
     "sidebar.settings": "设置",
+    "sidebar.quick_connect": "临时连接",
+    "sidebar.local_terminal": "本地终端",
     "sidebar.lock": "锁定保险库",
     "sidebar.collapse": "收起",
     "sidebar.expand": "展开",
@@ -545,7 +638,7 @@ const I18N = {
     "sftp.helper.install.success": "SFTP 辅助配置已安装",
     "sftp.helper.install.failed": "SFTP 辅助配置安装失败：{error}",
     "sftp.empty.connect_title": "连接到主机",
-    "sftp.empty.connect_desc": "先连接一个已保存主机，再通过 SFTP 管理远程文件。",
+    "sftp.empty.connect_desc": "请在上方选择要连接的主机",
     "sftp.empty.select_host": "选择主机",
     "sftp.filter.title": "筛选",
     "sftp.filter.prompt": "按文件/目录名称筛选当前窗格（留空可清除）：",
@@ -571,6 +664,7 @@ const I18N = {
     "groups.menu.collapse_all": "折叠全部分组",
     "groups.menu.edit": "编辑分组",
     "groups.menu.delete": "删除分组",
+    "groups.option.ungrouped": "（未分组）",
     "groups.prompt.add.title": "添加分组",
     "groups.prompt.add.message": "请输入分组名称",
     "groups.prompt.add.placeholder": "例如：生产环境",
@@ -597,6 +691,9 @@ const I18N = {
     "terminal.status.connected": "已连接",
     "terminal.status.disconnected": "已断开",
     "terminal.button.reconnect": "重新连接",
+    "terminal.status.local": "本地",
+    "terminal.pane.local_title": "本地终端",
+    "terminal.search.unavailable": "搜索不可用",
     "terminal.via": "经由 {jump}",
     "terminal.error.connect_failed_status": "连接失败：{error}",
     "terminal.error.connect_failed_term": "连接失败：{error}",
@@ -636,6 +733,24 @@ const I18N = {
     "host_editor.button.choose_key": "选择文件...",
     "host_editor.button.cancel": "取消",
     "host_editor.button.save": "保存",
+    "quick_connect.title": "临时连接",
+    "quick_connect.user": "用户",
+    "quick_connect.host": "主机",
+    "quick_connect.port": "端口",
+    "quick_connect.auth": "认证方式",
+    "quick_connect.auth.password": "密码",
+    "quick_connect.auth.key": "私钥",
+    "quick_connect.auth.agent": "SSH Agent",
+    "quick_connect.password": "密码",
+    "quick_connect.key": "私钥",
+    "quick_connect.key_passphrase": "私钥口令（可选）",
+    "quick_connect.key.pick": "选择文件...",
+    "quick_connect.key.none": "未加载私钥",
+    "quick_connect.error.pick_key": "请先选择私钥文件",
+    "quick_connect.error.required_password": "请填写用户 / 主机 / 密码",
+    "quick_connect.error.required_host_user": "请填写用户 / 主机",
+    "quick_connect.cancel": "取消",
+    "quick_connect.connect": "连接",
     "host_editor.auth.password": "密码",
     "host_editor.auth.key": "私钥",
     "host_editor.auth.agent": "SSH agent",
@@ -741,6 +856,7 @@ const I18N = {
     "editor.button.replace_all": "全部替换",
     "editor.button.close": "关闭",
     "editor.button.save": "保存",
+    "editor.button.close_inline": "✕",
     "editor.error.ace_load_failed": "Ace 编辑器加载失败。",
     "editor.error.enter_search": "请先输入要查找的文本。",
     "editor.error.no_matches": "未找到匹配项。",
@@ -764,18 +880,82 @@ const I18N = {
     "settings.nav.pref": "偏好",
     "settings.nav.general": "常规",
     "settings.nav.terminal": "终端",
+    "settings.nav.sync": "同步",
+    "settings.nav.about": "关于",
+    "settings.general.subtab.basic": "基础",
+    "settings.general.subtab.sftp": "SFTP",
+    "settings.sync.desc": "管理同步配置，并执行预览拉取/推送",
+    "settings.sync.placeholder.no_profile": "暂无同步配置",
+    "settings.sync.status.loaded": "已加载 {count} 个配置",
+    "settings.sync.status.none": "暂无同步配置",
+    "settings.sync.status.creating": "正在创建新配置",
+    "settings.sync.status.saved": "配置已保存",
+    "settings.sync.status.updated": "配置已更新",
+    "settings.sync.status.deleted": "配置已删除",
+    "settings.sync.status.conn_ok": "连接正常（{backend}）",
+    "settings.sync.status.conn_fail": "连接失败：{error}",
+    "settings.sync.status.pull_preview": "预览拉取事件数：{events}",
+    "settings.sync.status.push": "推送事件数：{events}",
+    "settings.sync.status.apply": "应用拉取：总数={events}，应用={applied}，跳过={skipped}{backup}",
+    "settings.sync.status.last": "最近同步：{action} · 事件={events} · {when}",
+    "settings.sync.backup.suffix": "，备份={path}",
+    "settings.sync.action.push": "推送",
+    "settings.sync.action.pull_preview": "预览拉取",
+    "settings.sync.action.apply_pull": "应用拉取",
+    "settings.sync.title": "同步",
+    "settings.sync.profile": "配置",
+    "settings.sync.button.refresh": "刷新",
+    "settings.sync.button.new": "新建",
+    "settings.sync.button.save": "保存",
+    "settings.sync.button.delete": "删除",
+    "settings.sync.button.test": "测试连接",
+    "settings.sync.button.apply": "应用拉取",
+    "settings.sync.button.pull": "预览拉取",
+    "settings.sync.button.push": "推送",
+    "settings.sync.backend.filesystem": "本地文件夹",
+    "settings.sync.backend.webdav": "WebDAV",
+    "settings.sync.backend.s3": "S3 对象存储",
+    "settings.sync.placeholder.name": "配置名称",
+    "settings.sync.placeholder.root": "本地同步目录（例如 /Users/you/ZeroTermSync）",
+    "settings.sync.placeholder.root_s3": "前缀路径（可选，例如 zeroterm/team-a）",
+    "settings.sync.placeholder.root_webdav": "远程目录路径（例如 remote.php/dav/files/you/zeroterm）",
+    "settings.sync.placeholder.endpoint": "端点地址（webdav）",
+    "settings.sync.placeholder.bucket": "桶名称（s3）",
+    "settings.sync.placeholder.region": "区域（s3，默认 us-east-1）",
+    "settings.sync.placeholder.username": "用户名（webdav）",
+    "settings.sync.placeholder.password": "密码（webdav）",
+    "settings.sync.tip.local": "本地文件夹模式需配合 iCloud/Dropbox/Syncthing 等目录同步工具实现多端同步。",
+    "theme.menu.edit": "编辑主题",
+    "theme.menu.duplicate": "复制为自定义",
+    "theme.menu.delete": "删除主题",
+    "theme.edit.title": "编辑主题",
+    "theme.edit.reset": "重置",
+    "theme.edit.cancel": "取消",
+    "theme.edit.save": "保存",
     "settings.nav.sftp": "SFTP",
     "settings.nav.hotkeys": "快捷键",
     "settings.terminal.desc": "配置终端主题与视觉表现。",
     "settings.language.label": "语言",
     "settings.language.hint": "修改立即生效，并会保存在本地。",
+    "settings.version.label": "版本",
+    "settings.about.title": "关于",
+    "settings.update.check": "检查更新",
+    "settings.update.install": "安装并重启",
+    "settings.update.latest": "当前已是最新版本（{version}）。",
+    "settings.update.available": "发现新版本：{current} -> {latest}",
+    "settings.update.failed": "更新失败：{error}",
     "settings.terminal_theme.title": "终端主题",
+    "settings.terminal_theme.light_title": "亮色终端主题",
+    "settings.terminal_theme.dark_title": "暗色终端主题",
+    "settings.terminal_theme.add": "+ 新建",
     "settings.terminal_theme.label": "主题",
     "settings.terminal_font.title": "字体配置",
     "settings.terminal_font.hint": "字体、字号和行高在同一行设置，下方实时预览。",
     "settings.terminal_font.family": "字体",
     "settings.terminal_font.size": "字号",
     "settings.terminal_font.line_height": "行高",
+    "settings.terminal.subtab.theme": "主题",
+    "settings.terminal.subtab.font": "字体",
     "settings.sftp.title": "SFTP",
     "settings.sftp.auto.label": "自动检测目录配置",
     "settings.sftp.auto.hint": "打开 SFTP 标签页时，自动检测远端 shell 是否已配置目录跟随，未配置时提示自动安装。",
@@ -1163,13 +1343,37 @@ const sftpLeftContent = document.getElementById("sftp-left-content");
 const sftpRightContent = document.getElementById("sftp-right-content");
 const newWindowButton = document.getElementById("new-window-button");
 const settingsButton = document.getElementById("settings-button");
+const quickConnectButton = document.getElementById("quick-connect-button");
+const localTerminalButton = document.getElementById("local-terminal-button");
 const vaultBottomSettingsButton = document.getElementById("vault-bottom-settings");
 const vaultBottomSettingsRow = document.getElementById("vault-bottom-settings-row");
 const settingsBackButton = document.getElementById("settings-back");
 const settingsNavGeneral = document.getElementById("settings-nav-general");
 const settingsNavTerminal = document.getElementById("settings-nav-terminal");
+const settingsNavSync = document.getElementById("settings-nav-sync");
 const settingsGeneralPanel = document.getElementById("settings-general-panel");
 const settingsTerminalPanel = document.getElementById("settings-terminal-panel");
+const settingsSyncPanel = document.getElementById("settings-sync-panel");
+const settingsSyncProfile = document.getElementById("settings-sync-profile");
+const settingsSyncRefresh = document.getElementById("settings-sync-refresh");
+const settingsSyncNew = document.getElementById("settings-sync-new");
+const settingsSyncSave = document.getElementById("settings-sync-save");
+const settingsSyncDelete = document.getElementById("settings-sync-delete");
+const settingsSyncTest = document.getElementById("settings-sync-test");
+const settingsSyncApply = document.getElementById("settings-sync-apply");
+const settingsSyncPull = document.getElementById("settings-sync-pull");
+const settingsSyncPush = document.getElementById("settings-sync-push");
+const settingsSyncStatus = document.getElementById("settings-sync-status");
+const settingsSyncName = document.getElementById("settings-sync-name");
+const settingsSyncBackend = document.getElementById("settings-sync-backend");
+const settingsSyncRoot = document.getElementById("settings-sync-root");
+const settingsSyncEndpoint = document.getElementById("settings-sync-endpoint");
+const settingsSyncBucket = document.getElementById("settings-sync-bucket");
+const settingsSyncRegion = document.getElementById("settings-sync-region");
+const settingsSyncUsername = document.getElementById("settings-sync-username");
+const settingsSyncPassword = document.getElementById("settings-sync-password");
+const settingsNavAbout = document.getElementById("settings-nav-about");
+const settingsAboutPanel = document.getElementById("settings-about-panel");
 const settingsGeneralSubtabBasic = document.getElementById("settings-general-subtab-basic");
 const settingsGeneralSubtabSftp = document.getElementById("settings-general-subtab-sftp");
 const settingsGeneralBasicSection = document.getElementById("settings-general-basic-section");
@@ -1177,6 +1381,12 @@ const settingsGeneralSftpSection = document.getElementById("settings-general-sft
 const settingsGeneralTitle = document.getElementById("settings-general-title");
 const settingsGeneralDesc = document.getElementById("settings-general-desc");
 const settingsLanguageSelect = document.getElementById("settings-language-select");
+const settingsAboutTitle = document.getElementById("settings-about-title");
+const settingsAboutVersionLabel = document.getElementById("settings-about-version-label");
+const settingsAboutVersionValue = document.getElementById("settings-about-version-value");
+const settingsUpdateCheck = document.getElementById("settings-update-check");
+const settingsUpdateInstall = document.getElementById("settings-update-install");
+const settingsUpdateStatus = document.getElementById("settings-update-status");
 const settingsTerminalTheme = document.getElementById("settings-terminal-theme");
 const settingsTerminalSubtabTheme = document.getElementById("settings-terminal-subtab-theme");
 const settingsTerminalSubtabFont = document.getElementById("settings-terminal-subtab-font");
@@ -1223,6 +1433,21 @@ const textInputMessage = document.getElementById("text-input-message");
 const textInputValue = document.getElementById("text-input-value");
 const textInputCancelButton = document.getElementById("text-input-cancel");
 const textInputConfirmButton = document.getElementById("text-input-confirm");
+const quickConnectOverlay = document.getElementById("quick-connect-overlay");
+const quickConnectForm = document.getElementById("quick-connect-form");
+const quickConnectUser = document.getElementById("qc-user");
+const quickConnectHost = document.getElementById("qc-host");
+const quickConnectPort = document.getElementById("qc-port");
+const quickConnectAuthType = document.getElementById("qc-auth-type");
+const quickConnectPasswordBlock = document.getElementById("qc-password-block");
+const quickConnectPassword = document.getElementById("qc-password");
+const quickConnectKeyBlock = document.getElementById("qc-key-block");
+const quickConnectKeyPick = document.getElementById("qc-key-pick");
+const quickConnectKeyStatus = document.getElementById("qc-key-status");
+const quickConnectKeyPassphrase = document.getElementById("qc-key-passphrase");
+const quickConnectCancel = document.getElementById("quick-connect-cancel");
+const quickConnectError = document.getElementById("quick-connect-error");
+let quickConnectKeyPem = null;
 
 let hostsCache = [];
 let workspaceMode = "vaults";
@@ -1249,6 +1474,10 @@ const SETTINGS_KEY_TERMINAL_LINE_HEIGHT = "zeroterm.settings.terminal.line_heigh
 let settingsSection = "general";
 let settingsTerminalSubtab = "theme";
 let settingsGeneralSubtab = "basic";
+let syncProfiles = [];
+let syncEditingId = null;
+let settingsSftpHomeCache = null;
+let appVersionCache = null;
 
 const TERMINAL_THEMES = {
   "termark-dark": {
@@ -1533,7 +1762,7 @@ function populateHostGroupOptions(selectedGroupId = "") {
   hfGroup.innerHTML = "";
   const none = document.createElement("option");
   none.value = "";
-  none.textContent = "(未分组)";
+  none.textContent = t("groups.option.ungrouped");
   hfGroup.appendChild(none);
 
   const roots = hostGroups.filter((g) => !g.parentId);
@@ -1706,6 +1935,7 @@ function setWorkspaceMode(mode) {
     }
     if (settingsSftpLocalDir) {
       settingsSftpLocalDir.value = localStorage.getItem(SETTINGS_KEY_SFTP_LOCAL_DIR) || "";
+      fillSftpLocalDirDefaultIfEmpty().catch(() => {});
     }
     if (settingsTerminalTheme) {
       settingsTerminalTheme.value = getTerminalThemeName();
@@ -1723,26 +1953,211 @@ function setWorkspaceMode(mode) {
 }
 
 function setSettingsSection(section) {
-  settingsSection = section === "terminal" ? "terminal" : "general";
+  settingsSection = section === "terminal"
+    ? "terminal"
+    : section === "sync"
+      ? "sync"
+      : section === "about"
+        ? "about"
+        : "general";
   settingsNavGeneral?.classList.toggle("active", settingsSection === "general");
   settingsNavTerminal?.classList.toggle("active", settingsSection === "terminal");
+  settingsNavSync?.classList.toggle("active", settingsSection === "sync");
+  settingsNavAbout?.classList.toggle("active", settingsSection === "about");
   if (settingsGeneralPanel) settingsGeneralPanel.hidden = settingsSection !== "general";
   if (settingsTerminalPanel) settingsTerminalPanel.hidden = settingsSection !== "terminal";
+  if (settingsSyncPanel) settingsSyncPanel.hidden = settingsSection !== "sync";
+  if (settingsAboutPanel) settingsAboutPanel.hidden = settingsSection !== "about";
   if (settingsGeneralTitle) {
     settingsGeneralTitle.textContent = settingsSection === "terminal"
       ? t("settings.nav.terminal")
+      : settingsSection === "sync"
+        ? t("settings.nav.sync")
+        : settingsSection === "about"
+          ? t("settings.nav.about")
       : t("settings.general.title");
   }
   if (settingsGeneralDesc) {
     settingsGeneralDesc.textContent = settingsSection === "terminal"
       ? t("settings.terminal.desc")
+      : settingsSection === "sync"
+        ? t("settings.sync.desc")
+        : settingsSection === "about"
+          ? ""
       : t("settings.general.desc");
   }
   if (settingsSection === "terminal") {
     setSettingsTerminalSubtab(settingsTerminalSubtab);
+  } else if (settingsSection === "sync") {
+    loadSyncProfiles().catch((e) => {
+      if (settingsSyncStatus) settingsSyncStatus.textContent = String(e);
+    });
+  } else if (settingsSection === "about") {
+    loadAppVersion().then((v) => {
+      if (settingsAboutVersionValue) settingsAboutVersionValue.textContent = v;
+    });
   } else {
     setSettingsGeneralSubtab(settingsGeneralSubtab);
   }
+}
+
+async function loadSyncProfiles() {
+  syncProfiles = await invoke("list_sync_profiles");
+  if (!settingsSyncProfile) return;
+  settingsSyncProfile.innerHTML = "";
+  for (const p of syncProfiles) {
+    const op = document.createElement("option");
+    op.value = p.id;
+    op.textContent = `${p.name} (${p.backend})`;
+    settingsSyncProfile.appendChild(op);
+  }
+  if (settingsSyncStatus) {
+    const raw = localStorage.getItem("zeroterm.sync.last");
+    if (raw) {
+      try {
+        const x = JSON.parse(raw);
+        const when = new Date(x.at).toLocaleString();
+        const actionLabel = t(`settings.sync.action.${x.action}`);
+        settingsSyncStatus.textContent = t("settings.sync.status.last", {
+          action: actionLabel,
+          events: x.events ?? 0,
+          when,
+        });
+      } catch {
+        settingsSyncStatus.textContent = syncProfiles.length > 0
+          ? t("settings.sync.status.loaded", { count: syncProfiles.length })
+          : t("settings.sync.status.none");
+      }
+    } else {
+      settingsSyncStatus.textContent = syncProfiles.length > 0
+        ? t("settings.sync.status.loaded", { count: syncProfiles.length })
+        : t("settings.sync.status.none");
+    }
+  }
+  if (syncProfiles.length > 0) {
+    settingsSyncProfile.disabled = false;
+    const pick = syncEditingId && syncProfiles.some((p) => p.id === syncEditingId)
+      ? syncEditingId
+      : syncProfiles[0].id;
+    settingsSyncProfile.value = pick;
+    applySyncProfileToForm(syncProfiles.find((p) => p.id === pick) || null);
+  } else {
+    const op = document.createElement("option");
+    op.value = "";
+    op.textContent = t("settings.sync.placeholder.no_profile");
+    settingsSyncProfile.appendChild(op);
+    settingsSyncProfile.disabled = true;
+    applySyncProfileToForm(null);
+  }
+  const hasProfiles = syncProfiles.length > 0;
+  if (settingsSyncDelete) settingsSyncDelete.disabled = !hasProfiles;
+  if (settingsSyncTest) settingsSyncTest.disabled = !hasProfiles;
+  if (settingsSyncApply) settingsSyncApply.disabled = !hasProfiles;
+  if (settingsSyncPull) settingsSyncPull.disabled = !hasProfiles;
+  if (settingsSyncPush) settingsSyncPush.disabled = !hasProfiles;
+  syncFormByBackend();
+}
+
+function syncFormToInput() {
+  return {
+    name: String(settingsSyncName?.value || "").trim() || "Sync Profile",
+    backend: String(settingsSyncBackend?.value || "filesystem"),
+    root: String(settingsSyncRoot?.value || "").trim() || null,
+    endpoint: String(settingsSyncEndpoint?.value || "").trim() || null,
+    bucket: String(settingsSyncBucket?.value || "").trim() || null,
+    region: String(settingsSyncRegion?.value || "").trim() || null,
+    username: String(settingsSyncUsername?.value || "").trim() || null,
+    password: String(settingsSyncPassword?.value || "").trim() || null,
+    path: String(settingsSyncRoot?.value || "").trim() || null,
+  };
+}
+
+function applySyncProfileToForm(p) {
+  if (!p) {
+    syncEditingId = null;
+    if (settingsSyncName) settingsSyncName.value = "";
+    if (settingsSyncBackend) settingsSyncBackend.value = "filesystem";
+    if (settingsSyncRoot) settingsSyncRoot.value = "";
+    if (settingsSyncEndpoint) settingsSyncEndpoint.value = "";
+    if (settingsSyncBucket) settingsSyncBucket.value = "";
+    if (settingsSyncRegion) settingsSyncRegion.value = "";
+    if (settingsSyncUsername) settingsSyncUsername.value = "";
+    if (settingsSyncPassword) settingsSyncPassword.value = "";
+    return;
+  }
+  syncEditingId = p.id;
+  if (settingsSyncName) settingsSyncName.value = p.name || "";
+  if (settingsSyncBackend) settingsSyncBackend.value = p.backend || "filesystem";
+  if (settingsSyncRoot) settingsSyncRoot.value = p.root || p.path || "";
+  if (settingsSyncEndpoint) settingsSyncEndpoint.value = p.endpoint || "";
+  if (settingsSyncBucket) settingsSyncBucket.value = p.bucket || "";
+  if (settingsSyncRegion) settingsSyncRegion.value = p.region || "";
+  if (settingsSyncUsername) settingsSyncUsername.value = p.username || "";
+  if (settingsSyncPassword) settingsSyncPassword.value = p.password || "";
+}
+
+function syncFormByBackend() {
+  const backend = String(settingsSyncBackend?.value || "filesystem");
+  const isFs = backend === "filesystem";
+  const isDav = backend === "webdav";
+  const isS3 = backend === "s3";
+  const toggleField = (el, show) => {
+    if (!el) return;
+    el.disabled = !show;
+    el.style.display = show ? "" : "none";
+  };
+
+  toggleField(settingsSyncEndpoint, isDav);
+  toggleField(settingsSyncUsername, isDav);
+  toggleField(settingsSyncPassword, isDav);
+  toggleField(settingsSyncBucket, isS3);
+  toggleField(settingsSyncRegion, isS3);
+
+  if (settingsSyncRoot) {
+    settingsSyncRoot.disabled = false;
+    settingsSyncRoot.style.display = "";
+  }
+
+  if (settingsSyncEndpoint) settingsSyncEndpoint.disabled = !isDav;
+  if (settingsSyncUsername) settingsSyncUsername.disabled = !isDav;
+  if (settingsSyncPassword) settingsSyncPassword.disabled = !isDav;
+  if (settingsSyncBucket) settingsSyncBucket.disabled = !isS3;
+  if (settingsSyncRegion) settingsSyncRegion.disabled = !isS3;
+  if (settingsSyncRoot) settingsSyncRoot.placeholder = isFs
+    ? t("settings.sync.placeholder.root")
+    : isS3
+      ? t("settings.sync.placeholder.root_s3")
+      : t("settings.sync.placeholder.root_webdav");
+}
+
+async function fillSftpLocalDirDefaultIfEmpty() {
+  if (!settingsSftpLocalDir) return;
+  const current = String(settingsSftpLocalDir.value || "").trim();
+  if (current) return;
+
+  if (!settingsSftpHomeCache) {
+    try {
+      settingsSftpHomeCache = await invoke("local_home_path");
+    } catch {
+      settingsSftpHomeCache = "";
+    }
+  }
+  if (!settingsSftpHomeCache) return;
+
+  settingsSftpLocalDir.value = settingsSftpHomeCache;
+  if (!localStorage.getItem(SETTINGS_KEY_SFTP_LOCAL_DIR)) {
+    localStorage.setItem(SETTINGS_KEY_SFTP_LOCAL_DIR, settingsSftpHomeCache);
+  }
+}
+
+async function loadAppVersion() {
+  if (appVersionCache) return appVersionCache;
+  try {
+    appVersionCache = await invoke("app_version");
+  } catch {
+    appVersionCache = "-";
+  }
+  return appVersionCache;
 }
 
 function setSettingsGeneralSubtab(subtab) {
@@ -1981,6 +2396,8 @@ function applyI18n() {
   setAttr("workspace-nav-sftp", "title", "workspace.tab.sftp");
   setAttr("new-window-button", "title", "sidebar.new_window");
   setAttr("settings-button", "title", "sidebar.settings");
+  setAttr("quick-connect-button", "title", "sidebar.quick_connect");
+  setAttr("local-terminal-button", "title", "sidebar.local_terminal");
   setAttr("lock-button", "title", "sidebar.lock");
   setAttr("window-minimize", "title", "window.minimize");
   setAttr("window-close", "title", "window.close");
@@ -1999,7 +2416,6 @@ function applyI18n() {
   setText("sftp-right-actions", "sftp.button.actions");
   setText("sftp-right-empty-title", "sftp.empty.connect_title");
   setText("sftp-right-empty-desc", "sftp.empty.connect_desc");
-  setText("sftp-right-empty-select", "sftp.empty.select_host");
   setText("files-menu-open", "files.menu.open");
   setText("files-menu-open-with", "files.menu.open_with");
   setText("files-menu-copy", "files.menu.copy_to_target");
@@ -2018,6 +2434,7 @@ function applyI18n() {
   setText("hk-reject", "host_key.reject");
   setText("hk-accept-once", "host_key.accept_once");
   setText("hk-accept", "host_key.accept");
+  setText("hk-title", "host_key.title");
 
   setText("hf-name-label", "host_editor.label.name");
   setText("hf-user-label", "host_editor.label.user");
@@ -2036,6 +2453,26 @@ function applyI18n() {
   setText("hf-key-pick", "host_editor.button.choose_key");
   setText("host-edit-cancel", "host_editor.button.cancel");
   setText("host-edit-save", "host_editor.button.save");
+  setText("host-edit-title", editingHostId ? "host_editor.title.edit" : "host_editor.title.add");
+  if (!hfKeyPem) {
+    setText("hf-key-status", editingHostId ? "host_editor.key.existing" : "host_editor.key.none");
+  }
+  setText("quick-connect-title", "quick_connect.title");
+  setText("qc-user-label", "quick_connect.user");
+  setText("qc-host-label", "quick_connect.host");
+  setText("qc-port-label", "quick_connect.port");
+  setText("qc-auth-label", "quick_connect.auth");
+  setOptionText("qc-auth-type", "password", "quick_connect.auth.password");
+  setOptionText("qc-auth-type", "key", "quick_connect.auth.key");
+  setOptionText("qc-auth-type", "agent", "quick_connect.auth.agent");
+  syncCustomSelect("qc-auth-type");
+  setText("qc-password-label", "quick_connect.password");
+  setText("qc-key-label", "quick_connect.key");
+  setText("qc-key-passphrase-label", "quick_connect.key_passphrase");
+  setText("qc-key-pick", "quick_connect.key.pick");
+  setText("qc-key-status", "quick_connect.key.none");
+  setText("quick-connect-cancel", "quick_connect.cancel");
+  setText("quick-connect-submit", "quick_connect.connect");
   setText("hosts-menu-connect", "hosts.menu.connect");
   setText("hosts-menu-edit", "hosts.menu.edit");
   setText("hosts-menu-copy", "hosts.menu.copy");
@@ -2056,13 +2493,23 @@ function applyI18n() {
 
   setPlaceholder("file-editor-find", "editor.find.placeholder");
   setPlaceholder("file-editor-replace", "editor.replace.placeholder");
+  setPlaceholder("file-editor-find-inline", "editor.find.placeholder");
+  setPlaceholder("file-editor-replace-inline", "editor.replace.placeholder");
   setText("editor-match-case-label", "editor.match_case");
   setText("file-editor-find-prev", "editor.button.prev");
   setText("file-editor-find-next", "editor.button.next");
   setText("file-editor-replace-one", "editor.button.replace");
   setText("file-editor-replace-all", "editor.button.replace_all");
+  setText("file-editor-inline-close", "editor.button.close_inline");
   setText("file-editor-cancel", "editor.button.close");
   setText("file-editor-save", "editor.button.save");
+  setText("theme-menu-edit", "theme.menu.edit");
+  setText("theme-menu-duplicate", "theme.menu.duplicate");
+  setText("theme-menu-delete", "theme.menu.delete");
+  setText("theme-edit-title", "theme.edit.title");
+  setText("theme-edit-reset", "theme.edit.reset");
+  setText("theme-edit-cancel", "theme.edit.cancel");
+  setText("theme-edit-save", "theme.edit.save");
 
   setText("settings-title", "settings.title");
   setText("settings-general-title", "settings.general.title");
@@ -2070,11 +2517,25 @@ function applyI18n() {
   setText("settings-nav-pref", "settings.nav.pref");
   setText("settings-nav-general", "settings.nav.general");
   setText("settings-nav-terminal", "settings.nav.terminal");
+  setText("settings-nav-sync", "settings.nav.sync");
+  setText("settings-nav-about", "settings.nav.about");
+  setText("settings-general-subtab-basic", "settings.general.subtab.basic");
+  setText("settings-general-subtab-sftp", "settings.general.subtab.sftp");
+  setText("settings-terminal-subtab-theme", "settings.terminal.subtab.theme");
+  setText("settings-terminal-subtab-font", "settings.terminal.subtab.font");
   setText("settings-nav-sftp", "settings.nav.sftp");
   setText("settings-nav-hotkeys", "settings.nav.hotkeys");
   setText("settings-language-label", "settings.language.label");
   setText("settings-language-hint", "settings.language.hint");
+  setText("settings-about-title", "settings.about.title");
+  setText("settings-about-version-label", "settings.version.label");
+  setText("settings-update-check", "settings.update.check");
+  setText("settings-update-install", "settings.update.install");
   setText("settings-terminal-theme-title", "settings.terminal_theme.title");
+  setText("terminal-theme-light-title", "settings.terminal_theme.light_title");
+  setText("terminal-theme-dark-title", "settings.terminal_theme.dark_title");
+  setText("terminal-theme-add-light", "settings.terminal_theme.add");
+  setText("terminal-theme-add-dark", "settings.terminal_theme.add");
   setText("settings-terminal-theme-label", "settings.terminal_theme.label");
   setText("settings-terminal-font-title", "settings.terminal_font.title");
   setText("settings-terminal-font-hint", "settings.terminal_font.hint");
@@ -2088,6 +2549,27 @@ function applyI18n() {
   setText("settings-sftp-local-dir-hint", "settings.sftp.local_dir.hint");
   setAttr("settings-sftp-local-dir", "placeholder", "settings.sftp.local_dir.placeholder");
   setText("settings-sftp-local-dir-browse", "settings.sftp.local_dir.browse");
+  setText("settings-sync-title", "settings.sync.title");
+  setText("settings-sync-profile-label", "settings.sync.profile");
+  setText("settings-sync-tip", "settings.sync.tip.local");
+  setText("settings-sync-refresh", "settings.sync.button.refresh");
+  setText("settings-sync-new", "settings.sync.button.new");
+  setText("settings-sync-save", "settings.sync.button.save");
+  setText("settings-sync-delete", "settings.sync.button.delete");
+  setText("settings-sync-test", "settings.sync.button.test");
+  setText("settings-sync-apply", "settings.sync.button.apply");
+  setText("settings-sync-pull", "settings.sync.button.pull");
+  setText("settings-sync-push", "settings.sync.button.push");
+  setOptionText("settings-sync-backend", "filesystem", "settings.sync.backend.filesystem");
+  setOptionText("settings-sync-backend", "webdav", "settings.sync.backend.webdav");
+  setOptionText("settings-sync-backend", "s3", "settings.sync.backend.s3");
+  syncCustomSelect("settings-sync-backend");
+  setPlaceholder("settings-sync-name", "settings.sync.placeholder.name");
+  setPlaceholder("settings-sync-endpoint", "settings.sync.placeholder.endpoint");
+  setPlaceholder("settings-sync-bucket", "settings.sync.placeholder.bucket");
+  setPlaceholder("settings-sync-region", "settings.sync.placeholder.region");
+  setPlaceholder("settings-sync-username", "settings.sync.placeholder.username");
+  setPlaceholder("settings-sync-password", "settings.sync.placeholder.password");
   setOptionText("settings-language-select", "zh-CN", "settings.language.zh");
   setOptionText("settings-language-select", "en", "settings.language.en");
   syncCustomSelect("settings-language-select");
@@ -2131,11 +2613,14 @@ function applyI18n() {
 
 hostSearch.addEventListener("input", () => renderHosts());
 buildCustomSelect(document.getElementById("hf-auth-type"));
+buildCustomSelect(document.getElementById("qc-auth-type"));
 buildCustomSelect(document.getElementById("hf-group"));
 buildCustomSelect(document.getElementById("hf-jump"));
 buildCustomSelect(document.getElementById("settings-language-select"));
 buildCustomSelect(document.getElementById("settings-terminal-theme"));
 buildCustomSelect(document.getElementById("settings-terminal-font-family"));
+buildCustomSelect(document.getElementById("settings-sync-backend"));
+syncCustomSelect("settings-sync-backend");
 buildCustomSelect(document.getElementById("sftp-left-host"));
 buildCustomSelect(document.getElementById("sftp-right-host"));
 workspaceTabVaults.addEventListener("click", () => setWorkspaceMode("vaults"));
@@ -2392,11 +2877,43 @@ window.addEventListener("click", () => hideHostsContextMenu());
 window.addEventListener("click", () => hideGroupsContextMenu());
 window.addEventListener("blur", () => hideHostsContextMenu());
 window.addEventListener("blur", () => hideGroupsContextMenu());
+window.addEventListener("keydown", handleGlobalTerminalFindShortcut, true);
+window.addEventListener("keydown", handleGlobalTerminalFindNav, true);
 settingsButton.addEventListener("click", openSettingsPage);
+quickConnectButton?.addEventListener("click", openQuickConnectOverlay);
+localTerminalButton?.addEventListener("click", () => {
+  openLocalTerminalInTab().catch((e) => alert(String(e)));
+});
 vaultBottomSettingsButton?.addEventListener("click", openSettingsPage);
 settingsBackButton?.addEventListener("click", () => setWorkspaceMode("vaults"));
 settingsNavGeneral?.addEventListener("click", () => setSettingsSection("general"));
 settingsNavTerminal?.addEventListener("click", () => setSettingsSection("terminal"));
+settingsNavSync?.addEventListener("click", () => setSettingsSection("sync"));
+settingsNavAbout?.addEventListener("click", () => setSettingsSection("about"));
+settingsUpdateCheck?.addEventListener("click", async () => {
+  try {
+    const info = await invoke("check_for_update");
+    if (!info.available) {
+      if (settingsUpdateStatus) settingsUpdateStatus.textContent = t("settings.update.latest", { version: info.currentVersion });
+      return;
+    }
+    if (settingsUpdateStatus) {
+      settingsUpdateStatus.textContent = t("settings.update.available", {
+        current: info.currentVersion,
+        latest: info.version || "?",
+      });
+    }
+  } catch (e) {
+    if (settingsUpdateStatus) settingsUpdateStatus.textContent = t("settings.update.failed", { error: String(e) });
+  }
+});
+settingsUpdateInstall?.addEventListener("click", async () => {
+  try {
+    await invoke("install_update");
+  } catch (e) {
+    if (settingsUpdateStatus) settingsUpdateStatus.textContent = t("settings.update.failed", { error: String(e) });
+  }
+});
 settingsGeneralSubtabBasic?.addEventListener("click", () => setSettingsGeneralSubtab("basic"));
 settingsGeneralSubtabSftp?.addEventListener("click", () => setSettingsGeneralSubtab("sftp"));
 settingsTerminalSubtabTheme?.addEventListener("click", () => setSettingsTerminalSubtab("theme"));
@@ -2413,6 +2930,211 @@ vaultBottomSettingsRow?.addEventListener("keydown", (ev) => {
 settingsLanguageSelect.addEventListener("change", () => {
   setLocale(settingsLanguageSelect.value);
 });
+settingsSyncRefresh?.addEventListener("click", () => {
+  loadSyncProfiles().catch((e) => {
+    if (settingsSyncStatus) settingsSyncStatus.textContent = String(e);
+  });
+});
+settingsSyncProfile?.addEventListener("change", () => {
+  const id = settingsSyncProfile.value;
+  applySyncProfileToForm(syncProfiles.find((p) => p.id === id) || null);
+  syncFormByBackend();
+});
+settingsSyncNew?.addEventListener("click", () => {
+  applySyncProfileToForm(null);
+  syncFormByBackend();
+  if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.creating");
+});
+settingsSyncBackend?.addEventListener("change", syncFormByBackend);
+settingsSyncSave?.addEventListener("click", async () => {
+  try {
+    const input = syncFormToInput();
+    if (syncEditingId) {
+      await invoke("update_sync_profile", { id: syncEditingId, input });
+      if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.updated");
+    } else {
+      const id = await invoke("save_sync_profile", { input });
+      syncEditingId = id;
+      if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.saved");
+    }
+    await loadSyncProfiles();
+  } catch (e) {
+    if (settingsSyncStatus) settingsSyncStatus.textContent = String(e);
+  }
+});
+settingsSyncDelete?.addEventListener("click", async () => {
+  const id = syncEditingId || settingsSyncProfile?.value;
+  if (!id) return;
+  try {
+    await invoke("delete_sync_profile", { id });
+    syncEditingId = null;
+    await loadSyncProfiles();
+    if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.deleted");
+  } catch (e) {
+    if (settingsSyncStatus) settingsSyncStatus.textContent = String(e);
+  }
+});
+settingsSyncTest?.addEventListener("click", async () => {
+  const id = syncEditingId || settingsSyncProfile?.value;
+  if (!id) return;
+  try {
+    const r = await invoke("sync_test_connection", { profileId: id });
+    if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.conn_ok", { backend: r.backend });
+  } catch (e) {
+    if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.conn_fail", { error: String(e) });
+  }
+});
+settingsSyncApply?.addEventListener("click", async () => {
+  const id = syncEditingId || settingsSyncProfile?.value;
+  if (!id) return;
+  try {
+    const r = await invoke("sync_apply_pull", { profileId: id });
+    if (r.clientStateJson) {
+      try {
+        const parsed = JSON.parse(r.clientStateJson);
+        if (Array.isArray(parsed.groups)) {
+          hostGroups = parsed.groups;
+          localStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify(hostGroups));
+        }
+        if (parsed.groupState && typeof parsed.groupState === "object") {
+          groupExpandedState = parsed.groupState;
+          localStorage.setItem(GROUP_STATE_STORAGE_KEY, JSON.stringify(groupExpandedState));
+        }
+        if (parsed.hostGroupMap && typeof parsed.hostGroupMap === "object") {
+          hostGroupMap = parsed.hostGroupMap;
+          localStorage.setItem(HOST_GROUP_MAP_STORAGE_KEY, JSON.stringify(hostGroupMap));
+        }
+        renderHosts();
+      } catch (e) {
+        console.warn("apply pull client state parse failed", e);
+      }
+    }
+    if (settingsSyncStatus) {
+      const backupText = r.backupPath
+        ? t("settings.sync.backup.suffix", { path: r.backupPath })
+        : "";
+      settingsSyncStatus.textContent = t("settings.sync.status.apply", {
+        events: r.events,
+        applied: r.applied,
+        skipped: r.skipped,
+        backup: backupText,
+      });
+    }
+    localStorage.setItem("zeroterm.sync.last", JSON.stringify({
+      at: Date.now(),
+      action: "apply_pull",
+      events: r.events,
+      applied: r.applied,
+      skipped: r.skipped,
+    }));
+    await refreshHostsCacheFromVault({ silent: true });
+  } catch (e) {
+    if (settingsSyncStatus) settingsSyncStatus.textContent = String(e);
+  }
+});
+settingsSyncPull?.addEventListener("click", async () => {
+  const id = settingsSyncProfile?.value;
+  if (!id) return;
+  try {
+    const r = await invoke("sync_pull_preview", { profileId: id });
+    if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.pull_preview", { events: r.events });
+    localStorage.setItem("zeroterm.sync.last", JSON.stringify({
+      at: Date.now(),
+      action: "pull_preview",
+      events: r.events,
+    }));
+  } catch (e) {
+    if (settingsSyncStatus) settingsSyncStatus.textContent = String(e);
+  }
+});
+settingsSyncPush?.addEventListener("click", async () => {
+  const id = settingsSyncProfile?.value;
+  if (!id) return;
+  try {
+    const clientStateJson = JSON.stringify({
+      groups: hostGroups,
+      groupState: groupExpandedState,
+      hostGroupMap,
+    });
+    const r = await invoke("sync_push_preview", { profileId: id, clientStateJson });
+    if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.push", { events: r.events });
+    localStorage.setItem("zeroterm.sync.last", JSON.stringify({
+      at: Date.now(),
+      action: "push",
+      events: r.events,
+    }));
+  } catch (e) {
+    if (settingsSyncStatus) settingsSyncStatus.textContent = String(e);
+  }
+});
+quickConnectCancel?.addEventListener("click", closeQuickConnectOverlay);
+quickConnectAuthType?.addEventListener("change", syncQuickConnectAuthSections);
+quickConnectKeyPick?.addEventListener("click", () => {
+  pickQuickConnectKeyFile().catch((e) => {
+    if (quickConnectKeyStatus) quickConnectKeyStatus.textContent = String(e);
+  });
+});
+quickConnectOverlay?.addEventListener("click", (ev) => {
+  if (ev.target === quickConnectOverlay) closeQuickConnectOverlay();
+});
+quickConnectForm?.addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  if (quickConnectError) {
+    quickConnectError.hidden = true;
+    quickConnectError.textContent = "";
+  }
+  const input = {
+    user: String(quickConnectUser?.value || "").trim(),
+    host: String(quickConnectHost?.value || "").trim(),
+    port: parseInt(String(quickConnectPort?.value || "22"), 10) || 22,
+    auth: null,
+  };
+  const authType = quickConnectAuthType?.value || "password";
+  if (authType === "password") {
+    const pw = String(quickConnectPassword?.value || "");
+    input.auth = { type: "password", value: pw };
+    if (!pw) {
+    if (quickConnectError) {
+      quickConnectError.textContent = t("quick_connect.error.required_password");
+      quickConnectError.hidden = false;
+    }
+      return;
+    }
+  } else if (authType === "key") {
+    if (!quickConnectKeyPem) {
+      if (quickConnectError) {
+        quickConnectError.textContent = t("quick_connect.error.pick_key");
+        quickConnectError.hidden = false;
+      }
+      return;
+    }
+    input.auth = {
+      type: "private_key",
+      key_pem: quickConnectKeyPem,
+      passphrase: String(quickConnectKeyPassphrase?.value || "") || null,
+    };
+  } else {
+    input.auth = { type: "agent" };
+  }
+
+  if (!input.user || !input.host) {
+    if (quickConnectError) {
+      quickConnectError.textContent = t("quick_connect.error.required_host_user");
+      quickConnectError.hidden = false;
+    }
+    return;
+  }
+  try {
+    closeQuickConnectOverlay();
+    await connectQuickHostAndOpenTerminal(input);
+  } catch (e) {
+    if (quickConnectError) {
+      quickConnectError.textContent = String(e);
+      quickConnectError.hidden = false;
+      quickConnectOverlay.hidden = false;
+    }
+  }
+});
 settingsSftpAutoDetect?.addEventListener("change", () => {
   localStorage.setItem(SETTINGS_KEY_SFTP_AUTO_DETECT, settingsSftpAutoDetect.checked ? "1" : "0");
 });
@@ -2420,15 +3142,21 @@ settingsSftpLocalDir?.addEventListener("change", () => {
   localStorage.setItem(SETTINGS_KEY_SFTP_LOCAL_DIR, settingsSftpLocalDir.value.trim());
 });
 settingsSftpLocalDirBrowse?.addEventListener("click", async () => {
-  const picked = await invoke("plugin:dialog|open", {
-    directory: true,
-    multiple: false,
-    title: t("settings.sftp.local_dir.browse"),
-  });
-  const resolved = Array.isArray(picked) ? picked[0] : picked;
-  if (!resolved || typeof resolved !== "string") return;
-  settingsSftpLocalDir.value = resolved;
-  localStorage.setItem(SETTINGS_KEY_SFTP_LOCAL_DIR, resolved);
+  try {
+    const picked = await invoke("plugin:dialog|open", {
+      options: {
+        directory: true,
+        multiple: false,
+        title: t("settings.sftp.local_dir.browse"),
+      },
+    });
+    const resolved = Array.isArray(picked) ? picked[0] : picked;
+    if (!resolved || typeof resolved !== "string") return;
+    settingsSftpLocalDir.value = resolved;
+    localStorage.setItem(SETTINGS_KEY_SFTP_LOCAL_DIR, resolved);
+  } catch (e) {
+    if (settingsSyncStatus) settingsSyncStatus.textContent = String(e);
+  }
 });
 settingsTerminalTheme?.addEventListener("change", () => {
   const value = settingsTerminalTheme.value;
@@ -2495,7 +3223,36 @@ themeMenuEdit?.addEventListener("click", () => {
   const id = themeMenuTargetId;
   themeCardMenu.hidden = true;
   if (!id) return;
-  openThemeEditDialog(id);
+
+  // Built-in themes are read-only. For "Edit", create a custom copy first
+  // so this action always opens an editable theme dialog.
+  let editableId = id;
+  const existingCustom = terminalCustomThemes.find((t) => t.id === id);
+  if (!existingCustom) {
+    const baseTheme = allTerminalThemes()[id];
+    if (!baseTheme) return;
+    const baseLabel = TERMINAL_THEME_META[id]?.label || id;
+    let newId = `custom-${Date.now()}`;
+    while (terminalCustomThemes.some((t) => t.id === newId)) {
+      newId = `custom-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    }
+    terminalCustomThemes.push({
+      id: newId,
+      label: `${baseLabel} Custom`,
+      group: TERMINAL_THEME_META[id]?.group === "light" ? "light" : "dark",
+      theme: { ...baseTheme },
+    });
+    saveCustomThemes();
+    editableId = newId;
+    localStorage.setItem(SETTINGS_KEY_TERMINAL_THEME, editableId);
+    terminalEditingThemeId = editableId;
+    rebuildTerminalThemeSelectOptions();
+    renderTerminalThemeCards();
+    syncTerminalThemeEditor();
+    applyTerminalThemeToAllPanes();
+  }
+
+  openThemeEditDialog(editableId);
 });
 
 themeMenuDuplicate?.addEventListener("click", async () => {
@@ -2883,18 +3640,31 @@ function sanitizeTerminalTabs() {
 }
 
 function createPane(host) {
+  const isLocal = host?.id?.startsWith?.("local-") || host?.port === 0;
   return {
     id: uniqueId("pane"),
     host,
+    isLocal,
+    reconnectFactory: null,
     sessionId: null,
     rootEl: null,
     bodyEl: null,
     titleEl: null,
+    latencyEl: null,
     statusEl: null,
     reconnectBtn: null,
     term: null,
     fitAddon: null,
+    searchAddon: null,
+    ipLinkProviderDispose: null,
+    searchQuery: "",
+    searchMatches: [],
+    searchIndex: -1,
+    findBarEl: null,
+    findInputEl: null,
+    findCountEl: null,
     dataUnlisten: null,
+    latencyUnlisten: null,
     closedUnlisten: null,
     resizeObserver: null,
     pendingResizeTimer: null,
@@ -2922,6 +3692,148 @@ async function openHostInTerminal(host) {
   setWorkspaceMode("terminal");
   renderTerminalWorkspace();
   await connectPaneSession(pane);
+  pane.reconnectFactory = async () => {
+    await connectPaneSession(pane);
+  };
+}
+
+function openQuickConnectOverlay() {
+  if (quickConnectError) {
+    quickConnectError.hidden = true;
+    quickConnectError.textContent = "";
+  }
+  if (quickConnectForm) quickConnectForm.reset();
+  if (quickConnectPort) quickConnectPort.value = "22";
+  if (quickConnectAuthType) quickConnectAuthType.value = "password";
+  quickConnectKeyPem = null;
+  if (quickConnectKeyStatus) quickConnectKeyStatus.textContent = t("quick_connect.key.none");
+  if (quickConnectKeyPassphrase) quickConnectKeyPassphrase.value = "";
+  syncQuickConnectAuthSections();
+  if (quickConnectOverlay) quickConnectOverlay.hidden = false;
+  quickConnectUser?.focus();
+}
+
+function closeQuickConnectOverlay() {
+  if (quickConnectOverlay) quickConnectOverlay.hidden = true;
+}
+
+async function connectQuickHostAndOpenTerminal(input) {
+  let tab = {
+    id: uniqueId("tab"),
+    title: `${input.user}@${input.host}`,
+    layout: "single",
+    panes: [],
+    activePaneId: null,
+  };
+  const pane = createPane({
+    id: `quick-${Date.now()}`,
+    name: `${input.user}@${input.host}`,
+    host: input.host,
+    port: input.port,
+    user: input.user,
+  });
+  tab.panes.push(pane);
+  tab.activePaneId = pane.id;
+  termState.tabs.push(tab);
+  termState.activeTabId = tab.id;
+  setWorkspaceMode("terminal");
+  renderTerminalWorkspace();
+
+  await connectQuickIntoPane(pane, input);
+  pane.reconnectFactory = async () => {
+    await connectQuickIntoPane(pane, input);
+  };
+}
+
+async function connectQuickIntoPane(pane, input) {
+  const cols = pane.term ? pane.term.cols : 80;
+  const rows = pane.term ? pane.term.rows : 24;
+  const sessionId = await invoke("connect_quick_host", {
+    input: {
+      user: input.user,
+      host: input.host,
+      port: input.port,
+      auth: input.auth,
+    },
+    cols,
+    rows,
+  });
+  pane.sessionId = sessionId;
+  if (pane.statusEl) pane.statusEl.textContent = t("terminal.status.connected");
+  if (pane.reconnectBtn) pane.reconnectBtn.hidden = true;
+  await wirePaneSessionEvents(pane, sessionId);
+}
+
+function syncQuickConnectAuthSections() {
+  const mode = quickConnectAuthType?.value || "password";
+  if (quickConnectPasswordBlock) quickConnectPasswordBlock.hidden = mode !== "password";
+  if (quickConnectKeyBlock) quickConnectKeyBlock.hidden = mode !== "key";
+}
+
+async function pickQuickConnectKeyFile() {
+  const chosen = await invoke("plugin:dialog|open", {
+    options: {
+      multiple: false,
+      directory: false,
+      title: t("host_editor.key.pick_title"),
+    },
+  });
+  if (!chosen) return;
+  const path = String(chosen);
+  try {
+    const text = await invoke("read_local_text_file", { path });
+    quickConnectKeyPem = text;
+    if (quickConnectKeyStatus) {
+      quickConnectKeyStatus.textContent = t("host_editor.key.loaded", {
+        name: basename(path),
+        bytes: text.length,
+      });
+    }
+  } catch (e) {
+    if (quickConnectKeyStatus) {
+      quickConnectKeyStatus.textContent = t("host_editor.key.read_failed", { error: e });
+    }
+  }
+}
+
+async function openLocalTerminalInTab() {
+  let tab = {
+    id: uniqueId("tab"),
+    title: "Local",
+    layout: "single",
+    panes: [],
+    activePaneId: null,
+  };
+  const pane = createPane({
+    id: `local-${Date.now()}`,
+    name: "Local",
+    host: "localhost",
+    port: 0,
+    user: "local",
+  });
+  tab.panes.push(pane);
+  tab.activePaneId = pane.id;
+  termState.tabs.push(tab);
+  termState.activeTabId = tab.id;
+  setWorkspaceMode("terminal");
+  renderTerminalWorkspace();
+
+  const cols = pane.term ? pane.term.cols : 80;
+  const rows = pane.term ? pane.term.rows : 24;
+  const sessionId = await invoke("create_local_terminal_session", { cols, rows });
+  pane.sessionId = sessionId;
+  pane.statusEl.textContent = t("terminal.status.local");
+  if (pane.reconnectBtn) pane.reconnectBtn.hidden = true;
+  await wirePaneSessionEvents(pane, sessionId);
+  pane.reconnectFactory = async () => {
+    const cols2 = pane.term ? pane.term.cols : 80;
+    const rows2 = pane.term ? pane.term.rows : 24;
+    const sid2 = await invoke("create_local_terminal_session", { cols: cols2, rows: rows2 });
+    pane.sessionId = sid2;
+    if (pane.statusEl) pane.statusEl.textContent = t("terminal.status.local");
+    if (pane.reconnectBtn) pane.reconnectBtn.hidden = true;
+    await wirePaneSessionEvents(pane, sid2);
+  };
 }
 
 function renderTerminalWorkspace() {
@@ -3024,12 +3936,18 @@ function ensurePaneElements(pane, tab) {
   const title = document.createElement("span");
   title.className = "pane-title";
   title.textContent = pane.host
-    ? `${pane.host.name} (${pane.host.user}@${pane.host.host}:${pane.host.port})`
+    ? (pane.isLocal
+      ? t("terminal.pane.local_title")
+      : `${pane.host.name} (${pane.host.user}@${pane.host.host}:${pane.host.port})`)
     : t("terminal.pane.empty");
 
   const status = document.createElement("span");
   status.className = "pane-status";
   status.textContent = t("terminal.status.connecting");
+
+  const latency = document.createElement("span");
+  latency.className = "pane-latency";
+  latency.hidden = true;
 
   const reconnectBtn = document.createElement("button");
   reconnectBtn.type = "button";
@@ -3038,20 +3956,41 @@ function ensurePaneElements(pane, tab) {
   reconnectBtn.hidden = true;
   reconnectBtn.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    connectPaneSession(pane).catch((e) => {
+    const runReconnect = pane.reconnectFactory || (() => connectPaneSession(pane));
+    runReconnect().catch((e) => {
       console.warn("reconnect failed", e);
     });
   });
 
   const meta = document.createElement("div");
   meta.className = "pane-meta";
-  meta.append(status, reconnectBtn);
+  meta.append(latency, status, reconnectBtn);
 
   const body = document.createElement("div");
   body.className = "pane-body";
 
+  const findBar = document.createElement("div");
+  findBar.className = "pane-findbar";
+  findBar.hidden = true;
+  const findInput = document.createElement("input");
+  findInput.type = "text";
+  findInput.placeholder = "Search";
+  const findCount = document.createElement("span");
+  findCount.className = "pane-findbar-count";
+  findCount.textContent = "0/0";
+  const findPrev = document.createElement("button");
+  findPrev.type = "button";
+  findPrev.textContent = "↑";
+  const findNext = document.createElement("button");
+  findNext.type = "button";
+  findNext.textContent = "↓";
+  const findClose = document.createElement("button");
+  findClose.type = "button";
+  findClose.textContent = "✕";
+  findBar.append(findInput, findCount, findPrev, findNext, findClose);
+
   header.append(title, meta);
-  root.append(header, body);
+  root.append(header, body, findBar);
 
   root.addEventListener("click", () => {
     if (tab.activePaneId !== pane.id) {
@@ -3068,8 +4007,60 @@ function ensurePaneElements(pane, tab) {
   pane.rootEl = root;
   pane.bodyEl = body;
   pane.titleEl = title;
+  pane.latencyEl = latency;
   pane.statusEl = status;
   pane.reconnectBtn = reconnectBtn;
+  pane.findBarEl = findBar;
+  pane.findInputEl = findInput;
+  pane.findCountEl = findCount;
+
+  findInput.addEventListener("input", () => {
+    pane.searchQuery = findInput.value || "";
+    pane.searchIndex = -1;
+    if (!pane.searchQuery) {
+      pane.searchMatches = [];
+      if (pane.findCountEl) pane.findCountEl.textContent = "0/0";
+      try {
+        pane.term?.clearSelection?.();
+      } catch {}
+      try {
+        pane.searchAddon?.clearDecorations?.();
+      } catch {}
+      return;
+    }
+    runPaneFind(pane, "next", { resetIndex: true });
+  });
+  findInput.addEventListener("mousedown", (ev) => ev.stopPropagation());
+  findInput.addEventListener("click", (ev) => ev.stopPropagation());
+  findInput.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") {
+      ev.preventDefault();
+      hidePaneFindBar(pane);
+      pane.term?.focus();
+      return;
+    }
+    if (ev.key !== "Enter") return;
+    ev.preventDefault();
+    runPaneFind(pane, ev.shiftKey ? "prev" : "next");
+  });
+  findPrev.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    runPaneFind(pane, "prev");
+  });
+  findPrev.addEventListener("mousedown", (ev) => ev.stopPropagation());
+  findNext.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    runPaneFind(pane, "next");
+  });
+  findNext.addEventListener("mousedown", (ev) => ev.stopPropagation());
+  findClose.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    hidePaneFindBar(pane);
+    pane.term?.focus();
+  });
+  findClose.addEventListener("mousedown", (ev) => ev.stopPropagation());
+  findBar.addEventListener("mousedown", (ev) => ev.stopPropagation());
+  findBar.addEventListener("click", (ev) => ev.stopPropagation());
 }
 
 function ensurePaneTerminal(pane) {
@@ -3094,6 +4085,30 @@ function ensurePaneTerminal(pane) {
 
   pane.fitAddon = new FitAddon();
   pane.term.loadAddon(pane.fitAddon);
+  if (SearchAddon) {
+    try {
+      pane.searchAddon = new SearchAddon();
+      pane.term.loadAddon(pane.searchAddon);
+    } catch (e) {
+      console.warn("search addon init failed", e);
+    }
+  }
+  if (WebLinksAddon) {
+    try {
+      const linksAddon = new WebLinksAddon((event, uri) => {
+        event?.preventDefault?.();
+        if (!uri) return;
+        const url = /^https?:\/\//i.test(uri) ? uri : `http://${uri}`;
+        invoke("plugin:opener|open", { path: url }).catch(() => {
+          window.open(url, "_blank", "noopener");
+        });
+      });
+      pane.term.loadAddon(linksAddon);
+    } catch (e) {
+      console.warn("weblinks addon init failed", e);
+    }
+  }
+  installIpLinkProvider(pane);
   if (window.Unicode11Addon?.Unicode11Addon) {
     try {
       const unicode11Addon = new window.Unicode11Addon.Unicode11Addon();
@@ -3119,10 +4134,256 @@ function ensurePaneTerminal(pane) {
     });
   });
 
+  pane.term.attachCustomKeyEventHandler((ev) => {
+    const key = ev.key?.toLowerCase?.();
+    const isKeydown = ev.type === "keydown";
+
+    // Robust clipboard shortcuts in terminal panes.
+    // macOS: Cmd+C copies current selection; Cmd+V pastes from system clipboard.
+    if (isMacPlatform && isKeydown && ev.metaKey && !ev.ctrlKey && !ev.altKey) {
+      if (key === "c") {
+        const selected = pane.term?.getSelection?.() || "";
+        if (selected) {
+          ev.preventDefault();
+          navigator.clipboard.writeText(selected).catch((e) => {
+            console.warn("terminal copy failed", e);
+          });
+          return false;
+        }
+        return true;
+      }
+      if (key === "v") {
+        // Prefer native paste path on macOS so WebView clipboard permissions
+        // do not block Cmd+V when the terminal textarea is focused.
+        return true;
+      }
+    }
+
+    // Non-mac fallback: Ctrl+Shift+C / Ctrl+Shift+V
+    if (!isMacPlatform && isKeydown && ev.ctrlKey && ev.shiftKey && !ev.metaKey && !ev.altKey) {
+      if (key === "c") {
+        const selected = pane.term?.getSelection?.() || "";
+        if (selected) {
+          ev.preventDefault();
+          navigator.clipboard.writeText(selected).catch((e) => {
+            console.warn("terminal copy failed", e);
+          });
+          return false;
+        }
+        return true;
+      }
+      if (key === "v") {
+        // Keep native behavior first; this avoids a "blocked key with failed
+        // clipboard read" dead path on some platforms/webviews.
+        return true;
+      }
+    }
+
+    const isF = ev.key?.toLowerCase?.() === "f";
+    const withFindModifier = ev.ctrlKey || ev.metaKey;
+    if (!isF || !withFindModifier || ev.type !== "keydown") return true;
+    ev.preventDefault();
+    openPaneFindPrompt(pane).catch((e) => console.warn("open find prompt failed", e));
+    return false;
+  });
+
   pane.resizeObserver = new ResizeObserver(() => {
     requestPaneFit(pane);
   });
   pane.resizeObserver.observe(pane.bodyEl);
+}
+
+function installIpLinkProvider(pane) {
+  if (!pane?.term?.registerLinkProvider) return;
+  if (pane.ipLinkProviderDispose) {
+    try {
+      pane.ipLinkProviderDispose.dispose();
+    } catch {}
+    pane.ipLinkProviderDispose = null;
+  }
+
+  const ipv4WithPort = /\b((?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}(?::\d{1,5})?(?:\/[\w\-./?%&=+#:]*)?)\b/g;
+  const urlRegex = /\b((?:https?:\/\/|www\.)[^\s<>'"`]+)\b/g;
+  pane.ipLinkProviderDispose = pane.term.registerLinkProvider({
+    provideLinks(y, cb) {
+      const line = pane.term.buffer.active.getLine(y - 1);
+      const text = line?.translateToString?.(true) || "";
+      if (!text) return cb([]);
+
+      const links = [];
+      let um;
+      while ((um = urlRegex.exec(text)) !== null) {
+        const value = um[1];
+        if (!value) continue;
+        const start = um.index + 1;
+        const end = start + value.length;
+        links.push({
+          range: {
+            start: { x: start, y },
+            end: { x: end, y },
+          },
+          text: value,
+          activate: () => {
+            const url = /^https?:\/\//i.test(value) ? value : `http://${value}`;
+            invoke("plugin:opener|open", { path: url }).catch(() => {
+              window.open(url, "_blank", "noopener");
+            });
+          },
+        });
+      }
+      let m;
+      while ((m = ipv4WithPort.exec(text)) !== null) {
+        const value = m[1];
+        if (!value) continue;
+        const start = m.index + 1;
+        const end = start + value.length;
+        links.push({
+          range: {
+            start: { x: start, y },
+            end: { x: end, y },
+          },
+          text: value,
+          activate: () => {
+            const url = /^https?:\/\//i.test(value) ? value : `http://${value}`;
+            invoke("plugin:opener|open", { path: url }).catch(() => {
+              window.open(url, "_blank", "noopener");
+            });
+          },
+        });
+      }
+      cb(links);
+    },
+  });
+}
+
+function showPaneFindBar(pane) {
+  if (!pane?.findBarEl || !pane?.findInputEl) return;
+  pane.findBarEl.hidden = false;
+  pane.findInputEl.value = pane.searchQuery || "";
+  pane.findInputEl.focus();
+  pane.findInputEl.select();
+}
+
+function hidePaneFindBar(pane) {
+  if (!pane?.findBarEl) return;
+  pane.findBarEl.hidden = true;
+  pane.searchMatches = [];
+  pane.searchIndex = -1;
+  if (pane.findCountEl) pane.findCountEl.textContent = "0/0";
+  try {
+    pane.term?.clearSelection?.();
+  } catch {}
+  try {
+    pane.searchAddon?.clearDecorations?.();
+  } catch {}
+}
+
+async function openPaneFindPrompt(pane) {
+  if (!pane) return;
+  showPaneFindBar(pane);
+  if (!pane.searchQuery) return;
+  runPaneFind(pane, "next", { resetIndex: true });
+}
+
+function countPaneMatches(pane, query) {
+  if (!pane?.term || !query) return 0;
+  const buf = pane.term.buffer?.active;
+  if (!buf) return 0;
+  const needle = String(query).toLowerCase();
+  if (!needle) return 0;
+  let total = 0;
+  for (let y = 0; y < buf.length; y += 1) {
+    const text = buf.getLine(y)?.translateToString?.(true)?.toLowerCase?.() || "";
+    if (!text) continue;
+    let i = 0;
+    while (i <= text.length - needle.length) {
+      const at = text.indexOf(needle, i);
+      if (at < 0) break;
+      total += 1;
+      i = at + Math.max(needle.length, 1);
+    }
+  }
+  return total;
+}
+
+function runPaneFind(pane, direction = "next", { resetIndex = false } = {}) {
+  if (!pane?.term || !pane?.searchQuery) return false;
+  if (!pane.searchAddon) {
+    if (pane.statusEl) pane.statusEl.textContent = t("terminal.search.unavailable");
+    return false;
+  }
+  const q = pane.searchQuery;
+  const opts = {
+    caseSensitive: false,
+    regex: false,
+    incremental: false,
+    decorations: {
+      activeMatchColorOverviewRuler: "#7fb2ff",
+      matchBackground: "rgba(127, 178, 255, 0.28)",
+      matchBorder: "#7fb2ff",
+      matchOverviewRuler: "rgba(127, 178, 255, 0.6)",
+    },
+  };
+  if (resetIndex) {
+    pane.searchIndex = -1;
+  }
+
+  let found = direction === "prev"
+    ? pane.searchAddon.findPrevious(q, opts)
+    : pane.searchAddon.findNext(q, opts);
+  if (!found) {
+    found = direction === "prev"
+      ? pane.searchAddon.findNext(q, opts)
+      : pane.searchAddon.findPrevious(q, opts);
+  }
+  const total = countPaneMatches(pane, q);
+  if (!found) {
+    pane.searchIndex = -1;
+    pane.searchMatches = [];
+    if (pane.statusEl) pane.statusEl.textContent = `no match: ${q}`;
+    return false;
+  }
+  pane.searchMatches = new Array(total).fill(0);
+  if (total > 0) {
+    if (direction === "prev") {
+      pane.searchIndex = pane.searchIndex <= 0 ? total - 1 : pane.searchIndex - 1;
+    } else {
+      pane.searchIndex = pane.searchIndex >= total - 1 ? 0 : pane.searchIndex + 1;
+    }
+  }
+  if (pane.findCountEl) {
+    pane.findCountEl.textContent = total > 0 ? `${pane.searchIndex + 1}/${total}` : `0/0`;
+  }
+  if (pane.statusEl) {
+    pane.statusEl.textContent = total > 0 ? `find: ${q} (${total})` : `find: ${q}`;
+  }
+  return true;
+}
+
+function handleGlobalTerminalFindShortcut(ev) {
+  const isF = ev.key?.toLowerCase?.() === "f";
+  const withFindModifier = ev.ctrlKey || ev.metaKey;
+  if (!isF || !withFindModifier) return;
+  if (workspaceMode !== "terminal") return;
+  const pane = getActivePane();
+  if (!pane) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  openPaneFindPrompt(pane).catch((e) => console.warn("open find prompt failed", e));
+}
+
+function handleGlobalTerminalFindNav(ev) {
+  if (workspaceMode !== "terminal") return;
+  const pane = getActivePane();
+  if (!pane?.searchQuery) return;
+  const isEnter = ev.key === "Enter";
+  if (!isEnter) return;
+  const inFindInput = ev.target === pane.findInputEl;
+  if (!inFindInput && !ev.ctrlKey && !ev.metaKey) return;
+  const isShift = ev.shiftKey;
+  ev.preventDefault();
+  ev.stopPropagation();
+  runPaneFind(pane, isShift ? "prev" : "next");
 }
 
 function requestPaneFit(pane, { immediate = false } = {}) {
@@ -3247,6 +4508,7 @@ async function connectPaneSession(pane) {
     pane.lastSentCols = cols;
     pane.lastSentRows = rows;
     pane.statusEl.textContent = t("terminal.status.connected");
+    if (pane.latencyEl) pane.latencyEl.hidden = true;
     if (pane.reconnectBtn) pane.reconnectBtn.hidden = true;
 
     await wirePaneSessionEvents(pane, sessionId);
@@ -3269,6 +4531,7 @@ async function connectPaneSession(pane) {
     refreshHostsCacheFromVault({ silent: true }).catch(() => {});
   } catch (e) {
     pane.statusEl.textContent = t("terminal.error.connect_failed_status", { error: e });
+    if (pane.latencyEl) pane.latencyEl.hidden = true;
     if (pane.reconnectBtn) pane.reconnectBtn.hidden = false;
     if (pane.term) {
       pane.term.write(`\x1b[31m${t("terminal.error.connect_failed_term", { error: e })}\x1b[0m\r\n`);
@@ -3281,6 +4544,10 @@ async function wirePaneSessionEvents(pane, sessionId) {
     pane.dataUnlisten();
     pane.dataUnlisten = null;
   }
+  if (pane.latencyUnlisten) {
+    pane.latencyUnlisten();
+    pane.latencyUnlisten = null;
+  }
   if (pane.closedUnlisten) {
     pane.closedUnlisten();
     pane.closedUnlisten = null;
@@ -3290,6 +4557,15 @@ async function wirePaneSessionEvents(pane, sessionId) {
     if (ev.payload.sessionId !== sessionId) return;
     if (!pane.term) return;
     pane.term.write(new Uint8Array(ev.payload.data));
+  });
+
+  pane.latencyUnlisten = await listen("session:latency", (ev) => {
+    if (ev.payload.sessionId !== sessionId) return;
+    if (!pane.latencyEl) return;
+    const rtt = Number(ev.payload.rttMs);
+    if (!Number.isFinite(rtt) || rtt < 0) return;
+    pane.latencyEl.textContent = `${Math.round(rtt)}ms`;
+    pane.latencyEl.hidden = false;
   });
 
   pane.closedUnlisten = await listen("session:closed", (ev) => {
@@ -3302,9 +4578,11 @@ async function wirePaneSessionEvents(pane, sessionId) {
 
     pane.sessionId = null;
     if (pane.statusEl) pane.statusEl.textContent = t("terminal.status.disconnected");
+    if (pane.latencyEl) pane.latencyEl.hidden = true;
     if (pane.reconnectBtn) pane.reconnectBtn.hidden = false;
     if (pane.term) pane.term.write(tail);
   });
+
 }
 
 async function disconnectPaneSession(pane, { dispose }) {
@@ -3324,6 +4602,10 @@ async function disconnectPaneSession(pane, { dispose }) {
   if (pane.dataUnlisten) {
     pane.dataUnlisten();
     pane.dataUnlisten = null;
+  }
+  if (pane.latencyUnlisten) {
+    pane.latencyUnlisten();
+    pane.latencyUnlisten = null;
   }
   if (pane.closedUnlisten) {
     pane.closedUnlisten();
@@ -3348,11 +4630,18 @@ async function disconnectPaneSession(pane, { dispose }) {
     if (pane.term) pane.term.dispose();
     pane.term = null;
     pane.fitAddon = null;
+    if (pane.ipLinkProviderDispose) {
+      try {
+        pane.ipLinkProviderDispose.dispose();
+      } catch {}
+      pane.ipLinkProviderDispose = null;
+    }
 
     if (pane.rootEl?.parentNode) pane.rootEl.parentNode.removeChild(pane.rootEl);
     pane.rootEl = null;
     pane.bodyEl = null;
     pane.titleEl = null;
+    pane.latencyEl = null;
     pane.statusEl = null;
     pane.reconnectBtn = null;
   }
@@ -3459,6 +4748,10 @@ listen("host-key-prompt", (ev) => {
   }
 
   hkOverlay.hidden = false;
+});
+
+listen("host:os_type_updated", () => {
+  refreshHostsCacheFromVault({ silent: true }).catch(() => {});
 });
 
 hkAccept.addEventListener("click", () => {
@@ -3975,6 +5268,7 @@ function buildSftpPane(key) {
     showHidden: false,
     selectedEntries: new Set(),
     lastUserNavAt: 0,
+    followLockedByUser: false,
     autoConnectQueue: Promise.resolve(),
   };
 }
@@ -4595,6 +5889,10 @@ function ensureDefaultSftpPaneState() {
   if (left.hostId === LOCAL_HOST_ID && !left.localConnected && left.sftpId === null) {
     left.hostSelect.value = LOCAL_HOST_ID;
     left.hostSelect.dispatchEvent(new Event("change"));
+    // Left pane will re-render after local auto-connect, but right pane has
+    // no auto-connect path and still needs an initial paint so its empty
+    // state is visible immediately.
+    renderSftpPane(sftpPanes.right);
     return;
   }
 
@@ -4673,6 +5971,7 @@ async function connectSftpPane(pane, host) {
     pane.connectedHostId = host.id;
     pane.hostId = host.id;
     pane.host = host;
+    pane.followLockedByUser = false;
     pane.hostSelect.title = `${host.user}@${host.host}:${host.port}`;
     pane.path = "/";
     pane.statusEl.textContent = t("sftp.status.connected", { name: host.name });
@@ -4690,7 +5989,7 @@ async function connectSftpPane(pane, host) {
       console.warn("sftp helper detect/install failed", e);
       pane.statusEl.textContent = t("sftp.helper.install.failed", { error: e });
     }
-    await navigateSftpPane(pane, "/");
+    await navigateSftpPane(pane, "/", { source: "system" });
     startSftpFollowPolling();
   } catch (e) {
     pane.statusEl.textContent = t("sftp.error.connect_failed", { error: e });
@@ -4734,6 +6033,7 @@ async function disconnectSftpPane(pane) {
   pane.filterQuery = "";
   pane.selectedEntries = new Set();
   pane.path = "/";
+  pane.followLockedByUser = false;
   setSftpPathEditMode(pane, false);
   pane.statusEl.textContent = t("sftp.status.not_connected");
   updateSftpPaneFilterButton(pane);
@@ -4766,6 +6066,7 @@ async function pollSftpFollowOnce() {
   sftpFollowPollingTick = true;
   for (const pane of Object.values(sftpPanes)) {
     if (!pane || isLocalPane(pane) || pane.sftpId === null || !pane.host) continue;
+    if (pane.followLockedByUser) continue;
     if (activeHostId && pane.host.id !== activeHostId) continue;
     if (Date.now() - (pane.lastUserNavAt || 0) < 2200) continue;
     try {
@@ -4777,7 +6078,7 @@ async function pollSftpFollowOnce() {
       const remoteCwd = normalizeAbsolutePath((doc?.content || "").trim());
       if (!remoteCwd || remoteCwd === "/") continue;
       if (samePanePath(pane, pane.path, remoteCwd)) continue;
-      await navigateSftpPane(pane, remoteCwd);
+      await navigateSftpPane(pane, remoteCwd, { source: "follow" });
     } catch {
       // Ignore missing/helper-not-ready errors.
     }
@@ -4785,8 +6086,11 @@ async function pollSftpFollowOnce() {
   sftpFollowPollingTick = false;
 }
 
-async function navigateSftpPane(pane, path) {
-  if (!sftpFollowPollingTick) {
+async function navigateSftpPane(pane, path, { source = "user" } = {}) {
+  if (source === "user") {
+    pane.followLockedByUser = true;
+  }
+  if (!sftpFollowPollingTick && source !== "follow") {
     pane.lastUserNavAt = Date.now();
   }
   const local = isLocalPane(pane);

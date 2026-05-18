@@ -160,6 +160,18 @@
                           <path d="m16 7-5 5 5 5"></path>
                         </svg>
                       </button>
+                      <button id="quick-connect-button" type="button" class="workspace-icon-btn" title="Quick connect" aria-label="Quick connect">
+                        <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M13 2 4 14h6l-1 8 9-12h-6z"></path>
+                        </svg>
+                      </button>
+                      <button id="local-terminal-button" type="button" class="workspace-icon-btn" title="Local terminal" aria-label="Local terminal">
+                        <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M3 5h18v14H3z"></path>
+                          <path d="m7 10 3 2-3 2"></path>
+                          <path d="M12 14h5"></path>
+                        </svg>
+                      </button>
                       <div id="term-tab-strip" class="tab-strip workspace-term-strip"></div>
                       <div class="workspace-actions topbar-hidden-actions" hidden>
                         <button id="new-window-button" type="button" class="workspace-icon-btn" aria-label="New window">
@@ -200,6 +212,8 @@
                             <div id="settings-nav-pref" class="settings-nav-label">偏好</div>
                             <button id="settings-nav-general" type="button" class="settings-nav-item active">常规</button>
                             <button id="settings-nav-terminal" type="button" class="settings-nav-item">终端</button>
+                            <button id="settings-nav-sync" type="button" class="settings-nav-item">同步</button>
+                            <button id="settings-nav-about" type="button" class="settings-nav-item">关于</button>
                           </div>
                         </aside>
                         <div class="settings-page-body">
@@ -350,6 +364,58 @@ $ npm run build && npm run start</pre>
                               </div>
                             </section>
                           </section>
+
+                          <section id="settings-sync-panel" class="settings-panel" hidden>
+                            <section class="settings-section settings-sync-card">
+                              <h4 id="settings-sync-title">Sync</h4>
+                              <label class="settings-field">
+                                <span id="settings-sync-profile-label">Profile</span>
+                                <select id="settings-sync-profile"></select>
+                              </label>
+                              <div class="settings-sync-grid">
+                                <input id="settings-sync-name" type="text" placeholder="Profile name" autocomplete="off" />
+                                <select id="settings-sync-backend">
+                                  <option value="filesystem">Local Folder</option>
+                                  <option value="webdav">WebDAV</option>
+                                  <option value="s3">S3 Object Storage</option>
+                                </select>
+                                <input id="settings-sync-root" type="text" placeholder="Local sync directory" autocomplete="off" />
+                                <input id="settings-sync-endpoint" type="text" placeholder="endpoint (webdav)" autocomplete="off" />
+                                <input id="settings-sync-bucket" type="text" placeholder="bucket (s3)" autocomplete="off" />
+                                <input id="settings-sync-region" type="text" placeholder="region (s3, default us-east-1)" autocomplete="off" />
+                                <input id="settings-sync-username" type="text" placeholder="username (webdav)" autocomplete="off" />
+                                <input id="settings-sync-password" type="password" placeholder="password (webdav)" autocomplete="off" />
+                              </div>
+                              <div class="settings-sync-actions">
+                                <button id="settings-sync-refresh" type="button">Refresh</button>
+                                <button id="settings-sync-new" type="button">New</button>
+                                <button id="settings-sync-save" type="button" class="primary">Save</button>
+                                <button id="settings-sync-delete" type="button">Delete</button>
+                                <button id="settings-sync-test" type="button">Test Connection</button>
+                                <button id="settings-sync-apply" type="button" class="primary">Apply Pull</button>
+                                <button id="settings-sync-pull" type="button">Preview Pull</button>
+                                <button id="settings-sync-push" type="button">Push</button>
+                              </div>
+                              <p id="settings-sync-status" class="muted tiny"></p>
+                              <p id="settings-sync-tip" class="muted tiny">Local Folder mode requires iCloud/Dropbox/Syncthing to sync across devices.</p>
+                            </section>
+                          </section>
+
+                          <section id="settings-about-panel" class="settings-panel" hidden>
+                            <section class="settings-section">
+                              <div class="settings-row">
+                                <div>
+                                  <div id="settings-about-version-label" class="settings-item-title">Version</div>
+                                  <p id="settings-about-version-value" class="muted tiny">-</p>
+                                </div>
+                              </div>
+                              <div class="settings-sync-actions">
+                                <button id="settings-update-check" type="button">检查更新</button>
+                                <button id="settings-update-install" type="button" class="primary">安装并重启</button>
+                              </div>
+                              <p id="settings-update-status" class="muted tiny"></p>
+                            </section>
+                          </section>
                         </div>
                       </div>
                     </div>
@@ -460,7 +526,6 @@ $ npm run build && npm run start</pre>
                               <p id="sftp-right-empty-desc" class="sftp-empty-desc">
                                 Start by connecting to a saved host to manage your files with SFTP.
                               </p>
-                              <button id="sftp-right-empty-select" type="button" class="sftp-empty-btn">Select host</button>
                             </div>
                           </div>
                         </article>
@@ -602,6 +667,43 @@ $ npm run build && npm run start</pre>
         </div>
       </div>
 
+      <div id="quick-connect-overlay" class="overlay" hidden>
+        <div class="dialog">
+          <h3 id="quick-connect-title">Quick connect</h3>
+          <form id="quick-connect-form">
+            <label><span id="qc-user-label">User</span><input id="qc-user" type="text" required autocomplete="off" /></label>
+            <label><span id="qc-host-label">Host</span><input id="qc-host" type="text" required autocomplete="off" /></label>
+            <label><span id="qc-port-label">Port</span><input id="qc-port" type="number" min="1" max="65535" value="22" required /></label>
+            <label>
+              <span id="qc-auth-label">Authentication</span>
+              <select id="qc-auth-type">
+                <option value="password">Password</option>
+                <option value="key">Private key</option>
+                <option value="agent">SSH agent</option>
+              </select>
+            </label>
+            <div id="qc-password-block">
+              <label><span id="qc-password-label">Password</span><input id="qc-password" type="password" autocomplete="off" /></label>
+            </div>
+            <div id="qc-key-block" hidden>
+              <label>
+                <span id="qc-key-label">Private key</span>
+                <div class="key-row">
+                  <button id="qc-key-pick" type="button">Choose file...</button>
+                  <span id="qc-key-status" class="muted tiny">No key loaded</span>
+                </div>
+              </label>
+              <label><span id="qc-key-passphrase-label">Passphrase (optional)</span><input id="qc-key-passphrase" type="password" autocomplete="off" /></label>
+            </div>
+            <p id="quick-connect-error" class="error" hidden></p>
+            <div class="dialog-actions">
+              <button id="quick-connect-cancel" type="button">Cancel</button>
+              <button id="quick-connect-submit" type="submit" class="primary">Connect</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
       <div id="file-editor-overlay" class="overlay" hidden>
         <div class="dialog file-editor-dialog">
           <h3 id="file-editor-title">Edit Remote File</h3>
@@ -678,10 +780,12 @@ drwxr-xr-x 1 root  data</pre>
       </div>
     </main>
 
-    <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-unicode11@0.8.0/lib/addon-unicode11.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/ace-builds@1.42.0/src-min-noconflict/ace.js"></script>
+    <script src="./assets/xterm.min.js"></script>
+    <script src="./assets/xterm-addon-fit.min.js"></script>
+    <script src="./assets/xterm-addon-search.min.js"></script>
+    <script src="./assets/xterm-addon-web-links.min.js"></script>
+    <script src="./assets/xterm-addon-unicode11.min.js"></script>
+    <script src="./assets/ace.js"></script>
     <script type="module" src="./main.js"></script>
   </body>
 </html>
