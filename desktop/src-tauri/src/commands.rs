@@ -1793,7 +1793,7 @@ pub async fn create_local_terminal_session(
         .map_err(|e| format!("open pty failed: {e}"))?;
 
     #[cfg(target_os = "windows")]
-    let mut cmd = CommandBuilder::new("cmd.exe");
+    let cmd = CommandBuilder::new("cmd.exe");
     #[cfg(not(target_os = "windows"))]
     let mut cmd = {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
