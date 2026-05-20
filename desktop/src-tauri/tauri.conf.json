@@ -38,6 +38,15 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "windows": {
+      "wix": {
+        "installMode": "both"
+      },
+      "nsis": {
+        "installMode": "both",
+        "installerIcon": "icons/icon.ico"
+      }
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

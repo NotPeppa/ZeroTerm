@@ -2506,6 +2506,77 @@ function autoSyncAfterDataChange() {
   scheduleAutoSync();
 }
 
+function markSyncLast(action, events = 0, extra = {}) {
+  localStorage.setItem("zeroterm.sync.last", JSON.stringify({
+    at: Date.now(),
+    action,
+    events,
+    ...extra,
+  }));
+}
+
+async function runImmediateSync({ confirmMerge = true } = {}) {
+  const id = await ensureSyncProfileReadyForActions();
+  const pull = await invoke("sync_apply_pull", { profileId: id });
+
+  if (pull.clientStateJson) {
+    try {
+      const parsed = JSON.parse(pull.clientStateJson);
+      if (Array.isArray(parsed.groups)) {
+        hostGroups = parsed.groups;
+        localStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify(hostGroups));
+      }
+      if (parsed.hostGroupMap && typeof parsed.hostGroupMap === "object") {
+        hostGroupMap = parsed.hostGroupMap;
+        localStorage.setItem(HOST_GROUP_MAP_STORAGE_KEY, JSON.stringify(hostGroupMap));
+      }
+      if (parsed.hostGroupMapByConn && typeof parsed.hostGroupMapByConn === "object") {
+        for (const h of (hostsCache || [])) {
+          const key = `${h.host}:${h.port}:${h.user}`;
+          const gid = parsed.hostGroupMapByConn[key];
+          if (gid) hostGroupMap[h.id] = gid;
+        }
+        localStorage.setItem(HOST_GROUP_MAP_STORAGE_KEY, JSON.stringify(hostGroupMap));
+      }
+      if (parsed.hostGroupMapByName && typeof parsed.hostGroupMapByName === "object") {
+        const nameToId = new Map((hostsCache || []).map((h) => [h.name, h.id]));
+        for (const [name, gid] of Object.entries(parsed.hostGroupMapByName)) {
+          const hid = nameToId.get(name);
+          if (hid && gid) hostGroupMap[hid] = gid;
+        }
+        localStorage.setItem(HOST_GROUP_MAP_STORAGE_KEY, JSON.stringify(hostGroupMap));
+      }
+      if (parsed.sync && typeof parsed.sync === "object") {
+        const syncAuto = parsed.sync.auto;
+        if (typeof syncAuto === "boolean") {
+          localStorage.setItem(SETTINGS_KEY_SYNC_AUTO, syncAuto ? "1" : "0");
+          if (settingsSyncAuto) settingsSyncAuto.checked = syncAuto;
+        }
+      }
+      applyClientSettingsFromState(parsed);
+      renderHosts();
+    } catch (e) {
+      console.warn("apply pull client state parse failed", e);
+    }
+  }
+
+  const preview = await invoke("sync_merge_preview", { profileId: id });
+  if (confirmMerge) {
+    const ok = confirm(
+      t("settings.sync.confirm.merge_preview", {
+        local: preview.localHosts,
+        remote: preview.remoteHosts,
+        merged: preview.mergedHosts,
+      }),
+    );
+    if (!ok) return { pull, push: null };
+  }
+
+  const clientStateJson = JSON.stringify(collectSyncClientState());
+  const push = await invoke("sync_push_preview", { profileId: id, clientStateJson });
+  return { pull, push };
+}
+
 async function fillSftpLocalDirDefaultIfEmpty() {
   if (!settingsSftpLocalDir) return;
   const current = String(settingsSftpLocalDir.value || "").trim();
