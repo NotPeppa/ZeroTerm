@@ -2180,9 +2180,21 @@ function collectSyncClientState() {
       }
     : null;
 
+  const hostGroupMapByName = {};
+  const hostGroupMapByConn = {};
+  for (const h of (hostsCache || [])) {
+    const gid = hostGroupMap?.[h.id];
+    if (gid) {
+      hostGroupMapByName[h.name] = gid;
+      hostGroupMapByConn[`${h.host}:${h.port}:${h.user}`] = gid;
+    }
+  }
+
   return {
     groups: hostGroups,
     hostGroupMap,
+    hostGroupMapByName,
+    hostGroupMapByConn,
     settings: {
       locale: currentLocale,
       sftpAutoDetect: localStorage.getItem(SETTINGS_KEY_SFTP_AUTO_DETECT) !== "0",
@@ -3425,6 +3437,22 @@ settingsSyncApply?.addEventListener("click", async () => {
         }
         if (parsed.hostGroupMap && typeof parsed.hostGroupMap === "object") {
           hostGroupMap = parsed.hostGroupMap;
+          localStorage.setItem(HOST_GROUP_MAP_STORAGE_KEY, JSON.stringify(hostGroupMap));
+        }
+        if (parsed.hostGroupMapByConn && typeof parsed.hostGroupMapByConn === "object") {
+          for (const h of (hostsCache || [])) {
+            const key = `${h.host}:${h.port}:${h.user}`;
+            const gid = parsed.hostGroupMapByConn[key];
+            if (gid) hostGroupMap[h.id] = gid;
+          }
+          localStorage.setItem(HOST_GROUP_MAP_STORAGE_KEY, JSON.stringify(hostGroupMap));
+        }
+        if (parsed.hostGroupMapByName && typeof parsed.hostGroupMapByName === "object") {
+          const nameToId = new Map((hostsCache || []).map((h) => [h.name, h.id]));
+          for (const [name, gid] of Object.entries(parsed.hostGroupMapByName)) {
+            const id = nameToId.get(name);
+            if (id && gid) hostGroupMap[id] = gid;
+          }
           localStorage.setItem(HOST_GROUP_MAP_STORAGE_KEY, JSON.stringify(hostGroupMap));
         }
         if (parsed.sync && typeof parsed.sync === "object") {
