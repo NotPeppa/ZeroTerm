@@ -33,6 +33,9 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1.10", features = ["v4"] }
 portable-pty = "0.8"
+chacha20poly1305 = { version = "0.10", features = ["std"] }
+base64 = "0.22"
+sha2 = "0.10"
 
 [features]
 default = ["custom-protocol"]

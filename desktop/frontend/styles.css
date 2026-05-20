@@ -2166,15 +2166,82 @@ label.checkbox input[type="checkbox"] {
 
 .settings-sync-card {
   max-width: 980px;
-  background: linear-gradient(180deg, rgba(34, 45, 73, 0.72) 0%, rgba(27, 35, 58, 0.72) 100%);
-  border: 1px solid #355187;
+  margin-top: 10px;
+}
+
+.settings-sync-password-block {
+  margin-top: 12px;
+  max-width: 980px;
+}
+
+.settings-sync-password-block input {
+  margin-top: 6px;
+  width: min(520px, 100%);
+  height: 36px;
+  border: 1px solid #3d5a8e;
+  border-radius: 10px;
+  background: rgba(21, 33, 61, 0.8);
+  color: #e9f1ff;
+  padding: 0 10px;
+}
+
+.settings-password-inline {
+  position: relative;
+}
+
+.settings-password-inline input {
+  margin-top: 0;
+  width: 100%;
+  padding-right: 42px;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #9ebcf3;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.password-toggle:hover {
+  background: rgba(68, 98, 150, 0.24);
+  color: #dbe8ff;
+}
+
+.password-toggle:active {
+  transform: translateY(-50%);
+}
+
+.password-toggle .zt-icon {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.7;
+}
+
+.settings-sync-actions-outer {
+  margin-top: 12px;
 }
 
 .settings-sync-grid {
   margin-top: 10px;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: 12px;
+}
+
+.settings-sync-active {
+  margin-top: 6px;
+  color: #a9c3f3;
 }
 
 .settings-sync-grid input,
@@ -2190,6 +2257,13 @@ label.checkbox input[type="checkbox"] {
   padding-bottom: 9px;
 }
 
+#settings-sync-profile + .zt-select-wrap .zt-select-trigger {
+  min-height: 42px;
+  padding: 10px 12px;
+  font-size: 14px;
+  border-radius: 10px;
+}
+
 .settings-sync-grid input {
   height: 36px;
   border: 1px solid #3d5a8e;
@@ -2197,6 +2271,48 @@ label.checkbox input[type="checkbox"] {
   background: rgba(21, 33, 61, 0.8);
   color: #e9f1ff;
   padding: 0 10px;
+  font-size: 14px;
+}
+
+.settings-sync-field .settings-item-title,
+.settings-sync-method-block .settings-item-title,
+.settings-sync-password-block .settings-item-title {
+  font-size: 13px;
+  font-weight: 620;
+}
+
+.settings-sync-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-sync-field-full {
+  grid-column: 1 / -1;
+}
+
+.settings-sync-root-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 90px;
+  gap: 10px;
+  align-items: center;
+}
+
+.settings-sync-root-row.no-browse {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.settings-sync-root-row input {
+  width: 100%;
+}
+
+#settings-sync-root-browse {
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid #4868a1;
+  background: rgba(31, 50, 90, 0.85);
+  color: #e9f1ff;
+  font-weight: 640;
 }
 
 .settings-sync-grid input:disabled {
@@ -2208,6 +2324,13 @@ label.checkbox input[type="checkbox"] {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.settings-sync-actions-top {
+  justify-content: flex-end;
+  align-items: center;
+  margin-top: 10px;
+  margin-bottom: 10px;
 }
 
 .settings-sync-actions button {
@@ -2225,8 +2348,65 @@ label.checkbox input[type="checkbox"] {
   background: linear-gradient(180deg, #3770cb 0%, #2f5ca8 100%);
 }
 
+.settings-sync-auto {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 6px;
+}
+
+.settings-sync-auto em {
+  font-style: normal;
+  color: #dfe9ff;
+  font-size: 13px;
+}
+
+.settings-sync-method-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings-sync-method-row .zt-select-wrap {
+  width: min(420px, 100%);
+  flex: 0 0 auto;
+}
+
+.settings-sync-method-row .settings-sync-auto {
+  margin: 0;
+  flex: 0 0 auto;
+}
+
 .settings-sync-actions button:hover {
   background: rgba(47, 71, 121, 0.92);
+}
+
+.settings-update-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 10px;
+}
+
+.settings-update-actions button {
+  height: 38px;
+  border-radius: 11px;
+  border: 1px solid #4f73b3;
+  background: linear-gradient(180deg, #3f7be0 0%, #345fae 100%);
+  color: #f2f7ff;
+  padding: 0 16px;
+  font-weight: 680;
+  letter-spacing: 0.2px;
+}
+
+.settings-update-actions button:hover:not(:disabled) {
+  background: linear-gradient(180deg, #4d88ea 0%, #3b6abc 100%);
+}
+
+.settings-update-actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: saturate(0.7);
 }
 
 #settings-sync-status {

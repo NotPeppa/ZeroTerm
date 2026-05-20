@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::Client as S3Client;
+use aws_sdk_s3::config::Credentials;
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use reqwest::header::{HeaderMap, HeaderValue};
@@ -272,14 +273,54 @@ pub struct S3Adapter {
     prefix: String,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct S3Options {
+    pub endpoint: Option<String>,
+    pub force_path_style: bool,
+    pub access_key_id: Option<String>,
+    pub secret_access_key: Option<String>,
+    pub session_token: Option<String>,
+}
+
 impl S3Adapter {
     pub async fn new(region: &str, bucket: impl Into<String>, prefix: impl Into<String>) -> Result<Self, SyncError> {
+        Self::new_with_options(region, bucket, prefix, S3Options::default()).await
+    }
+
+    pub async fn new_with_options(
+        region: &str,
+        bucket: impl Into<String>,
+        prefix: impl Into<String>,
+        options: S3Options,
+    ) -> Result<Self, SyncError> {
         let cfg = aws_config::defaults(aws_config::BehaviorVersion::latest())
             .region(aws_config::Region::new(region.to_string()))
             .load()
             .await;
+
+        let mut builder = aws_sdk_s3::config::Builder::from(&cfg);
+        if let Some(ep) = options.endpoint.as_deref() {
+            builder = builder.endpoint_url(ep.to_string());
+        }
+        if options.force_path_style {
+            builder = builder.force_path_style(true);
+        }
+        if let (Some(ak), Some(sk)) = (
+            options.access_key_id.as_deref(),
+            options.secret_access_key.as_deref(),
+        ) {
+            let creds = Credentials::new(
+                ak,
+                sk,
+                options.session_token.clone(),
+                None,
+                "zeroterm-sync",
+            );
+            builder = builder.credentials_provider(creds);
+        }
+        let s3_cfg = builder.build();
         Ok(Self {
-            client: S3Client::new(&cfg),
+            client: S3Client::from_conf(s3_cfg),
             bucket: bucket.into(),
             prefix: prefix.into().trim_matches('/').to_string(),
         })

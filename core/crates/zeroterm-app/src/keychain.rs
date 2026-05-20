@@ -38,6 +38,11 @@ fn sync_profile_entry(profile_id: &str) -> Result<keyring::Entry, KeychainError>
     keyring::Entry::new(SERVICE, &user).map_err(|e| KeychainError::Backend(e.to_string()))
 }
 
+fn sync_encryption_entry(profile_id: &str) -> Result<keyring::Entry, KeychainError> {
+    let user = format!("sync-encryption:{profile_id}");
+    keyring::Entry::new(SERVICE, &user).map_err(|e| KeychainError::Backend(e.to_string()))
+}
+
 /// Persist `password` so future unlocks of `vault_path` can skip the prompt.
 pub fn save_master_password(vault_path: &Path, password: &str) -> Result<(), KeychainError> {
     let e = entry(vault_path)?;
@@ -111,6 +116,30 @@ pub fn get_sync_profile_secret(profile_id: &str) -> Result<Option<String>, Keych
 
 pub fn forget_sync_profile_secret(profile_id: &str) -> Result<(), KeychainError> {
     let e = sync_profile_entry(profile_id)?;
+    match e.delete_password() {
+        Ok(()) => Ok(()),
+        Err(keyring::Error::NoEntry) => Ok(()),
+        Err(other) => Err(KeychainError::Backend(other.to_string())),
+    }
+}
+
+pub fn save_sync_encryption_secret(profile_id: &str, secret: &str) -> Result<(), KeychainError> {
+    let e = sync_encryption_entry(profile_id)?;
+    e.set_password(secret)
+        .map_err(|e| KeychainError::Backend(e.to_string()))
+}
+
+pub fn get_sync_encryption_secret(profile_id: &str) -> Result<Option<String>, KeychainError> {
+    let e = sync_encryption_entry(profile_id)?;
+    match e.get_password() {
+        Ok(v) => Ok(Some(v)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(other) => Err(KeychainError::Backend(other.to_string())),
+    }
+}
+
+pub fn forget_sync_encryption_secret(profile_id: &str) -> Result<(), KeychainError> {
+    let e = sync_encryption_entry(profile_id)?;
     match e.delete_password() {
         Ok(()) => Ok(()),
         Err(keyring::Error::NoEntry) => Ok(()),

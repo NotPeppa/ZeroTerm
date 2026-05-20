@@ -51,10 +51,10 @@
     "updater": {
       "active": true,
       "endpoints": [
-        "https://example.com/zeroterm/latest.json"
+        "https://zeroterm.cipheror.com/latest.json"
       ],
       "dialog": false,
-      "pubkey": "REPLACE_WITH_TAURI_UPDATER_PUBLIC_KEY"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEUyRjY5MUQyODQ2RUM5MEYKUldRUHlXNkUwcEgyNHJ2enRjQ0VyNU05MXJzRzJXV3pxODZ1RDk2SElpVFZqY1B4UlBJSEVKYk4K"
     }
   }
 }

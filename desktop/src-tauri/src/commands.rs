@@ -30,6 +30,68 @@ use zeroterm_app::{App, HostAuth, SyncBackendKind, SyncProfile};
 use zeroterm_ssh::{FileKind, HostKeyPolicy, KnownHosts, PtySize, Session};
 use zeroterm_sync::SyncAdapter;
 use tauri_plugin_updater::UpdaterExt;
+use chacha20poly1305::{aead::Aead, aead::KeyInit, XChaCha20Poly1305, XNonce};
+use sha2::{Digest, Sha256};
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as B64;
+
+const SYNC_STATE_KEY: &str = "zeroterm/sync-state.json";
+
+fn sync_cipher_from_secret(secret: &str) -> XChaCha20Poly1305 {
+    let mut hasher = Sha256::new();
+    hasher.update(secret.as_bytes());
+    let key = hasher.finalize();
+    XChaCha20Poly1305::new_from_slice(&key).expect("key len")
+}
+
+fn encrypt_sync_blob(secret: &str, plaintext: &[u8]) -> Result<String, String> {
+    let cipher = sync_cipher_from_secret(secret);
+    let nonce_bytes = {
+        let mut n = [0u8; 24];
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        n[..16].copy_from_slice(&ts.to_le_bytes());
+        n[16..24].copy_from_slice(&rand_fallback_u64().to_le_bytes());
+        n
+    };
+    let nonce = XNonce::from_slice(&nonce_bytes);
+    let ct = cipher
+        .encrypt(nonce, plaintext)
+        .map_err(|e| format!("encrypt sync state failed: {e}"))?;
+    let payload = serde_json::json!({
+        "v": 1,
+        "alg": "xchacha20poly1305",
+        "nonce": B64.encode(nonce_bytes),
+        "ct": B64.encode(ct),
+    });
+    serde_json::to_string(&payload).map_err(|e| e.to_string())
+}
+
+fn decrypt_sync_blob(secret: &str, payload: &[u8]) -> Result<Vec<u8>, String> {
+    let v: serde_json::Value = serde_json::from_slice(payload).map_err(|e| e.to_string())?;
+    let nonce_b64 = v.get("nonce").and_then(|x| x.as_str()).ok_or("invalid encrypted blob: nonce")?;
+    let ct_b64 = v.get("ct").and_then(|x| x.as_str()).ok_or("invalid encrypted blob: ct")?;
+    let nonce = B64.decode(nonce_b64).map_err(|e| e.to_string())?;
+    let ct = B64.decode(ct_b64).map_err(|e| e.to_string())?;
+    if nonce.len() != 24 {
+        return Err("invalid encrypted blob nonce length".to_string());
+    }
+    let cipher = sync_cipher_from_secret(secret);
+    let out = cipher
+        .decrypt(XNonce::from_slice(&nonce), ct.as_ref())
+        .map_err(|e| format!("decrypt sync state failed: {e}"))?;
+    Ok(out)
+}
+
+fn rand_fallback_u64() -> u64 {
+    let t = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    t.rotate_left(13) ^ 0x9e3779b97f4a7c15u64
+}
 
 use crate::host_key::TauriHostKeyPrompt;
 use crate::session::{run as run_session, ClosedEvent};
@@ -288,6 +350,18 @@ pub struct SyncProfileIO {
     pub username: Option<String>,
     pub password: Option<String>,
     pub path: Option<String>,
+    pub s3_endpoint: Option<String>,
+    pub s3_path_style: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncProfileSecrets {
+    pub webdav_password: Option<String>,
+    pub sync_password: Option<String>,
+    pub s3_access_key_id: Option<String>,
+    pub s3_secret_access_key: Option<String>,
+    pub s3_session_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -302,6 +376,12 @@ pub struct SyncProfileInput {
     pub username: Option<String>,
     pub password: Option<String>,
     pub path: Option<String>,
+    pub sync_password: Option<String>,
+    pub s3_endpoint: Option<String>,
+    pub s3_path_style: Option<bool>,
+    pub s3_access_key_id: Option<String>,
+    pub s3_secret_access_key: Option<String>,
+    pub s3_session_token: Option<String>,
 }
 
 fn backend_from_str(v: &str) -> Result<SyncBackendKind, String> {
@@ -333,6 +413,8 @@ fn profile_to_io(p: SyncProfile) -> SyncProfileIO {
         username: p.username,
         password: None,
         path: p.path,
+        s3_endpoint: p.s3_endpoint,
+        s3_path_style: p.s3_path_style,
     }
 }
 
@@ -348,6 +430,8 @@ fn profile_from_input(id: String, input: SyncProfileInput) -> Result<SyncProfile
         username: input.username,
         password: input.password,
         path: input.path,
+        s3_endpoint: input.s3_endpoint,
+        s3_path_style: input.s3_path_style,
     })
 }
 
@@ -363,11 +447,27 @@ pub async fn list_sync_profiles(state: State<'_, AppState>) -> Result<Vec<SyncPr
 pub async fn save_sync_profile(state: State<'_, AppState>, input: SyncProfileInput) -> Result<String, String> {
     let app_lock = state.app.lock().unwrap();
     let app = app_lock.as_ref().ok_or("vault is locked")?;
+    let sync_secret = input.sync_password.clone();
+    let s3_ak = input.s3_access_key_id.clone();
+    let s3_sk = input.s3_secret_access_key.clone();
+    let s3_st = input.s3_session_token.clone();
     let mut p = profile_from_input(String::new(), input)?;
     let secret = p.password.take();
     let id = app.save_sync_profile(&p).map_err(|e| e.to_string())?;
     if let Some(s) = secret {
         let _ = zeroterm_app::keychain::save_sync_profile_secret(&id, &s);
+    }
+    if let Some(s) = sync_secret {
+        let _ = zeroterm_app::keychain::save_sync_encryption_secret(&id, &s);
+    }
+    if let Some(ak) = s3_ak.as_deref() {
+        let _ = zeroterm_app::keychain::save_sync_profile_secret(&format!("{id}:s3:ak"), ak);
+    }
+    if let Some(sk) = s3_sk.as_deref() {
+        let _ = zeroterm_app::keychain::save_sync_profile_secret(&format!("{id}:s3:sk"), sk);
+    }
+    if let Some(st) = s3_st.as_deref() {
+        let _ = zeroterm_app::keychain::save_sync_profile_secret(&format!("{id}:s3:st"), st);
     }
     Ok(id)
 }
@@ -380,11 +480,27 @@ pub async fn update_sync_profile(
 ) -> Result<(), String> {
     let app_lock = state.app.lock().unwrap();
     let app = app_lock.as_ref().ok_or("vault is locked")?;
+    let sync_secret = input.sync_password.clone();
+    let s3_ak = input.s3_access_key_id.clone();
+    let s3_sk = input.s3_secret_access_key.clone();
+    let s3_st = input.s3_session_token.clone();
     let mut p = profile_from_input(id, input)?;
     let secret = p.password.take();
     app.update_sync_profile(&p).map_err(|e| e.to_string())?;
     if let Some(s) = secret {
         let _ = zeroterm_app::keychain::save_sync_profile_secret(&p.id, &s);
+    }
+    if let Some(s) = sync_secret {
+        let _ = zeroterm_app::keychain::save_sync_encryption_secret(&p.id, &s);
+    }
+    if let Some(ak) = s3_ak.as_deref() {
+        let _ = zeroterm_app::keychain::save_sync_profile_secret(&format!("{}:s3:ak", p.id), ak);
+    }
+    if let Some(sk) = s3_sk.as_deref() {
+        let _ = zeroterm_app::keychain::save_sync_profile_secret(&format!("{}:s3:sk", p.id), sk);
+    }
+    if let Some(st) = s3_st.as_deref() {
+        let _ = zeroterm_app::keychain::save_sync_profile_secret(&format!("{}:s3:st", p.id), st);
     }
     Ok(())
 }
@@ -395,13 +511,111 @@ pub async fn delete_sync_profile(state: State<'_, AppState>, id: String) -> Resu
     let app = app_lock.as_ref().ok_or("vault is locked")?;
     app.delete_sync_profile(&id).map_err(|e| e.to_string())?;
     let _ = zeroterm_app::keychain::forget_sync_profile_secret(&id);
+    let _ = zeroterm_app::keychain::forget_sync_encryption_secret(&id);
     Ok(())
+}
+
+#[tauri::command]
+pub async fn get_sync_profile_secrets(profile_id: String) -> Result<SyncProfileSecrets, String> {
+    let webdav_password = zeroterm_app::keychain::get_sync_profile_secret(&profile_id)
+        .map_err(|e| e.to_string())?;
+    let sync_password = zeroterm_app::keychain::get_sync_encryption_secret(&profile_id)
+        .map_err(|e| e.to_string())?;
+    let s3_access_key_id = zeroterm_app::keychain::get_sync_profile_secret(&format!("{profile_id}:s3:ak"))
+        .map_err(|e| e.to_string())?;
+    let s3_secret_access_key = zeroterm_app::keychain::get_sync_profile_secret(&format!("{profile_id}:s3:sk"))
+        .map_err(|e| e.to_string())?;
+    let s3_session_token = zeroterm_app::keychain::get_sync_profile_secret(&format!("{profile_id}:s3:st"))
+        .map_err(|e| e.to_string())?;
+
+    Ok(SyncProfileSecrets {
+        webdav_password,
+        sync_password,
+        s3_access_key_id,
+        s3_secret_access_key,
+        s3_session_token,
+    })
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncPreview {
     pub events: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SyncStateBlob {
+    pub hosts: Vec<zeroterm_app::Host>,
+    pub client_state_json: Option<String>,
+    pub updated_at: i64,
+}
+
+fn merge_hosts_local_wins(local: Vec<zeroterm_app::Host>, remote: Vec<zeroterm_app::Host>) -> Vec<zeroterm_app::Host> {
+    let mut by_id = std::collections::BTreeMap::<String, zeroterm_app::Host>::new();
+    let mut name_to_id = std::collections::HashMap::<String, String>::new();
+
+    for h in remote {
+        name_to_id.insert(h.name.clone(), h.id.clone());
+        by_id.insert(h.id.clone(), h);
+    }
+
+    for mut h in local {
+        if h.id.is_empty() {
+            if let Some(existing_id) = name_to_id.get(&h.name).cloned() {
+                h.id = existing_id;
+            }
+        }
+        if !h.id.is_empty() {
+            name_to_id.insert(h.name.clone(), h.id.clone());
+            by_id.insert(h.id.clone(), h);
+        }
+    }
+
+    by_id.into_values().collect()
+}
+
+async fn sync_adapter_for_profile(profile: &SyncProfile) -> Result<Box<dyn SyncAdapter>, String> {
+    match profile.backend {
+        SyncBackendKind::Filesystem => {
+            let root = profile.root.as_deref().ok_or("filesystem root is required")?;
+            Ok(Box::new(zeroterm_sync::FsAdapter::new(root)))
+        }
+        SyncBackendKind::WebDav => {
+            let endpoint = profile.endpoint.as_deref().ok_or("webdav endpoint is required")?;
+            let path = profile.path.as_deref().unwrap_or("zeroterm");
+            let user = profile.username.as_deref().ok_or("webdav username is required")?;
+            let pass_owned = zeroterm_app::keychain::get_sync_profile_secret(&profile.id)
+                .map_err(|e| e.to_string())?
+                .ok_or("webdav password is required")?;
+            let adapter = zeroterm_sync::WebDavAdapter::new(endpoint, path, user, pass_owned.as_str())
+                .map_err(|e| e.to_string())?;
+            Ok(Box::new(adapter))
+        }
+        SyncBackendKind::S3 => {
+            let bucket = profile.bucket.as_deref().ok_or("s3 bucket is required")?;
+            let region = profile.region.as_deref().unwrap_or("us-east-1");
+            let prefix = profile.path.as_deref().unwrap_or("zeroterm");
+            let ak = zeroterm_app::keychain::get_sync_profile_secret(&format!("{}:s3:ak", profile.id)).ok().flatten();
+            let sk = zeroterm_app::keychain::get_sync_profile_secret(&format!("{}:s3:sk", profile.id)).ok().flatten();
+            let st = zeroterm_app::keychain::get_sync_profile_secret(&format!("{}:s3:st", profile.id)).ok().flatten();
+            let adapter = zeroterm_sync::S3Adapter::new_with_options(
+                region,
+                bucket,
+                prefix,
+                zeroterm_sync::S3Options {
+                    endpoint: profile.s3_endpoint.clone(),
+                    force_path_style: profile.s3_path_style.unwrap_or(false),
+                    access_key_id: ak,
+                    secret_access_key: sk,
+                    session_token: st,
+                },
+            )
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(Box::new(adapter))
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -504,14 +718,6 @@ fn apply_host_events_to_vault(
     Ok((applied, skipped, id_remap))
 }
 
-fn latest_client_state(events: &[zeroterm_sync::EncryptedEvent]) -> Option<String> {
-    events
-        .iter()
-        .filter(|e| e.object_type == "client_state" && e.op == "upsert")
-        .max_by_key(|e| (e.created_at, e.logical_clock as i64))
-        .map(|e| e.ciphertext_b64.clone())
-}
-
 fn remap_client_state_host_ids(
     json: &str,
     remap: &std::collections::HashMap<String, String>,
@@ -555,7 +761,7 @@ pub async fn sync_test_connection(state: State<'_, AppState>, profile_id: String
         SyncBackendKind::Filesystem => {
             let root = profile.root.as_deref().ok_or("filesystem root is required")?;
             let adapter = zeroterm_sync::FsAdapter::new(root);
-            let _ = adapter.list_prefix("events").await.map_err(|e| e.to_string())?;
+            let _ = adapter.head(SYNC_STATE_KEY).await.map_err(|e| e.to_string())?;
             Ok(SyncTestResult { backend: "filesystem".to_string() })
         }
         SyncBackendKind::WebDav => {
@@ -567,7 +773,7 @@ pub async fn sync_test_connection(state: State<'_, AppState>, profile_id: String
                 .ok_or("webdav password is required")?;
             let adapter = zeroterm_sync::WebDavAdapter::new(endpoint, path, user, pass_owned.as_str())
                 .map_err(|e| e.to_string())?;
-            let _ = adapter.list_prefix("events").await.map_err(|e| e.to_string())?;
+            let _ = adapter.head(SYNC_STATE_KEY).await.map_err(|e| e.to_string())?;
             Ok(SyncTestResult { backend: "webdav".to_string() })
         }
         SyncBackendKind::S3 => {
@@ -575,7 +781,7 @@ pub async fn sync_test_connection(state: State<'_, AppState>, profile_id: String
             let region = profile.region.as_deref().unwrap_or("us-east-1");
             let prefix = profile.path.as_deref().unwrap_or("zeroterm");
             let adapter = zeroterm_sync::S3Adapter::new(region, bucket, prefix).await.map_err(|e| e.to_string())?;
-            let _ = adapter.list_prefix("events").await.map_err(|e| e.to_string())?;
+            let _ = adapter.head(SYNC_STATE_KEY).await.map_err(|e| e.to_string())?;
             Ok(SyncTestResult { backend: "s3".to_string() })
         }
     }
@@ -593,34 +799,21 @@ pub async fn sync_pull_preview(state: State<'_, AppState>, profile_id: String) -
             .ok_or_else(|| format!("no sync profile with id {profile_id}"))?
     };
 
-    let events = match profile.backend {
-        SyncBackendKind::Filesystem => {
-            let root = profile.root.as_deref().ok_or("filesystem root is required")?;
-            let engine = zeroterm_sync::SyncEngine::new(zeroterm_sync::FsAdapter::new(root));
-            engine.pull_events_under_prefix("events").await.map_err(|e| e.to_string())?
-        }
-        SyncBackendKind::WebDav => {
-            let endpoint = profile.endpoint.as_deref().ok_or("webdav endpoint is required")?;
-            let path = profile.path.as_deref().unwrap_or("zeroterm");
-            let user = profile.username.as_deref().ok_or("webdav username is required")?;
-            let pass_owned = zeroterm_app::keychain::get_sync_profile_secret(&profile.id)
-                .map_err(|e| e.to_string())?
-                .ok_or("webdav password is required")?;
-            let pass = pass_owned.as_str();
-            let adapter = zeroterm_sync::WebDavAdapter::new(endpoint, path, user, pass).map_err(|e| e.to_string())?;
-            let engine = zeroterm_sync::SyncEngine::new(adapter);
-            engine.pull_events_under_prefix("events").await.map_err(|e| e.to_string())?
-        }
-        SyncBackendKind::S3 => {
-            let bucket = profile.bucket.as_deref().ok_or("s3 bucket is required")?;
-            let region = profile.region.as_deref().unwrap_or("us-east-1");
-            let prefix = profile.path.as_deref().unwrap_or("zeroterm");
-            let adapter = zeroterm_sync::S3Adapter::new(region, bucket, prefix).await.map_err(|e| e.to_string())?;
-            let engine = zeroterm_sync::SyncEngine::new(adapter);
-            engine.pull_events_under_prefix("events").await.map_err(|e| e.to_string())?
-        }
+    let adapter = sync_adapter_for_profile(&profile).await?;
+    let state_bytes = adapter
+        .get(SYNC_STATE_KEY)
+        .await
+        .map_err(|e| e.to_string())?;
+    let Some(bytes) = state_bytes else {
+        return Ok(SyncPreview { events: 0 });
     };
-    Ok(SyncPreview { events: events.len() })
+
+    let sync_secret = zeroterm_app::keychain::get_sync_encryption_secret(&profile.id)
+        .map_err(|e| e.to_string())?
+        .ok_or("sync password is required")?;
+    let plain = decrypt_sync_blob(&sync_secret, &bytes)?;
+    let blob: SyncStateBlob = serde_json::from_slice(&plain).map_err(|e| e.to_string())?;
+    Ok(SyncPreview { events: blob.hosts.len() })
 }
 
 #[tauri::command]
@@ -641,62 +834,53 @@ pub async fn sync_push_preview(
         (profile, hosts)
     };
 
-    let mut events = Vec::with_capacity(hosts.len());
-    for (i, host) in hosts.iter().enumerate() {
-        let plaintext = serde_json::to_vec(host).map_err(|e| e.to_string())?;
-        events.push(zeroterm_sync::new_event(
-            "local-device",
-            i as u64 + 1,
-            "host",
-            host.id.clone(),
-            "upsert",
-            "",
-            String::from_utf8_lossy(&plaintext).to_string(),
-            1,
-        ));
-    }
-    if let Some(state_json) = client_state_json {
-        events.push(zeroterm_sync::new_event(
-            "local-device",
-            hosts.len() as u64 + 1,
-            "client_state",
-            "desktop_groups",
-            "upsert",
-            "",
-            state_json,
-            1,
-        ));
-    }
+    let adapter = sync_adapter_for_profile(&profile).await?;
 
-    match profile.backend {
-        SyncBackendKind::Filesystem => {
-            let root = profile.root.as_deref().ok_or("filesystem root is required")?;
-            let engine = zeroterm_sync::SyncEngine::new(zeroterm_sync::FsAdapter::new(root));
-            engine.push_events(&events).await.map_err(|e| e.to_string())?;
-        }
-        SyncBackendKind::WebDav => {
-            let endpoint = profile.endpoint.as_deref().ok_or("webdav endpoint is required")?;
-            let path = profile.path.as_deref().unwrap_or("zeroterm");
-            let user = profile.username.as_deref().ok_or("webdav username is required")?;
-            let pass_owned = zeroterm_app::keychain::get_sync_profile_secret(&profile.id)
-                .map_err(|e| e.to_string())?
-                .ok_or("webdav password is required")?;
-            let pass = pass_owned.as_str();
-            let adapter = zeroterm_sync::WebDavAdapter::new(endpoint, path, user, pass).map_err(|e| e.to_string())?;
-            let engine = zeroterm_sync::SyncEngine::new(adapter);
-            engine.push_events(&events).await.map_err(|e| e.to_string())?;
-        }
-        SyncBackendKind::S3 => {
-            let bucket = profile.bucket.as_deref().ok_or("s3 bucket is required")?;
-            let region = profile.region.as_deref().unwrap_or("us-east-1");
-            let prefix = profile.path.as_deref().unwrap_or("zeroterm");
-            let adapter = zeroterm_sync::S3Adapter::new(region, bucket, prefix).await.map_err(|e| e.to_string())?;
-            let engine = zeroterm_sync::SyncEngine::new(adapter);
-            engine.push_events(&events).await.map_err(|e| e.to_string())?;
-        }
-    }
+    let remote_blob = adapter
+        .get(SYNC_STATE_KEY)
+        .await
+        .map_err(|e| e.to_string())?
+        .and_then(|b| serde_json::from_slice::<SyncStateBlob>(&b).ok());
 
-    Ok(SyncPreview { events: events.len() })
+    let merged_hosts = if let Some(ref rb) = remote_blob {
+        merge_hosts_local_wins(hosts, rb.hosts.clone())
+    } else {
+        hosts
+    };
+
+    let merged_client_state = if client_state_json.is_some() {
+        client_state_json
+    } else {
+        remote_blob.and_then(|rb| rb.client_state_json)
+    };
+
+    let blob = SyncStateBlob {
+        hosts: merged_hosts.clone(),
+        client_state_json: merged_client_state,
+        updated_at: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0),
+    };
+    let body_plain = serde_json::to_vec(&blob).map_err(|e| e.to_string())?;
+    let sync_secret = zeroterm_app::keychain::get_sync_encryption_secret(&profile.id)
+        .map_err(|e| e.to_string())?
+        .ok_or("sync password is required")?;
+    let body_enc = encrypt_sync_blob(&sync_secret, &body_plain)?;
+    let body = body_enc.into_bytes();
+    adapter
+        .put(
+            SYNC_STATE_KEY,
+            &body,
+            zeroterm_sync::PutOptions {
+                if_match_etag: None,
+                content_type: Some("application/json"),
+            },
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(SyncPreview { events: merged_hosts.len() })
 }
 
 #[tauri::command]
@@ -713,44 +897,46 @@ pub async fn sync_apply_pull(state: State<'_, AppState>, profile_id: String) -> 
             .ok_or_else(|| format!("no sync profile with id {profile_id}"))?
     };
 
-    let events = match profile.backend {
-        SyncBackendKind::Filesystem => {
-            let root = profile.root.as_deref().ok_or("filesystem root is required")?;
-            let engine = zeroterm_sync::SyncEngine::new(zeroterm_sync::FsAdapter::new(root));
-            engine.pull_events_under_prefix("events").await.map_err(|e| e.to_string())?
-        }
-        SyncBackendKind::WebDav => {
-            let endpoint = profile.endpoint.as_deref().ok_or("webdav endpoint is required")?;
-            let path = profile.path.as_deref().unwrap_or("zeroterm");
-            let user = profile.username.as_deref().ok_or("webdav username is required")?;
-            let pass_owned = zeroterm_app::keychain::get_sync_profile_secret(&profile.id)
-                .map_err(|e| e.to_string())?
-                .ok_or("webdav password is required")?;
-            let adapter = zeroterm_sync::WebDavAdapter::new(endpoint, path, user, pass_owned.as_str())
-                .map_err(|e| e.to_string())?;
-            let engine = zeroterm_sync::SyncEngine::new(adapter);
-            engine.pull_events_under_prefix("events").await.map_err(|e| e.to_string())?
-        }
-        SyncBackendKind::S3 => {
-            let bucket = profile.bucket.as_deref().ok_or("s3 bucket is required")?;
-            let region = profile.region.as_deref().unwrap_or("us-east-1");
-            let prefix = profile.path.as_deref().unwrap_or("zeroterm");
-            let adapter = zeroterm_sync::S3Adapter::new(region, bucket, prefix).await.map_err(|e| e.to_string())?;
-            let engine = zeroterm_sync::SyncEngine::new(adapter);
-            engine.pull_events_under_prefix("events").await.map_err(|e| e.to_string())?
-        }
-    };
+    let adapter = sync_adapter_for_profile(&profile).await?;
+    let bytes = adapter
+        .get(SYNC_STATE_KEY)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("no synced state found")?;
+    let sync_secret = zeroterm_app::keychain::get_sync_encryption_secret(&profile.id)
+        .map_err(|e| e.to_string())?
+        .ok_or("sync password is required")?;
+    let plain = decrypt_sync_blob(&sync_secret, &bytes)?;
+    let blob: SyncStateBlob = serde_json::from_slice(&plain).map_err(|e| e.to_string())?;
+
+    let pseudo_events: Vec<zeroterm_sync::EncryptedEvent> = blob
+        .hosts
+        .iter()
+        .enumerate()
+        .map(|(i, h)| zeroterm_sync::new_event(
+            "remote-state",
+            i as u64 + 1,
+            "host",
+            h.id.clone(),
+            "upsert",
+            "",
+            serde_json::to_string(h).unwrap_or_default(),
+            1,
+        ))
+        .collect();
 
     let (applied, skipped, id_remap) = {
         let app_lock = state.app.lock().unwrap();
         let app = app_lock.as_ref().ok_or("vault is locked")?;
-        apply_host_events_to_vault(app, &events)?
+        apply_host_events_to_vault(app, &pseudo_events)?
     };
-    let client_state_json = latest_client_state(&events)
-        .and_then(|j| remap_client_state_host_ids(&j, &id_remap));
+    let client_state_json = blob
+        .client_state_json
+        .as_deref()
+        .and_then(|j| remap_client_state_host_ids(j, &id_remap));
 
     Ok(SyncApplyResult {
-        events: events.len(),
+        events: pseudo_events.len(),
         applied,
         skipped,
         client_state_json,

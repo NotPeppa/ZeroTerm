@@ -24,6 +24,8 @@ pub struct SyncProfile {
     pub username: Option<String>,
     pub password: Option<String>,
     pub path: Option<String>,
+    pub s3_endpoint: Option<String>,
+    pub s3_path_style: Option<bool>,
 }
 
 const SYNC_PROFILE_KIND: &str = "sync_profile";

@@ -46,6 +46,7 @@ pub fn run() {
             commands::update_sync_profile,
             commands::delete_host,
             commands::delete_sync_profile,
+            commands::get_sync_profile_secrets,
             commands::get_host,
             commands::sync_pull_preview,
             commands::sync_push_preview,
