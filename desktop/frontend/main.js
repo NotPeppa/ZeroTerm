@@ -522,6 +522,7 @@ const I18N = {
     "settings.sync.status.apply": "Apply Pull: events={events}, applied={applied}, skipped={skipped}{backup}",
     "settings.sync.status.last": "Last sync: {action} · events={events} · {when}",
     "settings.sync.status.active": "Active profile: {name}",
+    "settings.sync.confirm.merge_preview": "Sync merge preview\nLocal hosts: {local}\nRemote hosts: {remote}\nMerged result: {merged}\n\nContinue to push?",
     "settings.sync.backup.suffix": ", backup={path}",
     "settings.sync.action.push": "push",
     "settings.sync.action.pull_preview": "pull preview",
@@ -928,6 +929,7 @@ const I18N = {
     "settings.sync.status.apply": "应用拉取：总数={events}，应用={applied}，跳过={skipped}{backup}",
     "settings.sync.status.last": "最近同步：{action} · 事件={events} · {when}",
     "settings.sync.status.active": "当前配置：{name}",
+    "settings.sync.confirm.merge_preview": "同步合并预览\n本地主机：{local}\n远端主机：{remote}\n合并结果：{merged}\n\n是否继续推送？",
     "settings.sync.backup.suffix": "，备份={path}",
     "settings.sync.action.push": "推送",
     "settings.sync.action.pull_preview": "预览拉取",
@@ -3365,6 +3367,15 @@ settingsSyncAdvancedToggle?.addEventListener("click", () => {
 settingsSyncNow?.addEventListener("click", async () => {
   try {
     const id = await ensureSyncProfileReadyForActions();
+    const preview = await invoke("sync_merge_preview", { profileId: id });
+    const ok = confirm(
+      t("settings.sync.confirm.merge_preview", {
+        local: preview.localHosts,
+        remote: preview.remoteHosts,
+        merged: preview.mergedHosts,
+      }),
+    );
+    if (!ok) return;
     const clientStateJson = JSON.stringify(collectSyncClientState());
     const r = await invoke("sync_push_preview", { profileId: id, clientStateJson });
     if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.push", { events: r.events });
@@ -3469,6 +3480,15 @@ settingsSyncPull?.addEventListener("click", async () => {
 settingsSyncPush?.addEventListener("click", async () => {
   try {
     const id = await ensureSyncProfileReadyForActions();
+    const preview = await invoke("sync_merge_preview", { profileId: id });
+    const ok = confirm(
+      t("settings.sync.confirm.merge_preview", {
+        local: preview.localHosts,
+        remote: preview.remoteHosts,
+        merged: preview.mergedHosts,
+      }),
+    );
+    if (!ok) return;
     const clientStateJson = JSON.stringify(collectSyncClientState());
     const r = await invoke("sync_push_preview", { profileId: id, clientStateJson });
     if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.push", { events: r.events });

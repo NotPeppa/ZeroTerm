@@ -543,6 +543,14 @@ pub struct SyncPreview {
     pub events: usize,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncMergePreview {
+    pub local_hosts: usize,
+    pub remote_hosts: usize,
+    pub merged_hosts: usize,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SyncStateBlob {
@@ -836,11 +844,18 @@ pub async fn sync_push_preview(
 
     let adapter = sync_adapter_for_profile(&profile).await?;
 
+    let sync_secret = zeroterm_app::keychain::get_sync_encryption_secret(&profile.id)
+        .map_err(|e| e.to_string())?
+        .ok_or("sync password is required")?;
+
     let remote_blob = adapter
         .get(SYNC_STATE_KEY)
         .await
         .map_err(|e| e.to_string())?
-        .and_then(|b| serde_json::from_slice::<SyncStateBlob>(&b).ok());
+        .and_then(|b| {
+            let plain = decrypt_sync_blob(&sync_secret, &b).ok()?;
+            serde_json::from_slice::<SyncStateBlob>(&plain).ok()
+        });
 
     let merged_hosts = if let Some(ref rb) = remote_blob {
         merge_hosts_local_wins(hosts, rb.hosts.clone())
@@ -863,9 +878,6 @@ pub async fn sync_push_preview(
             .unwrap_or(0),
     };
     let body_plain = serde_json::to_vec(&blob).map_err(|e| e.to_string())?;
-    let sync_secret = zeroterm_app::keychain::get_sync_encryption_secret(&profile.id)
-        .map_err(|e| e.to_string())?
-        .ok_or("sync password is required")?;
     let body_enc = encrypt_sync_blob(&sync_secret, &body_plain)?;
     let body = body_enc.into_bytes();
     adapter
@@ -881,6 +893,43 @@ pub async fn sync_push_preview(
         .map_err(|e| e.to_string())?;
 
     Ok(SyncPreview { events: merged_hosts.len() })
+}
+
+#[tauri::command]
+pub async fn sync_merge_preview(state: State<'_, AppState>, profile_id: String) -> Result<SyncMergePreview, String> {
+    let (profile, hosts) = {
+        let app_lock = state.app.lock().unwrap();
+        let app = app_lock.as_ref().ok_or("vault is locked")?;
+        let profile = app.list_sync_profiles()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .find(|p| p.id == profile_id)
+            .ok_or_else(|| format!("no sync profile with id {profile_id}"))?;
+        let hosts = app.list_hosts().map_err(|e| e.to_string())?;
+        (profile, hosts)
+    };
+
+    let adapter = sync_adapter_for_profile(&profile).await?;
+    let sync_secret = zeroterm_app::keychain::get_sync_encryption_secret(&profile.id)
+        .map_err(|e| e.to_string())?
+        .ok_or("sync password is required")?;
+    let remote_blob = adapter
+        .get(SYNC_STATE_KEY)
+        .await
+        .map_err(|e| e.to_string())?
+        .and_then(|b| {
+            let plain = decrypt_sync_blob(&sync_secret, &b).ok()?;
+            serde_json::from_slice::<SyncStateBlob>(&plain).ok()
+        });
+
+    let remote_hosts = remote_blob.as_ref().map(|rb| rb.hosts.clone()).unwrap_or_default();
+    let merged = merge_hosts_local_wins(hosts.clone(), remote_hosts.clone());
+
+    Ok(SyncMergePreview {
+        local_hosts: hosts.len(),
+        remote_hosts: remote_hosts.len(),
+        merged_hosts: merged.len(),
+    })
 }
 
 #[tauri::command]

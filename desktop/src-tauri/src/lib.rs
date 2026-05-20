@@ -50,6 +50,7 @@ pub fn run() {
             commands::get_host,
             commands::sync_pull_preview,
             commands::sync_push_preview,
+            commands::sync_merge_preview,
             commands::sync_test_connection,
             commands::sync_apply_pull,
             commands::read_local_text_file,
