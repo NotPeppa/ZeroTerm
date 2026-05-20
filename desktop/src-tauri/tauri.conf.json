@@ -39,9 +39,6 @@
     "active": true,
     "targets": "all",
     "windows": {
-      "wix": {
-        "installMode": "both"
-      },
       "nsis": {
         "installMode": "both",
         "installerIcon": "icons/icon.ico"
