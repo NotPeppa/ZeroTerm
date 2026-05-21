@@ -2488,12 +2488,16 @@ function scheduleAutoSync() {
   }
   if (!isAutoSyncEnabled()) return;
   syncAutoTimer = setTimeout(() => {
-    const id = localStorage.getItem(SETTINGS_KEY_SYNC_ACTIVE_PROFILE) || settingsSyncProfile?.value;
-    if (!id) return;
-    const clientStateJson = JSON.stringify(collectSyncClientState());
-    invoke("sync_push_preview", { profileId: id, clientStateJson })
-      .then((r) => {
-        if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.push", { events: r.events });
+    runImmediateSync({ confirmMerge: false })
+      .then((result) => {
+        if (!result?.push) return;
+        if (settingsSyncStatus) {
+          settingsSyncStatus.textContent = t("settings.sync.status.sync_now", {
+            pulled: result.pull?.events ?? 0,
+            pushed: result.push?.events ?? 0,
+          });
+        }
+        markSyncLast("sync_now", result.push?.events ?? 0, { pulled: result.pull?.events ?? 0 });
       })
       .catch((e) => {
         if (settingsSyncStatus) settingsSyncStatus.textContent = String(e);
@@ -3449,19 +3453,15 @@ settingsSyncAdvancedToggle?.addEventListener("click", () => {
 });
 settingsSyncNow?.addEventListener("click", async () => {
   try {
-    const id = await ensureSyncProfileReadyForActions();
-    const preview = await invoke("sync_merge_preview", { profileId: id });
-    const ok = confirm(
-      t("settings.sync.confirm.merge_preview", {
-        local: preview.localHosts,
-        remote: preview.remoteHosts,
-        merged: preview.mergedHosts,
-      }),
-    );
-    if (!ok) return;
-    const clientStateJson = JSON.stringify(collectSyncClientState());
-    const r = await invoke("sync_push_preview", { profileId: id, clientStateJson });
-    if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.push", { events: r.events });
+    const result = await runImmediateSync({ confirmMerge: true });
+    if (!result?.push) return;
+    if (settingsSyncStatus) {
+      settingsSyncStatus.textContent = t("settings.sync.status.sync_now", {
+        pulled: result.pull?.events ?? 0,
+        pushed: result.push?.events ?? 0,
+      });
+    }
+    markSyncLast("sync_now", result.push?.events ?? 0, { pulled: result.pull?.events ?? 0 });
   } catch (e) {
     if (settingsSyncStatus) settingsSyncStatus.textContent = String(e);
   }
@@ -3481,7 +3481,18 @@ settingsSyncSave?.addEventListener("click", async () => {
       if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.saved");
     }
     await loadSyncProfiles();
-    scheduleAutoSync();
+    if (isAutoSyncEnabled()) {
+      const result = await runImmediateSync({ confirmMerge: false });
+      if (result?.push && settingsSyncStatus) {
+        settingsSyncStatus.textContent = t("settings.sync.status.sync_now", {
+          pulled: result.pull?.events ?? 0,
+          pushed: result.push?.events ?? 0,
+        });
+      }
+      if (result?.push) {
+        markSyncLast("sync_now", result.push?.events ?? 0, { pulled: result.pull?.events ?? 0 });
+      }
+    }
   } catch (e) {
     if (settingsSyncStatus) settingsSyncStatus.textContent = String(e);
   }

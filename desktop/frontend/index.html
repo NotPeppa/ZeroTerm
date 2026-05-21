@@ -462,10 +462,18 @@ $ npm run build && npm run start</pre>
 
                               <div id="settings-sync-advanced" class="settings-sync-actions" hidden>
                                 <button id="settings-sync-refresh" type="button">Refresh</button>
-                                <button id="settings-sync-test" type="button">Test Connection</button>
                                 <button id="settings-sync-apply" type="button" class="primary">Apply Pull</button>
                                 <button id="settings-sync-pull" type="button">Preview Pull</button>
                                 <button id="settings-sync-push" type="button">Push</button>
+                              </div>
+                              <div class="settings-sync-inline-tools">
+                                <button id="settings-sync-test" type="button" class="settings-link-btn">
+                                  <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M10 14a4 4 0 0 1 0-6l2-2a4 4 0 1 1 6 6l-1.5 1.5"></path>
+                                    <path d="M14 10a4 4 0 0 1 0 6l-2 2a4 4 0 1 1-6-6L7.5 10.5"></path>
+                                  </svg>
+                                  <span>测试连接</span>
+                                </button>
                               </div>
                               <p id="settings-sync-tip" class="muted tiny">Local Folder mode requires iCloud/Dropbox/Syncthing to sync across devices.</p>
                             </section>
