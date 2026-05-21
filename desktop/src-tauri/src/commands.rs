@@ -829,6 +829,7 @@ pub async fn sync_push_preview(
     state: State<'_, AppState>,
     profile_id: String,
     client_state_json: Option<String>,
+    overwrite_remote: Option<bool>,
 ) -> Result<SyncPreview, String> {
     let (profile, hosts) = {
         let app_lock = state.app.lock().unwrap();
@@ -857,13 +858,18 @@ pub async fn sync_push_preview(
             serde_json::from_slice::<SyncStateBlob>(&plain).ok()
         });
 
-    let merged_hosts = if let Some(ref rb) = remote_blob {
+    let overwrite = overwrite_remote.unwrap_or(false);
+    let merged_hosts = if overwrite {
+        hosts
+    } else if let Some(ref rb) = remote_blob {
         merge_hosts_local_wins(hosts, rb.hosts.clone())
     } else {
         hosts
     };
 
-    let merged_client_state = if client_state_json.is_some() {
+    let merged_client_state = if overwrite {
+        client_state_json
+    } else if client_state_json.is_some() {
         client_state_json
     } else {
         remote_blob.and_then(|rb| rb.client_state_json)

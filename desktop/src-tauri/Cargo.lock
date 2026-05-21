@@ -8355,7 +8355,7 @@ dependencies = [
 
 [[package]]
 name = "zeroterm-app"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "dirs 5.0.1",
  "keyring",
@@ -8370,7 +8370,7 @@ dependencies = [
 
 [[package]]
 name = "zeroterm-desktop"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -8398,7 +8398,7 @@ dependencies = [
 
 [[package]]
 name = "zeroterm-ssh"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "async-trait",
  "dirs 5.0.1",
@@ -8413,7 +8413,7 @@ dependencies = [
 
 [[package]]
 name = "zeroterm-store"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "rusqlite",
  "thiserror 1.0.69",
@@ -8422,7 +8422,7 @@ dependencies = [
 
 [[package]]
 name = "zeroterm-sync"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "async-trait",
  "aws-config",
@@ -8439,7 +8439,7 @@ dependencies = [
 
 [[package]]
 name = "zeroterm-vault"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "argon2",
  "chacha20poly1305",

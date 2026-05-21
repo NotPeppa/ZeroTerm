@@ -519,6 +519,7 @@ const I18N = {
     "settings.sync.status.conn_fail": "Connection failed: {error}",
     "settings.sync.status.pull_preview": "Pull preview events: {events}",
     "settings.sync.status.push": "Push events: {events}",
+    "settings.sync.status.sync_now": "Sync complete: pulled {pulled}, pushed {pushed}",
     "settings.sync.status.apply": "Apply Pull: events={events}, applied={applied}, skipped={skipped}{backup}",
     "settings.sync.status.last": "Last sync: {action} · events={events} · {when}",
     "settings.sync.status.active": "Active profile: {name}",
@@ -926,6 +927,7 @@ const I18N = {
     "settings.sync.status.conn_fail": "连接失败：{error}",
     "settings.sync.status.pull_preview": "预览拉取事件数：{events}",
     "settings.sync.status.push": "推送事件数：{events}",
+    "settings.sync.status.sync_now": "同步完成：拉取 {pulled}，推送 {pushed}",
     "settings.sync.status.apply": "应用拉取：总数={events}，应用={applied}，跳过={skipped}{backup}",
     "settings.sync.status.last": "最近同步：{action} · 事件={events} · {when}",
     "settings.sync.status.active": "当前配置：{name}",
@@ -2488,7 +2490,7 @@ function scheduleAutoSync() {
   }
   if (!isAutoSyncEnabled()) return;
   syncAutoTimer = setTimeout(() => {
-    runImmediateSync({ confirmMerge: false })
+    runImmediateSync({ confirmMerge: false, overwriteRemote: true })
       .then((result) => {
         if (!result?.push) return;
         if (settingsSyncStatus) {
@@ -2519,7 +2521,7 @@ function markSyncLast(action, events = 0, extra = {}) {
   }));
 }
 
-async function runImmediateSync({ confirmMerge = true } = {}) {
+async function runImmediateSync({ confirmMerge = true, overwriteRemote = false } = {}) {
   const id = await ensureSyncProfileReadyForActions();
   const pull = await invoke("sync_apply_pull", { profileId: id });
 
@@ -2577,7 +2579,7 @@ async function runImmediateSync({ confirmMerge = true } = {}) {
   }
 
   const clientStateJson = JSON.stringify(collectSyncClientState());
-  const push = await invoke("sync_push_preview", { profileId: id, clientStateJson });
+  const push = await invoke("sync_push_preview", { profileId: id, clientStateJson, overwriteRemote });
   return { pull, push };
 }
 
@@ -3482,7 +3484,7 @@ settingsSyncSave?.addEventListener("click", async () => {
     }
     await loadSyncProfiles();
     if (isAutoSyncEnabled()) {
-      const result = await runImmediateSync({ confirmMerge: false });
+      const result = await runImmediateSync({ confirmMerge: false, overwriteRemote: true });
       if (result?.push && settingsSyncStatus) {
         settingsSyncStatus.textContent = t("settings.sync.status.sync_now", {
           pulled: result.pull?.events ?? 0,
