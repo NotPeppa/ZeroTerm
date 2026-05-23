@@ -20,8 +20,14 @@ pub enum AppError {
     #[error("sync config error: {0}")]
     SyncConfig(String),
 
-    #[error("sync error: {0}")]
-    Sync(zeroterm_sync::SyncError),
+    #[error("sync engine error: {0}")]
+    Sync(#[from] zeroterm_sync::error::Error),
+
+    #[error("sync engine for profile '{0}' is not bootstrapped — call create_repo or join_repo first")]
+    SyncEngineMissing(String),
+
+    #[error("no sync profile with id '{0}'")]
+    SyncProfileNotFound(String),
 
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),

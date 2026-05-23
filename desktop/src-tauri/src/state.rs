@@ -17,8 +17,15 @@ use tokio_util::sync::CancellationToken;
 ///   - Locks are short and granular; if you find yourself wanting to hold
 ///     `app` and `sessions` at the same time, restructure instead.
 pub struct AppState {
-    /// `None` while the vault is locked, `Some(App)` once unlocked.
-    pub app: Mutex<Option<zeroterm_app::App>>,
+    /// `None` while the vault is locked, `Some(Arc<App>)` once unlocked.
+    /// Held as an `Arc` so commands can grab a cheap owned handle out of
+    /// the mutex and `.await` without holding the lock.
+    pub app: Mutex<Option<Arc<zeroterm_app::App>>>,
+
+    /// Per-process cache of bootstrapped sync engines, keyed by sync
+    /// profile id. Engines hold the unwrapped sync root key in memory,
+    /// so dropping the manager (e.g. on vault lock) drops every key.
+    pub sync: Arc<zeroterm_app::SyncManager>,
 
     /// Active shell sessions keyed by id assigned via `next_session_id`.
     pub sessions: Mutex<HashMap<u64, SessionHandle>>,
@@ -52,6 +59,7 @@ impl AppState {
     pub fn new() -> Self {
         Self {
             app: Mutex::new(None),
+            sync: Arc::new(zeroterm_app::SyncManager::new()),
             sessions: Mutex::new(HashMap::new()),
             next_session_id: AtomicU64::new(1),
             pending_host_key: Mutex::new(HashMap::new()),

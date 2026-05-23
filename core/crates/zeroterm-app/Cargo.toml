@@ -5,6 +5,14 @@ edition.workspace = true
 license.workspace = true
 description = "Orchestration layer: vault-aware host management on top of zeroterm-ssh + zeroterm-vault"
 
+[features]
+default = []
+# Forward to zeroterm-sync's webdav-backend feature so callers can
+# opt into the WebDAV sync adapter from the top-level crate.
+webdav-backend = ["zeroterm-sync/webdav-backend"]
+# Forward to zeroterm-sync's s3-backend feature.
+s3-backend = ["zeroterm-sync/s3-backend"]
+
 [dependencies]
 zeroterm-ssh = { path = "../zeroterm-ssh" }
 zeroterm-vault = { path = "../zeroterm-vault" }
@@ -14,6 +22,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 dirs = { workspace = true }
 keyring = { workspace = true }
+tokio = { workspace = true }
 
 thiserror = { workspace = true }
 tracing = { workspace = true }

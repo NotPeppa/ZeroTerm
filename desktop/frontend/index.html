@@ -370,15 +370,11 @@ $ npm run build && npm run start</pre>
                               <div class="settings-item-title">同步方式</div>
                               <div class="settings-sync-method-row">
                                 <select id="settings-sync-backend">
-                                  <option value="filesystem">Local Folder</option>
+                                  <option value="local_folder">Local Folder</option>
+                                  <option value="sftp">SFTP</option>
                                   <option value="webdav">WebDAV</option>
-                                  <option value="s3">S3 Object Storage</option>
+                                  <option value="s3">S3</option>
                                 </select>
-                                <label class="settings-switch settings-sync-auto">
-                                  <input id="settings-sync-auto" type="checkbox" />
-                                  <span></span>
-                                  <em id="settings-sync-auto-label">启用自动同步</em>
-                                </label>
                               </div>
                             </div>
 
@@ -392,111 +388,132 @@ $ npm run build && npm run start</pre>
                                       <button id="settings-sync-root-browse" type="button">浏览</button>
                                     </div>
                                   </div>
-                                  <div id="settings-sync-endpoint-field" class="settings-sync-field settings-sync-field-full">
-                                    <div id="settings-sync-endpoint-label" class="settings-item-title">WebDAV 地址</div>
-                                    <input id="settings-sync-endpoint" type="text" placeholder="endpoint (webdav)" autocomplete="off" />
+                                  <div id="settings-sync-host-ref-field" class="settings-sync-field settings-sync-field-full" hidden>
+                                    <div id="settings-sync-host-ref-label" class="settings-item-title">SFTP 主机</div>
+                                    <select id="settings-sync-host-ref"></select>
                                   </div>
-                                  <div id="settings-sync-bucket-field" class="settings-sync-field">
-                                    <div id="settings-sync-bucket-label" class="settings-item-title">桶名</div>
-                                    <input id="settings-sync-bucket" type="text" placeholder="bucket (s3)" autocomplete="off" />
+                                  <div id="settings-sync-remote-dir-field" class="settings-sync-field settings-sync-field-full" hidden>
+                                    <div id="settings-sync-remote-dir-label" class="settings-item-title">远端目录</div>
+                                    <input id="settings-sync-remote-dir" type="text" placeholder="/home/user/zeroterm" autocomplete="off" />
                                   </div>
-                                  <div id="settings-sync-region-field" class="settings-sync-field">
-                                    <div id="settings-sync-region-label" class="settings-item-title">区域</div>
-                                    <input id="settings-sync-region" type="text" placeholder="region (s3, default us-east-1)" autocomplete="off" />
+                                  <div id="settings-sync-webdav-url-field" class="settings-sync-field settings-sync-field-full" hidden>
+                                    <div id="settings-sync-webdav-url-label" class="settings-item-title">WebDAV 服务地址</div>
+                                    <input id="settings-sync-webdav-url" type="text" placeholder="https://dav.example.com/remote.php/dav/files/alice" autocomplete="off" />
                                   </div>
-                                  <div id="settings-sync-s3-endpoint-field" class="settings-sync-field settings-sync-field-full">
-                                    <div id="settings-sync-s3-endpoint-label" class="settings-item-title">S3 Endpoint</div>
-                                    <input id="settings-sync-s3-endpoint" type="text" placeholder="https://s3.example.com" autocomplete="off" />
+                                  <div id="settings-sync-webdav-root-field" class="settings-sync-field settings-sync-field-full" hidden>
+                                    <div id="settings-sync-webdav-root-label" class="settings-item-title">仓库子路径(可选)</div>
+                                    <input id="settings-sync-webdav-root" type="text" placeholder="zeroterm" autocomplete="off" />
                                   </div>
-                                  <div id="settings-sync-s3-ak-field" class="settings-sync-field">
+                                  <div id="settings-sync-webdav-user-field" class="settings-sync-field settings-sync-field-full" hidden>
+                                    <div id="settings-sync-webdav-user-label" class="settings-item-title">用户名</div>
+                                    <input id="settings-sync-webdav-user" type="text" autocomplete="off" />
+                                  </div>
+                                  <div id="settings-sync-webdav-pw-field" class="settings-sync-field settings-sync-field-full" hidden>
+                                    <div id="settings-sync-webdav-pw-label" class="settings-item-title">密码</div>
+                                    <input id="settings-sync-webdav-pw" type="password" placeholder="WebDAV 服务密码" autocomplete="off" />
+                                  </div>
+                                  <div id="settings-sync-s3-region-field" class="settings-sync-field settings-sync-field-full" hidden>
+                                    <div id="settings-sync-s3-region-label" class="settings-item-title">S3 Region</div>
+                                    <input id="settings-sync-s3-region" type="text" placeholder="us-east-1" autocomplete="off" />
+                                  </div>
+                                  <div id="settings-sync-s3-bucket-field" class="settings-sync-field settings-sync-field-full" hidden>
+                                    <div id="settings-sync-s3-bucket-label" class="settings-item-title">Bucket</div>
+                                    <input id="settings-sync-s3-bucket" type="text" placeholder="my-zeroterm-bucket" autocomplete="off" />
+                                  </div>
+                                  <div id="settings-sync-s3-prefix-field" class="settings-sync-field settings-sync-field-full" hidden>
+                                    <div id="settings-sync-s3-prefix-label" class="settings-item-title">仓库前缀(可选)</div>
+                                    <input id="settings-sync-s3-prefix" type="text" placeholder="zeroterm" autocomplete="off" />
+                                  </div>
+                                  <div id="settings-sync-s3-endpoint-field" class="settings-sync-field settings-sync-field-full" hidden>
+                                    <div id="settings-sync-s3-endpoint-label" class="settings-item-title">Endpoint(可选)</div>
+                                    <input id="settings-sync-s3-endpoint" type="text" placeholder="https://r2.cloudflarestorage.com" autocomplete="off" />
+                                  </div>
+                                  <div id="settings-sync-s3-path-style-field" class="settings-sync-field settings-sync-field-full" hidden>
+                                    <label class="settings-switch">
+                                      <input id="settings-sync-s3-path-style" type="checkbox" />
+                                      <span class="slider"></span>
+                                      <em id="settings-sync-s3-path-style-label">Path-style 地址(MinIO/R2 一般需要)</em>
+                                    </label>
+                                  </div>
+                                  <div id="settings-sync-s3-ak-field" class="settings-sync-field settings-sync-field-full" hidden>
                                     <div id="settings-sync-s3-ak-label" class="settings-item-title">Access Key ID</div>
-                                    <input id="settings-sync-s3-ak" type="text" placeholder="AKIA..." autocomplete="off" />
+                                    <input id="settings-sync-s3-ak" type="text" autocomplete="off" />
                                   </div>
-                                  <div id="settings-sync-s3-sk-field" class="settings-sync-field">
+                                  <div id="settings-sync-s3-sk-field" class="settings-sync-field settings-sync-field-full" hidden>
                                     <div id="settings-sync-s3-sk-label" class="settings-item-title">Secret Access Key</div>
-                                    <div class="settings-password-inline">
-                                      <input id="settings-sync-s3-sk" type="password" placeholder="S3 Secret" autocomplete="off" />
-                                      <button id="settings-sync-s3-sk-toggle" type="button" class="password-toggle" aria-label="显示密码" title="显示密码">
-                                        <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
-                                          <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z"></path>
-                                          <circle cx="12" cy="12" r="3.2"></circle>
-                                        </svg>
-                                      </button>
-                                    </div>
+                                    <input id="settings-sync-s3-sk" type="password" placeholder="留空保留旧密钥" autocomplete="off" />
                                   </div>
-                                  <div id="settings-sync-s3-st-field" class="settings-sync-field settings-sync-field-full">
-                                    <div id="settings-sync-s3-st-label" class="settings-item-title">Session Token (optional)</div>
-                                    <div class="settings-password-inline">
-                                      <input id="settings-sync-s3-st" type="password" placeholder="Session Token" autocomplete="off" />
-                                      <button id="settings-sync-s3-st-toggle" type="button" class="password-toggle" aria-label="显示密码" title="显示密码">
-                                        <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
-                                          <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z"></path>
-                                          <circle cx="12" cy="12" r="3.2"></circle>
-                                        </svg>
-                                      </button>
-                                    </div>
-                                  </div>
-                                  <label id="settings-sync-s3-path-style-field" class="settings-switch settings-sync-auto settings-sync-field-full">
-                                    <input id="settings-sync-s3-path-style" type="checkbox" />
-                                    <span></span>
-                                    <em id="settings-sync-s3-path-style-label">使用 Path-Style 寻址</em>
-                                  </label>
-                                  <div id="settings-sync-username-field" class="settings-sync-field">
-                                    <div id="settings-sync-username-label" class="settings-item-title">用户名</div>
-                                    <input id="settings-sync-username" type="text" placeholder="username (webdav)" autocomplete="off" />
-                                  </div>
-                                  <div id="settings-sync-password-field" class="settings-sync-field">
-                                    <div id="settings-sync-password-label" class="settings-item-title">密码</div>
-                                    <div class="settings-password-inline">
-                                      <input id="settings-sync-password" type="password" placeholder="password (webdav)" autocomplete="off" />
-                                      <button id="settings-sync-password-toggle" type="button" class="password-toggle" aria-label="显示密码" title="显示密码">
-                                        <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
-                                          <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z"></path>
-                                          <circle cx="12" cy="12" r="3.2"></circle>
-                                        </svg>
-                                      </button>
-                                    </div>
+                                  <div id="settings-sync-s3-token-field" class="settings-sync-field settings-sync-field-full" hidden>
+                                    <div id="settings-sync-s3-token-label" class="settings-item-title">Session Token(可选)</div>
+                                    <input id="settings-sync-s3-token" type="password" placeholder="STS 临时凭据(可选)" autocomplete="off" />
                                   </div>
                                 </div>
                               </div>
 
-                              <div id="settings-sync-advanced" class="settings-sync-actions" hidden>
-                                <button id="settings-sync-refresh" type="button">Refresh</button>
-                                <button id="settings-sync-apply" type="button" class="primary">Apply Pull</button>
-                                <button id="settings-sync-pull" type="button">Preview Pull</button>
-                                <button id="settings-sync-push" type="button">Push</button>
-                              </div>
-                              <div class="settings-sync-inline-tools">
-                                <button id="settings-sync-test" type="button" class="settings-link-btn">
-                                  <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
-                                    <path d="M10 14a4 4 0 0 1 0-6l2-2a4 4 0 1 1 6 6l-1.5 1.5"></path>
-                                    <path d="M14 10a4 4 0 0 1 0 6l-2 2a4 4 0 1 1-6-6L7.5 10.5"></path>
-                                  </svg>
-                                  <span>测试连接</span>
-                                </button>
-                              </div>
                               <p id="settings-sync-tip" class="muted tiny">Local Folder mode requires iCloud/Dropbox/Syncthing to sync across devices.</p>
                             </section>
 
-                            <div class="settings-sync-password-block">
+                            <section class="settings-section settings-sync-card">
                               <div class="settings-item-title" id="settings-sync-enc-title">同步密码</div>
-                              <div class="settings-password-inline">
-                                <input id="settings-sync-enc-password" type="password" placeholder="sync password (encrypt state)" autocomplete="off" />
-                                <button id="settings-sync-enc-password-toggle" type="button" class="password-toggle" aria-label="显示密码" title="显示密码">
-                                  <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
-                                    <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z"></path>
-                                    <circle cx="12" cy="12" r="3.2"></circle>
-                                  </svg>
-                                </button>
+                              <div class="settings-sync-password-block">
+                                <div class="settings-password-inline">
+                                  <input id="settings-sync-enc-password" type="password" placeholder="sync passphrase" autocomplete="off" />
+                                  <button id="settings-sync-enc-password-toggle" type="button" class="password-toggle" aria-label="显示密码" title="显示密码">
+                                    <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                      <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z"></path>
+                                      <circle cx="12" cy="12" r="3.2"></circle>
+                                    </svg>
+                                  </button>
+                                </div>
+                                <label class="settings-switch settings-sync-auto">
+                                  <input id="settings-sync-remember-passphrase" type="checkbox" />
+                                  <span></span>
+                                  <em id="settings-sync-remember-passphrase-label">记住密码（系统钥匙串）</em>
+                                </label>
                               </div>
-                            </div>
+                              <div class="settings-sync-actions">
+                                <button id="settings-sync-create-repo" type="button" class="primary">创建仓库</button>
+                                <button id="settings-sync-join-repo" type="button">加入仓库</button>
+                              </div>
+                              <p id="settings-sync-bootstrap-hint" class="muted tiny">首次使用：在第一台设备上"创建仓库"；其他设备用同样的密码"加入仓库"。</p>
+                            </section>
 
-                            <div class="settings-sync-actions settings-sync-actions-outer">
-                              <button id="settings-sync-save" type="button">保存</button>
-                              <button id="settings-sync-now" type="button" class="primary">立即同步</button>
-                              <button id="settings-sync-advanced-toggle" type="button">高级</button>
-                            </div>
-                            <p id="settings-sync-status" class="muted tiny"></p>
+                            <section class="settings-section settings-sync-card">
+                              <div class="settings-item-title" id="settings-sync-status-title">同步状态</div>
+                              <p id="settings-sync-status-line" class="muted tiny">未连接</p>
+                              <div class="settings-sync-actions">
+                                <button id="settings-sync-save" type="button">保存配置</button>
+                                <button id="settings-sync-now" type="button" class="primary">立即同步</button>
+                                <button id="settings-sync-forget-engine" type="button">断开会话</button>
+                              </div>
+                              <p id="settings-sync-status" class="muted tiny"></p>
+                            </section>
+
+                            <section class="settings-section settings-sync-card">
+                              <div class="settings-item-title" id="settings-sync-devices-title">已加入设备</div>
+                              <ul id="settings-sync-devices-list" class="settings-sync-devices-list">
+                                <li class="muted tiny" id="settings-sync-devices-empty">尚未拉取设备列表</li>
+                              </ul>
+                            </section>
+
+                            <section class="settings-section settings-sync-card">
+                              <div class="settings-item-title" id="settings-sync-repo-stats-title">仓库大小</div>
+                              <ul id="settings-sync-repo-stats-list" class="settings-sync-stats-list">
+                                <li class="muted tiny" id="settings-sync-repo-stats-empty">尚未拉取统计</li>
+                              </ul>
+                              <div class="settings-sync-actions">
+                                <button id="settings-sync-refresh-stats" type="button">刷新统计</button>
+                                <button id="settings-sync-compact-now" type="button">立即压缩</button>
+                              </div>
+                              <p id="settings-sync-compact-status" class="muted tiny"></p>
+                            </section>
+
+                            <section class="settings-section settings-sync-card">
+                              <div class="settings-item-title" id="settings-sync-conflicts-title">冲突收件箱</div>
+                              <ul id="settings-sync-conflicts-list" class="settings-sync-conflicts-list">
+                                <li class="muted tiny" id="settings-sync-conflicts-empty">尚无冲突。</li>
+                              </ul>
+                            </section>
                           </section>
 
                           <section id="settings-about-panel" class="settings-panel" hidden>

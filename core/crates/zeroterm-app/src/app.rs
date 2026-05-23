@@ -39,6 +39,12 @@ impl App {
         path.as_ref().exists()
     }
 
+    /// Vault-level identifier, stable across reopens. Stamped into sync
+    /// repos so two devices can verify they share the same vault.
+    pub fn vault_id(&self) -> &str {
+        self.vault.vault_id()
+    }
+
     // -- host CRUD ----------------------------------------------------------
 
     pub fn list_hosts(&self) -> Result<Vec<Host>, AppError> {

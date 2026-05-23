@@ -26,72 +26,9 @@ use portable_pty::{CommandBuilder, PtySize as LocalPtySize};
 use std::io::{Read, Write};
 use std::sync::Mutex as StdMutex;
 
-use zeroterm_app::{App, HostAuth, SyncBackendKind, SyncProfile};
+use zeroterm_app::{App, HostAuth, SyncBackend, SyncProfile};
 use zeroterm_ssh::{FileKind, HostKeyPolicy, KnownHosts, PtySize, Session};
-use zeroterm_sync::SyncAdapter;
 use tauri_plugin_updater::UpdaterExt;
-use chacha20poly1305::{aead::Aead, aead::KeyInit, XChaCha20Poly1305, XNonce};
-use sha2::{Digest, Sha256};
-use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD as B64;
-
-const SYNC_STATE_KEY: &str = "zeroterm/sync-state.json";
-
-fn sync_cipher_from_secret(secret: &str) -> XChaCha20Poly1305 {
-    let mut hasher = Sha256::new();
-    hasher.update(secret.as_bytes());
-    let key = hasher.finalize();
-    XChaCha20Poly1305::new_from_slice(&key).expect("key len")
-}
-
-fn encrypt_sync_blob(secret: &str, plaintext: &[u8]) -> Result<String, String> {
-    let cipher = sync_cipher_from_secret(secret);
-    let nonce_bytes = {
-        let mut n = [0u8; 24];
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        n[..16].copy_from_slice(&ts.to_le_bytes());
-        n[16..24].copy_from_slice(&rand_fallback_u64().to_le_bytes());
-        n
-    };
-    let nonce = XNonce::from_slice(&nonce_bytes);
-    let ct = cipher
-        .encrypt(nonce, plaintext)
-        .map_err(|e| format!("encrypt sync state failed: {e}"))?;
-    let payload = serde_json::json!({
-        "v": 1,
-        "alg": "xchacha20poly1305",
-        "nonce": B64.encode(nonce_bytes),
-        "ct": B64.encode(ct),
-    });
-    serde_json::to_string(&payload).map_err(|e| e.to_string())
-}
-
-fn decrypt_sync_blob(secret: &str, payload: &[u8]) -> Result<Vec<u8>, String> {
-    let v: serde_json::Value = serde_json::from_slice(payload).map_err(|e| e.to_string())?;
-    let nonce_b64 = v.get("nonce").and_then(|x| x.as_str()).ok_or("invalid encrypted blob: nonce")?;
-    let ct_b64 = v.get("ct").and_then(|x| x.as_str()).ok_or("invalid encrypted blob: ct")?;
-    let nonce = B64.decode(nonce_b64).map_err(|e| e.to_string())?;
-    let ct = B64.decode(ct_b64).map_err(|e| e.to_string())?;
-    if nonce.len() != 24 {
-        return Err("invalid encrypted blob nonce length".to_string());
-    }
-    let cipher = sync_cipher_from_secret(secret);
-    let out = cipher
-        .decrypt(XNonce::from_slice(&nonce), ct.as_ref())
-        .map_err(|e| format!("decrypt sync state failed: {e}"))?;
-    Ok(out)
-}
-
-fn rand_fallback_u64() -> u64 {
-    let t = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos() as u64)
-        .unwrap_or(0);
-    t.rotate_left(13) ^ 0x9e3779b97f4a7c15u64
-}
 
 use crate::host_key::TauriHostKeyPrompt;
 use crate::session::{run as run_session, ClosedEvent};
@@ -131,7 +68,7 @@ pub async fn unlock_vault(
     let path = zeroterm_app::default_vault_path()
         .ok_or_else(|| "no default vault path on this OS".to_string())?;
     let app = App::open(&path, &password).map_err(|e| e.to_string())?;
-    *state.app.lock().unwrap() = Some(app);
+    *state.app.lock().unwrap() = Some(Arc::new(app));
     if remember {
         if let Err(e) = zeroterm_app::keychain::save_master_password(&path, &password) {
             tracing::warn!(error = %e, "could not cache master password in keychain");
@@ -156,7 +93,7 @@ pub async fn create_vault(
         std::fs::create_dir_all(parent).map_err(|e| format!("creating vault dir: {e}"))?;
     }
     let app = App::create(&path, &password).map_err(|e| e.to_string())?;
-    *state.app.lock().unwrap() = Some(app);
+    *state.app.lock().unwrap() = Some(Arc::new(app));
     if remember {
         if let Err(e) = zeroterm_app::keychain::save_master_password(&path, &password) {
             tracing::warn!(error = %e, "could not cache master password in keychain");
@@ -169,6 +106,10 @@ pub async fn create_vault(
 #[tauri::command]
 pub async fn lock_vault(state: State<'_, AppState>) -> Result<(), String> {
     *state.app.lock().unwrap() = None;
+    // Locking the vault drops every cached sync engine too — they hold
+    // the unwrapped sync root key in memory and shouldn't outlive the
+    // master key.
+    state.sync.forget_all().await;
     Ok(())
 }
 
@@ -193,7 +134,7 @@ pub async fn try_keychain_unlock(state: State<'_, AppState>) -> Result<bool, Str
     };
     match App::open(&path, &pw) {
         Ok(app) => {
-            *state.app.lock().unwrap() = Some(app);
+            *state.app.lock().unwrap() = Some(Arc::new(app));
             info!("vault unlocked from keychain cache");
             Ok(true)
         }
@@ -337,6 +278,14 @@ pub async fn list_hosts(state: State<'_, AppState>) -> Result<Vec<HostSummary>, 
         .collect())
 }
 
+// --------------------------------------------------------------------------
+// sync profiles & engine (RFC-002 repo-based)
+// --------------------------------------------------------------------------
+//
+// Profile shape is intentionally narrow: only LocalFolder is wired up
+// today. SFTP lands in M6; that variant exists in `SyncBackend` for
+// forwards-compat but is rejected at every command boundary.
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncProfileIO {
@@ -344,24 +293,18 @@ pub struct SyncProfileIO {
     pub name: String,
     pub backend: String,
     pub root: Option<String>,
-    pub endpoint: Option<String>,
-    pub bucket: Option<String>,
-    pub region: Option<String>,
+    pub host_ref: Option<String>,
+    pub remote_dir: Option<String>,
+    pub url: Option<String>,
+    pub root_path: Option<String>,
     pub username: Option<String>,
-    pub password: Option<String>,
-    pub path: Option<String>,
-    pub s3_endpoint: Option<String>,
-    pub s3_path_style: Option<bool>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SyncProfileSecrets {
-    pub webdav_password: Option<String>,
-    pub sync_password: Option<String>,
-    pub s3_access_key_id: Option<String>,
-    pub s3_secret_access_key: Option<String>,
-    pub s3_session_token: Option<String>,
+    pub region: Option<String>,
+    pub bucket: Option<String>,
+    pub prefix: Option<String>,
+    pub endpoint: Option<String>,
+    pub force_path_style: Option<bool>,
+    pub access_key_id: Option<String>,
+    pub created_at: i64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -370,68 +313,177 @@ pub struct SyncProfileInput {
     pub name: String,
     pub backend: String,
     pub root: Option<String>,
-    pub endpoint: Option<String>,
-    pub bucket: Option<String>,
-    pub region: Option<String>,
+    pub host_ref: Option<String>,
+    pub remote_dir: Option<String>,
+    pub url: Option<String>,
+    pub root_path: Option<String>,
     pub username: Option<String>,
+    /// WebDAV password. Only sent on save/update; we never echo it back
+    /// from `profile_to_io`. Persisted in the OS keychain, not the
+    /// vault, so it doesn't survive a sync profile export.
     pub password: Option<String>,
-    pub path: Option<String>,
-    pub sync_password: Option<String>,
-    pub s3_endpoint: Option<String>,
-    pub s3_path_style: Option<bool>,
-    pub s3_access_key_id: Option<String>,
-    pub s3_secret_access_key: Option<String>,
-    pub s3_session_token: Option<String>,
-}
-
-fn backend_from_str(v: &str) -> Result<SyncBackendKind, String> {
-    match v {
-        "filesystem" => Ok(SyncBackendKind::Filesystem),
-        "webdav" => Ok(SyncBackendKind::WebDav),
-        "s3" => Ok(SyncBackendKind::S3),
-        _ => Err(format!("unsupported sync backend: {v}")),
-    }
-}
-
-fn backend_to_str(v: &SyncBackendKind) -> &'static str {
-    match v {
-        SyncBackendKind::Filesystem => "filesystem",
-        SyncBackendKind::WebDav => "webdav",
-        SyncBackendKind::S3 => "s3",
-    }
+    pub region: Option<String>,
+    pub bucket: Option<String>,
+    pub prefix: Option<String>,
+    pub endpoint: Option<String>,
+    pub force_path_style: Option<bool>,
+    pub access_key_id: Option<String>,
+    /// S3 secret access key. Same keychain handling as `password`.
+    pub secret_access_key: Option<String>,
+    /// Optional S3 session token (STS). Empty string = leave keychain
+    /// intact, exact same convention as `password` / `secret_access_key`.
+    pub session_token: Option<String>,
 }
 
 fn profile_to_io(p: SyncProfile) -> SyncProfileIO {
-    SyncProfileIO {
+    let mut io = SyncProfileIO {
         id: p.id,
         name: p.name,
-        backend: backend_to_str(&p.backend).to_string(),
-        root: p.root,
-        endpoint: p.endpoint,
-        bucket: p.bucket,
-        region: p.region,
-        username: p.username,
-        password: None,
-        path: p.path,
-        s3_endpoint: p.s3_endpoint,
-        s3_path_style: p.s3_path_style,
+        backend: String::new(),
+        root: None,
+        host_ref: None,
+        remote_dir: None,
+        url: None,
+        root_path: None,
+        username: None,
+        region: None,
+        bucket: None,
+        prefix: None,
+        endpoint: None,
+        force_path_style: None,
+        access_key_id: None,
+        created_at: p.created_at,
+    };
+    match p.backend {
+        SyncBackend::LocalFolder { root } => {
+            io.backend = "local_folder".into();
+            io.root = Some(root);
+        }
+        SyncBackend::Sftp { host_ref, remote_dir } => {
+            io.backend = "sftp".into();
+            io.host_ref = Some(host_ref);
+            io.remote_dir = Some(remote_dir);
+        }
+        SyncBackend::WebDav { url, root_path, username } => {
+            io.backend = "webdav".into();
+            io.url = Some(url);
+            io.root_path = Some(root_path);
+            io.username = Some(username);
+        }
+        SyncBackend::S3 {
+            region,
+            bucket,
+            prefix,
+            endpoint,
+            force_path_style,
+            access_key_id,
+        } => {
+            io.backend = "s3".into();
+            io.region = Some(region);
+            io.bucket = Some(bucket);
+            io.prefix = Some(prefix);
+            io.endpoint = endpoint;
+            io.force_path_style = Some(force_path_style);
+            io.access_key_id = Some(access_key_id);
+        }
     }
+    io
 }
 
 fn profile_from_input(id: String, input: SyncProfileInput) -> Result<SyncProfile, String> {
+    let backend = match input.backend.as_str() {
+        "local_folder" | "filesystem" => {
+            let root = input
+                .root
+                .clone()
+                .ok_or_else(|| "sync root is required for local_folder backend".to_string())?;
+            if root.trim().is_empty() {
+                return Err("sync root cannot be empty".to_string());
+            }
+            SyncBackend::LocalFolder { root }
+        }
+        "sftp" => {
+            let host_ref = input
+                .host_ref
+                .clone()
+                .ok_or_else(|| "sftp host_ref is required".to_string())?;
+            if host_ref.trim().is_empty() {
+                return Err("sftp host_ref cannot be empty".to_string());
+            }
+            let remote_dir = input
+                .remote_dir
+                .clone()
+                .ok_or_else(|| "sftp remote_dir is required".to_string())?;
+            if remote_dir.trim().is_empty() {
+                return Err("sftp remote_dir cannot be empty".to_string());
+            }
+            SyncBackend::Sftp {
+                host_ref,
+                remote_dir,
+            }
+        }
+        "webdav" => {
+            let url = input
+                .url
+                .clone()
+                .ok_or_else(|| "webdav url is required".to_string())?;
+            if url.trim().is_empty() {
+                return Err("webdav url cannot be empty".to_string());
+            }
+            let username = input
+                .username
+                .clone()
+                .ok_or_else(|| "webdav username is required".to_string())?;
+            if username.trim().is_empty() {
+                return Err("webdav username cannot be empty".to_string());
+            }
+            SyncBackend::WebDav {
+                url,
+                root_path: input.root_path.clone().unwrap_or_default(),
+                username,
+            }
+        }
+        "s3" => {
+            let region = input
+                .region
+                .clone()
+                .ok_or_else(|| "s3 region is required".to_string())?;
+            if region.trim().is_empty() {
+                return Err("s3 region cannot be empty".to_string());
+            }
+            let bucket = input
+                .bucket
+                .clone()
+                .ok_or_else(|| "s3 bucket is required".to_string())?;
+            if bucket.trim().is_empty() {
+                return Err("s3 bucket cannot be empty".to_string());
+            }
+            let access_key_id = input
+                .access_key_id
+                .clone()
+                .ok_or_else(|| "s3 access_key_id is required".to_string())?;
+            if access_key_id.trim().is_empty() {
+                return Err("s3 access_key_id cannot be empty".to_string());
+            }
+            SyncBackend::S3 {
+                region,
+                bucket,
+                prefix: input.prefix.clone().unwrap_or_default(),
+                endpoint: input
+                    .endpoint
+                    .clone()
+                    .filter(|s| !s.trim().is_empty()),
+                force_path_style: input.force_path_style.unwrap_or(false),
+                access_key_id,
+            }
+        }
+        other => return Err(format!("unsupported sync backend: {other}")),
+    };
     Ok(SyncProfile {
         id,
         name: input.name,
-        backend: backend_from_str(&input.backend)?,
-        root: input.root,
-        endpoint: input.endpoint,
-        bucket: input.bucket,
-        region: input.region,
-        username: input.username,
-        password: input.password,
-        path: input.path,
-        s3_endpoint: input.s3_endpoint,
-        s3_path_style: input.s3_path_style,
+        created_at: 0,
+        backend,
     })
 }
 
@@ -444,31 +496,16 @@ pub async fn list_sync_profiles(state: State<'_, AppState>) -> Result<Vec<SyncPr
 }
 
 #[tauri::command]
-pub async fn save_sync_profile(state: State<'_, AppState>, input: SyncProfileInput) -> Result<String, String> {
+pub async fn save_sync_profile(
+    state: State<'_, AppState>,
+    input: SyncProfileInput,
+) -> Result<String, String> {
+    let credential = sync_profile_credential_from_input(&input);
     let app_lock = state.app.lock().unwrap();
     let app = app_lock.as_ref().ok_or("vault is locked")?;
-    let sync_secret = input.sync_password.clone();
-    let s3_ak = input.s3_access_key_id.clone();
-    let s3_sk = input.s3_secret_access_key.clone();
-    let s3_st = input.s3_session_token.clone();
-    let mut p = profile_from_input(String::new(), input)?;
-    let secret = p.password.take();
+    let p = profile_from_input(String::new(), input)?;
     let id = app.save_sync_profile(&p).map_err(|e| e.to_string())?;
-    if let Some(s) = secret {
-        let _ = zeroterm_app::keychain::save_sync_profile_secret(&id, &s);
-    }
-    if let Some(s) = sync_secret {
-        let _ = zeroterm_app::keychain::save_sync_encryption_secret(&id, &s);
-    }
-    if let Some(ak) = s3_ak.as_deref() {
-        let _ = zeroterm_app::keychain::save_sync_profile_secret(&format!("{id}:s3:ak"), ak);
-    }
-    if let Some(sk) = s3_sk.as_deref() {
-        let _ = zeroterm_app::keychain::save_sync_profile_secret(&format!("{id}:s3:sk"), sk);
-    }
-    if let Some(st) = s3_st.as_deref() {
-        let _ = zeroterm_app::keychain::save_sync_profile_secret(&format!("{id}:s3:st"), st);
-    }
+    persist_sync_profile_credential(&id, &credential);
     Ok(id)
 }
 
@@ -478,525 +515,243 @@ pub async fn update_sync_profile(
     id: String,
     input: SyncProfileInput,
 ) -> Result<(), String> {
+    let credential = sync_profile_credential_from_input(&input);
     let app_lock = state.app.lock().unwrap();
     let app = app_lock.as_ref().ok_or("vault is locked")?;
-    let sync_secret = input.sync_password.clone();
-    let s3_ak = input.s3_access_key_id.clone();
-    let s3_sk = input.s3_secret_access_key.clone();
-    let s3_st = input.s3_session_token.clone();
-    let mut p = profile_from_input(id, input)?;
-    let secret = p.password.take();
+    let p = profile_from_input(id.clone(), input)?;
     app.update_sync_profile(&p).map_err(|e| e.to_string())?;
-    if let Some(s) = secret {
-        let _ = zeroterm_app::keychain::save_sync_profile_secret(&p.id, &s);
-    }
-    if let Some(s) = sync_secret {
-        let _ = zeroterm_app::keychain::save_sync_encryption_secret(&p.id, &s);
-    }
-    if let Some(ak) = s3_ak.as_deref() {
-        let _ = zeroterm_app::keychain::save_sync_profile_secret(&format!("{}:s3:ak", p.id), ak);
-    }
-    if let Some(sk) = s3_sk.as_deref() {
-        let _ = zeroterm_app::keychain::save_sync_profile_secret(&format!("{}:s3:sk", p.id), sk);
-    }
-    if let Some(st) = s3_st.as_deref() {
-        let _ = zeroterm_app::keychain::save_sync_profile_secret(&format!("{}:s3:st", p.id), st);
-    }
+    persist_sync_profile_credential(&id, &credential);
     Ok(())
 }
 
 #[tauri::command]
 pub async fn delete_sync_profile(state: State<'_, AppState>, id: String) -> Result<(), String> {
-    let app_lock = state.app.lock().unwrap();
-    let app = app_lock.as_ref().ok_or("vault is locked")?;
-    app.delete_sync_profile(&id).map_err(|e| e.to_string())?;
-    let _ = zeroterm_app::keychain::forget_sync_profile_secret(&id);
+    {
+        let app_lock = state.app.lock().unwrap();
+        let app = app_lock.as_ref().ok_or("vault is locked")?;
+        app.delete_sync_profile(&id).map_err(|e| e.to_string())?;
+    }
+    // Forget any cached engine and any cached sync passphrase. Best-effort.
+    state.sync.forget(&id).await;
     let _ = zeroterm_app::keychain::forget_sync_encryption_secret(&id);
+    let _ = zeroterm_app::keychain::forget_sync_backend_credential(&id);
+    let _ = zeroterm_app::keychain::forget_sync_backend_extra(&id);
+    Ok(())
+}
+
+/// What the keychain needs to know after a save/update. Empty strings
+/// mean "leave the existing keychain entry alone" — the UI never echoes
+/// stored secrets back, so a re-save that only changed the URL must not
+/// blow away the password.
+#[derive(Default)]
+struct SyncBackendCredentialUpdate {
+    /// WebDAV password OR S3 secret access key — both go into the
+    /// `sync-backend-credential:<id>` slot.
+    primary: Option<String>,
+    /// Optional sibling secret (e.g. S3 STS session token).
+    extra: Option<String>,
+}
+
+fn sync_profile_credential_from_input(input: &SyncProfileInput) -> SyncBackendCredentialUpdate {
+    match input.backend.as_str() {
+        "webdav" => SyncBackendCredentialUpdate {
+            primary: input.password.clone(),
+            extra: None,
+        },
+        "s3" => SyncBackendCredentialUpdate {
+            primary: input.secret_access_key.clone(),
+            extra: input.session_token.clone(),
+        },
+        _ => SyncBackendCredentialUpdate::default(),
+    }
+}
+
+fn persist_sync_profile_credential(profile_id: &str, update: &SyncBackendCredentialUpdate) {
+    if let Some(primary) = update.primary.as_deref() {
+        if !primary.is_empty() {
+            let _ = zeroterm_app::keychain::save_sync_backend_credential(profile_id, primary);
+        }
+    }
+    if let Some(extra) = update.extra.as_deref() {
+        if extra.is_empty() {
+            // Explicit empty string from a UI that supports clearing
+            // the STS token. We don't expose that path yet; treat empty
+            // as "leave it" to match the primary semantics.
+        } else {
+            let _ = zeroterm_app::keychain::save_sync_backend_extra(profile_id, extra);
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn sync_create_repo(
+    state: State<'_, AppState>,
+    profile_id: String,
+    passphrase: String,
+    remember_passphrase: Option<bool>,
+) -> Result<(), String> {
+    let (app, manager) = clone_app_and_sync(&state)?;
+    app.sync_create_repo(&manager, &profile_id, &passphrase)
+        .await
+        .map_err(|e| e.to_string())?;
+    if remember_passphrase.unwrap_or(false) {
+        let _ = zeroterm_app::keychain::save_sync_encryption_secret(&profile_id, &passphrase);
+    }
     Ok(())
 }
 
 #[tauri::command]
-pub async fn get_sync_profile_secrets(profile_id: String) -> Result<SyncProfileSecrets, String> {
-    let webdav_password = zeroterm_app::keychain::get_sync_profile_secret(&profile_id)
-        .map_err(|e| e.to_string())?;
-    let sync_password = zeroterm_app::keychain::get_sync_encryption_secret(&profile_id)
-        .map_err(|e| e.to_string())?;
-    let s3_access_key_id = zeroterm_app::keychain::get_sync_profile_secret(&format!("{profile_id}:s3:ak"))
-        .map_err(|e| e.to_string())?;
-    let s3_secret_access_key = zeroterm_app::keychain::get_sync_profile_secret(&format!("{profile_id}:s3:sk"))
-        .map_err(|e| e.to_string())?;
-    let s3_session_token = zeroterm_app::keychain::get_sync_profile_secret(&format!("{profile_id}:s3:st"))
-        .map_err(|e| e.to_string())?;
-
-    Ok(SyncProfileSecrets {
-        webdav_password,
-        sync_password,
-        s3_access_key_id,
-        s3_secret_access_key,
-        s3_session_token,
-    })
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SyncPreview {
-    pub events: usize,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SyncMergePreview {
-    pub local_hosts: usize,
-    pub remote_hosts: usize,
-    pub merged_hosts: usize,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SyncStateBlob {
-    pub hosts: Vec<zeroterm_app::Host>,
-    pub client_state_json: Option<String>,
-    pub updated_at: i64,
-}
-
-fn merge_hosts_local_wins(local: Vec<zeroterm_app::Host>, remote: Vec<zeroterm_app::Host>) -> Vec<zeroterm_app::Host> {
-    let mut by_id = std::collections::BTreeMap::<String, zeroterm_app::Host>::new();
-    let mut name_to_id = std::collections::HashMap::<String, String>::new();
-
-    for h in remote {
-        name_to_id.insert(h.name.clone(), h.id.clone());
-        by_id.insert(h.id.clone(), h);
-    }
-
-    for mut h in local {
-        if h.id.is_empty() {
-            if let Some(existing_id) = name_to_id.get(&h.name).cloned() {
-                h.id = existing_id;
-            }
-        }
-        if !h.id.is_empty() {
-            name_to_id.insert(h.name.clone(), h.id.clone());
-            by_id.insert(h.id.clone(), h);
-        }
-    }
-
-    by_id.into_values().collect()
-}
-
-async fn sync_adapter_for_profile(profile: &SyncProfile) -> Result<Box<dyn SyncAdapter>, String> {
-    match profile.backend {
-        SyncBackendKind::Filesystem => {
-            let root = profile.root.as_deref().ok_or("filesystem root is required")?;
-            Ok(Box::new(zeroterm_sync::FsAdapter::new(root)))
-        }
-        SyncBackendKind::WebDav => {
-            let endpoint = profile.endpoint.as_deref().ok_or("webdav endpoint is required")?;
-            let path = profile.path.as_deref().unwrap_or("zeroterm");
-            let user = profile.username.as_deref().ok_or("webdav username is required")?;
-            let pass_owned = zeroterm_app::keychain::get_sync_profile_secret(&profile.id)
-                .map_err(|e| e.to_string())?
-                .ok_or("webdav password is required")?;
-            let adapter = zeroterm_sync::WebDavAdapter::new(endpoint, path, user, pass_owned.as_str())
-                .map_err(|e| e.to_string())?;
-            Ok(Box::new(adapter))
-        }
-        SyncBackendKind::S3 => {
-            let bucket = profile.bucket.as_deref().ok_or("s3 bucket is required")?;
-            let region = profile.region.as_deref().unwrap_or("us-east-1");
-            let prefix = profile.path.as_deref().unwrap_or("zeroterm");
-            let ak = zeroterm_app::keychain::get_sync_profile_secret(&format!("{}:s3:ak", profile.id)).ok().flatten();
-            let sk = zeroterm_app::keychain::get_sync_profile_secret(&format!("{}:s3:sk", profile.id)).ok().flatten();
-            let st = zeroterm_app::keychain::get_sync_profile_secret(&format!("{}:s3:st", profile.id)).ok().flatten();
-            let adapter = zeroterm_sync::S3Adapter::new_with_options(
-                region,
-                bucket,
-                prefix,
-                zeroterm_sync::S3Options {
-                    endpoint: profile.s3_endpoint.clone(),
-                    force_path_style: profile.s3_path_style.unwrap_or(false),
-                    access_key_id: ak,
-                    secret_access_key: sk,
-                    session_token: st,
-                },
-            )
-                .await
-                .map_err(|e| e.to_string())?;
-            Ok(Box::new(adapter))
-        }
-    }
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SyncApplyResult {
-    pub events: usize,
-    pub applied: usize,
-    pub skipped: usize,
-    pub client_state_json: Option<String>,
-    pub backup_path: Option<String>,
-}
-
-fn backup_vault_before_apply() -> Result<Option<String>, String> {
-    let vault = zeroterm_app::default_vault_path()
-        .ok_or_else(|| "no default vault path on this OS".to_string())?;
-    if !vault.exists() {
-        return Ok(None);
-    }
-    let parent = vault
-        .parent()
-        .ok_or_else(|| "vault has no parent directory".to_string())?;
-    let backup_dir = parent.join("sync-backups");
-    std::fs::create_dir_all(&backup_dir).map_err(|e| format!("create backup dir failed: {e}"))?;
-    let ts = chrono_like_now_compact();
-    let backup = backup_dir.join(format!("zeroterm-{ts}.vault"));
-    std::fs::copy(&vault, &backup).map_err(|e| format!("backup vault failed: {e}"))?;
-    Ok(Some(backup.display().to_string()))
-}
-
-fn chrono_like_now_compact() -> String {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    format!("{now}")
-}
-
-fn apply_host_events_to_vault(
-    app: &App,
-    events: &[zeroterm_sync::EncryptedEvent],
-) -> Result<(usize, usize, std::collections::HashMap<String, String>), String> {
-    let mut applied = 0usize;
-    let mut skipped = 0usize;
-    let mut id_remap = std::collections::HashMap::new();
-    for ev in events {
-        if ev.object_type != "host" {
-            skipped += 1;
-            continue;
-        }
-        if ev.op != "upsert" {
-            skipped += 1;
-            continue;
-        }
-        let mut host: zeroterm_app::Host = match serde_json::from_str(&ev.ciphertext_b64) {
-            Ok(h) => h,
-            Err(_) => {
-                skipped += 1;
-                continue;
-            }
-        };
-        if host.id.is_empty() {
-            host.id = ev.object_id.clone();
-        }
-        let source_id = host.id.clone();
-        match app.find_host_by_id(&host.id).map_err(|e| e.to_string())? {
-            Some(existing) => {
-                host.id = existing.id.clone();
-                if source_id != host.id {
-                    id_remap.insert(source_id.clone(), host.id.clone());
-                }
-                app.update_host(&host).map_err(|e| e.to_string())?
-            }
-            None => {
-                match app.save_host(&host) {
-                    Ok(new_id) => {
-                        if source_id != new_id {
-                            id_remap.insert(source_id.clone(), new_id.clone());
-                        }
-                    }
-                    Err(zeroterm_app::AppError::HostNameTaken(_)) => {
-                        // Merge-by-name fallback for first-time apply into a
-                        // vault that already has a same-named host created
-                        // locally. We update that record instead of failing.
-                        let existing = app
-                            .find_host_by_name(&host.name)
-                            .map_err(|e| e.to_string())?
-                            .ok_or_else(|| format!("host name conflict but not found: {}", host.name))?;
-                        host.id = existing.id;
-                        if source_id != host.id {
-                            id_remap.insert(source_id.clone(), host.id.clone());
-                        }
-                        app.update_host(&host).map_err(|e| e.to_string())?;
-                    }
-                    Err(e) => return Err(e.to_string()),
-                }
-            }
-        }
-        applied += 1;
-    }
-    Ok((applied, skipped, id_remap))
-}
-
-fn remap_client_state_host_ids(
-    json: &str,
-    remap: &std::collections::HashMap<String, String>,
-) -> Option<String> {
-    if remap.is_empty() {
-        return Some(json.to_string());
-    }
-    let mut v: serde_json::Value = serde_json::from_str(json).ok()?;
-    let Some(obj) = v.as_object_mut() else { return Some(json.to_string()); };
-    let Some(map_val) = obj.get_mut("hostGroupMap") else { return Some(json.to_string()); };
-    let Some(map_obj) = map_val.as_object() else { return Some(json.to_string()); };
-
-    let mut new_map = serde_json::Map::new();
-    for (k, val) in map_obj {
-        let nk = remap.get(k).cloned().unwrap_or_else(|| k.clone());
-        new_map.insert(nk, val.clone());
-    }
-    *map_val = serde_json::Value::Object(new_map);
-    serde_json::to_string(&v).ok()
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SyncTestResult {
-    pub backend: String,
-}
-
-#[tauri::command]
-pub async fn sync_test_connection(state: State<'_, AppState>, profile_id: String) -> Result<SyncTestResult, String> {
-    let profile = {
-        let app_lock = state.app.lock().unwrap();
-        let app = app_lock.as_ref().ok_or("vault is locked")?;
-        app.list_sync_profiles()
-            .map_err(|e| e.to_string())?
-            .into_iter()
-            .find(|p| p.id == profile_id)
-            .ok_or_else(|| format!("no sync profile with id {profile_id}"))?
-    };
-
-    match profile.backend {
-        SyncBackendKind::Filesystem => {
-            let root = profile.root.as_deref().ok_or("filesystem root is required")?;
-            let adapter = zeroterm_sync::FsAdapter::new(root);
-            let _ = adapter.head(SYNC_STATE_KEY).await.map_err(|e| e.to_string())?;
-            Ok(SyncTestResult { backend: "filesystem".to_string() })
-        }
-        SyncBackendKind::WebDav => {
-            let endpoint = profile.endpoint.as_deref().ok_or("webdav endpoint is required")?;
-            let path = profile.path.as_deref().unwrap_or("zeroterm");
-            let user = profile.username.as_deref().ok_or("webdav username is required")?;
-            let pass_owned = zeroterm_app::keychain::get_sync_profile_secret(&profile.id)
-                .map_err(|e| e.to_string())?
-                .ok_or("webdav password is required")?;
-            let adapter = zeroterm_sync::WebDavAdapter::new(endpoint, path, user, pass_owned.as_str())
-                .map_err(|e| e.to_string())?;
-            let _ = adapter.head(SYNC_STATE_KEY).await.map_err(|e| e.to_string())?;
-            Ok(SyncTestResult { backend: "webdav".to_string() })
-        }
-        SyncBackendKind::S3 => {
-            let bucket = profile.bucket.as_deref().ok_or("s3 bucket is required")?;
-            let region = profile.region.as_deref().unwrap_or("us-east-1");
-            let prefix = profile.path.as_deref().unwrap_or("zeroterm");
-            let adapter = zeroterm_sync::S3Adapter::new(region, bucket, prefix).await.map_err(|e| e.to_string())?;
-            let _ = adapter.head(SYNC_STATE_KEY).await.map_err(|e| e.to_string())?;
-            Ok(SyncTestResult { backend: "s3".to_string() })
-        }
-    }
-}
-
-#[tauri::command]
-pub async fn sync_pull_preview(state: State<'_, AppState>, profile_id: String) -> Result<SyncPreview, String> {
-    let profile = {
-        let app_lock = state.app.lock().unwrap();
-        let app = app_lock.as_ref().ok_or("vault is locked")?;
-        app.list_sync_profiles()
-            .map_err(|e| e.to_string())?
-            .into_iter()
-            .find(|p| p.id == profile_id)
-            .ok_or_else(|| format!("no sync profile with id {profile_id}"))?
-    };
-
-    let adapter = sync_adapter_for_profile(&profile).await?;
-    let state_bytes = adapter
-        .get(SYNC_STATE_KEY)
-        .await
-        .map_err(|e| e.to_string())?;
-    let Some(bytes) = state_bytes else {
-        return Ok(SyncPreview { events: 0 });
-    };
-
-    let sync_secret = zeroterm_app::keychain::get_sync_encryption_secret(&profile.id)
-        .map_err(|e| e.to_string())?
-        .ok_or("sync password is required")?;
-    let plain = decrypt_sync_blob(&sync_secret, &bytes)?;
-    let blob: SyncStateBlob = serde_json::from_slice(&plain).map_err(|e| e.to_string())?;
-    Ok(SyncPreview { events: blob.hosts.len() })
-}
-
-#[tauri::command]
-pub async fn sync_push_preview(
+pub async fn sync_join_repo(
     state: State<'_, AppState>,
     profile_id: String,
-    client_state_json: Option<String>,
-    overwrite_remote: Option<bool>,
-) -> Result<SyncPreview, String> {
-    let (profile, hosts) = {
-        let app_lock = state.app.lock().unwrap();
-        let app = app_lock.as_ref().ok_or("vault is locked")?;
-        let profile = app.list_sync_profiles()
-            .map_err(|e| e.to_string())?
-            .into_iter()
-            .find(|p| p.id == profile_id)
-            .ok_or_else(|| format!("no sync profile with id {profile_id}"))?;
-        let hosts = app.list_hosts().map_err(|e| e.to_string())?;
-        (profile, hosts)
-    };
-
-    let adapter = sync_adapter_for_profile(&profile).await?;
-
-    let sync_secret = zeroterm_app::keychain::get_sync_encryption_secret(&profile.id)
-        .map_err(|e| e.to_string())?
-        .ok_or("sync password is required")?;
-
-    let remote_blob = adapter
-        .get(SYNC_STATE_KEY)
-        .await
-        .map_err(|e| e.to_string())?
-        .and_then(|b| {
-            let plain = decrypt_sync_blob(&sync_secret, &b).ok()?;
-            serde_json::from_slice::<SyncStateBlob>(&plain).ok()
-        });
-
-    let overwrite = overwrite_remote.unwrap_or(false);
-    let merged_hosts = if overwrite {
-        hosts
-    } else if let Some(ref rb) = remote_blob {
-        merge_hosts_local_wins(hosts, rb.hosts.clone())
-    } else {
-        hosts
-    };
-
-    let merged_client_state = if overwrite {
-        client_state_json
-    } else if client_state_json.is_some() {
-        client_state_json
-    } else {
-        remote_blob.and_then(|rb| rb.client_state_json)
-    };
-
-    let blob = SyncStateBlob {
-        hosts: merged_hosts.clone(),
-        client_state_json: merged_client_state,
-        updated_at: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(0),
-    };
-    let body_plain = serde_json::to_vec(&blob).map_err(|e| e.to_string())?;
-    let body_enc = encrypt_sync_blob(&sync_secret, &body_plain)?;
-    let body = body_enc.into_bytes();
-    adapter
-        .put(
-            SYNC_STATE_KEY,
-            &body,
-            zeroterm_sync::PutOptions {
-                if_match_etag: None,
-                content_type: Some("application/json"),
-            },
-        )
+    passphrase: String,
+    remember_passphrase: Option<bool>,
+) -> Result<SyncJoinResult, String> {
+    let (app, manager) = clone_app_and_sync(&state)?;
+    let repo_vault_id = app
+        .sync_join_repo(&manager, &profile_id, &passphrase)
         .await
         .map_err(|e| e.to_string())?;
 
-    Ok(SyncPreview { events: merged_hosts.len() })
-}
-
-#[tauri::command]
-pub async fn sync_merge_preview(state: State<'_, AppState>, profile_id: String) -> Result<SyncMergePreview, String> {
-    let (profile, hosts) = {
+    let local_vault_id = {
         let app_lock = state.app.lock().unwrap();
         let app = app_lock.as_ref().ok_or("vault is locked")?;
-        let profile = app.list_sync_profiles()
-            .map_err(|e| e.to_string())?
-            .into_iter()
-            .find(|p| p.id == profile_id)
-            .ok_or_else(|| format!("no sync profile with id {profile_id}"))?;
-        let hosts = app.list_hosts().map_err(|e| e.to_string())?;
-        (profile, hosts)
+        app.vault_id().to_string()
     };
-
-    let adapter = sync_adapter_for_profile(&profile).await?;
-    let sync_secret = zeroterm_app::keychain::get_sync_encryption_secret(&profile.id)
-        .map_err(|e| e.to_string())?
-        .ok_or("sync password is required")?;
-    let remote_blob = adapter
-        .get(SYNC_STATE_KEY)
-        .await
-        .map_err(|e| e.to_string())?
-        .and_then(|b| {
-            let plain = decrypt_sync_blob(&sync_secret, &b).ok()?;
-            serde_json::from_slice::<SyncStateBlob>(&plain).ok()
-        });
-
-    let remote_hosts = remote_blob.as_ref().map(|rb| rb.hosts.clone()).unwrap_or_default();
-    let merged = merge_hosts_local_wins(hosts.clone(), remote_hosts.clone());
-
-    Ok(SyncMergePreview {
-        local_hosts: hosts.len(),
-        remote_hosts: remote_hosts.len(),
-        merged_hosts: merged.len(),
+    if remember_passphrase.unwrap_or(false) {
+        let _ = zeroterm_app::keychain::save_sync_encryption_secret(&profile_id, &passphrase);
+    }
+    let local_vault_id_matches = local_vault_id == repo_vault_id;
+    Ok(SyncJoinResult {
+        repo_vault_id,
+        local_vault_id_matches,
     })
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncJoinResult {
+    pub repo_vault_id: String,
+    /// `false` if the user joined a repo created against a *different*
+    /// local vault — the engine will reject `sync_now` with
+    /// VaultIdMismatch, but the UI can warn early.
+    pub local_vault_id_matches: bool,
+}
+
 #[tauri::command]
-pub async fn sync_apply_pull(state: State<'_, AppState>, profile_id: String) -> Result<SyncApplyResult, String> {
-    let backup_path = backup_vault_before_apply()?;
-
-    let profile = {
-        let app_lock = state.app.lock().unwrap();
-        let app = app_lock.as_ref().ok_or("vault is locked")?;
-        app.list_sync_profiles()
-            .map_err(|e| e.to_string())?
-            .into_iter()
-            .find(|p| p.id == profile_id)
-            .ok_or_else(|| format!("no sync profile with id {profile_id}"))?
-    };
-
-    let adapter = sync_adapter_for_profile(&profile).await?;
-    let bytes = adapter
-        .get(SYNC_STATE_KEY)
+pub async fn sync_now(
+    state: State<'_, AppState>,
+    profile_id: String,
+) -> Result<zeroterm_app::SyncOutcome, String> {
+    let (app, manager) = clone_app_and_sync(&state)?;
+    app.sync_now(&manager, &profile_id)
         .await
-        .map_err(|e| e.to_string())?
-        .ok_or("no synced state found")?;
-    let sync_secret = zeroterm_app::keychain::get_sync_encryption_secret(&profile.id)
-        .map_err(|e| e.to_string())?
-        .ok_or("sync password is required")?;
-    let plain = decrypt_sync_blob(&sync_secret, &bytes)?;
-    let blob: SyncStateBlob = serde_json::from_slice(&plain).map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())
+}
 
-    let pseudo_events: Vec<zeroterm_sync::EncryptedEvent> = blob
-        .hosts
-        .iter()
-        .enumerate()
-        .map(|(i, h)| zeroterm_sync::new_event(
-            "remote-state",
-            i as u64 + 1,
-            "host",
-            h.id.clone(),
-            "upsert",
-            "",
-            serde_json::to_string(h).unwrap_or_default(),
-            1,
-        ))
-        .collect();
+#[tauri::command]
+pub async fn sync_status(
+    state: State<'_, AppState>,
+    profile_id: String,
+) -> Result<zeroterm_app::SyncStatus, String> {
+    let (app, manager) = clone_app_and_sync(&state)?;
+    app.sync_status(&manager, &profile_id)
+        .await
+        .map_err(|e| e.to_string())
+}
 
-    let (applied, skipped, id_remap) = {
-        let app_lock = state.app.lock().unwrap();
-        let app = app_lock.as_ref().ok_or("vault is locked")?;
-        apply_host_events_to_vault(app, &pseudo_events)?
+#[tauri::command]
+pub async fn sync_forget_engine(
+    state: State<'_, AppState>,
+    profile_id: String,
+) -> Result<(), String> {
+    state.sync.forget(&profile_id).await;
+    Ok(())
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncDeviceEntry {
+    pub device_id: String,
+}
+
+/// Stub for M5 — returns whatever is in the keyring (one entry per
+/// device). Surfacing the per-device metadata file lands once M5 wires
+/// up the `devices/` directory.
+#[tauri::command]
+pub async fn sync_list_devices(
+    _state: State<'_, AppState>,
+    _profile_id: String,
+) -> Result<Vec<SyncDeviceEntry>, String> {
+    Ok(Vec::new())
+}
+
+#[tauri::command]
+pub async fn sync_list_conflicts(
+    state: State<'_, AppState>,
+    _profile_id: String,
+) -> Result<Vec<zeroterm_app::ConflictView>, String> {
+    let app = {
+        let guard = state.app.lock().unwrap();
+        guard.as_ref().ok_or("vault is locked")?.clone()
     };
-    let client_state_json = blob
-        .client_state_json
-        .as_deref()
-        .and_then(|j| remap_client_state_host_ids(j, &id_remap));
+    app.list_open_conflicts().map_err(|e| e.to_string())
+}
 
-    Ok(SyncApplyResult {
-        events: pseudo_events.len(),
-        applied,
-        skipped,
-        client_state_json,
-        backup_path,
-    })
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SyncResolutionInput {
+    KeepLocal,
+    KeepRemote,
+}
+
+#[tauri::command]
+pub async fn sync_resolve_conflict(
+    state: State<'_, AppState>,
+    _profile_id: String,
+    conflict_id: String,
+    resolution: SyncResolutionInput,
+) -> Result<(), String> {
+    let app = {
+        let guard = state.app.lock().unwrap();
+        guard.as_ref().ok_or("vault is locked")?.clone()
+    };
+    let r = match resolution {
+        SyncResolutionInput::KeepLocal => zeroterm_app::ConflictResolution::KeepLocal,
+        SyncResolutionInput::KeepRemote => zeroterm_app::ConflictResolution::KeepRemote,
+    };
+    app.resolve_conflict(&conflict_id, r).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn sync_compact_now(
+    state: State<'_, AppState>,
+    profile_id: String,
+) -> Result<zeroterm_sync::engine::CompactReport, String> {
+    let (app, manager) = clone_app_and_sync(&state)?;
+    app.sync_compact(&manager, &profile_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn sync_repo_stats(
+    state: State<'_, AppState>,
+    profile_id: String,
+) -> Result<zeroterm_sync::engine::RepoStats, String> {
+    let (app, manager) = clone_app_and_sync(&state)?;
+    app.sync_repo_stats(&manager, &profile_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+fn clone_app_and_sync(
+    state: &State<'_, AppState>,
+) -> Result<(Arc<zeroterm_app::App>, Arc<zeroterm_app::SyncManager>), String> {
+    let guard = state.app.lock().unwrap();
+    let app = guard.as_ref().ok_or("vault is locked")?.clone();
+    let manager = state.sync.clone();
+    Ok((app, manager))
 }
 
 // ---- host CRUD -----------------------------------------------------------
@@ -1175,10 +930,11 @@ pub async fn save_host(
     state: State<'_, AppState>,
     input: HostInput,
 ) -> Result<String, String> {
-    let app_lock = state.app.lock().unwrap();
-    let app = app_lock.as_ref().ok_or("vault is locked")?;
+    let (app, manager) = clone_app_and_sync(&state)?;
     let h = input.into_app_host(String::new());
-    app.save_host(&h).map_err(|e| e.to_string())
+    let id = app.save_host(&h).map_err(|e| e.to_string())?;
+    manager.schedule_debounced_sync_for_all(app);
+    Ok(id)
 }
 
 #[tauri::command]
@@ -1187,8 +943,7 @@ pub async fn update_host(
     id: String,
     input: HostInput,
 ) -> Result<(), String> {
-    let app_lock = state.app.lock().unwrap();
-    let app = app_lock.as_ref().ok_or("vault is locked")?;
+    let (app, manager) = clone_app_and_sync(&state)?;
 
     let existing = app
         .find_host_by_id(&id)
@@ -1199,14 +954,17 @@ pub async fn update_host(
     if new_host.os_type.is_none() {
         new_host.os_type = existing.os_type;
     }
-    app.update_host(&new_host).map_err(|e| e.to_string())
+    app.update_host(&new_host).map_err(|e| e.to_string())?;
+    manager.schedule_debounced_sync_for_all(app);
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn delete_host(state: State<'_, AppState>, id: String) -> Result<(), String> {
-    let app_lock = state.app.lock().unwrap();
-    let app = app_lock.as_ref().ok_or("vault is locked")?;
-    app.delete_host(&id).map_err(|e| e.to_string())
+    let (app, manager) = clone_app_and_sync(&state)?;
+    app.delete_host(&id).map_err(|e| e.to_string())?;
+    manager.schedule_debounced_sync_for_all(app);
+    Ok(())
 }
 
 /// Read a local text file (key material picked by the host editor).

@@ -15,8 +15,8 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 zeroterm-ssh   = { path = "../../core/crates/zeroterm-ssh" }
 zeroterm-vault = { path = "../../core/crates/zeroterm-vault" }
-zeroterm-app   = { path = "../../core/crates/zeroterm-app" }
-zeroterm-sync  = { path = "../../core/crates/zeroterm-sync" }
+zeroterm-app   = { path = "../../core/crates/zeroterm-app", features = ["webdav-backend", "s3-backend"] }
+zeroterm-sync  = { path = "../../core/crates/zeroterm-sync", features = ["webdav-backend", "s3-backend"] }
 
 tauri = { version = "2", features = ["macos-private-api"] }
 tauri-plugin-dialog = "2"

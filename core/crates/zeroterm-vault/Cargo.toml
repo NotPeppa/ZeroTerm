@@ -7,12 +7,8 @@ description = "End-to-end encrypted credential & config store for ZeroTerm"
 
 [dependencies]
 zeroterm-store = { path = "../zeroterm-store" }
+zeroterm-crypto = { path = "../zeroterm-crypto" }
 
-argon2 = { workspace = true }
-chacha20poly1305 = { workspace = true }
-hkdf = { workspace = true }
-sha2 = { workspace = true }
-rand = { workspace = true }
 zeroize = { workspace = true }
 uuid = { workspace = true }
 

@@ -51,6 +51,10 @@ pub struct DirEntry {
     pub name: String,
     pub kind: FileKind,
     pub size: u64,
+    /// Last modification time in milliseconds since the Unix epoch.
+    /// `None` when the server didn't report mtime (rare but possible
+    /// for some non-OpenSSH servers).
+    pub modified_unix_ms: Option<i64>,
 }
 
 /// Metadata returned by [`Sftp::stat`].
@@ -58,6 +62,9 @@ pub struct DirEntry {
 pub struct FileMetadata {
     pub kind: FileKind,
     pub size: u64,
+    /// Last modification time in milliseconds since the Unix epoch.
+    /// `None` when the server didn't report mtime.
+    pub modified_unix_ms: Option<i64>,
 }
 
 /// One progress update during a streaming transfer. `total` is `None`
@@ -94,6 +101,7 @@ impl Sftp {
                     name: e.file_name(),
                     kind: metadata.file_type().into(),
                     size: metadata.size.unwrap_or(0),
+                    modified_unix_ms: metadata.mtime.map(|s| (s as i64) * 1000),
                 }
             })
             .collect();
@@ -109,6 +117,7 @@ impl Sftp {
         Ok(FileMetadata {
             kind: metadata.file_type().into(),
             size: metadata.size.unwrap_or(0),
+            modified_unix_ms: metadata.mtime.map(|s| (s as i64) * 1000),
         })
     }
 

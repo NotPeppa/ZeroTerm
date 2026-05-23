@@ -507,71 +507,76 @@ const I18N = {
     "settings.nav.about": "About",
     "settings.general.subtab.basic": "Basic",
     "settings.general.subtab.sftp": "SFTP",
-    "settings.sync.desc": "Manage sync profiles and run preview pull/push.",
-    "settings.sync.placeholder.no_profile": "No sync profile",
+    "settings.sync.desc": "Manage your sync repo for ZeroTerm.",
     "settings.sync.status.loaded": "Loaded {count} profile(s)",
     "settings.sync.status.none": "No sync profile",
-    "settings.sync.status.creating": "Creating new profile",
     "settings.sync.status.saved": "Profile saved",
     "settings.sync.status.updated": "Profile updated",
-    "settings.sync.status.deleted": "Profile deleted",
-    "settings.sync.status.conn_ok": "Connection OK ({backend})",
-    "settings.sync.status.conn_fail": "Connection failed: {error}",
-    "settings.sync.status.pull_preview": "Pull preview events: {events}",
-    "settings.sync.status.push": "Push events: {events}",
     "settings.sync.status.sync_now": "Sync complete: pulled {pulled}, pushed {pushed}",
-    "settings.sync.status.apply": "Apply Pull: events={events}, applied={applied}, skipped={skipped}{backup}",
-    "settings.sync.status.last": "Last sync: {action} · events={events} · {when}",
-    "settings.sync.status.active": "Active profile: {name}",
-    "settings.sync.confirm.merge_preview": "Sync merge preview\nLocal hosts: {local}\nRemote hosts: {remote}\nMerged result: {merged}\n\nContinue to push?",
-    "settings.sync.backup.suffix": ", backup={path}",
-    "settings.sync.action.push": "push",
-    "settings.sync.action.pull_preview": "pull preview",
-    "settings.sync.action.apply_pull": "apply pull",
+    "settings.sync.status.repo_created": "New sync repo created and seeded",
+    "settings.sync.status.joined": "Joined existing sync repo",
+    "settings.sync.status.aborted": "Aborted — vault id mismatch",
+    "settings.sync.status.forgotten": "Engine forgotten (passphrase required to resume)",
+    "settings.sync.status.no_profile": "No sync profile configured",
+    "settings.sync.status.bootstrapped": "Connected — head clock {clock}",
+    "settings.sync.status.not_bootstrapped": "Not connected — Create or Join the repo to begin",
+    "settings.sync.status.invalid.host_record_missing": "The SFTP host this profile points at was deleted — pick another host below and save again.",
+    "settings.sync.status.invalid.profile_missing": "The sync profile no longer exists. Recreate it to continue.",
+    "settings.sync.status.invalid.generic": "Sync profile is invalid ({reason}).",
+    "settings.sync.status.title": "Sync Status",
+    "settings.sync.error.root_required": "Pick a sync folder first",
+    "settings.sync.error.passphrase_required": "Enter the sync passphrase first",
+    "settings.sync.error.host_required": "Pick an SFTP host first",
+    "settings.sync.error.remote_dir_required": "Enter the remote directory first",
+    "settings.sync.error.webdav_url_required": "Enter the WebDAV server URL first",
+    "settings.sync.error.webdav_user_required": "Enter the WebDAV username first",
+    "settings.sync.error.s3_region_required": "Enter the S3 region first",
+    "settings.sync.error.s3_bucket_required": "Enter the S3 bucket first",
+    "settings.sync.error.s3_ak_required": "Enter the S3 access key ID first",
+    "settings.sync.sftp.host": "SFTP host",
+    "settings.sync.sftp.remote_dir": "Remote directory",
+    "settings.sync.sftp.no_hosts": "Add an SSH host in the vault first",
+    "settings.sync.backend.sftp": "SFTP",
+    "settings.sync.confirm.vault_mismatch": "The repo was created against a different vault (vault id = {remote}). Continuing will reject every sync. Proceed anyway?",
+    "settings.sync.devices.title": "Joined Devices",
+    "settings.sync.devices.empty": "Device list will populate after the next sync (M5).",
+    "settings.sync.conflicts.title": "Conflict Inbox",
+    "settings.sync.conflicts.empty": "No conflicts pending.",
+    "settings.sync.conflicts.no_profile": "Configure a sync profile to see conflicts.",
+    "settings.sync.conflicts.local": "Local",
+    "settings.sync.conflicts.remote": "Remote",
+    "settings.sync.conflicts.tombstone": "(deleted upstream)",
+    "settings.sync.conflicts.redacted": "(secret content, {bytes} bytes)",
+    "settings.sync.conflicts.keep_local": "Keep local",
+    "settings.sync.conflicts.keep_remote": "Keep remote",
+    "settings.sync.conflicts.resolved": "Conflict resolved",
+    "settings.sync.stats.no_profile": "Configure a sync profile to see stats.",
+    "settings.sync.stats.total": "Total",
+    "settings.sync.stats.manifest": "manifest.json",
+    "settings.sync.stats.keyring": "keyring.json",
+    "settings.sync.stats.snapshots": "snapshots/",
+    "settings.sync.stats.events": "events/",
+    "settings.sync.stats.trash": "trash/",
+    "settings.sync.compact.done": "Compacted {events} events into a snapshot of {records} records",
+    "settings.sync.compact.retained": " · kept {kept} recent events",
+    "settings.sync.compact.tombstones": " · pruned {tombstones} old tombstones",
+    "settings.sync.button.refresh_stats": "Refresh stats",
+    "settings.sync.button.compact_now": "Compact now",
+    "settings.sync.repo_stats.title": "Repo Size",
+    "settings.sync.bootstrap.hint": "First device: Create a new repo. Other devices: use the same passphrase to Join.",
+    "settings.sync.remember_passphrase": "Remember passphrase (OS keychain)",
     "settings.sync.title": "Sync",
-    "settings.sync.profile": "Profile",
-    "settings.sync.button.refresh": "Refresh",
-    "settings.sync.button.new": "New",
-    "settings.sync.button.save": "Save",
-    "settings.sync.button.delete": "Delete",
-    "settings.sync.button.test": "Test Connection",
-    "settings.sync.button.apply": "Apply Pull",
-    "settings.sync.button.pull": "Preview Pull",
-    "settings.sync.button.push": "Push",
+    "settings.sync.button.save": "Save Config",
     "settings.sync.button.browse": "Browse",
-    "settings.sync.button.now": "Sync now",
-    "settings.sync.button.advanced": "Advanced",
-    "settings.sync.auto": "Enable auto sync",
-    "settings.sync.backend.filesystem": "Local Folder",
-    "settings.sync.backend.webdav": "WebDAV",
-    "settings.sync.backend.s3": "S3 Object Storage",
-    "settings.sync.placeholder.name": "Profile name",
-    "settings.sync.label.endpoint": "WebDAV Endpoint",
-    "settings.sync.label.username": "Username",
-    "settings.sync.label.password": "Password",
-    "settings.sync.label.path": "Sync File Path",
-    "settings.sync.label.bucket": "Bucket",
-    "settings.sync.label.region": "Region",
-    "settings.sync.label.s3_endpoint": "S3 Endpoint",
-    "settings.sync.label.s3_access_key": "Access Key ID",
-    "settings.sync.label.s3_secret": "Secret Access Key",
-    "settings.sync.label.s3_session": "Session Token (optional)",
-    "settings.sync.label.s3_path_style": "Use Path-Style Addressing",
-    "settings.sync.placeholder.root": "Local sync directory (e.g. /Users/you/ZeroTermSync)",
-    "settings.sync.placeholder.root_s3": "prefix path (optional, e.g. zeroterm/team-a)",
-    "settings.sync.placeholder.root_webdav": "remote path (e.g. remote.php/dav/files/you/zeroterm)",
-    "settings.sync.placeholder.endpoint": "endpoint (webdav)",
-    "settings.sync.placeholder.bucket": "bucket (s3)",
-    "settings.sync.placeholder.region": "region (s3, default us-east-1)",
-    "settings.sync.placeholder.username": "username (webdav)",
-    "settings.sync.placeholder.password": "password (webdav)",
-    "settings.sync.placeholder.enc_password": "sync password (encrypt state)",
-    "settings.sync.placeholder.s3_endpoint": "https://s3.example.com",
-    "settings.sync.placeholder.s3_ak": "AKIA...",
-    "settings.sync.placeholder.s3_sk": "S3 Secret",
-    "settings.sync.placeholder.s3_st": "Session Token",
+    "settings.sync.button.now": "Sync Now",
+    "settings.sync.button.create_repo": "Create Repo",
+    "settings.sync.button.join_repo": "Join Repo",
+    "settings.sync.button.forget_engine": "Disconnect",
+    "settings.sync.backend.local_folder": "Local Folder",
+    "settings.sync.label.path": "Sync Folder",
+    "settings.sync.placeholder.enc_password": "sync passphrase",
     "settings.sync.tip.local": "Local Folder mode requires iCloud/Dropbox/Syncthing (or similar) to sync across devices.",
-    "settings.sync.enc.title": "Sync Password",
+    "settings.sync.enc.title": "Sync Passphrase",
     "theme.menu.edit": "Edit theme",
     "theme.menu.duplicate": "Duplicate as custom",
     "theme.menu.delete": "Delete theme",
@@ -915,69 +920,74 @@ const I18N = {
     "settings.nav.about": "关于",
     "settings.general.subtab.basic": "基础",
     "settings.general.subtab.sftp": "SFTP",
-    "settings.sync.desc": "管理同步配置，并执行预览拉取/推送",
-    "settings.sync.placeholder.no_profile": "暂无同步配置",
+    "settings.sync.desc": "管理 ZeroTerm 同步仓库。",
     "settings.sync.status.loaded": "已加载 {count} 个配置",
     "settings.sync.status.none": "暂无同步配置",
-    "settings.sync.status.creating": "正在创建新配置",
     "settings.sync.status.saved": "配置已保存",
     "settings.sync.status.updated": "配置已更新",
-    "settings.sync.status.deleted": "配置已删除",
-    "settings.sync.status.conn_ok": "连接正常（{backend}）",
-    "settings.sync.status.conn_fail": "连接失败：{error}",
-    "settings.sync.status.pull_preview": "预览拉取事件数：{events}",
-    "settings.sync.status.push": "推送事件数：{events}",
     "settings.sync.status.sync_now": "同步完成：拉取 {pulled}，推送 {pushed}",
-    "settings.sync.status.apply": "应用拉取：总数={events}，应用={applied}，跳过={skipped}{backup}",
-    "settings.sync.status.last": "最近同步：{action} · 事件={events} · {when}",
-    "settings.sync.status.active": "当前配置：{name}",
-    "settings.sync.confirm.merge_preview": "同步合并预览\n本地主机：{local}\n远端主机：{remote}\n合并结果：{merged}\n\n是否继续推送？",
-    "settings.sync.backup.suffix": "，备份={path}",
-    "settings.sync.action.push": "推送",
-    "settings.sync.action.pull_preview": "预览拉取",
-    "settings.sync.action.apply_pull": "应用拉取",
+    "settings.sync.status.repo_created": "已创建新同步仓库并写入快照",
+    "settings.sync.status.joined": "已加入现有同步仓库",
+    "settings.sync.status.aborted": "已中止 — vault id 不匹配",
+    "settings.sync.status.forgotten": "已断开会话（需要密码重新连接）",
+    "settings.sync.status.no_profile": "尚未配置同步",
+    "settings.sync.status.bootstrapped": "已连接 — 逻辑时钟 {clock}",
+    "settings.sync.status.not_bootstrapped": "未连接 — 请创建或加入仓库",
+    "settings.sync.status.invalid.host_record_missing": "该 SFTP 仓库引用的主机已被删除,请在下方重新选择主机后保存。",
+    "settings.sync.status.invalid.profile_missing": "同步配置已不存在,请重新创建。",
+    "settings.sync.status.invalid.generic": "同步配置已失效({reason})。",
+    "settings.sync.status.title": "同步状态",
+    "settings.sync.error.root_required": "请先选择同步文件夹",
+    "settings.sync.error.passphrase_required": "请先输入同步密码",
+    "settings.sync.error.host_required": "请先选择 SFTP 主机",
+    "settings.sync.error.remote_dir_required": "请输入远端目录",
+    "settings.sync.error.webdav_url_required": "请先填写 WebDAV 服务地址",
+    "settings.sync.error.webdav_user_required": "请先填写 WebDAV 用户名",
+    "settings.sync.error.s3_region_required": "请先填写 S3 Region",
+    "settings.sync.error.s3_bucket_required": "请先填写 S3 Bucket",
+    "settings.sync.error.s3_ak_required": "请先填写 S3 Access Key ID",
+    "settings.sync.sftp.host": "SFTP 主机",
+    "settings.sync.sftp.remote_dir": "远端目录",
+    "settings.sync.sftp.no_hosts": "请先在保险库添加 SSH 主机",
+    "settings.sync.backend.sftp": "SFTP",
+    "settings.sync.confirm.vault_mismatch": "该仓库是基于另一个 vault 创建的（vault id = {remote}）。继续将导致每次同步被拒。仍要继续吗？",
+    "settings.sync.devices.title": "已加入设备",
+    "settings.sync.devices.empty": "设备列表将在下次同步后展示（M5）。",
+    "settings.sync.conflicts.title": "冲突收件箱",
+    "settings.sync.conflicts.empty": "暂无待解决冲突。",
+    "settings.sync.conflicts.no_profile": "请先配置同步以查看冲突。",
+    "settings.sync.conflicts.local": "本地",
+    "settings.sync.conflicts.remote": "远端",
+    "settings.sync.conflicts.tombstone": "（远端已删除）",
+    "settings.sync.conflicts.redacted": "（私密内容，{bytes} 字节）",
+    "settings.sync.conflicts.keep_local": "保留本地",
+    "settings.sync.conflicts.keep_remote": "保留远端",
+    "settings.sync.conflicts.resolved": "冲突已解决",
+    "settings.sync.stats.no_profile": "请先配置同步以查看大小。",
+    "settings.sync.stats.total": "总计",
+    "settings.sync.stats.manifest": "manifest.json",
+    "settings.sync.stats.keyring": "keyring.json",
+    "settings.sync.stats.snapshots": "snapshots/",
+    "settings.sync.stats.events": "events/",
+    "settings.sync.stats.trash": "trash/",
+    "settings.sync.compact.done": "压缩 {events} 个事件 → {records} 条记录的新快照",
+    "settings.sync.compact.retained": " · 保留最近 {kept} 个事件",
+    "settings.sync.compact.tombstones": " · 清理 {tombstones} 个过期墓碑",
+    "settings.sync.button.refresh_stats": "刷新统计",
+    "settings.sync.button.compact_now": "立即压缩",
+    "settings.sync.repo_stats.title": "仓库大小",
+    "settings.sync.bootstrap.hint": "首台设备点\"创建仓库\"；其他设备用同样的密码点\"加入仓库\"。",
+    "settings.sync.remember_passphrase": "记住密码（系统钥匙串）",
     "settings.sync.title": "同步",
-    "settings.sync.profile": "配置",
-    "settings.sync.button.refresh": "刷新",
-    "settings.sync.button.new": "新建",
-    "settings.sync.button.save": "保存",
-    "settings.sync.button.delete": "删除",
-    "settings.sync.button.test": "测试连接",
-    "settings.sync.button.apply": "应用拉取",
-    "settings.sync.button.pull": "预览拉取",
-    "settings.sync.button.push": "推送",
+    "settings.sync.button.save": "保存配置",
     "settings.sync.button.browse": "浏览",
     "settings.sync.button.now": "立即同步",
-    "settings.sync.button.advanced": "高级",
-    "settings.sync.auto": "启用自动同步",
-    "settings.sync.backend.filesystem": "本地文件夹",
-    "settings.sync.backend.webdav": "WebDAV",
-    "settings.sync.backend.s3": "S3 对象存储",
-    "settings.sync.placeholder.name": "配置名称",
-    "settings.sync.label.endpoint": "WebDAV 地址",
-    "settings.sync.label.username": "用户名",
-    "settings.sync.label.password": "密码",
-    "settings.sync.label.path": "同步文件路径",
-    "settings.sync.label.bucket": "桶名",
-    "settings.sync.label.region": "区域",
-    "settings.sync.label.s3_endpoint": "S3 Endpoint",
-    "settings.sync.label.s3_access_key": "Access Key ID",
-    "settings.sync.label.s3_secret": "Secret Access Key",
-    "settings.sync.label.s3_session": "会话令牌（可选）",
-    "settings.sync.label.s3_path_style": "使用 Path-Style 寻址",
-    "settings.sync.placeholder.root": "本地同步目录（例如 /Users/you/ZeroTermSync）",
-    "settings.sync.placeholder.root_s3": "前缀路径（可选，例如 zeroterm/team-a）",
-    "settings.sync.placeholder.root_webdav": "远程目录路径（例如 remote.php/dav/files/you/zeroterm）",
-    "settings.sync.placeholder.endpoint": "端点地址（webdav）",
-    "settings.sync.placeholder.bucket": "桶名称（s3）",
-    "settings.sync.placeholder.region": "区域（s3，默认 us-east-1）",
-    "settings.sync.placeholder.username": "用户名（webdav）",
-    "settings.sync.placeholder.password": "密码（webdav）",
-    "settings.sync.placeholder.enc_password": "同步密码（用于加密状态）",
-    "settings.sync.placeholder.s3_endpoint": "https://s3.example.com",
-    "settings.sync.placeholder.s3_ak": "AKIA...",
-    "settings.sync.placeholder.s3_sk": "S3 密钥",
-    "settings.sync.placeholder.s3_st": "会话令牌",
+    "settings.sync.button.create_repo": "创建仓库",
+    "settings.sync.button.join_repo": "加入仓库",
+    "settings.sync.button.forget_engine": "断开会话",
+    "settings.sync.backend.local_folder": "本地文件夹",
+    "settings.sync.label.path": "同步文件夹",
+    "settings.sync.placeholder.enc_password": "同步密码",
     "settings.sync.tip.local": "本地文件夹模式需配合 iCloud/Dropbox/Syncthing 等目录同步工具实现多端同步。",
     "settings.sync.enc.title": "同步密码",
     "theme.menu.edit": "编辑主题",
@@ -1408,52 +1418,96 @@ const settingsNavSync = document.getElementById("settings-nav-sync");
 const settingsGeneralPanel = document.getElementById("settings-general-panel");
 const settingsTerminalPanel = document.getElementById("settings-terminal-panel");
 const settingsSyncPanel = document.getElementById("settings-sync-panel");
-const settingsSyncProfile = document.getElementById("settings-sync-profile");
-const settingsSyncActive = document.getElementById("settings-sync-active");
-const settingsSyncRefresh = document.getElementById("settings-sync-refresh");
+const settingsSyncRefresh = null;
 const settingsSyncSave = document.getElementById("settings-sync-save");
-const settingsSyncDelete = document.getElementById("settings-sync-delete");
-const settingsSyncTest = document.getElementById("settings-sync-test");
-const settingsSyncApply = document.getElementById("settings-sync-apply");
-const settingsSyncPull = document.getElementById("settings-sync-pull");
-const settingsSyncPush = document.getElementById("settings-sync-push");
 const settingsSyncStatus = document.getElementById("settings-sync-status");
+const settingsSyncStatusLine = document.getElementById("settings-sync-status-line");
 const settingsSyncTip = document.getElementById("settings-sync-tip");
-const settingsSyncAuto = document.getElementById("settings-sync-auto");
-const settingsSyncAutoLabel = document.getElementById("settings-sync-auto-label");
 const settingsSyncNow = document.getElementById("settings-sync-now");
-const settingsSyncAdvancedToggle = document.getElementById("settings-sync-advanced-toggle");
-const settingsSyncAdvanced = document.getElementById("settings-sync-advanced");
-const settingsSyncName = document.getElementById("settings-sync-name");
+const settingsSyncCreateRepo = document.getElementById("settings-sync-create-repo");
+const settingsSyncJoinRepo = document.getElementById("settings-sync-join-repo");
+const settingsSyncForgetEngine = document.getElementById("settings-sync-forget-engine");
 const settingsSyncBackend = document.getElementById("settings-sync-backend");
 const settingsSyncRoot = document.getElementById("settings-sync-root");
 const settingsSyncRootRow = document.getElementById("settings-sync-root-row");
 const settingsSyncRootBrowse = document.getElementById("settings-sync-root-browse");
-const settingsSyncEndpoint = document.getElementById("settings-sync-endpoint");
-const settingsSyncEndpointField = document.getElementById("settings-sync-endpoint-field");
-const settingsSyncBucket = document.getElementById("settings-sync-bucket");
-const settingsSyncBucketField = document.getElementById("settings-sync-bucket-field");
-const settingsSyncRegion = document.getElementById("settings-sync-region");
-const settingsSyncRegionField = document.getElementById("settings-sync-region-field");
+const settingsSyncEncPassword = document.getElementById("settings-sync-enc-password");
+const settingsSyncEncPasswordToggle = document.getElementById("settings-sync-enc-password-toggle");
+const settingsSyncRememberPassphrase = document.getElementById("settings-sync-remember-passphrase");
+const settingsSyncDevicesList = document.getElementById("settings-sync-devices-list");
+const settingsSyncDevicesEmpty = document.getElementById("settings-sync-devices-empty");
+const settingsSyncConflictsList = document.getElementById("settings-sync-conflicts-list");
+const settingsSyncConflictsEmpty = document.getElementById("settings-sync-conflicts-empty");
+const settingsSyncRepoStatsList = document.getElementById("settings-sync-repo-stats-list");
+const settingsSyncRepoStatsEmpty = document.getElementById("settings-sync-repo-stats-empty");
+const settingsSyncRefreshStats = document.getElementById("settings-sync-refresh-stats");
+const settingsSyncCompactNow = document.getElementById("settings-sync-compact-now");
+const settingsSyncCompactStatus = document.getElementById("settings-sync-compact-status");
+const settingsSyncHostRef = document.getElementById("settings-sync-host-ref");
+const settingsSyncHostRefField = document.getElementById("settings-sync-host-ref-field");
+const settingsSyncRemoteDir = document.getElementById("settings-sync-remote-dir");
+const settingsSyncRemoteDirField = document.getElementById("settings-sync-remote-dir-field");
+const settingsSyncWebDavUrl = document.getElementById("settings-sync-webdav-url");
+const settingsSyncWebDavUrlField = document.getElementById("settings-sync-webdav-url-field");
+const settingsSyncWebDavRoot = document.getElementById("settings-sync-webdav-root");
+const settingsSyncWebDavRootField = document.getElementById("settings-sync-webdav-root-field");
+const settingsSyncWebDavUser = document.getElementById("settings-sync-webdav-user");
+const settingsSyncWebDavUserField = document.getElementById("settings-sync-webdav-user-field");
+const settingsSyncWebDavPw = document.getElementById("settings-sync-webdav-pw");
+const settingsSyncWebDavPwField = document.getElementById("settings-sync-webdav-pw-field");
+const settingsSyncS3Region = document.getElementById("settings-sync-s3-region");
+const settingsSyncS3RegionField = document.getElementById("settings-sync-s3-region-field");
+const settingsSyncS3Bucket = document.getElementById("settings-sync-s3-bucket");
+const settingsSyncS3BucketField = document.getElementById("settings-sync-s3-bucket-field");
+const settingsSyncS3Prefix = document.getElementById("settings-sync-s3-prefix");
+const settingsSyncS3PrefixField = document.getElementById("settings-sync-s3-prefix-field");
 const settingsSyncS3Endpoint = document.getElementById("settings-sync-s3-endpoint");
 const settingsSyncS3EndpointField = document.getElementById("settings-sync-s3-endpoint-field");
+const settingsSyncS3PathStyle = document.getElementById("settings-sync-s3-path-style");
+const settingsSyncS3PathStyleField = document.getElementById("settings-sync-s3-path-style-field");
 const settingsSyncS3Ak = document.getElementById("settings-sync-s3-ak");
 const settingsSyncS3AkField = document.getElementById("settings-sync-s3-ak-field");
 const settingsSyncS3Sk = document.getElementById("settings-sync-s3-sk");
 const settingsSyncS3SkField = document.getElementById("settings-sync-s3-sk-field");
-const settingsSyncS3St = document.getElementById("settings-sync-s3-st");
-const settingsSyncS3StField = document.getElementById("settings-sync-s3-st-field");
-const settingsSyncS3SkToggle = document.getElementById("settings-sync-s3-sk-toggle");
-const settingsSyncS3StToggle = document.getElementById("settings-sync-s3-st-toggle");
-const settingsSyncS3PathStyle = document.getElementById("settings-sync-s3-path-style");
-const settingsSyncS3PathStyleField = document.getElementById("settings-sync-s3-path-style-field");
-const settingsSyncUsername = document.getElementById("settings-sync-username");
-const settingsSyncUsernameField = document.getElementById("settings-sync-username-field");
-const settingsSyncPassword = document.getElementById("settings-sync-password");
-const settingsSyncPasswordField = document.getElementById("settings-sync-password-field");
-const settingsSyncEncPassword = document.getElementById("settings-sync-enc-password");
-const settingsSyncPasswordToggle = document.getElementById("settings-sync-password-toggle");
-const settingsSyncEncPasswordToggle = document.getElementById("settings-sync-enc-password-toggle");
+const settingsSyncS3Token = document.getElementById("settings-sync-s3-token");
+const settingsSyncS3TokenField = document.getElementById("settings-sync-s3-token-field");
+// Removed in M3 (RFC-002 cutover); kept as null so any straggler references
+// no-op instead of crashing. JS references to these will be cleaned up next pass.
+const settingsSyncProfile = null;
+const settingsSyncActive = null;
+const settingsSyncDelete = null;
+const settingsSyncTest = null;
+const settingsSyncApply = null;
+const settingsSyncPull = null;
+const settingsSyncPush = null;
+const settingsSyncAuto = null;
+const settingsSyncAutoLabel = null;
+const settingsSyncAdvancedToggle = null;
+const settingsSyncAdvanced = null;
+const settingsSyncName = null;
+const settingsSyncEndpoint = null;
+const settingsSyncEndpointField = null;
+const settingsSyncBucket = null;
+const settingsSyncBucketField = null;
+const settingsSyncRegion = null;
+const settingsSyncRegionField = null;
+const settingsSyncS3Endpoint = null;
+const settingsSyncS3EndpointField = null;
+const settingsSyncS3Ak = null;
+const settingsSyncS3AkField = null;
+const settingsSyncS3Sk = null;
+const settingsSyncS3SkField = null;
+const settingsSyncS3St = null;
+const settingsSyncS3StField = null;
+const settingsSyncS3SkToggle = null;
+const settingsSyncS3StToggle = null;
+const settingsSyncS3PathStyle = null;
+const settingsSyncS3PathStyleField = null;
+const settingsSyncUsername = null;
+const settingsSyncUsernameField = null;
+const settingsSyncPassword = null;
+const settingsSyncPasswordField = null;
+const settingsSyncPasswordToggle = null;
 const settingsSyncRootField = document.getElementById("settings-sync-root-field");
 const settingsNavAbout = document.getElementById("settings-nav-about");
 const settingsAboutPanel = document.getElementById("settings-about-panel");
@@ -2098,30 +2152,6 @@ function setSettingsSection(section) {
 async function loadSyncProfiles() {
   syncProfiles = await invoke("list_sync_profiles");
   const activeProfileId = localStorage.getItem(SETTINGS_KEY_SYNC_ACTIVE_PROFILE) || "";
-  if (settingsSyncStatus) {
-    const raw = localStorage.getItem("zeroterm.sync.last");
-    if (raw) {
-      try {
-        const x = JSON.parse(raw);
-        const when = new Date(x.at).toLocaleString();
-        const actionLabel = t(`settings.sync.action.${x.action}`);
-        settingsSyncStatus.textContent = t("settings.sync.status.last", {
-          action: actionLabel,
-          events: x.events ?? 0,
-          when,
-        });
-      } catch {
-        settingsSyncStatus.textContent = syncProfiles.length > 0
-          ? t("settings.sync.status.loaded", { count: syncProfiles.length })
-          : t("settings.sync.status.none");
-      }
-    } else {
-      settingsSyncStatus.textContent = syncProfiles.length > 0
-        ? t("settings.sync.status.loaded", { count: syncProfiles.length })
-        : t("settings.sync.status.none");
-    }
-  }
-  if (settingsSyncAuto) settingsSyncAuto.checked = isAutoSyncEnabled();
   if (syncProfiles.length > 0) {
     const pick = activeProfileId && syncProfiles.some((p) => p.id === activeProfileId)
       ? activeProfileId
@@ -2136,86 +2166,110 @@ async function loadSyncProfiles() {
     localStorage.removeItem(SETTINGS_KEY_SYNC_ACTIVE_PROFILE);
     applySyncProfileToForm(null);
   }
-  const hasProfiles = syncProfiles.length > 0;
-  if (settingsSyncTest) settingsSyncTest.disabled = !hasProfiles;
-  if (settingsSyncApply) settingsSyncApply.disabled = !hasProfiles;
-  if (settingsSyncPull) settingsSyncPull.disabled = !hasProfiles;
-  if (settingsSyncPush) settingsSyncPush.disabled = !hasProfiles;
-  syncFormByBackend();
-  scheduleAutoSync();
+  if (settingsSyncStatus) {
+    settingsSyncStatus.textContent = syncProfiles.length > 0
+      ? t("settings.sync.status.loaded", { count: syncProfiles.length })
+      : t("settings.sync.status.none");
+  }
+  await refreshSyncStatusLine();
+  await refreshSyncConflicts();
+  await refreshSyncRepoStats();
 }
 
 function syncFormToInput() {
+  const backend = String(settingsSyncBackend?.value || "local_folder");
   return {
     name: "ZeroTerm Sync",
-    backend: String(settingsSyncBackend?.value || "filesystem"),
-    root: String(settingsSyncRoot?.value || "").trim() || null,
-    endpoint: String(settingsSyncEndpoint?.value || "").trim() || null,
-    bucket: String(settingsSyncBucket?.value || "").trim() || null,
-    region: String(settingsSyncRegion?.value || "").trim() || null,
-    s3Endpoint: String(settingsSyncS3Endpoint?.value || "").trim() || null,
-    s3PathStyle: Boolean(settingsSyncS3PathStyle?.checked || false),
-    s3AccessKeyId: String(settingsSyncS3Ak?.value || "").trim() || null,
-    s3SecretAccessKey: String(settingsSyncS3Sk?.value || "") || null,
-    s3SessionToken: String(settingsSyncS3St?.value || "") || null,
-    username: String(settingsSyncUsername?.value || "").trim() || null,
-    password: String(settingsSyncPassword?.value || "").trim() || null,
-    syncPassword: String(settingsSyncEncPassword?.value || "") || null,
-    path: String(settingsSyncRoot?.value || "").trim() || null,
+    backend,
+    root:
+      backend === "local_folder"
+        ? String(settingsSyncRoot?.value || "").trim() || null
+        : null,
+    hostRef:
+      backend === "sftp"
+        ? String(settingsSyncHostRef?.value || "").trim() || null
+        : null,
+    remoteDir:
+      backend === "sftp"
+        ? String(settingsSyncRemoteDir?.value || "").trim() || null
+        : null,
+    url:
+      backend === "webdav"
+        ? String(settingsSyncWebDavUrl?.value || "").trim() || null
+        : null,
+    rootPath:
+      backend === "webdav"
+        ? String(settingsSyncWebDavRoot?.value || "").trim() || null
+        : null,
+    username:
+      backend === "webdav"
+        ? String(settingsSyncWebDavUser?.value || "").trim() || null
+        : null,
+    // Password is sent only when the user typed one; empty string =
+    // leave keychain entry intact. backend uses this convention to
+    // distinguish "no change" from "clear".
+    password:
+      backend === "webdav"
+        ? String(settingsSyncWebDavPw?.value || "") || null
+        : null,
+    region:
+      backend === "s3"
+        ? String(settingsSyncS3Region?.value || "").trim() || null
+        : null,
+    bucket:
+      backend === "s3"
+        ? String(settingsSyncS3Bucket?.value || "").trim() || null
+        : null,
+    prefix:
+      backend === "s3"
+        ? String(settingsSyncS3Prefix?.value || "").trim() || null
+        : null,
+    endpoint:
+      backend === "s3"
+        ? String(settingsSyncS3Endpoint?.value || "").trim() || null
+        : null,
+    forcePathStyle:
+      backend === "s3" ? Boolean(settingsSyncS3PathStyle?.checked) : null,
+    accessKeyId:
+      backend === "s3"
+        ? String(settingsSyncS3Ak?.value || "").trim() || null
+        : null,
+    secretAccessKey:
+      backend === "s3"
+        ? String(settingsSyncS3Sk?.value || "") || null
+        : null,
+    sessionToken:
+      backend === "s3"
+        ? String(settingsSyncS3Token?.value || "") || null
+        : null,
   };
 }
 
 function collectSyncClientState() {
-  const activeProfileId = localStorage.getItem(SETTINGS_KEY_SYNC_ACTIVE_PROFILE) || syncSingleProfileId || "";
-  const activeProfile = syncProfiles.find((p) => p.id === activeProfileId) || null;
-  const syncProfile = activeProfile && activeProfile.backend !== "filesystem"
-    ? {
-        id: activeProfile.id,
-        name: activeProfile.name,
-        backend: activeProfile.backend,
-        root: activeProfile.root || null,
-        endpoint: activeProfile.endpoint || null,
-        bucket: activeProfile.bucket || null,
-        region: activeProfile.region || null,
-        username: activeProfile.username || null,
-        path: activeProfile.path || null,
-      }
-    : null;
-
-  const hostGroupMapByName = {};
-  const hostGroupMapByConn = {};
-  for (const h of (hostsCache || [])) {
-    const gid = hostGroupMap?.[h.id];
-    if (gid) {
-      hostGroupMapByName[h.name] = gid;
-      hostGroupMapByConn[`${h.host}:${h.port}:${h.user}`] = gid;
-    }
-  }
-
-  return {
-    groups: hostGroups,
-    hostGroupMap,
-    hostGroupMapByName,
-    hostGroupMapByConn,
-    settings: {
-      locale: currentLocale,
-      sftpAutoDetect: localStorage.getItem(SETTINGS_KEY_SFTP_AUTO_DETECT) !== "0",
-      terminalTheme: localStorage.getItem(SETTINGS_KEY_TERMINAL_THEME) || "termark-dark",
-      terminalFontFamily: localStorage.getItem(SETTINGS_KEY_TERMINAL_FONT_FAMILY) || TERMINAL_FONT_STACK,
-      terminalFontSize: Number(localStorage.getItem(SETTINGS_KEY_TERMINAL_FONT_SIZE) || 13),
-      terminalLineHeight: Number(localStorage.getItem(SETTINGS_KEY_TERMINAL_LINE_HEIGHT) || 1.25),
-    },
-    sync: {
-      auto: isAutoSyncEnabled(),
-      activeProfileId,
-      activeProfileBackend: activeProfile?.backend || null,
-      profile: syncProfile,
-    },
-  };
+  // Repo-based sync (M3+) doesn't piggy-back client UI state through the
+  // sync layer — groups / hostGroupMap stay client-local for now and will
+  // get their own sync record kinds in a later milestone.
+  return null;
 }
 
 async function ensureSyncProfileReadyForActions() {
   const input = syncFormToInput();
+  if (input.backend === "local_folder" && !input.root) {
+    throw new Error(t("settings.sync.error.root_required"));
+  }
+  if (input.backend === "sftp") {
+    if (!input.hostRef) throw new Error(t("settings.sync.error.host_required"));
+    if (!input.remoteDir) throw new Error(t("settings.sync.error.remote_dir_required"));
+  }
+  if (input.backend === "webdav") {
+    if (!input.url) throw new Error(t("settings.sync.error.webdav_url_required"));
+    if (!input.username) throw new Error(t("settings.sync.error.webdav_user_required"));
+  }
+  if (input.backend === "s3") {
+    if (!input.region) throw new Error(t("settings.sync.error.s3_region_required"));
+    if (!input.bucket) throw new Error(t("settings.sync.error.s3_bucket_required"));
+    if (!input.accessKeyId) throw new Error(t("settings.sync.error.s3_ak_required"));
+  }
   const existingId = syncSingleProfileId || syncEditingId || localStorage.getItem(SETTINGS_KEY_SYNC_ACTIVE_PROFILE);
   if (existingId) {
     await invoke("update_sync_profile", { id: existingId, input });
@@ -2231,256 +2285,342 @@ async function ensureSyncProfileReadyForActions() {
   return id;
 }
 
-function applyClientSettingsFromState(state) {
-  if (!state || typeof state !== "object") return;
-  const s = state.settings;
-  if (!s || typeof s !== "object") return;
-
-  if (typeof s.locale === "string" && I18N[s.locale]) {
-    setLocale(s.locale);
-  }
-  if (typeof s.sftpAutoDetect === "boolean") {
-    localStorage.setItem(SETTINGS_KEY_SFTP_AUTO_DETECT, s.sftpAutoDetect ? "1" : "0");
-  }
-  if (typeof s.terminalTheme === "string") {
-    localStorage.setItem(SETTINGS_KEY_TERMINAL_THEME, s.terminalTheme);
-  }
-  if (typeof s.terminalFontFamily === "string" && s.terminalFontFamily.trim()) {
-    localStorage.setItem(SETTINGS_KEY_TERMINAL_FONT_FAMILY, s.terminalFontFamily);
-  }
-  if (Number.isFinite(Number(s.terminalFontSize))) {
-    localStorage.setItem(SETTINGS_KEY_TERMINAL_FONT_SIZE, String(s.terminalFontSize));
-  }
-  if (Number.isFinite(Number(s.terminalLineHeight))) {
-    localStorage.setItem(SETTINGS_KEY_TERMINAL_LINE_HEIGHT, String(s.terminalLineHeight));
-  }
-
-  applyTerminalThemeToAllPanes();
-  syncTerminalThemeCardsActive();
-  syncTerminalFontPreview();
-}
-
-function snapshotSyncForm() {
-  return {
-    name: "ZeroTerm Sync",
-    root: String(settingsSyncRoot?.value || ""),
-    endpoint: String(settingsSyncEndpoint?.value || ""),
-    bucket: String(settingsSyncBucket?.value || ""),
-    region: String(settingsSyncRegion?.value || ""),
-    s3Endpoint: String(settingsSyncS3Endpoint?.value || ""),
-    s3PathStyle: Boolean(settingsSyncS3PathStyle?.checked || false),
-    s3AccessKeyId: String(settingsSyncS3Ak?.value || ""),
-    s3SecretAccessKey: String(settingsSyncS3Sk?.value || ""),
-    s3SessionToken: String(settingsSyncS3St?.value || ""),
-    username: String(settingsSyncUsername?.value || ""),
-    password: String(settingsSyncPassword?.value || ""),
-    syncPassword: String(settingsSyncEncPassword?.value || ""),
-  };
-}
-
-function restoreSyncDraftForBackend(backend) {
-  const d = syncDraftByBackend[backend] || null;
-  if (!d) {
-    resetSyncFieldsForBackend(backend);
-    return;
-  }
-  if (settingsSyncName) settingsSyncName.value = d.name || "";
-  if (settingsSyncRoot) settingsSyncRoot.value = d.root || "";
-  if (settingsSyncEndpoint) settingsSyncEndpoint.value = d.endpoint || "";
-  if (settingsSyncBucket) settingsSyncBucket.value = d.bucket || "";
-  if (settingsSyncRegion) settingsSyncRegion.value = d.region || (backend === "s3" ? "us-east-1" : "");
-  if (settingsSyncS3Endpoint) settingsSyncS3Endpoint.value = d.s3Endpoint || "";
-  if (settingsSyncS3PathStyle) settingsSyncS3PathStyle.checked = Boolean(d.s3PathStyle);
-  if (settingsSyncS3Ak) settingsSyncS3Ak.value = d.s3AccessKeyId || "";
-  if (settingsSyncS3Sk) settingsSyncS3Sk.value = d.s3SecretAccessKey || "";
-  if (settingsSyncS3St) settingsSyncS3St.value = d.s3SessionToken || "";
-  if (settingsSyncUsername) settingsSyncUsername.value = d.username || "";
-  if (settingsSyncPassword) settingsSyncPassword.value = d.password || "";
-  if (settingsSyncEncPassword) settingsSyncEncPassword.value = d.syncPassword || "";
+function applyClientSettingsFromState(_state) {
+  // Repo-based sync no longer carries client settings inside the sync
+  // payload — settings sync needs its own record kind (future milestone).
 }
 
 function applySyncProfileToForm(p) {
   if (!p) {
     syncEditingId = null;
-    if (settingsSyncName) settingsSyncName.value = "";
-    if (settingsSyncBackend) {
-      settingsSyncBackend.value = "filesystem";
-      syncCustomSelect("settings-sync-backend");
-    }
     if (settingsSyncRoot) settingsSyncRoot.value = "";
-    if (settingsSyncEndpoint) settingsSyncEndpoint.value = "";
-    if (settingsSyncBucket) settingsSyncBucket.value = "";
-    if (settingsSyncRegion) settingsSyncRegion.value = "";
-    if (settingsSyncUsername) settingsSyncUsername.value = "";
-    if (settingsSyncPassword) settingsSyncPassword.value = "";
+    if (settingsSyncHostRef) settingsSyncHostRef.value = "";
+    if (settingsSyncRemoteDir) settingsSyncRemoteDir.value = "";
+    if (settingsSyncWebDavUrl) settingsSyncWebDavUrl.value = "";
+    if (settingsSyncWebDavRoot) settingsSyncWebDavRoot.value = "";
+    if (settingsSyncWebDavUser) settingsSyncWebDavUser.value = "";
+    if (settingsSyncWebDavPw) settingsSyncWebDavPw.value = "";
+    if (settingsSyncS3Region) settingsSyncS3Region.value = "";
+    if (settingsSyncS3Bucket) settingsSyncS3Bucket.value = "";
+    if (settingsSyncS3Prefix) settingsSyncS3Prefix.value = "";
+    if (settingsSyncS3Endpoint) settingsSyncS3Endpoint.value = "";
+    if (settingsSyncS3PathStyle) settingsSyncS3PathStyle.checked = false;
     if (settingsSyncS3Ak) settingsSyncS3Ak.value = "";
     if (settingsSyncS3Sk) settingsSyncS3Sk.value = "";
-    if (settingsSyncS3St) settingsSyncS3St.value = "";
+    if (settingsSyncS3Token) settingsSyncS3Token.value = "";
     if (settingsSyncEncPassword) settingsSyncEncPassword.value = "";
-    syncDraftByBackend.filesystem = null;
-    syncDraftByBackend.webdav = null;
-    syncDraftByBackend.s3 = null;
+    syncFormToggleBackendFields(settingsSyncBackend?.value || "local_folder");
     return;
   }
   syncEditingId = p.id;
-  const backend = p.backend || "filesystem";
+  const backend = p.backend || "local_folder";
   if (settingsSyncBackend) {
     settingsSyncBackend.value = backend;
-    settingsSyncBackend.dataset.prev = backend;
     syncCustomSelect("settings-sync-backend");
   }
-
-  // Reset form first to avoid leaking values across different backends.
-  resetSyncFieldsForBackend(backend);
-
-  if (settingsSyncName) settingsSyncName.value = p.name || "";
-  if (backend === "filesystem") {
-    if (settingsSyncRoot) settingsSyncRoot.value = p.root || p.path || "";
-  } else if (backend === "webdav") {
-    if (settingsSyncRoot) settingsSyncRoot.value = p.path || "";
-    if (settingsSyncEndpoint) settingsSyncEndpoint.value = p.endpoint || "";
-    if (settingsSyncUsername) settingsSyncUsername.value = p.username || "";
-    if (settingsSyncPassword) settingsSyncPassword.value = p.password || "";
-  } else if (backend === "s3") {
-    if (settingsSyncRoot) settingsSyncRoot.value = p.path || "";
-    if (settingsSyncBucket) settingsSyncBucket.value = p.bucket || "";
-    if (settingsSyncRegion) settingsSyncRegion.value = p.region || "us-east-1";
-    if (settingsSyncS3Endpoint) settingsSyncS3Endpoint.value = p.s3Endpoint || "";
-    if (settingsSyncS3PathStyle) settingsSyncS3PathStyle.checked = Boolean(p.s3PathStyle);
+  if (settingsSyncRoot) settingsSyncRoot.value = p.root || "";
+  if (settingsSyncHostRef) {
+    refreshSftpHostOptions(p.hostRef || "");
   }
-
-  syncDraftByBackend.filesystem = null;
-  syncDraftByBackend.webdav = null;
-  syncDraftByBackend.s3 = null;
-  syncDraftByBackend[backend] = snapshotSyncForm();
-
-  const currentToken = ++syncSecretsLoadToken;
-  invoke("get_sync_profile_secrets", { profileId: p.id })
-    .then((sec) => {
-      if (currentToken !== syncSecretsLoadToken) return;
-      if (settingsSyncPassword) settingsSyncPassword.value = sec.webdavPassword || "";
-      if (settingsSyncEncPassword) settingsSyncEncPassword.value = sec.syncPassword || "";
-      if (settingsSyncS3Ak) settingsSyncS3Ak.value = sec.s3AccessKeyId || "";
-      if (settingsSyncS3Sk) settingsSyncS3Sk.value = sec.s3SecretAccessKey || "";
-      if (settingsSyncS3St) settingsSyncS3St.value = sec.s3SessionToken || "";
-      syncDraftByBackend[backend] = snapshotSyncForm();
-    })
-    .catch(() => {});
+  if (settingsSyncRemoteDir) settingsSyncRemoteDir.value = p.remoteDir || "";
+  if (settingsSyncWebDavUrl) settingsSyncWebDavUrl.value = p.url || "";
+  if (settingsSyncWebDavRoot) settingsSyncWebDavRoot.value = p.rootPath || "";
+  if (settingsSyncWebDavUser) settingsSyncWebDavUser.value = p.username || "";
+  // Backend passwords / secrets live in the OS keychain — never echo
+  // them back. Empty input on save = "leave keychain intact".
+  if (settingsSyncWebDavPw) settingsSyncWebDavPw.value = "";
+  if (settingsSyncS3Region) settingsSyncS3Region.value = p.region || "";
+  if (settingsSyncS3Bucket) settingsSyncS3Bucket.value = p.bucket || "";
+  if (settingsSyncS3Prefix) settingsSyncS3Prefix.value = p.prefix || "";
+  if (settingsSyncS3Endpoint) settingsSyncS3Endpoint.value = p.endpoint || "";
+  if (settingsSyncS3PathStyle) settingsSyncS3PathStyle.checked = !!p.forcePathStyle;
+  if (settingsSyncS3Ak) settingsSyncS3Ak.value = p.accessKeyId || "";
+  if (settingsSyncS3Sk) settingsSyncS3Sk.value = "";
+  if (settingsSyncS3Token) settingsSyncS3Token.value = "";
+  syncFormToggleBackendFields(backend);
+  // Passphrase is per-session, never echoed back from disk — leave empty
+  // so the user is prompted on Create/Join.
 }
 
-function syncFormByBackend() {
-  const backend = String(settingsSyncBackend?.value || "filesystem");
-  const isFs = backend === "filesystem";
-  const isDav = backend === "webdav";
+function syncFormToggleBackendFields(backend) {
+  const isLocal = backend === "local_folder";
+  const isSftp = backend === "sftp";
+  const isWebDav = backend === "webdav";
   const isS3 = backend === "s3";
-  const toggleField = (el, show) => {
-    if (!el) return;
-    el.disabled = !show;
-    el.style.display = show ? "" : "none";
-  };
-
-  toggleField(settingsSyncEndpoint, isDav);
-  toggleField(settingsSyncUsername, isDav);
-  toggleField(settingsSyncPassword, isDav);
-  toggleField(settingsSyncBucket, isS3);
-  toggleField(settingsSyncRegion, isS3);
-
-  if (settingsSyncRoot) {
-    settingsSyncRoot.disabled = false;
-    settingsSyncRoot.style.display = "";
-  }
-  if (settingsSyncRootBrowse) {
-    settingsSyncRootBrowse.style.display = isFs ? "" : "none";
-    settingsSyncRootBrowse.disabled = !isFs;
-  }
-  if (settingsSyncTip) {
-    settingsSyncTip.hidden = !isFs;
-  }
-  if (settingsSyncRootRow) {
-    settingsSyncRootRow.classList.toggle("no-browse", !isFs);
-  }
-
-  if (settingsSyncRootField) settingsSyncRootField.style.display = "";
-  if (settingsSyncEndpointField) settingsSyncEndpointField.style.display = isDav ? "" : "none";
-  if (settingsSyncUsernameField) settingsSyncUsernameField.style.display = isDav ? "" : "none";
-  if (settingsSyncPasswordField) settingsSyncPasswordField.style.display = isDav ? "" : "none";
-  if (settingsSyncBucketField) settingsSyncBucketField.style.display = isS3 ? "" : "none";
-  if (settingsSyncRegionField) settingsSyncRegionField.style.display = isS3 ? "" : "none";
-  if (settingsSyncS3EndpointField) settingsSyncS3EndpointField.style.display = isS3 ? "" : "none";
-  if (settingsSyncS3AkField) settingsSyncS3AkField.style.display = isS3 ? "" : "none";
-  if (settingsSyncS3SkField) settingsSyncS3SkField.style.display = isS3 ? "" : "none";
-  if (settingsSyncS3StField) settingsSyncS3StField.style.display = isS3 ? "" : "none";
-  if (settingsSyncS3PathStyleField) settingsSyncS3PathStyleField.style.display = isS3 ? "" : "none";
-
-  const setFull = (el, on) => {
-    if (!el) return;
-    el.classList.toggle("settings-sync-field-full", !!on);
-  };
-  setFull(settingsSyncRootField, isFs || isDav);
-  setFull(settingsSyncEndpointField, true);
-  setFull(settingsSyncBucketField, false);
-  setFull(settingsSyncRegionField, false);
-  setFull(settingsSyncS3EndpointField, true);
-  setFull(settingsSyncS3AkField, false);
-  setFull(settingsSyncS3SkField, false);
-  setFull(settingsSyncS3StField, true);
-  setFull(settingsSyncS3PathStyleField, true);
-  setFull(settingsSyncUsernameField, !isDav);
-  setFull(settingsSyncPasswordField, !isDav);
-
-  if (settingsSyncEndpoint) settingsSyncEndpoint.disabled = !isDav;
-  if (settingsSyncUsername) settingsSyncUsername.disabled = !isDav;
-  if (settingsSyncPassword) settingsSyncPassword.disabled = !isDav;
-  if (settingsSyncBucket) settingsSyncBucket.disabled = !isS3;
-  if (settingsSyncRegion) settingsSyncRegion.disabled = !isS3;
-  if (settingsSyncS3Endpoint) settingsSyncS3Endpoint.disabled = !isS3;
-  if (settingsSyncS3Ak) settingsSyncS3Ak.disabled = !isS3;
-  if (settingsSyncS3Sk) settingsSyncS3Sk.disabled = !isS3;
-  if (settingsSyncS3St) settingsSyncS3St.disabled = !isS3;
-  if (settingsSyncS3PathStyle) settingsSyncS3PathStyle.disabled = !isS3;
-  if (settingsSyncRoot) settingsSyncRoot.placeholder = isFs
-    ? t("settings.sync.placeholder.root")
-    : isS3
-      ? t("settings.sync.placeholder.root_s3")
-      : t("settings.sync.placeholder.root_webdav");
+  if (settingsSyncRootField) settingsSyncRootField.hidden = !isLocal;
+  if (settingsSyncHostRefField) settingsSyncHostRefField.hidden = !isSftp;
+  if (settingsSyncRemoteDirField) settingsSyncRemoteDirField.hidden = !isSftp;
+  if (settingsSyncWebDavUrlField) settingsSyncWebDavUrlField.hidden = !isWebDav;
+  if (settingsSyncWebDavRootField) settingsSyncWebDavRootField.hidden = !isWebDav;
+  if (settingsSyncWebDavUserField) settingsSyncWebDavUserField.hidden = !isWebDav;
+  if (settingsSyncWebDavPwField) settingsSyncWebDavPwField.hidden = !isWebDav;
+  if (settingsSyncS3RegionField) settingsSyncS3RegionField.hidden = !isS3;
+  if (settingsSyncS3BucketField) settingsSyncS3BucketField.hidden = !isS3;
+  if (settingsSyncS3PrefixField) settingsSyncS3PrefixField.hidden = !isS3;
+  if (settingsSyncS3EndpointField) settingsSyncS3EndpointField.hidden = !isS3;
+  if (settingsSyncS3PathStyleField) settingsSyncS3PathStyleField.hidden = !isS3;
+  if (settingsSyncS3AkField) settingsSyncS3AkField.hidden = !isS3;
+  if (settingsSyncS3SkField) settingsSyncS3SkField.hidden = !isS3;
+  if (settingsSyncS3TokenField) settingsSyncS3TokenField.hidden = !isS3;
+  if (settingsSyncTip) settingsSyncTip.hidden = !isLocal;
 }
 
-function resetSyncFieldsForBackend(backend) {
-  const isDav = backend === "webdav";
-  const isS3 = backend === "s3";
-
-  if (settingsSyncName) settingsSyncName.value = "";
-
-  // Switching backend should not carry previous backend's path semantics.
-  // We clear the shared path/root input and let user re-enter per backend.
-  if (settingsSyncRoot) settingsSyncRoot.value = "";
-
-  if (!isDav) {
-    if (settingsSyncEndpoint) settingsSyncEndpoint.value = "";
-    if (settingsSyncUsername) settingsSyncUsername.value = "";
-    if (settingsSyncPassword) settingsSyncPassword.value = "";
+function refreshSftpHostOptions(selectedId) {
+  if (!settingsSyncHostRef) return;
+  const hosts = hostsCache || [];
+  settingsSyncHostRef.innerHTML = "";
+  if (hosts.length === 0) {
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = t("settings.sync.sftp.no_hosts");
+    settingsSyncHostRef.appendChild(placeholder);
+    return;
   }
+  for (const h of hosts) {
+    const opt = document.createElement("option");
+    opt.value = h.id;
+    opt.textContent = `${h.name} (${h.user}@${h.host}:${h.port})`;
+    settingsSyncHostRef.appendChild(opt);
+  }
+  if (selectedId && hosts.some((h) => h.id === selectedId)) {
+    settingsSyncHostRef.value = selectedId;
+  }
+}
 
-  if (settingsSyncEncPassword) settingsSyncEncPassword.value = "";
-
-  if (!isS3) {
-    if (settingsSyncBucket) settingsSyncBucket.value = "";
-    if (settingsSyncRegion) settingsSyncRegion.value = "";
-    if (settingsSyncS3Endpoint) settingsSyncS3Endpoint.value = "";
-    if (settingsSyncS3Ak) settingsSyncS3Ak.value = "";
-    if (settingsSyncS3Sk) settingsSyncS3Sk.value = "";
-    if (settingsSyncS3St) settingsSyncS3St.value = "";
-    if (settingsSyncS3PathStyle) settingsSyncS3PathStyle.checked = false;
-  } else {
-    if (settingsSyncRegion && !String(settingsSyncRegion.value || "").trim()) {
-      settingsSyncRegion.value = "us-east-1";
+async function refreshSyncStatusLine() {
+  const target = settingsSyncStatusLine;
+  if (!target) return;
+  const id = syncSingleProfileId || localStorage.getItem(SETTINGS_KEY_SYNC_ACTIVE_PROFILE);
+  if (!id) {
+    target.textContent = t("settings.sync.status.no_profile");
+    return;
+  }
+  try {
+    const status = await invoke("sync_status", { profileId: id });
+    if (status.profileValid === false) {
+      const reason = status.profileIssue || "invalid";
+      const key = `settings.sync.status.invalid.${reason}`;
+      const msg = t(key);
+      target.textContent = msg === key
+        ? t("settings.sync.status.invalid.generic", { reason })
+        : msg;
+      target.classList.add("sync-status-invalid");
+    } else {
+      target.classList.remove("sync-status-invalid");
+      if (status.bootstrapped) {
+        target.textContent = t("settings.sync.status.bootstrapped", {
+          clock: status.headClock || 0,
+        });
+      } else {
+        target.textContent = t("settings.sync.status.not_bootstrapped");
+      }
     }
+  } catch (e) {
+    target.textContent = String(e);
   }
+}
 
+function activeSyncProfileId() {
+  return syncSingleProfileId || localStorage.getItem(SETTINGS_KEY_SYNC_ACTIVE_PROFILE) || null;
+}
+
+function formatBytes(n) {
+  if (!Number.isFinite(n) || n < 0) return "-";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KiB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MiB`;
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GiB`;
+}
+
+async function refreshSyncRepoStats() {
+  if (!settingsSyncRepoStatsList) return;
+  const id = activeSyncProfileId();
+  if (!id) {
+    settingsSyncRepoStatsList.innerHTML = "";
+    const li = document.createElement("li");
+    li.className = "muted tiny";
+    li.textContent = t("settings.sync.stats.no_profile");
+    settingsSyncRepoStatsList.appendChild(li);
+    return;
+  }
+  try {
+    const stats = await invoke("sync_repo_stats", { profileId: id });
+    const rows = [
+      [t("settings.sync.stats.total"), formatBytes(stats.totalBytes)],
+      [t("settings.sync.stats.manifest"), formatBytes(stats.manifestBytes)],
+      [t("settings.sync.stats.keyring"), formatBytes(stats.keyringBytes)],
+      [
+        t("settings.sync.stats.snapshots"),
+        `${formatBytes(stats.snapshotsBytes)} (${stats.snapshotCount})`,
+      ],
+      [
+        t("settings.sync.stats.events"),
+        `${formatBytes(stats.eventsBytes)} (${stats.eventCount})`,
+      ],
+      [t("settings.sync.stats.trash"), formatBytes(stats.trashBytes)],
+    ];
+    settingsSyncRepoStatsList.innerHTML = "";
+    for (const [label, value] of rows) {
+      const li = document.createElement("li");
+      li.className = "settings-sync-stat-row";
+      const k = document.createElement("span");
+      k.className = "settings-sync-stat-key";
+      k.textContent = label;
+      const v = document.createElement("span");
+      v.className = "settings-sync-stat-value";
+      v.textContent = value;
+      li.appendChild(k);
+      li.appendChild(v);
+      settingsSyncRepoStatsList.appendChild(li);
+    }
+  } catch (e) {
+    settingsSyncRepoStatsList.innerHTML = "";
+    const li = document.createElement("li");
+    li.className = "muted tiny";
+    li.textContent = String(e);
+    settingsSyncRepoStatsList.appendChild(li);
+  }
+}
+
+async function refreshSyncConflicts() {
+  if (!settingsSyncConflictsList) return;
+  const id = activeSyncProfileId();
+  if (!id) {
+    settingsSyncConflictsList.innerHTML = "";
+    const li = document.createElement("li");
+    li.className = "muted tiny";
+    li.textContent = t("settings.sync.conflicts.no_profile");
+    settingsSyncConflictsList.appendChild(li);
+    return;
+  }
+  try {
+    const conflicts = await invoke("sync_list_conflicts", { profileId: id });
+    settingsSyncConflictsList.innerHTML = "";
+    if (!conflicts.length) {
+      const li = document.createElement("li");
+      li.className = "muted tiny";
+      li.textContent = t("settings.sync.conflicts.empty");
+      settingsSyncConflictsList.appendChild(li);
+      return;
+    }
+    for (const c of conflicts) {
+      settingsSyncConflictsList.appendChild(renderConflictItem(id, c));
+    }
+  } catch (e) {
+    settingsSyncConflictsList.innerHTML = "";
+    const li = document.createElement("li");
+    li.className = "muted tiny";
+    li.textContent = String(e);
+    settingsSyncConflictsList.appendChild(li);
+  }
+}
+
+function renderConflictItem(profileId, conflict) {
+  const li = document.createElement("li");
+  li.className = "settings-sync-conflict";
+  li.dataset.id = conflict.id;
+
+  const header = document.createElement("div");
+  header.className = "settings-sync-conflict-header";
+  const title = document.createElement("strong");
+  title.textContent = `${conflict.kind} · ${conflict.recordId}`;
+  header.appendChild(title);
+
+  const when = document.createElement("span");
+  when.className = "muted tiny";
+  try {
+    when.textContent = new Date(conflict.detectedAt).toLocaleString();
+  } catch {
+    when.textContent = String(conflict.detectedAt);
+  }
+  header.appendChild(when);
+  li.appendChild(header);
+
+  const grid = document.createElement("div");
+  grid.className = "settings-sync-conflict-grid";
+
+  const localBox = document.createElement("div");
+  localBox.className = "settings-sync-conflict-side";
+  const localLabel = document.createElement("div");
+  localLabel.className = "settings-sync-conflict-side-label";
+  localLabel.textContent = t("settings.sync.conflicts.local");
+  const localPre = document.createElement("pre");
+  localPre.className = "settings-sync-conflict-preview";
+  localPre.textContent = previewToText(conflict.localPreview);
+  localBox.appendChild(localLabel);
+  localBox.appendChild(localPre);
+  grid.appendChild(localBox);
+
+  const remoteBox = document.createElement("div");
+  remoteBox.className = "settings-sync-conflict-side";
+  const remoteLabel = document.createElement("div");
+  remoteLabel.className = "settings-sync-conflict-side-label";
+  remoteLabel.textContent = t("settings.sync.conflicts.remote");
+  const remotePre = document.createElement("pre");
+  remotePre.className = "settings-sync-conflict-preview";
+  remotePre.textContent = previewToText(conflict.remotePreview);
+  remoteBox.appendChild(remoteLabel);
+  remoteBox.appendChild(remotePre);
+  grid.appendChild(remoteBox);
+
+  li.appendChild(grid);
+
+  const actions = document.createElement("div");
+  actions.className = "settings-sync-conflict-actions";
+  const keepLocal = document.createElement("button");
+  keepLocal.type = "button";
+  keepLocal.textContent = t("settings.sync.conflicts.keep_local");
+  keepLocal.addEventListener("click", () =>
+    resolveConflict(profileId, conflict.id, "keep_local"),
+  );
+  const keepRemote = document.createElement("button");
+  keepRemote.type = "button";
+  keepRemote.textContent = t("settings.sync.conflicts.keep_remote");
+  keepRemote.addEventListener("click", () =>
+    resolveConflict(profileId, conflict.id, "keep_remote"),
+  );
+  actions.appendChild(keepLocal);
+  actions.appendChild(keepRemote);
+  li.appendChild(actions);
+
+  return li;
+}
+
+function previewToText(preview) {
+  if (preview && typeof preview === "object" && preview.tombstone) {
+    return t("settings.sync.conflicts.tombstone");
+  }
+  if (preview && typeof preview === "object" && preview.redacted) {
+    return t("settings.sync.conflicts.redacted", { bytes: preview.bytes ?? 0 });
+  }
+  try {
+    return JSON.stringify(preview, null, 2);
+  } catch {
+    return String(preview);
+  }
+}
+
+async function resolveConflict(profileId, conflictId, resolution) {
+  try {
+    await invoke("sync_resolve_conflict", {
+      profileId,
+      conflictId,
+      resolution,
+    });
+    if (settingsSyncStatus) {
+      settingsSyncStatus.textContent = t("settings.sync.conflicts.resolved");
+    }
+    await refreshSyncConflicts();
+    await refreshHostsCacheFromVault({ silent: true });
+  } catch (e) {
+    if (settingsSyncStatus) settingsSyncStatus.textContent = String(e);
+  }
 }
 
 function isAutoSyncEnabled() {
-  return localStorage.getItem(SETTINGS_KEY_SYNC_AUTO) !== "0";
+  // Auto-sync is gone for M3 — every push is a full snapshot so timer-driven
+  // pushes are wasteful. M5 reintroduces it once events are record-level.
+  return false;
 }
 
 function scheduleAutoSync() {
@@ -2488,28 +2628,10 @@ function scheduleAutoSync() {
     clearTimeout(syncAutoTimer);
     syncAutoTimer = null;
   }
-  if (!isAutoSyncEnabled()) return;
-  syncAutoTimer = setTimeout(() => {
-    runImmediateSync({ confirmMerge: false, overwriteRemote: true })
-      .then((result) => {
-        if (!result?.push) return;
-        if (settingsSyncStatus) {
-          settingsSyncStatus.textContent = t("settings.sync.status.sync_now", {
-            pulled: result.pull?.events ?? 0,
-            pushed: result.push?.events ?? 0,
-          });
-        }
-        markSyncLast("sync_now", result.push?.events ?? 0, { pulled: result.pull?.events ?? 0 });
-      })
-      .catch((e) => {
-        if (settingsSyncStatus) settingsSyncStatus.textContent = String(e);
-      });
-  }, 2500);
 }
 
 function autoSyncAfterDataChange() {
-  if (!isAutoSyncEnabled()) return;
-  scheduleAutoSync();
+  // No-op in M3 — see isAutoSyncEnabled().
 }
 
 function markSyncLast(action, events = 0, extra = {}) {
@@ -2521,66 +2643,10 @@ function markSyncLast(action, events = 0, extra = {}) {
   }));
 }
 
-async function runImmediateSync({ confirmMerge = true, overwriteRemote = false } = {}) {
+async function runImmediateSync(_opts) {
   const id = await ensureSyncProfileReadyForActions();
-  const pull = await invoke("sync_apply_pull", { profileId: id });
-
-  if (pull.clientStateJson) {
-    try {
-      const parsed = JSON.parse(pull.clientStateJson);
-      if (Array.isArray(parsed.groups)) {
-        hostGroups = parsed.groups;
-        localStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify(hostGroups));
-      }
-      if (parsed.hostGroupMap && typeof parsed.hostGroupMap === "object") {
-        hostGroupMap = parsed.hostGroupMap;
-        localStorage.setItem(HOST_GROUP_MAP_STORAGE_KEY, JSON.stringify(hostGroupMap));
-      }
-      if (parsed.hostGroupMapByConn && typeof parsed.hostGroupMapByConn === "object") {
-        for (const h of (hostsCache || [])) {
-          const key = `${h.host}:${h.port}:${h.user}`;
-          const gid = parsed.hostGroupMapByConn[key];
-          if (gid) hostGroupMap[h.id] = gid;
-        }
-        localStorage.setItem(HOST_GROUP_MAP_STORAGE_KEY, JSON.stringify(hostGroupMap));
-      }
-      if (parsed.hostGroupMapByName && typeof parsed.hostGroupMapByName === "object") {
-        const nameToId = new Map((hostsCache || []).map((h) => [h.name, h.id]));
-        for (const [name, gid] of Object.entries(parsed.hostGroupMapByName)) {
-          const hid = nameToId.get(name);
-          if (hid && gid) hostGroupMap[hid] = gid;
-        }
-        localStorage.setItem(HOST_GROUP_MAP_STORAGE_KEY, JSON.stringify(hostGroupMap));
-      }
-      if (parsed.sync && typeof parsed.sync === "object") {
-        const syncAuto = parsed.sync.auto;
-        if (typeof syncAuto === "boolean") {
-          localStorage.setItem(SETTINGS_KEY_SYNC_AUTO, syncAuto ? "1" : "0");
-          if (settingsSyncAuto) settingsSyncAuto.checked = syncAuto;
-        }
-      }
-      applyClientSettingsFromState(parsed);
-      renderHosts();
-    } catch (e) {
-      console.warn("apply pull client state parse failed", e);
-    }
-  }
-
-  const preview = await invoke("sync_merge_preview", { profileId: id });
-  if (confirmMerge) {
-    const ok = confirm(
-      t("settings.sync.confirm.merge_preview", {
-        local: preview.localHosts,
-        remote: preview.remoteHosts,
-        merged: preview.mergedHosts,
-      }),
-    );
-    if (!ok) return { pull, push: null };
-  }
-
-  const clientStateJson = JSON.stringify(collectSyncClientState());
-  const push = await invoke("sync_push_preview", { profileId: id, clientStateJson, overwriteRemote });
-  return { pull, push };
+  const outcome = await invoke("sync_now", { profileId: id });
+  return outcome;
 }
 
 async function fillSftpLocalDirDefaultIfEmpty() {
@@ -3024,49 +3090,32 @@ function applyI18n() {
   setAttr("settings-sftp-local-dir", "placeholder", "settings.sftp.local_dir.placeholder");
   setText("settings-sftp-local-dir-browse", "settings.sftp.local_dir.browse");
   setText("settings-sync-title", "settings.sync.title");
-  setText("settings-sync-profile-label", "settings.sync.profile");
-  setText("settings-sync-active", "settings.sync.status.active", { name: "-" });
   setText("settings-sync-tip", "settings.sync.tip.local");
-  setText("settings-sync-endpoint-label", "settings.sync.label.endpoint");
-  setText("settings-sync-username-label", "settings.sync.label.username");
-  setText("settings-sync-password-label", "settings.sync.label.password");
   setText("settings-sync-root-label", "settings.sync.label.path");
-  setText("settings-sync-bucket-label", "settings.sync.label.bucket");
-  setText("settings-sync-region-label", "settings.sync.label.region");
-  setText("settings-sync-s3-endpoint-label", "settings.sync.label.s3_endpoint");
-  setText("settings-sync-s3-ak-label", "settings.sync.label.s3_access_key");
-  setText("settings-sync-s3-sk-label", "settings.sync.label.s3_secret");
-  setText("settings-sync-s3-st-label", "settings.sync.label.s3_session");
-  setText("settings-sync-s3-path-style-label", "settings.sync.label.s3_path_style");
   setText("settings-sync-enc-title", "settings.sync.enc.title");
-  setText("settings-sync-refresh", "settings.sync.button.refresh");
-  setText("settings-sync-new", "settings.sync.button.new");
+  setText("settings-sync-status-title", "settings.sync.status.title");
+  setText("settings-sync-devices-title", "settings.sync.devices.title");
+  setText("settings-sync-conflicts-title", "settings.sync.conflicts.title");
+  setText("settings-sync-bootstrap-hint", "settings.sync.bootstrap.hint");
   setText("settings-sync-save", "settings.sync.button.save");
-  setText("settings-sync-delete", "settings.sync.button.delete");
-  setText("settings-sync-test", "settings.sync.button.test");
-  setText("settings-sync-apply", "settings.sync.button.apply");
-  setText("settings-sync-pull", "settings.sync.button.pull");
-  setText("settings-sync-push", "settings.sync.button.push");
-  setText("settings-sync-root-browse", "settings.sync.button.browse");
   setText("settings-sync-root-browse", "settings.sync.button.browse");
   setText("settings-sync-now", "settings.sync.button.now");
-  setText("settings-sync-advanced-toggle", "settings.sync.button.advanced");
-  setText("settings-sync-auto-label", "settings.sync.auto");
-  setOptionText("settings-sync-backend", "filesystem", "settings.sync.backend.filesystem");
-  setOptionText("settings-sync-backend", "webdav", "settings.sync.backend.webdav");
-  setOptionText("settings-sync-backend", "s3", "settings.sync.backend.s3");
+  setText("settings-sync-create-repo", "settings.sync.button.create_repo");
+  setText("settings-sync-join-repo", "settings.sync.button.join_repo");
+  setText("settings-sync-forget-engine", "settings.sync.button.forget_engine");
+  setText("settings-sync-remember-passphrase-label", "settings.sync.remember_passphrase");
+  setText("settings-sync-devices-empty", "settings.sync.devices.empty");
+  setText("settings-sync-conflicts-title", "settings.sync.conflicts.title");
+  setText("settings-sync-conflicts-empty", "settings.sync.conflicts.empty");
+  setText("settings-sync-repo-stats-title", "settings.sync.repo_stats.title");
+  setText("settings-sync-refresh-stats", "settings.sync.button.refresh_stats");
+  setText("settings-sync-compact-now", "settings.sync.button.compact_now");
+  setOptionText("settings-sync-backend", "local_folder", "settings.sync.backend.local_folder");
+  setOptionText("settings-sync-backend", "sftp", "settings.sync.backend.sftp");
   syncCustomSelect("settings-sync-backend");
-  setPlaceholder("settings-sync-name", "settings.sync.placeholder.name");
-  setPlaceholder("settings-sync-endpoint", "settings.sync.placeholder.endpoint");
-  setPlaceholder("settings-sync-bucket", "settings.sync.placeholder.bucket");
-  setPlaceholder("settings-sync-region", "settings.sync.placeholder.region");
-  setPlaceholder("settings-sync-username", "settings.sync.placeholder.username");
-  setPlaceholder("settings-sync-password", "settings.sync.placeholder.password");
+  setText("settings-sync-host-ref-label", "settings.sync.sftp.host");
+  setText("settings-sync-remote-dir-label", "settings.sync.sftp.remote_dir");
   setPlaceholder("settings-sync-enc-password", "settings.sync.placeholder.enc_password");
-  setPlaceholder("settings-sync-s3-endpoint", "settings.sync.placeholder.s3_endpoint");
-  setPlaceholder("settings-sync-s3-ak", "settings.sync.placeholder.s3_ak");
-  setPlaceholder("settings-sync-s3-sk", "settings.sync.placeholder.s3_sk");
-  setPlaceholder("settings-sync-s3-st", "settings.sync.placeholder.s3_st");
   setOptionText("settings-language-select", "zh-CN", "settings.language.zh");
   setOptionText("settings-language-select", "en", "settings.language.en");
   syncCustomSelect("settings-language-select");
@@ -3412,23 +3461,13 @@ vaultBottomSettingsRow?.addEventListener("keydown", (ev) => {
 settingsLanguageSelect.addEventListener("change", () => {
   setLocale(settingsLanguageSelect.value);
 });
-settingsSyncRefresh?.addEventListener("click", () => {
-  loadSyncProfiles().catch((e) => {
-    if (settingsSyncStatus) settingsSyncStatus.textContent = String(e);
-  });
-});
 settingsSyncBackend?.addEventListener("change", () => {
-  const previous = Object.keys(syncDraftByBackend).includes(settingsSyncBackend.dataset.prev || "")
-    ? settingsSyncBackend.dataset.prev
-    : null;
-  if (previous) {
-    syncDraftByBackend[previous] = snapshotSyncForm();
+  syncFormToggleBackendFields(settingsSyncBackend.value || "local_folder");
+  if (settingsSyncBackend.value === "sftp") {
+    refreshSftpHostOptions(settingsSyncHostRef?.value || "");
   }
-  const backend = String(settingsSyncBackend.value || "filesystem");
-  restoreSyncDraftForBackend(backend);
-  settingsSyncBackend.dataset.prev = backend;
-  syncFormByBackend();
 });
+
 settingsSyncRootBrowse?.addEventListener("click", async () => {
   try {
     const picked = await invoke("plugin:dialog|open", {
@@ -3445,32 +3484,48 @@ settingsSyncRootBrowse?.addEventListener("click", async () => {
     if (settingsSyncStatus) settingsSyncStatus.textContent = String(e);
   }
 });
-settingsSyncAuto?.addEventListener("change", () => {
-  localStorage.setItem(SETTINGS_KEY_SYNC_AUTO, settingsSyncAuto.checked ? "1" : "0");
-  scheduleAutoSync();
-});
-settingsSyncAdvancedToggle?.addEventListener("click", () => {
-  if (!settingsSyncAdvanced) return;
-  settingsSyncAdvanced.hidden = !settingsSyncAdvanced.hidden;
-});
-settingsSyncNow?.addEventListener("click", async () => {
-  try {
-    const result = await runImmediateSync({ confirmMerge: true });
-    if (!result?.push) return;
-    if (settingsSyncStatus) {
-      settingsSyncStatus.textContent = t("settings.sync.status.sync_now", {
-        pulled: result.pull?.events ?? 0,
-        pushed: result.push?.events ?? 0,
-      });
-    }
-    markSyncLast("sync_now", result.push?.events ?? 0, { pulled: result.pull?.events ?? 0 });
-  } catch (e) {
-    if (settingsSyncStatus) settingsSyncStatus.textContent = String(e);
-  }
-});
+
 settingsSyncSave?.addEventListener("click", async () => {
   try {
     const input = syncFormToInput();
+    if (input.backend === "local_folder" && !input.root) {
+      if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.error.root_required");
+      return;
+    }
+    if (input.backend === "sftp") {
+      if (!input.hostRef) {
+        if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.error.host_required");
+        return;
+      }
+      if (!input.remoteDir) {
+        if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.error.remote_dir_required");
+        return;
+      }
+    }
+    if (input.backend === "webdav") {
+      if (!input.url) {
+        if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.error.webdav_url_required");
+        return;
+      }
+      if (!input.username) {
+        if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.error.webdav_user_required");
+        return;
+      }
+    }
+    if (input.backend === "s3") {
+      if (!input.region) {
+        if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.error.s3_region_required");
+        return;
+      }
+      if (!input.bucket) {
+        if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.error.s3_bucket_required");
+        return;
+      }
+      if (!input.accessKeyId) {
+        if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.error.s3_ak_required");
+        return;
+      }
+    }
     const existingId = syncSingleProfileId || syncEditingId;
     if (existingId) {
       await invoke("update_sync_profile", { id: existingId, input });
@@ -3483,136 +3538,124 @@ settingsSyncSave?.addEventListener("click", async () => {
       if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.saved");
     }
     await loadSyncProfiles();
-    if (isAutoSyncEnabled()) {
-      const result = await runImmediateSync({ confirmMerge: false, overwriteRemote: true });
-      if (result?.push && settingsSyncStatus) {
-        settingsSyncStatus.textContent = t("settings.sync.status.sync_now", {
-          pulled: result.pull?.events ?? 0,
-          pushed: result.push?.events ?? 0,
-        });
-      }
-      if (result?.push) {
-        markSyncLast("sync_now", result.push?.events ?? 0, { pulled: result.pull?.events ?? 0 });
-      }
-    }
   } catch (e) {
     if (settingsSyncStatus) settingsSyncStatus.textContent = String(e);
   }
 });
-settingsSyncTest?.addEventListener("click", async () => {
+
+settingsSyncCreateRepo?.addEventListener("click", async () => {
   try {
     const id = await ensureSyncProfileReadyForActions();
-    const r = await invoke("sync_test_connection", { profileId: id });
-    if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.conn_ok", { backend: r.backend });
+    const passphrase = String(settingsSyncEncPassword?.value || "");
+    if (!passphrase) {
+      if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.error.passphrase_required");
+      return;
+    }
+    const rememberPassphrase = Boolean(settingsSyncRememberPassphrase?.checked);
+    await invoke("sync_create_repo", { profileId: id, passphrase, rememberPassphrase });
+    if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.repo_created");
+    await refreshSyncStatusLine();
+    await refreshSyncRepoStats();
   } catch (e) {
-    if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.conn_fail", { error: String(e) });
+    if (settingsSyncStatus) settingsSyncStatus.textContent = String(e);
   }
 });
-settingsSyncApply?.addEventListener("click", async () => {
+
+settingsSyncJoinRepo?.addEventListener("click", async () => {
   try {
     const id = await ensureSyncProfileReadyForActions();
-    const r = await invoke("sync_apply_pull", { profileId: id });
-    if (r.clientStateJson) {
-      try {
-        const parsed = JSON.parse(r.clientStateJson);
-        if (Array.isArray(parsed.groups)) {
-          hostGroups = parsed.groups;
-          localStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify(hostGroups));
-        }
-        if (parsed.hostGroupMap && typeof parsed.hostGroupMap === "object") {
-          hostGroupMap = parsed.hostGroupMap;
-          localStorage.setItem(HOST_GROUP_MAP_STORAGE_KEY, JSON.stringify(hostGroupMap));
-        }
-        if (parsed.hostGroupMapByConn && typeof parsed.hostGroupMapByConn === "object") {
-          for (const h of (hostsCache || [])) {
-            const key = `${h.host}:${h.port}:${h.user}`;
-            const gid = parsed.hostGroupMapByConn[key];
-            if (gid) hostGroupMap[h.id] = gid;
-          }
-          localStorage.setItem(HOST_GROUP_MAP_STORAGE_KEY, JSON.stringify(hostGroupMap));
-        }
-        if (parsed.hostGroupMapByName && typeof parsed.hostGroupMapByName === "object") {
-          const nameToId = new Map((hostsCache || []).map((h) => [h.name, h.id]));
-          for (const [name, gid] of Object.entries(parsed.hostGroupMapByName)) {
-            const id = nameToId.get(name);
-            if (id && gid) hostGroupMap[id] = gid;
-          }
-          localStorage.setItem(HOST_GROUP_MAP_STORAGE_KEY, JSON.stringify(hostGroupMap));
-        }
-        if (parsed.sync && typeof parsed.sync === "object") {
-          const syncAuto = parsed.sync.auto;
-          if (typeof syncAuto === "boolean") {
-            localStorage.setItem(SETTINGS_KEY_SYNC_AUTO, syncAuto ? "1" : "0");
-            if (settingsSyncAuto) settingsSyncAuto.checked = syncAuto;
-          }
-        }
-        applyClientSettingsFromState(parsed);
-        renderHosts();
-      } catch (e) {
-        console.warn("apply pull client state parse failed", e);
+    const passphrase = String(settingsSyncEncPassword?.value || "");
+    if (!passphrase) {
+      if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.error.passphrase_required");
+      return;
+    }
+    const rememberPassphrase = Boolean(settingsSyncRememberPassphrase?.checked);
+    const r = await invoke("sync_join_repo", { profileId: id, passphrase, rememberPassphrase });
+    if (!r.localVaultIdMatches) {
+      const ok = confirm(t("settings.sync.confirm.vault_mismatch", { remote: r.repoVaultId }));
+      if (!ok) {
+        // Forget the engine so the user can re-try after picking a different repo.
+        await invoke("sync_forget_engine", { profileId: id });
+        if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.aborted");
+        return;
       }
     }
+    if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.joined");
+    await refreshSyncStatusLine();
+    await refreshHostsCacheFromVault({ silent: true });
+    await refreshSyncConflicts();
+    await refreshSyncRepoStats();
+  } catch (e) {
+    if (settingsSyncStatus) settingsSyncStatus.textContent = String(e);
+  }
+});
+
+settingsSyncForgetEngine?.addEventListener("click", async () => {
+  try {
+    const id = syncSingleProfileId || syncEditingId;
+    if (!id) return;
+    await invoke("sync_forget_engine", { profileId: id });
+    if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.forgotten");
+    await refreshSyncStatusLine();
+  } catch (e) {
+    if (settingsSyncStatus) settingsSyncStatus.textContent = String(e);
+  }
+});
+
+settingsSyncNow?.addEventListener("click", async () => {
+  try {
+    const outcome = await runImmediateSync({});
     if (settingsSyncStatus) {
-      const backupText = r.backupPath
-        ? t("settings.sync.backup.suffix", { path: r.backupPath })
-        : "";
-      settingsSyncStatus.textContent = t("settings.sync.status.apply", {
-        events: r.events,
-        applied: r.applied,
-        skipped: r.skipped,
-        backup: backupText,
+      settingsSyncStatus.textContent = t("settings.sync.status.sync_now", {
+        pulled: outcome.eventsPulled ?? outcome.pulled ?? 0,
+        pushed: outcome.eventsPushed ?? 0,
       });
     }
-    localStorage.setItem("zeroterm.sync.last", JSON.stringify({
-      at: Date.now(),
-      action: "apply_pull",
-      events: r.events,
-      applied: r.applied,
-      skipped: r.skipped,
-    }));
+    markSyncLast("sync_now", outcome.eventsPushed ?? 0, {
+      pulled: outcome.eventsPulled ?? 0,
+    });
     await refreshHostsCacheFromVault({ silent: true });
+    await refreshSyncStatusLine();
+    await refreshSyncConflicts();
+    await refreshSyncRepoStats();
   } catch (e) {
     if (settingsSyncStatus) settingsSyncStatus.textContent = String(e);
   }
 });
-settingsSyncPull?.addEventListener("click", async () => {
+
+settingsSyncRefreshStats?.addEventListener("click", () => {
+  refreshSyncRepoStats().catch((e) => {
+    if (settingsSyncCompactStatus) settingsSyncCompactStatus.textContent = String(e);
+  });
+});
+
+settingsSyncCompactNow?.addEventListener("click", async () => {
+  const id = activeSyncProfileId();
+  if (!id) return;
   try {
-    const id = await ensureSyncProfileReadyForActions();
-    const r = await invoke("sync_pull_preview", { profileId: id });
-    if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.pull_preview", { events: r.events });
-    localStorage.setItem("zeroterm.sync.last", JSON.stringify({
-      at: Date.now(),
-      action: "pull_preview",
-      events: r.events,
-    }));
+    const r = await invoke("sync_compact_now", { profileId: id });
+    if (settingsSyncCompactStatus) {
+      let line = t("settings.sync.compact.done", {
+        events: r.eventsCompacted ?? 0,
+        records: r.recordsInSnapshot ?? 0,
+      });
+      if ((r.eventsRetained ?? 0) > 0) {
+        line += t("settings.sync.compact.retained", { kept: r.eventsRetained });
+      }
+      if ((r.tombstonesPruned ?? 0) > 0) {
+        line += t("settings.sync.compact.tombstones", {
+          tombstones: r.tombstonesPruned,
+        });
+      }
+      settingsSyncCompactStatus.textContent = line;
+    }
+    await refreshSyncRepoStats();
+    await refreshSyncStatusLine();
   } catch (e) {
-    if (settingsSyncStatus) settingsSyncStatus.textContent = String(e);
+    if (settingsSyncCompactStatus) settingsSyncCompactStatus.textContent = String(e);
   }
 });
-settingsSyncPush?.addEventListener("click", async () => {
-  try {
-    const id = await ensureSyncProfileReadyForActions();
-    const preview = await invoke("sync_merge_preview", { profileId: id });
-    const ok = confirm(
-      t("settings.sync.confirm.merge_preview", {
-        local: preview.localHosts,
-        remote: preview.remoteHosts,
-        merged: preview.mergedHosts,
-      }),
-    );
-    if (!ok) return;
-    const clientStateJson = JSON.stringify(collectSyncClientState());
-    const r = await invoke("sync_push_preview", { profileId: id, clientStateJson });
-    if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.push", { events: r.events });
-    localStorage.setItem("zeroterm.sync.last", JSON.stringify({
-      at: Date.now(),
-      action: "push",
-      events: r.events,
-    }));
-  } catch (e) {
-    if (settingsSyncStatus) settingsSyncStatus.textContent = String(e);
-  }
-});
+
 quickConnectCancel?.addEventListener("click", closeQuickConnectOverlay);
 quickConnectAuthType?.addEventListener("change", syncQuickConnectAuthSections);
 quickConnectKeyPick?.addEventListener("click", () => {

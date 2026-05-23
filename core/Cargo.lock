@@ -5726,7 +5726,7 @@ dependencies = [
 
 [[package]]
 name = "zeroterm-app"
-version = "0.0.1"
+version = "0.0.3"
 dependencies = [
  "anyhow",
  "dirs",
@@ -5735,6 +5735,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror 1.0.69",
+ "tokio",
  "tracing",
  "zeroterm-ssh",
  "zeroterm-sync",
@@ -5743,7 +5744,7 @@ dependencies = [
 
 [[package]]
 name = "zeroterm-cli"
-version = "0.0.1"
+version = "0.0.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5761,8 +5762,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "zeroterm-crypto"
+version = "0.0.3"
+dependencies = [
+ "argon2",
+ "chacha20poly1305",
+ "hkdf",
+ "rand 0.8.6",
+ "sha2 0.10.9",
+ "thiserror 1.0.69",
+ "tracing",
+ "zeroize",
+]
+
+[[package]]
 name = "zeroterm-ffi"
-version = "0.0.1"
+version = "0.0.3"
 dependencies = [
  "async-trait",
  "tempfile",
@@ -5778,7 +5793,7 @@ dependencies = [
 
 [[package]]
 name = "zeroterm-ssh"
-version = "0.0.1"
+version = "0.0.3"
 dependencies = [
  "async-trait",
  "dirs",
@@ -5793,7 +5808,7 @@ dependencies = [
 
 [[package]]
 name = "zeroterm-store"
-version = "0.0.1"
+version = "0.0.3"
 dependencies = [
  "rusqlite",
  "thiserror 1.0.69",
@@ -5802,35 +5817,38 @@ dependencies = [
 
 [[package]]
 name = "zeroterm-sync"
-version = "0.0.1"
+version = "0.0.3"
 dependencies = [
  "async-trait",
  "aws-config",
+ "aws-credential-types",
  "aws-sdk-s3",
+ "base64",
  "quick-xml",
  "reqwest",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
+ "tracing",
  "uuid",
+ "zeroize",
+ "zeroterm-crypto",
+ "zeroterm-ssh",
 ]
 
 [[package]]
 name = "zeroterm-vault"
-version = "0.0.1"
+version = "0.0.3"
 dependencies = [
  "anyhow",
- "argon2",
- "chacha20poly1305",
- "hkdf",
- "rand 0.8.6",
- "sha2 0.10.9",
  "tempfile",
  "thiserror 1.0.69",
  "tracing",
  "uuid",
  "zeroize",
+ "zeroterm-crypto",
  "zeroterm-store",
 ]
 

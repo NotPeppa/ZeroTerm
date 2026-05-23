@@ -43,6 +43,23 @@ fn sync_encryption_entry(profile_id: &str) -> Result<keyring::Entry, KeychainErr
     keyring::Entry::new(SERVICE, &user).map_err(|e| KeychainError::Backend(e.to_string()))
 }
 
+/// Keyed entry for backend credentials (e.g. WebDAV password).
+/// Separate from `sync-encryption:` (the sync passphrase) so the two
+/// can be rotated independently and so a leaked backend password
+/// doesn't trivially imply control of repo decryption.
+fn sync_backend_credential_entry(profile_id: &str) -> Result<keyring::Entry, KeychainError> {
+    let user = format!("sync-backend-credential:{profile_id}");
+    keyring::Entry::new(SERVICE, &user).map_err(|e| KeychainError::Backend(e.to_string()))
+}
+
+/// Sibling slot for an optional second backend secret (e.g. STS session
+/// token for S3). Kept separate so rotating the main credential
+/// doesn't disturb the secondary slot, and vice versa.
+fn sync_backend_extra_entry(profile_id: &str) -> Result<keyring::Entry, KeychainError> {
+    let user = format!("sync-backend-extra:{profile_id}");
+    keyring::Entry::new(SERVICE, &user).map_err(|e| KeychainError::Backend(e.to_string()))
+}
+
 /// Persist `password` so future unlocks of `vault_path` can skip the prompt.
 pub fn save_master_password(vault_path: &Path, password: &str) -> Result<(), KeychainError> {
     let e = entry(vault_path)?;
@@ -140,6 +157,63 @@ pub fn get_sync_encryption_secret(profile_id: &str) -> Result<Option<String>, Ke
 
 pub fn forget_sync_encryption_secret(profile_id: &str) -> Result<(), KeychainError> {
     let e = sync_encryption_entry(profile_id)?;
+    match e.delete_password() {
+        Ok(()) => Ok(()),
+        Err(keyring::Error::NoEntry) => Ok(()),
+        Err(other) => Err(KeychainError::Backend(other.to_string())),
+    }
+}
+
+/// Persist a backend credential (e.g. WebDAV password) under
+/// `sync-backend-credential:<profile_id>`.
+pub fn save_sync_backend_credential(
+    profile_id: &str,
+    secret: &str,
+) -> Result<(), KeychainError> {
+    let e = sync_backend_credential_entry(profile_id)?;
+    e.set_password(secret)
+        .map_err(|e| KeychainError::Backend(e.to_string()))
+}
+
+pub fn get_sync_backend_credential(
+    profile_id: &str,
+) -> Result<Option<String>, KeychainError> {
+    let e = sync_backend_credential_entry(profile_id)?;
+    match e.get_password() {
+        Ok(v) => Ok(Some(v)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(other) => Err(KeychainError::Backend(other.to_string())),
+    }
+}
+
+pub fn forget_sync_backend_credential(profile_id: &str) -> Result<(), KeychainError> {
+    let e = sync_backend_credential_entry(profile_id)?;
+    match e.delete_password() {
+        Ok(()) => Ok(()),
+        Err(keyring::Error::NoEntry) => Ok(()),
+        Err(other) => Err(KeychainError::Backend(other.to_string())),
+    }
+}
+
+/// Persist an extra backend secret (e.g. S3 session token) under
+/// `sync-backend-extra:<profile_id>`.
+pub fn save_sync_backend_extra(profile_id: &str, secret: &str) -> Result<(), KeychainError> {
+    let e = sync_backend_extra_entry(profile_id)?;
+    e.set_password(secret)
+        .map_err(|e| KeychainError::Backend(e.to_string()))
+}
+
+pub fn get_sync_backend_extra(profile_id: &str) -> Result<Option<String>, KeychainError> {
+    let e = sync_backend_extra_entry(profile_id)?;
+    match e.get_password() {
+        Ok(v) => Ok(Some(v)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(other) => Err(KeychainError::Backend(other.to_string())),
+    }
+}
+
+pub fn forget_sync_backend_extra(profile_id: &str) -> Result<(), KeychainError> {
+    let e = sync_backend_extra_entry(profile_id)?;
     match e.delete_password() {
         Ok(()) => Ok(()),
         Err(keyring::Error::NoEntry) => Ok(()),

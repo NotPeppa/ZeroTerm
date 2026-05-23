@@ -15,4 +15,5 @@ mod vault;
 
 pub use crypto::Argon2Params;
 pub use error::VaultError;
-pub use vault::Vault;
+pub use vault::{DirtyRecord, FullRecord, Vault};
+pub use zeroterm_store::ConflictRow;

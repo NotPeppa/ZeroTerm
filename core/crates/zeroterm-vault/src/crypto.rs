@@ -1,4 +1,4 @@
-//! Crypto primitives used by the vault.
+//! Vault-specific crypto wrappers over [`zeroterm_crypto`].
 //!
 //! Layering, top to bottom:
 //!   1. Argon2id derives a 32-byte `master_key` from the user's password
@@ -12,15 +12,17 @@
 //!      replayed against a different id or rolled back to an older
 //!      version.
 //!
-//! See RFC-001 §4 for the rationale.
+//! The primitives themselves live in [`zeroterm_crypto`]. This module
+//! owns only the vault-specific `info` strings and AAD shape — those are
+//! deliberately not shared with the sync layer (see RFC-002 §16 and the
+//! plan in `snug-mapping-koala.md` §2).
 
-use argon2::{Algorithm, Argon2, Params, Version};
-use chacha20poly1305::aead::{Aead, KeyInit, Payload};
-use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
-use hkdf::Hkdf;
-use rand::RngCore;
-use sha2::Sha256;
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroize;
+
+use zeroterm_crypto::{
+    aead_decrypt, aead_seal, derive_key_argon2id, hkdf_subkey, random_bytes as crypto_random_bytes,
+    Argon2Params as KdfParams, CryptoError, SymmetricKey, KEY_LEN, NONCE_LEN,
+};
 
 use crate::error::VaultError;
 
@@ -39,7 +41,10 @@ const VERIFIER_AAD: &[u8] = b"zeroterm-vault-verifier";
 /// without disturbing the master key derivation.
 const RECORD_INFO: &[u8] = b"zeroterm-record-v1";
 
-/// Argon2id parameters. Defaults match RFC-001.
+/// Argon2id parameters. Defaults match RFC-001 (64 MiB / 3 iters / 4 lanes).
+///
+/// This is a thin newtype over [`zeroterm_crypto::Argon2Params`] so the
+/// vault keeps its existing public API while the primitives are shared.
 #[derive(Debug, Clone, Copy)]
 pub struct Argon2Params {
     /// Memory cost, in KiB.
@@ -52,45 +57,48 @@ pub struct Argon2Params {
 
 impl Default for Argon2Params {
     fn default() -> Self {
+        let d = KdfParams::default();
         Self {
-            m_cost: 64 * 1024, // 64 MiB
-            t_cost: 3,
-            p_cost: 4,
+            m_cost: d.m_cost,
+            t_cost: d.t_cost,
+            p_cost: d.p_cost,
         }
     }
 }
 
 impl Argon2Params {
+    fn to_crypto(self) -> KdfParams {
+        KdfParams {
+            m_cost: self.m_cost,
+            t_cost: self.t_cost,
+            p_cost: self.p_cost,
+        }
+    }
+
     pub(crate) fn to_bytes(self) -> [u8; 12] {
-        let mut out = [0u8; 12];
-        out[0..4].copy_from_slice(&self.m_cost.to_le_bytes());
-        out[4..8].copy_from_slice(&self.t_cost.to_le_bytes());
-        out[8..12].copy_from_slice(&self.p_cost.to_le_bytes());
-        out
+        self.to_crypto().to_bytes()
     }
 
     pub(crate) fn from_bytes(bytes: &[u8]) -> Result<Self, VaultError> {
-        if bytes.len() != 12 {
-            return Err(VaultError::Corrupt);
-        }
-        let m_cost = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
-        let t_cost = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
-        let p_cost = u32::from_le_bytes(bytes[8..12].try_into().unwrap());
+        let p = KdfParams::from_bytes(bytes).map_err(|_| VaultError::Corrupt)?;
         Ok(Self {
-            m_cost,
-            t_cost,
-            p_cost,
+            m_cost: p.m_cost,
+            t_cost: p.t_cost,
+            p_cost: p.p_cost,
         })
     }
 }
 
 /// Owned 32-byte master key. Auto-zeroes on drop.
-pub(crate) type MasterKey = Zeroizing<[u8; 32]>;
+pub(crate) type MasterKey = SymmetricKey;
 
 pub(crate) fn random_bytes(n: usize) -> Vec<u8> {
-    let mut buf = vec![0u8; n];
-    rand::thread_rng().fill_bytes(&mut buf);
-    buf
+    crypto_random_bytes(n)
+}
+
+fn map_crypto_err(e: CryptoError) -> VaultError {
+    tracing::error!(error = ?e, "vault crypto failed");
+    VaultError::Crypto
 }
 
 pub(crate) fn derive_master_key(
@@ -98,31 +106,18 @@ pub(crate) fn derive_master_key(
     salt: &[u8],
     params: Argon2Params,
 ) -> Result<MasterKey, VaultError> {
-    let argon_params = Params::new(params.m_cost, params.t_cost, params.p_cost, Some(32))
-        .map_err(|e| {
-            tracing::error!(error = ?e, "invalid Argon2 params");
-            VaultError::Crypto
-        })?;
-
-    let argon = Argon2::new(Algorithm::Argon2id, Version::V0x13, argon_params);
-    let mut out = Zeroizing::new([0u8; 32]);
-    argon
-        .hash_password_into(password.as_bytes(), salt, out.as_mut())
-        .map_err(|e| {
-            tracing::error!(error = ?e, "argon2 derive failed");
-            VaultError::Crypto
-        })?;
-    Ok(out)
+    derive_key_argon2id(password.as_bytes(), salt, params.to_crypto()).map_err(map_crypto_err)
 }
 
-fn derive_record_key(master: &MasterKey, record_id: &str) -> Zeroizing<[u8; 32]> {
-    let hk = Hkdf::<Sha256>::new(Some(record_id.as_bytes()), master.as_ref());
-    let mut okm = Zeroizing::new([0u8; 32]);
-    // expand on a 32-byte buffer with our fixed info — both inputs are
-    // controlled, infallible at runtime.
-    hk.expand(RECORD_INFO, okm.as_mut())
-        .expect("HKDF-SHA256 expand of 32 bytes must succeed");
-    okm
+fn derive_record_key(master: &MasterKey, record_id: &str) -> SymmetricKey {
+    // Salt = record_id, info = constant tag. Both inputs are controlled,
+    // 32-byte output is well within HKDF-SHA256's max.
+    let okm = hkdf_subkey::<KEY_LEN>(master.as_ref(), record_id.as_bytes(), RECORD_INFO);
+    // Re-wrap into a SymmetricKey alias (same shape, but the explicit
+    // re-construction makes intent clear at the call site).
+    let mut key: SymmetricKey = zeroize::Zeroizing::new([0u8; KEY_LEN]);
+    key.as_mut().copy_from_slice(okm.as_ref());
+    key
 }
 
 fn record_aad(record_id: &str, version: i64) -> Vec<u8> {
@@ -140,23 +135,9 @@ pub(crate) fn encrypt_record(
     plaintext: &[u8],
 ) -> Result<(Vec<u8>, Vec<u8>), VaultError> {
     let key = derive_record_key(master, record_id);
-    let cipher = XChaCha20Poly1305::new(Key::from_slice(key.as_ref()));
-
-    let mut nonce = vec![0u8; 24];
-    rand::thread_rng().fill_bytes(&mut nonce);
-
     let aad = record_aad(record_id, version);
-    let ct = cipher
-        .encrypt(
-            XNonce::from_slice(&nonce),
-            Payload {
-                msg: plaintext,
-                aad: &aad,
-            },
-        )
-        .map_err(|_| VaultError::Crypto)?;
-
-    Ok((nonce, ct))
+    let (nonce, ct) = aead_seal(&key, plaintext, &aad).map_err(map_crypto_err)?;
+    Ok((nonce.to_vec(), ct))
 }
 
 /// Decrypt a previously-encrypted record. Wrong key, tampered ciphertext,
@@ -168,41 +149,19 @@ pub(crate) fn decrypt_record(
     nonce: &[u8],
     ciphertext: &[u8],
 ) -> Result<Vec<u8>, VaultError> {
-    if nonce.len() != 24 {
+    if nonce.len() != NONCE_LEN {
         return Err(VaultError::Crypto);
     }
     let key = derive_record_key(master, record_id);
-    let cipher = XChaCha20Poly1305::new(Key::from_slice(key.as_ref()));
-
     let aad = record_aad(record_id, version);
-    cipher
-        .decrypt(
-            XNonce::from_slice(nonce),
-            Payload {
-                msg: ciphertext,
-                aad: &aad,
-            },
-        )
-        .map_err(|_| VaultError::Crypto)
+    aead_decrypt(&key, nonce, ciphertext, &aad).map_err(map_crypto_err)
 }
 
 /// Encrypt the verifier constant. Stored at vault creation; the unlock
 /// path tries to decrypt it back to confirm the password is right.
 pub(crate) fn encrypt_verifier(master: &MasterKey) -> Result<(Vec<u8>, Vec<u8>), VaultError> {
-    let cipher = XChaCha20Poly1305::new(Key::from_slice(master.as_ref()));
-    let mut nonce = vec![0u8; 24];
-    rand::thread_rng().fill_bytes(&mut nonce);
-
-    let ct = cipher
-        .encrypt(
-            XNonce::from_slice(&nonce),
-            Payload {
-                msg: VERIFIER_PLAINTEXT,
-                aad: VERIFIER_AAD,
-            },
-        )
-        .map_err(|_| VaultError::Crypto)?;
-    Ok((nonce, ct))
+    let (nonce, ct) = aead_seal(master, VERIFIER_PLAINTEXT, VERIFIER_AAD).map_err(map_crypto_err)?;
+    Ok((nonce.to_vec(), ct))
 }
 
 /// Verify the master key by decrypting the stored verifier blob and
@@ -212,39 +171,18 @@ pub(crate) fn verify_master_key(
     nonce: &[u8],
     ciphertext: &[u8],
 ) -> Result<(), VaultError> {
-    if nonce.len() != 24 {
+    if nonce.len() != NONCE_LEN {
         return Err(VaultError::Corrupt);
     }
-    let cipher = XChaCha20Poly1305::new(Key::from_slice(master.as_ref()));
-    let pt = cipher
-        .decrypt(
-            XNonce::from_slice(nonce),
-            Payload {
-                msg: ciphertext,
-                aad: VERIFIER_AAD,
-            },
-        )
+    let pt = aead_decrypt(master, nonce, ciphertext, VERIFIER_AAD)
         .map_err(|_| VaultError::AuthenticationFailed)?;
 
-    // Constant-time compare — chacha20poly1305 already authenticates, but
-    // we belt-and-suspenders the equality check just in case.
-    if !constant_time_eq(&pt, VERIFIER_PLAINTEXT) {
+    if !zeroterm_crypto::constant_time_eq(&pt, VERIFIER_PLAINTEXT) {
         let mut pt = pt;
         pt.zeroize();
         return Err(VaultError::AuthenticationFailed);
     }
     Ok(())
-}
-
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut diff = 0u8;
-    for (x, y) in a.iter().zip(b.iter()) {
-        diff |= x ^ y;
-    }
-    diff == 0
 }
 
 #[cfg(test)]
@@ -268,7 +206,6 @@ mod tests {
     fn record_id_is_bound_into_aad() {
         let master = fresh_master();
         let (nonce, ct) = encrypt_record(&master, "id-1", 1, b"hello").unwrap();
-        // Same key (master) but different record id → must fail.
         assert!(decrypt_record(&master, "id-OTHER", 1, &nonce, &ct).is_err());
     }
 

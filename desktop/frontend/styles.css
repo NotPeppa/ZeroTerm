@@ -2436,6 +2436,11 @@ label.checkbox input[type="checkbox"] {
   min-height: 18px;
 }
 
+.sync-status-invalid {
+  color: var(--warn, #d97706);
+  font-weight: 500;
+}
+
 .settings-row > :first-child {
   flex: 1 1 auto;
   min-width: 0;

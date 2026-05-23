@@ -4,6 +4,7 @@ members = [
     "crates/zeroterm-ssh",
     "crates/zeroterm-cli",
     "crates/zeroterm-store",
+    "crates/zeroterm-crypto",
     "crates/zeroterm-vault",
     "crates/zeroterm-app",
     "crates/zeroterm-ffi",
@@ -60,6 +61,7 @@ hex = "0.4"
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+base64 = "0.22"
 
 # OS keychain integration
 keyring = "2"
