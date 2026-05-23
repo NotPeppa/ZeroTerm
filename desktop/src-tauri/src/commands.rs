@@ -2043,17 +2043,27 @@ fn detect_remote_kind(path: &str, kind: FileKind) -> Result<CopyNodeKind, String
     }
 }
 
-fn copy_local_tree_to_local(source: &Path, target: &Path, root_kind: CopyNodeKind) -> Result<(), String> {
+fn copy_local_tree_to_local(
+    source: &Path,
+    target: &Path,
+    root_kind: CopyNodeKind,
+    overwrite: bool,
+) -> Result<(), String> {
     match root_kind {
         CopyNodeKind::File => {
+            if target.exists() && !overwrite {
+                return Err(format!("destination already exists: {}", target.display()));
+            }
             fs::copy(source, target).map_err(|e| {
                 format!("copy file {} -> {}: {e}", source.display(), target.display())
             })?;
             Ok(())
         }
         CopyNodeKind::Dir => {
-            fs::create_dir(target)
-                .map_err(|e| format!("mkdir {}: {e}", target.display()))?;
+            if !target.exists() {
+                fs::create_dir_all(target)
+                    .map_err(|e| format!("mkdir {}: {e}", target.display()))?;
+            }
 
             let mut stack: Vec<(PathBuf, PathBuf)> = vec![(source.to_path_buf(), target.to_path_buf())];
             while let Some((src_dir, dst_dir)) = stack.pop() {
@@ -2068,6 +2078,9 @@ fn copy_local_tree_to_local(source: &Path, target: &Path, root_kind: CopyNodeKin
                     let kind = detect_local_kind(&child_src)?;
                     match kind {
                         CopyNodeKind::File => {
+                            if child_dst.exists() && !overwrite {
+                                return Err(format!("destination already exists: {}", child_dst.display()));
+                            }
                             fs::copy(&child_src, &child_dst).map_err(|e| {
                                 format!(
                                     "copy file {} -> {}: {e}",
@@ -2077,8 +2090,10 @@ fn copy_local_tree_to_local(source: &Path, target: &Path, root_kind: CopyNodeKin
                             })?;
                         }
                         CopyNodeKind::Dir => {
-                            fs::create_dir(&child_dst)
-                                .map_err(|e| format!("mkdir {}: {e}", child_dst.display()))?;
+                            if !child_dst.exists() {
+                                fs::create_dir_all(&child_dst)
+                                    .map_err(|e| format!("mkdir {}: {e}", child_dst.display()))?;
+                            }
                             stack.push((child_src, child_dst));
                         }
                     }
@@ -2094,9 +2109,13 @@ async fn copy_local_tree_to_remote(
     target_sftp: &zeroterm_ssh::Sftp,
     target: &str,
     root_kind: CopyNodeKind,
+    overwrite: bool,
 ) -> Result<(), String> {
     match root_kind {
         CopyNodeKind::File => {
+            if target_sftp.stat(target).await.is_ok() && !overwrite {
+                return Err(format!("destination already exists: {target}"));
+            }
             let data = tokio::fs::read(source)
                 .await
                 .map_err(|e| format!("reading {}: {e}", source.display()))?;
@@ -2107,10 +2126,9 @@ async fn copy_local_tree_to_remote(
             Ok(())
         }
         CopyNodeKind::Dir => {
-            target_sftp
-                .create_dir(target)
-                .await
-                .map_err(|e| e.to_string())?;
+            if target_sftp.create_dir(target).await.is_err() {
+                target_sftp.stat(target).await.map_err(|e| e.to_string())?;
+            }
 
             let mut stack: Vec<(PathBuf, String)> = vec![(source.to_path_buf(), target.to_string())];
             while let Some((src_dir, dst_dir)) = stack.pop() {
@@ -2125,6 +2143,9 @@ async fn copy_local_tree_to_remote(
                     let kind = detect_local_kind(&child_src)?;
                     match kind {
                         CopyNodeKind::File => {
+                            if target_sftp.stat(&child_dst).await.is_ok() && !overwrite {
+                                return Err(format!("destination already exists: {child_dst}"));
+                            }
                             let data = tokio::fs::read(&child_src).await.map_err(|e| {
                                 format!("reading {}: {e}", child_src.display())
                             })?;
@@ -2134,10 +2155,9 @@ async fn copy_local_tree_to_remote(
                                 .map_err(|e| e.to_string())?;
                         }
                         CopyNodeKind::Dir => {
-                            target_sftp
-                                .create_dir(&child_dst)
-                                .await
-                                .map_err(|e| e.to_string())?;
+                            if target_sftp.create_dir(&child_dst).await.is_err() {
+                                target_sftp.stat(&child_dst).await.map_err(|e| e.to_string())?;
+                            }
                             stack.push((child_src, child_dst));
                         }
                     }
@@ -2153,9 +2173,13 @@ async fn copy_remote_tree_to_local(
     source: &str,
     target: &Path,
     root_kind: CopyNodeKind,
+    overwrite: bool,
 ) -> Result<(), String> {
     match root_kind {
         CopyNodeKind::File => {
+            if target.exists() && !overwrite {
+                return Err(format!("destination already exists: {}", target.display()));
+            }
             let bytes = source_sftp
                 .download_to_vec(source)
                 .await
@@ -2166,9 +2190,11 @@ async fn copy_remote_tree_to_local(
             Ok(())
         }
         CopyNodeKind::Dir => {
-            tokio::fs::create_dir(target)
-                .await
-                .map_err(|e| format!("mkdir {}: {e}", target.display()))?;
+            if tokio::fs::metadata(target).await.is_err() {
+                tokio::fs::create_dir_all(target)
+                    .await
+                    .map_err(|e| format!("mkdir {}: {e}", target.display()))?;
+            }
             let mut stack: Vec<(String, PathBuf)> =
                 vec![(source.to_string(), target.to_path_buf())];
             while let Some((src_dir, dst_dir)) = stack.pop() {
@@ -2185,6 +2211,9 @@ async fn copy_remote_tree_to_local(
                     let kind = detect_remote_kind(&child_src, entry.kind)?;
                     match kind {
                         CopyNodeKind::File => {
+                            if child_dst.exists() && !overwrite {
+                                return Err(format!("destination already exists: {}", child_dst.display()));
+                            }
                             let bytes = source_sftp
                                 .download_to_vec(&child_src)
                                 .await
@@ -2194,9 +2223,11 @@ async fn copy_remote_tree_to_local(
                                 .map_err(|e| format!("writing {}: {e}", child_dst.display()))?;
                         }
                         CopyNodeKind::Dir => {
-                            tokio::fs::create_dir(&child_dst)
-                                .await
-                                .map_err(|e| format!("mkdir {}: {e}", child_dst.display()))?;
+                            if tokio::fs::metadata(&child_dst).await.is_err() {
+                                tokio::fs::create_dir_all(&child_dst)
+                                    .await
+                                    .map_err(|e| format!("mkdir {}: {e}", child_dst.display()))?;
+                            }
                             stack.push((child_src, child_dst));
                         }
                     }
@@ -2213,9 +2244,13 @@ async fn copy_remote_tree_to_remote(
     target_sftp: &zeroterm_ssh::Sftp,
     target: &str,
     root_kind: CopyNodeKind,
+    overwrite: bool,
 ) -> Result<(), String> {
     match root_kind {
         CopyNodeKind::File => {
+            if target_sftp.stat(target).await.is_ok() && !overwrite {
+                return Err(format!("destination already exists: {target}"));
+            }
             let data = source_sftp
                 .download_to_vec(source)
                 .await
@@ -2227,10 +2262,9 @@ async fn copy_remote_tree_to_remote(
             Ok(())
         }
         CopyNodeKind::Dir => {
-            target_sftp
-                .create_dir(target)
-                .await
-                .map_err(|e| e.to_string())?;
+            if target_sftp.create_dir(target).await.is_err() {
+                target_sftp.stat(target).await.map_err(|e| e.to_string())?;
+            }
             let mut stack: Vec<(String, String)> = vec![(source.to_string(), target.to_string())];
             while let Some((src_dir, dst_dir)) = stack.pop() {
                 let entries = source_sftp
@@ -2246,6 +2280,9 @@ async fn copy_remote_tree_to_remote(
                     let kind = detect_remote_kind(&child_src, entry.kind)?;
                     match kind {
                         CopyNodeKind::File => {
+                            if target_sftp.stat(&child_dst).await.is_ok() && !overwrite {
+                                return Err(format!("destination already exists: {child_dst}"));
+                            }
                             let data = source_sftp
                                 .download_to_vec(&child_src)
                                 .await
@@ -2256,10 +2293,9 @@ async fn copy_remote_tree_to_remote(
                                 .map_err(|e| e.to_string())?;
                         }
                         CopyNodeKind::Dir => {
-                            target_sftp
-                                .create_dir(&child_dst)
-                                .await
-                                .map_err(|e| e.to_string())?;
+                            if target_sftp.create_dir(&child_dst).await.is_err() {
+                                target_sftp.stat(&child_dst).await.map_err(|e| e.to_string())?;
+                            }
                             stack.push((child_src, child_dst));
                         }
                     }
@@ -2277,7 +2313,9 @@ pub async fn sftp_copy_entry_between_panes(
     source_path: String,
     destination_sftp_id: Option<u64>,
     destination_dir: String,
+    overwrite: Option<bool>,
 ) -> Result<(), String> {
+    let overwrite = overwrite.unwrap_or(false);
     let source_name = Path::new(&source_path)
         .file_name()
         .and_then(|s| s.to_str())
@@ -2299,34 +2337,25 @@ pub async fn sftp_copy_entry_between_panes(
             if root_kind == CopyNodeKind::Dir && dst.starts_with(&src) {
                 return Err("cannot copy a directory into itself".to_string());
             }
-            if fs::symlink_metadata(&dst).is_ok() {
-                return Err(format!("destination already exists: {}", dst.display()));
-            }
-            copy_local_tree_to_local(&src, &dst, root_kind)
+            copy_local_tree_to_local(&src, &dst, root_kind, overwrite)
         }
         (None, Some(dst_id)) => {
             let src = PathBuf::from(&source_path);
             let dst_sftp = lookup_sftp(&state, dst_id)?;
             let dst = remote_join_path(&destination_dir, &source_name);
-            if dst_sftp.stat(&dst).await.is_ok() {
-                return Err(format!("destination already exists: {dst}"));
-            }
             let root_kind = detect_local_kind(&src)?;
-            copy_local_tree_to_remote(&src, &dst_sftp, &dst, root_kind).await
+            copy_local_tree_to_remote(&src, &dst_sftp, &dst, root_kind, overwrite).await
         }
         (Some(src_id), None) => {
             let src_sftp = lookup_sftp(&state, src_id)?;
             let dst_dir = PathBuf::from(&destination_dir);
             let dst = dst_dir.join(&source_name);
-            if fs::symlink_metadata(&dst).is_ok() {
-                return Err(format!("destination already exists: {}", dst.display()));
-            }
             let meta = src_sftp
                 .stat(&source_path)
                 .await
                 .map_err(|e| e.to_string())?;
             let root_kind = detect_remote_kind(&source_path, meta.kind)?;
-            copy_remote_tree_to_local(&src_sftp, &source_path, &dst, root_kind).await
+            copy_remote_tree_to_local(&src_sftp, &source_path, &dst, root_kind, overwrite).await
         }
         (Some(src_id), Some(dst_id)) => {
             let src_sftp = lookup_sftp(&state, src_id)?;
@@ -2342,10 +2371,7 @@ pub async fn sftp_copy_entry_between_panes(
             if root_kind == CopyNodeKind::Dir && src_id == dst_id && is_remote_path_within(&dst, &source_path) {
                 return Err("cannot copy a directory into itself".to_string());
             }
-            if dst_sftp.stat(&dst).await.is_ok() {
-                return Err(format!("destination already exists: {dst}"));
-            }
-            copy_remote_tree_to_remote(&src_sftp, &source_path, &dst_sftp, &dst, root_kind).await
+            copy_remote_tree_to_remote(&src_sftp, &source_path, &dst_sftp, &dst, root_kind, overwrite).await
         }
     }
 }

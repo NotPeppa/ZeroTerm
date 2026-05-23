@@ -454,6 +454,7 @@ const I18N = {
     "files.error.copy_failed": "copy failed: {error}",
     "files.error.copy_entry_failed": "copy {name} failed: {error}",
     "files.error.copy_partial": "Copied {ok}/{total} item(s), first error: {error}",
+    "files.confirm.overwrite": "{path} already exists. Overwrite it?",
     "files.error.permissions_not_supported": "Editing permissions is not available yet.",
     "files.progress.uploading": "Uploading",
     "files.progress.downloading": "Downloading",
@@ -868,6 +869,7 @@ const I18N = {
     "files.error.copy_failed": "复制失败：{error}",
     "files.error.copy_entry_failed": "复制 {name} 失败：{error}",
     "files.error.copy_partial": "已复制 {ok}/{total} 项，首个错误：{error}",
+    "files.confirm.overwrite": "{path} 已存在，是否覆盖？",
     "files.error.permissions_not_supported": "暂不支持编辑权限。",
     "files.progress.uploading": "上传中",
     "files.progress.downloading": "下载中",
@@ -1198,7 +1200,7 @@ const EDITABLE_TEXT_BASENAMES = new Set([
   "sshd_config", "authorized_keys", "known_hosts", "config",
 ]);
 
-const ACE_BASE_PATH = "https://cdn.jsdelivr.net/npm/ace-builds@1.42.0/src-min-noconflict";
+const ACE_BASE_PATH = "./assets/ace";
 const TERMINAL_FONT_STACK = [
   '"ZeroTerm Meslo NF"',
   "monospace",
@@ -1418,7 +1420,7 @@ const settingsNavSync = document.getElementById("settings-nav-sync");
 const settingsGeneralPanel = document.getElementById("settings-general-panel");
 const settingsTerminalPanel = document.getElementById("settings-terminal-panel");
 const settingsSyncPanel = document.getElementById("settings-sync-panel");
-const settingsSyncRefresh = null;
+const settingsSyncRefresh = document.getElementById("settings-sync-refresh");
 const settingsSyncSave = document.getElementById("settings-sync-save");
 const settingsSyncStatus = document.getElementById("settings-sync-status");
 const settingsSyncStatusLine = document.getElementById("settings-sync-status-line");
@@ -1471,42 +1473,10 @@ const settingsSyncS3Sk = document.getElementById("settings-sync-s3-sk");
 const settingsSyncS3SkField = document.getElementById("settings-sync-s3-sk-field");
 const settingsSyncS3Token = document.getElementById("settings-sync-s3-token");
 const settingsSyncS3TokenField = document.getElementById("settings-sync-s3-token-field");
-// Removed in M3 (RFC-002 cutover); kept as null so any straggler references
-// no-op instead of crashing. JS references to these will be cleaned up next pass.
-const settingsSyncProfile = null;
-const settingsSyncActive = null;
-const settingsSyncDelete = null;
-const settingsSyncTest = null;
-const settingsSyncApply = null;
-const settingsSyncPull = null;
-const settingsSyncPush = null;
-const settingsSyncAuto = null;
-const settingsSyncAutoLabel = null;
-const settingsSyncAdvancedToggle = null;
-const settingsSyncAdvanced = null;
-const settingsSyncName = null;
-const settingsSyncEndpoint = null;
-const settingsSyncEndpointField = null;
-const settingsSyncBucket = null;
-const settingsSyncBucketField = null;
-const settingsSyncRegion = null;
-const settingsSyncRegionField = null;
-const settingsSyncS3Endpoint = null;
-const settingsSyncS3EndpointField = null;
-const settingsSyncS3Ak = null;
-const settingsSyncS3AkField = null;
-const settingsSyncS3Sk = null;
-const settingsSyncS3SkField = null;
-const settingsSyncS3St = null;
-const settingsSyncS3StField = null;
-const settingsSyncS3SkToggle = null;
+const settingsSyncS3St = settingsSyncS3Token;
+const settingsSyncS3StField = settingsSyncS3TokenField;
 const settingsSyncS3StToggle = null;
-const settingsSyncS3PathStyle = null;
-const settingsSyncS3PathStyleField = null;
-const settingsSyncUsername = null;
-const settingsSyncUsernameField = null;
-const settingsSyncPassword = null;
-const settingsSyncPasswordField = null;
+const settingsSyncS3SkToggle = null;
 const settingsSyncPasswordToggle = null;
 const settingsSyncRootField = document.getElementById("settings-sync-root-field");
 const settingsNavAbout = document.getElementById("settings-nav-about");
@@ -6250,16 +6220,38 @@ async function copyDraggedEntriesToPane(sourcePane, targetPane, targetDir) {
 
   for (const name of names) {
     const sourcePath = joinPanePath(sourcePane, name);
+    const destinationPath = joinPath(destinationDir, name);
     try {
       await invoke("sftp_copy_entry_between_panes", {
         sourceSftpId,
         sourcePath,
         destinationSftpId,
         destinationDir,
+        overwrite: false,
       });
       copied += 1;
     } catch (e) {
-      errors.push({ name, error: String(e) });
+      const err = String(e || "");
+      if (err.includes("destination already exists")) {
+        const ok = confirm(t("files.confirm.overwrite", { path: destinationPath }));
+        if (ok) {
+          try {
+            await invoke("sftp_copy_entry_between_panes", {
+              sourceSftpId,
+              sourcePath,
+              destinationSftpId,
+              destinationDir,
+              overwrite: true,
+            });
+            copied += 1;
+            continue;
+          } catch (e2) {
+            errors.push({ name, error: String(e2) });
+            continue;
+          }
+        }
+      }
+      errors.push({ name, error: err });
     }
   }
 
