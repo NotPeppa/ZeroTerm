@@ -6697,7 +6697,7 @@ async function pollSftpFollowOnce() {
   sftpFollowPollingTick = false;
 }
 
-async function navigateSftpPane(pane, path, { source = "user" } = {}) {
+async function navigateSftpPane(pane, path, { source = "user", retryOnReconnect = true } = {}) {
   if (source === "user") {
     pane.followLockedByUser = true;
   }
@@ -6723,6 +6723,24 @@ async function navigateSftpPane(pane, path, { source = "user" } = {}) {
         : "";
     renderSftpPane(pane);
   } catch (e) {
+    const msg = String(e || "").toLowerCase();
+    const shouldReconnect =
+      retryOnReconnect &&
+      !local &&
+      pane.host &&
+      pane.hostId &&
+      (msg.includes("session closed") || msg.includes("channel closed") || msg.includes("broken pipe"));
+
+    if (shouldReconnect) {
+      try {
+        pane.statusEl.textContent = t("sftp.status.connecting");
+        await connectSftpPane(pane, pane.host);
+        await navigateSftpPane(pane, path, { source: "system", retryOnReconnect: false });
+        return;
+      } catch {
+        // fall through to visible error below
+      }
+    }
     pane.statusEl.textContent = t("files.error.list_failed", { error: e });
   }
 }
