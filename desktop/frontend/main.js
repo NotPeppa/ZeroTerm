@@ -599,6 +599,16 @@ const I18N = {
     "settings.sync.button.join_repo": "Join Repo",
     "settings.sync.button.forget_engine": "Disconnect",
     "settings.sync.button.clear_all": "Clear all",
+    "settings.sync.button.busy.save": "Saving...",
+    "settings.sync.button.busy.create_repo": "Creating...",
+    "settings.sync.button.busy.join_repo": "Joining...",
+    "settings.sync.button.busy.now": "Syncing...",
+    "settings.sync.button.busy.refresh_stats": "Refreshing...",
+    "settings.sync.button.busy.compact_now": "Compacting...",
+    "settings.sync.button.busy.forget_engine": "Disconnecting...",
+    "settings.sync.button.busy.clear_all": "Clearing...",
+    "settings.sync.button.busy.resolve_conflict": "Resolving...",
+    "settings.update.status.installing": "Installing update...",
     "settings.sync.backend.local_folder": "Local Folder",
     "settings.sync.label.path": "Sync Folder",
     "settings.sync.placeholder.enc_password": "sync passphrase",
@@ -1040,6 +1050,16 @@ const I18N = {
     "settings.sync.button.join_repo": "加入仓库",
     "settings.sync.button.forget_engine": "断开会话",
     "settings.sync.button.clear_all": "清空配置",
+    "settings.sync.button.busy.save": "保存中...",
+    "settings.sync.button.busy.create_repo": "创建中...",
+    "settings.sync.button.busy.join_repo": "加入中...",
+    "settings.sync.button.busy.now": "同步中...",
+    "settings.sync.button.busy.refresh_stats": "刷新中...",
+    "settings.sync.button.busy.compact_now": "压缩中...",
+    "settings.sync.button.busy.forget_engine": "断开中...",
+    "settings.sync.button.busy.clear_all": "清空中...",
+    "settings.sync.button.busy.resolve_conflict": "处理中...",
+    "settings.update.status.installing": "正在安装更新...",
     "settings.sync.backend.local_folder": "本地文件夹",
     "settings.sync.label.path": "同步文件夹",
     "settings.sync.placeholder.enc_password": "同步密码",
@@ -1521,6 +1541,22 @@ function showToast(message, kind = "info", timeoutMs = 2600) {
     node.classList.remove("show");
     window.setTimeout(() => node.remove(), 180);
   }, timeoutMs);
+}
+
+async function runSyncButtonAction(button, busyLabel, task) {
+  const prevLabel = button ? button.textContent : "";
+  if (button) {
+    button.disabled = true;
+    if (busyLabel) button.textContent = busyLabel;
+  }
+  try {
+    return await task();
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = prevLabel;
+    }
+  }
 }
 
 function userFriendlySyncError(err) {
@@ -2662,13 +2698,13 @@ function renderConflictItem(profileId, conflict) {
   keepLocal.type = "button";
   keepLocal.textContent = t("settings.sync.conflicts.keep_local");
   keepLocal.addEventListener("click", () =>
-    resolveConflict(profileId, conflict.id, "keep_local"),
+    resolveConflict(profileId, conflict.id, "keep_local", keepLocal),
   );
   const keepRemote = document.createElement("button");
   keepRemote.type = "button";
   keepRemote.textContent = t("settings.sync.conflicts.keep_remote");
   keepRemote.addEventListener("click", () =>
-    resolveConflict(profileId, conflict.id, "keep_remote"),
+    resolveConflict(profileId, conflict.id, "keep_remote", keepRemote),
   );
   actions.appendChild(keepLocal);
   actions.appendChild(keepRemote);
@@ -2691,21 +2727,26 @@ function previewToText(preview) {
   }
 }
 
-async function resolveConflict(profileId, conflictId, resolution) {
-  try {
-    await invoke("sync_resolve_conflict", {
-      profileId,
-      conflictId,
-      resolution,
-    });
-    if (settingsSyncStatus) {
-      settingsSyncStatus.textContent = t("settings.sync.conflicts.resolved");
+async function resolveConflict(profileId, conflictId, resolution, button) {
+  await runSyncButtonAction(button, t("settings.sync.button.busy.resolve_conflict"), async () => {
+    try {
+      await invoke("sync_resolve_conflict", {
+        profileId,
+        conflictId,
+        resolution,
+      });
+      if (settingsSyncStatus) {
+        settingsSyncStatus.textContent = t("settings.sync.conflicts.resolved");
+      }
+      await refreshSyncConflicts();
+      await refreshHostsCacheFromVault({ silent: true });
+      showToast(t("settings.sync.conflicts.resolved"), "success");
+    } catch (e) {
+      const msg = userFriendlySyncError(e);
+      if (settingsSyncStatus) settingsSyncStatus.textContent = msg;
+      showToast(msg, "error", 4200);
     }
-    await refreshSyncConflicts();
-    await refreshHostsCacheFromVault({ silent: true });
-  } catch (e) {
-    if (settingsSyncStatus) settingsSyncStatus.textContent = String(e);
-  }
+  });
 }
 
 function isAutoSyncEnabled() {
@@ -3552,11 +3593,16 @@ settingsNavTerminal?.addEventListener("click", () => setSettingsSection("termina
 settingsNavSync?.addEventListener("click", () => setSettingsSection("sync"));
 settingsNavAbout?.addEventListener("click", () => setSettingsSection("about"));
 settingsUpdateInstall?.addEventListener("click", async () => {
-  try {
-    await invoke("install_update");
-  } catch (e) {
-    if (settingsUpdateStatus) settingsUpdateStatus.textContent = t("settings.update.failed", { error: String(e) });
-  }
+  await runSyncButtonAction(settingsUpdateInstall, t("settings.update.status.installing"), async () => {
+    try {
+      if (settingsUpdateStatus) settingsUpdateStatus.textContent = t("settings.update.status.installing");
+      await invoke("install_update");
+    } catch (e) {
+      const msg = t("settings.update.failed", { error: String(e) });
+      if (settingsUpdateStatus) settingsUpdateStatus.textContent = msg;
+      showToast(msg, "error", 4200);
+    }
+  });
 });
 settingsGeneralSubtabBasic?.addEventListener("click", () => setSettingsGeneralSubtab("basic"));
 settingsGeneralSubtabSftp?.addEventListener("click", () => setSettingsGeneralSubtab("sftp"));
@@ -3599,7 +3645,8 @@ settingsSyncRootBrowse?.addEventListener("click", async () => {
 });
 
 settingsSyncSave?.addEventListener("click", async () => {
-  try {
+  await runSyncButtonAction(settingsSyncSave, t("settings.sync.button.busy.save"), async () => {
+    try {
     const input = syncFormToInput();
     if (input.backend === "local_folder" && !input.root) {
       if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.error.root_required");
@@ -3651,163 +3698,187 @@ settingsSyncSave?.addEventListener("click", async () => {
       if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.saved");
     }
     await loadSyncProfiles();
-  } catch (e) {
-    if (settingsSyncStatus) settingsSyncStatus.textContent = String(e);
-  }
+    showToast(settingsSyncStatus?.textContent || t("settings.sync.status.saved"), "success");
+    } catch (e) {
+      const msg = userFriendlySyncError(e);
+      if (settingsSyncStatus) settingsSyncStatus.textContent = msg;
+      showToast(msg, "error", 4200);
+    }
+  });
 });
 
 settingsSyncCreateRepo?.addEventListener("click", async () => {
-  const prevLabel = settingsSyncCreateRepo ? settingsSyncCreateRepo.textContent : "";
-  try {
-    if (settingsSyncCreateRepo) {
-      settingsSyncCreateRepo.disabled = true;
-      settingsSyncCreateRepo.textContent = "创建中...";
+  await runSyncButtonAction(settingsSyncCreateRepo, t("settings.sync.button.busy.create_repo"), async () => {
+    try {
+      if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.creating_repo");
+      const id = await ensureSyncProfileReadyForActions();
+      const passphrase = String(settingsSyncEncPassword?.value || "");
+      if (!passphrase) {
+        if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.error.passphrase_required");
+        return;
+      }
+      const rememberPassphrase = Boolean(settingsSyncRememberPassphrase?.checked);
+      await invoke("sync_create_repo", { profileId: id, passphrase, rememberPassphrase });
+      if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.repo_created");
+      showToast(t("settings.sync.alert.repo_created"), "success");
+      await refreshSyncStatusLine();
+      await refreshSyncRepoStats();
+    } catch (e) {
+      const msg = userFriendlySyncError(e);
+      if (settingsSyncStatus) settingsSyncStatus.textContent = msg;
+      showToast(t("settings.sync.alert.repo_failed", { error: msg }), "error", 5200);
     }
-    if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.creating_repo");
-    const id = await ensureSyncProfileReadyForActions();
-    const passphrase = String(settingsSyncEncPassword?.value || "");
-    if (!passphrase) {
-      if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.error.passphrase_required");
-      return;
-    }
-    const rememberPassphrase = Boolean(settingsSyncRememberPassphrase?.checked);
-    await invoke("sync_create_repo", { profileId: id, passphrase, rememberPassphrase });
-    if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.repo_created");
-    showToast(t("settings.sync.alert.repo_created"), "success");
-    await refreshSyncStatusLine();
-    await refreshSyncRepoStats();
-  } catch (e) {
-    const msg = userFriendlySyncError(e);
-    if (settingsSyncStatus) settingsSyncStatus.textContent = msg;
-    showToast(t("settings.sync.alert.repo_failed", { error: msg }), "error", 5200);
-  } finally {
-    if (settingsSyncCreateRepo) {
-      settingsSyncCreateRepo.disabled = false;
-      settingsSyncCreateRepo.textContent = prevLabel || "创建仓库";
-    }
-  }
+  });
 });
 
 settingsSyncJoinRepo?.addEventListener("click", async () => {
-  try {
-    const id = await ensureSyncProfileReadyForActions();
-    const passphrase = String(settingsSyncEncPassword?.value || "");
-    if (!passphrase) {
-      if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.error.passphrase_required");
-      return;
-    }
-    const rememberPassphrase = Boolean(settingsSyncRememberPassphrase?.checked);
-    const r = await invoke("sync_join_repo", { profileId: id, passphrase, rememberPassphrase });
-    if (!r.localVaultIdMatches) {
-      const ok = confirm(t("settings.sync.confirm.vault_mismatch", { remote: r.repoVaultId }));
-      if (!ok) {
-        // Forget the engine so the user can re-try after picking a different repo.
-        await invoke("sync_forget_engine", { profileId: id });
-        if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.aborted");
+  await runSyncButtonAction(settingsSyncJoinRepo, t("settings.sync.button.busy.join_repo"), async () => {
+    try {
+      const id = await ensureSyncProfileReadyForActions();
+      const passphrase = String(settingsSyncEncPassword?.value || "");
+      if (!passphrase) {
+        if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.error.passphrase_required");
         return;
       }
+      const rememberPassphrase = Boolean(settingsSyncRememberPassphrase?.checked);
+      const r = await invoke("sync_join_repo", { profileId: id, passphrase, rememberPassphrase });
+      if (!r.localVaultIdMatches) {
+        const ok = confirm(t("settings.sync.confirm.vault_mismatch", { remote: r.repoVaultId }));
+        if (!ok) {
+          await invoke("sync_forget_engine", { profileId: id });
+          if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.aborted");
+          return;
+        }
+      }
+      if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.joined");
+      await refreshSyncStatusLine();
+      await refreshHostsCacheFromVault({ silent: true });
+      await refreshSyncConflicts();
+      await refreshSyncRepoStats();
+      showToast(t("settings.sync.status.joined"), "success");
+    } catch (e) {
+      const msg = userFriendlySyncError(e);
+      if (settingsSyncStatus) settingsSyncStatus.textContent = msg;
+      showToast(msg, "error", 4200);
     }
-    if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.joined");
-    await refreshSyncStatusLine();
-    await refreshHostsCacheFromVault({ silent: true });
-    await refreshSyncConflicts();
-    await refreshSyncRepoStats();
-  } catch (e) {
-    if (settingsSyncStatus) settingsSyncStatus.textContent = userFriendlySyncError(e);
-  }
+  });
 });
 
 settingsSyncForgetEngine?.addEventListener("click", async () => {
-  try {
-    const id = syncSingleProfileId || syncEditingId;
-    if (!id) return;
-    await invoke("sync_forget_engine", { profileId: id });
-    if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.forgotten");
-    await refreshSyncStatusLine();
-  } catch (e) {
-    if (settingsSyncStatus) settingsSyncStatus.textContent = userFriendlySyncError(e);
-  }
+  await runSyncButtonAction(settingsSyncForgetEngine, t("settings.sync.button.busy.forget_engine"), async () => {
+    try {
+      const id = syncSingleProfileId || syncEditingId;
+      if (!id) return;
+      await invoke("sync_forget_engine", { profileId: id });
+      if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.forgotten");
+      await refreshSyncStatusLine();
+      showToast(t("settings.sync.status.forgotten"), "success");
+    } catch (e) {
+      const msg = userFriendlySyncError(e);
+      if (settingsSyncStatus) settingsSyncStatus.textContent = msg;
+      showToast(msg, "error", 4200);
+    }
+  });
 });
 
 settingsSyncClearAll?.addEventListener("click", async () => {
   const ok = confirm(t("settings.sync.confirm.clear_all"));
   if (!ok) return;
-  try {
-    const r = await invoke("delete_all_sync_profiles");
-    syncSingleProfileId = null;
-    syncEditingId = null;
-    localStorage.removeItem(SETTINGS_KEY_SYNC_ACTIVE_PROFILE);
-    if (settingsSyncStatus) {
-      settingsSyncStatus.textContent = t("settings.sync.status.cleared_all", {
-        count: r?.deletedCount ?? r?.deleted_count ?? 0,
-      });
+  await runSyncButtonAction(settingsSyncClearAll, t("settings.sync.button.busy.clear_all"), async () => {
+    try {
+      const r = await invoke("delete_all_sync_profiles");
+      syncSingleProfileId = null;
+      syncEditingId = null;
+      localStorage.removeItem(SETTINGS_KEY_SYNC_ACTIVE_PROFILE);
+      if (settingsSyncStatus) {
+        settingsSyncStatus.textContent = t("settings.sync.status.cleared_all", {
+          count: r?.deletedCount ?? r?.deleted_count ?? 0,
+        });
+      }
+      showToast(
+        t("settings.sync.status.cleared_all", {
+          count: r?.deletedCount ?? r?.deleted_count ?? 0,
+        }),
+        "success",
+      );
+      await loadSyncProfiles();
+    } catch (e) {
+      const msg = userFriendlySyncError(e);
+      if (settingsSyncStatus) settingsSyncStatus.textContent = msg;
+      showToast(msg, "error", 4200);
     }
-    showToast(
-      t("settings.sync.status.cleared_all", {
-        count: r?.deletedCount ?? r?.deleted_count ?? 0,
-      }),
-      "success",
-    );
-    await loadSyncProfiles();
-  } catch (e) {
-    const msg = userFriendlySyncError(e);
-    if (settingsSyncStatus) settingsSyncStatus.textContent = msg;
-    showToast(msg, "error", 4200);
-  }
+  });
 });
 
 settingsSyncNow?.addEventListener("click", async () => {
-  try {
-    const outcome = await runImmediateSync({});
-    if (settingsSyncStatus) {
-      settingsSyncStatus.textContent = t("settings.sync.status.sync_now", {
-        pulled: outcome.eventsPulled ?? outcome.pulled ?? 0,
-        pushed: outcome.eventsPushed ?? 0,
+  await runSyncButtonAction(settingsSyncNow, t("settings.sync.button.busy.now"), async () => {
+    try {
+      const outcome = await runImmediateSync({});
+      if (settingsSyncStatus) {
+        settingsSyncStatus.textContent = t("settings.sync.status.sync_now", {
+          pulled: outcome.eventsPulled ?? outcome.pulled ?? 0,
+          pushed: outcome.eventsPushed ?? 0,
+        });
+      }
+      markSyncLast("sync_now", outcome.eventsPushed ?? 0, {
+        pulled: outcome.eventsPulled ?? 0,
       });
+      await refreshHostsCacheFromVault({ silent: true });
+      await refreshSyncStatusLine();
+      await refreshSyncConflicts();
+      await refreshSyncRepoStats();
+      showToast(settingsSyncStatus?.textContent || t("settings.sync.button.now"), "success");
+    } catch (e) {
+      const msg = userFriendlySyncError(e);
+      if (settingsSyncStatus) settingsSyncStatus.textContent = msg;
+      showToast(msg, "error", 4200);
     }
-    markSyncLast("sync_now", outcome.eventsPushed ?? 0, {
-      pulled: outcome.eventsPulled ?? 0,
-    });
-    await refreshHostsCacheFromVault({ silent: true });
-    await refreshSyncStatusLine();
-    await refreshSyncConflicts();
-    await refreshSyncRepoStats();
-  } catch (e) {
-    if (settingsSyncStatus) settingsSyncStatus.textContent = userFriendlySyncError(e);
-  }
+  });
 });
 
-settingsSyncRefreshStats?.addEventListener("click", () => {
-  refreshSyncRepoStats().catch((e) => {
-    if (settingsSyncCompactStatus) settingsSyncCompactStatus.textContent = String(e);
+settingsSyncRefreshStats?.addEventListener("click", async () => {
+  await runSyncButtonAction(settingsSyncRefreshStats, t("settings.sync.button.busy.refresh_stats"), async () => {
+    try {
+      await refreshSyncRepoStats();
+      showToast(t("settings.sync.button.refresh_stats"), "success");
+    } catch (e) {
+      const msg = userFriendlySyncError(e);
+      if (settingsSyncCompactStatus) settingsSyncCompactStatus.textContent = msg;
+      showToast(msg, "error", 4200);
+    }
   });
 });
 
 settingsSyncCompactNow?.addEventListener("click", async () => {
   const id = activeSyncProfileId();
   if (!id) return;
-  try {
-    const r = await invoke("sync_compact_now", { profileId: id });
-    if (settingsSyncCompactStatus) {
-      let line = t("settings.sync.compact.done", {
-        events: r.eventsCompacted ?? 0,
-        records: r.recordsInSnapshot ?? 0,
-      });
-      if ((r.eventsRetained ?? 0) > 0) {
-        line += t("settings.sync.compact.retained", { kept: r.eventsRetained });
-      }
-      if ((r.tombstonesPruned ?? 0) > 0) {
-        line += t("settings.sync.compact.tombstones", {
-          tombstones: r.tombstonesPruned,
+  await runSyncButtonAction(settingsSyncCompactNow, t("settings.sync.button.busy.compact_now"), async () => {
+    try {
+      const r = await invoke("sync_compact_now", { profileId: id });
+      if (settingsSyncCompactStatus) {
+        let line = t("settings.sync.compact.done", {
+          events: r.eventsCompacted ?? 0,
+          records: r.recordsInSnapshot ?? 0,
         });
+        if ((r.eventsRetained ?? 0) > 0) {
+          line += t("settings.sync.compact.retained", { kept: r.eventsRetained });
+        }
+        if ((r.tombstonesPruned ?? 0) > 0) {
+          line += t("settings.sync.compact.tombstones", {
+            tombstones: r.tombstonesPruned,
+          });
+        }
+        settingsSyncCompactStatus.textContent = line;
       }
-      settingsSyncCompactStatus.textContent = line;
+      await refreshSyncRepoStats();
+      await refreshSyncStatusLine();
+      showToast(t("settings.sync.button.compact_now"), "success");
+    } catch (e) {
+      const msg = userFriendlySyncError(e);
+      if (settingsSyncCompactStatus) settingsSyncCompactStatus.textContent = msg;
+      showToast(msg, "error", 4200);
     }
-    await refreshSyncRepoStats();
-    await refreshSyncStatusLine();
-  } catch (e) {
-    if (settingsSyncCompactStatus) settingsSyncCompactStatus.textContent = String(e);
-  }
+  });
 });
 
 quickConnectCancel?.addEventListener("click", closeQuickConnectOverlay);
