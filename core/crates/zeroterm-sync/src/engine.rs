@@ -173,7 +173,7 @@ impl SyncEngine {
         passphrase: &str,
         vault_id: &str,
         kdf_params: Argon2Params,
-    ) -> Result<(), Error> {
+    ) -> Result<usize, Error> {
         if self.adapter.read(RepoPaths::manifest()).await?.is_some() {
             return Err(Error::AlreadyExists);
         }
@@ -214,17 +214,18 @@ impl SyncEngine {
 
         // Seed: every existing local record needs to land on the wire.
         // The store's view of "what's dirty" already includes all
-        // freshly inserted local rows; if the store has prior clean rows
-        // (back-fill after a re-create), they get pushed too via list_all_live.
-        self.push_local_events().await?;
+        // freshly inserted local rows.
+        let mut seeded = self.push_local_events().await?;
 
         // For records that aren't yet dirty but exist (e.g. callers
         // back-filled them via apply_upsert prior to create_repo), push
-        // them now as upsert events using their server_rev as event rev.
-        // This is rare in practice, but covers the "re-bootstrap" path.
+        // them now as upsert events too so first bootstrap always seeds
+        // the full local dataset. This also covers the "re-bootstrap"
+        // path where rows are already marked clean.
+        seeded += self.push_clean_seed_events().await?;
 
         self.persist_logical_clock().await?;
-        Ok(())
+        Ok(seeded)
     }
 
     /// Connect to an existing repo. Reads the keyring, unwraps with the
@@ -527,6 +528,70 @@ impl SyncEngine {
 
             self.store.mark_clean(&rec.id, &revision)?;
 
+            pushed += 1;
+        }
+
+        self.persist_applied_events(&applied).await?;
+        Ok(pushed)
+    }
+
+    async fn push_clean_seed_events(&self) -> Result<usize, Error> {
+        let clean_live: Vec<LocalRecord> = self
+            .store
+            .list_all_live()?
+            .into_iter()
+            .filter(|r| !r.dirty)
+            .collect();
+        if clean_live.is_empty() {
+            return Ok(0);
+        }
+
+        let root_key = self.clone_root_key().await?;
+        let vault_id = self.vault_id_required().await?;
+        let now = now_ms();
+
+        let mut applied = self.load_applied_events().await?;
+        let mut pushed = 0usize;
+
+        for rec in clean_live {
+            let (clock, event_id, revision) = {
+                let st = self.state.lock().await;
+                let clock = st.clock.tick();
+                let event_id = uuid::Uuid::now_v7().to_string();
+                let revision = if rec.local_rev.is_empty() {
+                    uuid::Uuid::now_v7().to_string()
+                } else {
+                    rec.local_rev.clone()
+                };
+                (clock, event_id, revision)
+            };
+
+            let (nonce, ct) = crypto::seal_record(
+                &root_key,
+                &vault_id,
+                &rec.id,
+                &rec.kind,
+                &revision,
+                &rec.plaintext,
+            )?;
+            let ev = event::new_upsert(
+                &event_id,
+                &self.device_id,
+                clock,
+                now,
+                &vault_id,
+                &rec.id,
+                &rec.kind,
+                &revision,
+                rec.base_server_rev.clone(),
+                &nonce,
+                &ct,
+            );
+
+            let path = RepoPaths::event_filename_ztlog(now, clock, &self.device_id, &event_id);
+            self.adapter.write_new(&path, &ev.to_bytes()?).await?;
+            applied.insert(event_id);
+            self.store.mark_clean(&rec.id, &revision)?;
             pushed += 1;
         }
 

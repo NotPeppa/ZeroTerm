@@ -515,6 +515,7 @@ const I18N = {
     "settings.sync.status.updated": "Profile updated",
     "settings.sync.status.sync_now": "Sync complete: pulled {pulled}, pushed {pushed}",
     "settings.sync.status.repo_created": "New sync repo created and seeded",
+    "settings.sync.status.repo_created_seeded": "New sync repo created and seeded {count} record(s)",
     "settings.sync.status.creating_repo": "Creating sync repo...",
     "settings.sync.alert.repo_created": "Sync repo created successfully.",
     "settings.sync.alert.repo_failed": "Create repo failed:\n{error}",
@@ -966,6 +967,7 @@ const I18N = {
     "settings.sync.status.updated": "配置已更新",
     "settings.sync.status.sync_now": "同步完成：拉取 {pulled}，推送 {pushed}",
     "settings.sync.status.repo_created": "已创建新同步仓库并写入快照",
+    "settings.sync.status.repo_created_seeded": "已创建新同步仓库，初始化写入 {count} 条记录",
     "settings.sync.status.creating_repo": "正在创建同步仓库...",
     "settings.sync.alert.repo_created": "同步仓库创建成功。",
     "settings.sync.alert.repo_failed": "创建仓库失败：\n{error}",
@@ -3718,8 +3720,12 @@ settingsSyncCreateRepo?.addEventListener("click", async () => {
         return;
       }
       const rememberPassphrase = Boolean(settingsSyncRememberPassphrase?.checked);
-      await invoke("sync_create_repo", { profileId: id, passphrase, rememberPassphrase });
-      if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.repo_created");
+      const r = await invoke("sync_create_repo", { profileId: id, passphrase, rememberPassphrase });
+      if (settingsSyncStatus) {
+        settingsSyncStatus.textContent = t("settings.sync.status.repo_created_seeded", {
+          count: Number(r?.seededRecords ?? 0),
+        });
+      }
       showToast(t("settings.sync.alert.repo_created"), "success");
       await refreshSyncStatusLine();
       await refreshSyncRepoStats();

@@ -559,14 +559,14 @@ impl App {
         manager: &SyncManager,
         profile_id: &str,
         passphrase: &str,
-    ) -> Result<(), AppError> {
+    ) -> Result<usize, AppError> {
         let profile = self.find_sync_profile(profile_id)?;
         let engine = self.engine_for_profile(&profile).await?;
-        engine
+        let seeded = engine
             .create_repo(passphrase, self.vault_id(), Default::default())
             .await?;
         manager.insert(profile_id, engine).await;
-        Ok(())
+        Ok(seeded)
     }
 
     pub async fn sync_join_repo(

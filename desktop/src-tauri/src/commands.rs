@@ -689,15 +689,22 @@ pub async fn sync_create_repo(
     profile_id: String,
     passphrase: String,
     remember_passphrase: Option<bool>,
-) -> Result<(), String> {
+) -> Result<SyncCreateRepoResult, String> {
     let (app, manager) = clone_app_and_sync(&state)?;
-    app.sync_create_repo(&manager, &profile_id, &passphrase)
+    let seeded_records = app
+        .sync_create_repo(&manager, &profile_id, &passphrase)
         .await
         .map_err(|e| e.to_string())?;
     if remember_passphrase.unwrap_or(false) {
         let _ = zeroterm_app::keychain::save_sync_encryption_secret(&profile_id, &passphrase);
     }
-    Ok(())
+    Ok(SyncCreateRepoResult { seeded_records })
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncCreateRepoResult {
+    pub seeded_records: usize,
 }
 
 #[tauri::command]
