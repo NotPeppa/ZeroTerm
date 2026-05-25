@@ -67,13 +67,14 @@ pub async fn unlock_vault(
 ) -> Result<(), String> {
     let path = zeroterm_app::default_vault_path()
         .ok_or_else(|| "no default vault path on this OS".to_string())?;
-    let app = App::open(&path, &password).map_err(|e| e.to_string())?;
-    *state.app.lock().unwrap() = Some(Arc::new(app));
+    let app = Arc::new(App::open(&path, &password).map_err(|e| e.to_string())?);
+    *state.app.lock().unwrap() = Some(app.clone());
     if remember {
         if let Err(e) = zeroterm_app::keychain::save_master_password(&path, &password) {
             tracing::warn!(error = %e, "could not cache master password in keychain");
         }
     }
+    bootstrap_sync_engines_from_keychain(app, state.sync.clone()).await;
     info!(remember, "vault unlocked");
     Ok(())
 }
@@ -134,7 +135,9 @@ pub async fn try_keychain_unlock(state: State<'_, AppState>) -> Result<bool, Str
     };
     match App::open(&path, &pw) {
         Ok(app) => {
-            *state.app.lock().unwrap() = Some(Arc::new(app));
+            let app = Arc::new(app);
+            *state.app.lock().unwrap() = Some(app.clone());
+            bootstrap_sync_engines_from_keychain(app, state.sync.clone()).await;
             info!("vault unlocked from keychain cache");
             Ok(true)
         }
@@ -143,6 +146,35 @@ pub async fn try_keychain_unlock(state: State<'_, AppState>) -> Result<bool, Str
             Ok(false)
         }
         Err(e) => Err(e.to_string()),
+    }
+}
+
+async fn bootstrap_sync_engines_from_keychain(
+    app: Arc<zeroterm_app::App>,
+    manager: Arc<zeroterm_app::SyncManager>,
+) {
+    let profiles = match app.list_sync_profiles() {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::debug!(error = %e, "could not list sync profiles during keychain bootstrap");
+            return;
+        }
+    };
+
+    for profile in profiles {
+        let profile_id = profile.id;
+        let passphrase = match zeroterm_app::keychain::get_sync_encryption_secret(&profile_id) {
+            Ok(Some(v)) => v,
+            Ok(None) => continue,
+            Err(e) => {
+                tracing::debug!(profile_id = %profile_id, error = %e, "could not read sync passphrase from keychain");
+                continue;
+            }
+        };
+
+        if let Err(e) = app.sync_join_repo(&manager, &profile_id, &passphrase).await {
+            tracing::debug!(profile_id = %profile_id, error = %e, "sync auto-bootstrap from remembered passphrase failed");
+        }
     }
 }
 
@@ -487,6 +519,22 @@ fn profile_from_input(id: String, input: SyncProfileInput) -> Result<SyncProfile
     })
 }
 
+fn sync_backend_key_from_input(input: &SyncProfileInput) -> &str {
+    match input.backend.as_str() {
+        "filesystem" => "local_folder",
+        other => other,
+    }
+}
+
+fn sync_backend_key_from_profile(profile: &SyncProfile) -> &'static str {
+    match profile.backend {
+        SyncBackend::LocalFolder { .. } => "local_folder",
+        SyncBackend::Sftp { .. } => "sftp",
+        SyncBackend::WebDav { .. } => "webdav",
+        SyncBackend::S3 { .. } => "s3",
+    }
+}
+
 #[tauri::command]
 pub async fn list_sync_profiles(state: State<'_, AppState>) -> Result<Vec<SyncProfileIO>, String> {
     let app_lock = state.app.lock().unwrap();
@@ -500,11 +548,25 @@ pub async fn save_sync_profile(
     state: State<'_, AppState>,
     input: SyncProfileInput,
 ) -> Result<String, String> {
+    let backend_key = sync_backend_key_from_input(&input).to_string();
     let credential = sync_profile_credential_from_input(&input);
     let app_lock = state.app.lock().unwrap();
     let app = app_lock.as_ref().ok_or("vault is locked")?;
-    let p = profile_from_input(String::new(), input)?;
-    let id = app.save_sync_profile(&p).map_err(|e| e.to_string())?;
+    let existing = app
+        .list_sync_profiles()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .find(|p| sync_backend_key_from_profile(p) == backend_key);
+
+    let id = if let Some(existing) = existing {
+        let mut p = profile_from_input(existing.id.clone(), input)?;
+        p.created_at = existing.created_at;
+        app.update_sync_profile(&p).map_err(|e| e.to_string())?;
+        existing.id
+    } else {
+        let p = profile_from_input(String::new(), input)?;
+        app.save_sync_profile(&p).map_err(|e| e.to_string())?
+    };
     persist_sync_profile_credential(&id, &credential);
     Ok(id)
 }
@@ -537,6 +599,44 @@ pub async fn delete_sync_profile(state: State<'_, AppState>, id: String) -> Resu
     let _ = zeroterm_app::keychain::forget_sync_backend_credential(&id);
     let _ = zeroterm_app::keychain::forget_sync_backend_extra(&id);
     Ok(())
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteAllSyncProfilesResult {
+    pub deleted_count: usize,
+}
+
+#[tauri::command]
+pub async fn delete_all_sync_profiles(
+    state: State<'_, AppState>,
+) -> Result<DeleteAllSyncProfilesResult, String> {
+    let ids = {
+        let app_lock = state.app.lock().unwrap();
+        let app = app_lock.as_ref().ok_or("vault is locked")?;
+        app.list_sync_profiles()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .map(|p| p.id)
+            .collect::<Vec<_>>()
+    };
+
+    let mut deleted_count = 0usize;
+    for id in &ids {
+        {
+            let app_lock = state.app.lock().unwrap();
+            let app = app_lock.as_ref().ok_or("vault is locked")?;
+            app.delete_sync_profile(id).map_err(|e| e.to_string())?;
+        }
+        state.sync.forget(id).await;
+        let _ = zeroterm_app::keychain::forget_sync_encryption_secret(id);
+        let _ = zeroterm_app::keychain::forget_sync_backend_credential(id);
+        let _ = zeroterm_app::keychain::forget_sync_backend_extra(id);
+        deleted_count += 1;
+    }
+
+    state.sync.forget_all().await;
+    Ok(DeleteAllSyncProfilesResult { deleted_count })
 }
 
 /// What the keychain needs to know after a save/update. Empty strings
@@ -667,6 +767,13 @@ pub async fn sync_forget_engine(
 ) -> Result<(), String> {
     state.sync.forget(&profile_id).await;
     Ok(())
+}
+
+#[tauri::command]
+pub async fn sync_has_remembered_passphrase(profile_id: String) -> Result<bool, String> {
+    zeroterm_app::keychain::get_sync_encryption_secret(&profile_id)
+        .map(|v| v.is_some())
+        .map_err(|e| e.to_string())
 }
 
 #[derive(Debug, Serialize)]

@@ -360,7 +360,7 @@ impl SyncEngine {
         let listed = self.adapter.list(RepoPaths::events_dir(), true).await?;
         let mut event_paths: Vec<String> = listed
             .into_iter()
-            .filter(|m| m.path.ends_with(".json"))
+            .filter(|m| RepoPaths::is_event_path(&m.path))
             .map(|m| m.path)
             .collect();
         event_paths.sort();
@@ -369,7 +369,7 @@ impl SyncEngine {
             let Some(bytes) = self.adapter.read(&path).await? else {
                 continue;
             };
-            let ev = RemoteEvent::from_json(&bytes)?;
+            let ev = decode_event(&bytes)?;
 
             if applied.contains(&ev.event_id) {
                 tally.already_seen += 1;
@@ -518,8 +518,8 @@ impl SyncEngine {
                 )
             };
 
-            let path = RepoPaths::event_filename(now, clock, &self.device_id, &event_id);
-            self.adapter.write_new(&path, &ev.to_json()?).await?;
+            let path = RepoPaths::event_filename_ztlog(now, clock, &self.device_id, &event_id);
+            self.adapter.write_new(&path, &ev.to_bytes()?).await?;
 
             // Our own event must be marked applied so the next apply
             // pass doesn't try to re-ingest it.
@@ -686,7 +686,7 @@ impl SyncEngine {
         let listed = self.adapter.list(RepoPaths::events_dir(), true).await?;
         let mut paths: Vec<_> = listed
             .into_iter()
-            .filter(|m| m.path.ends_with(".json"))
+            .filter(|m| RepoPaths::is_event_path(&m.path))
             .collect();
         paths.sort_by(|a, b| a.path.cmp(&b.path));
 
@@ -700,7 +700,7 @@ impl SyncEngine {
             let Some(bytes) = self.adapter.read(&meta.path).await? else {
                 continue;
             };
-            let ev = RemoteEvent::from_json(&bytes)?;
+            let ev = decode_event(&bytes)?;
             if ev.vault_id != vault_id {
                 continue;
             }
@@ -951,6 +951,20 @@ impl SyncEngine {
         self.store
             .put_sync_state(KEY_LOGICAL_CLOCK, &value.to_le_bytes())?;
         Ok(())
+    }
+}
+
+/// Decode an event read from the repo. Auto-detects which format the
+/// caller wrote based on the leading magic bytes:
+///   - `.ztlog` frames are length-bounded binary and start with `b"ZTLG"`
+///     (no JSON document does).
+///   - Anything else is fed to [`RemoteEvent::from_json`]. Pre-M10
+///     repos with `.json` files keep working without a migration step.
+fn decode_event(bytes: &[u8]) -> Result<RemoteEvent, Error> {
+    if RemoteEvent::looks_like_ztlog(bytes) {
+        RemoteEvent::from_bytes(bytes)
+    } else {
+        RemoteEvent::from_json(bytes)
     }
 }
 

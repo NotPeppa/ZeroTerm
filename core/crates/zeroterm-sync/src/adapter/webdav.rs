@@ -3,8 +3,8 @@
 //! Maps the [`crate::adapter::SyncAdapter`] trait onto a WebDAV server.
 //! Path scheme: every adapter method receives a repo-relative key
 //! (e.g. `"manifest.json"`, `"events/2024-03/ev-…json"`); this adapter
-//! prepends `<base_url>/<root_path>/.zeroterm-sync/` to form the
-//! absolute URL. The `.zeroterm-sync/` marker mirrors what the local
+//! prepends `<base_url>/<root_path>/zeroterm-sync/` to form the
+//! absolute URL. The `zeroterm-sync/` marker mirrors what the local
 //! and SFTP adapters do so all three backends look interchangeable.
 //!
 //! HTTP verbs used:
@@ -87,7 +87,7 @@ impl WebDavPaths {
         }
     }
 
-    /// URL of the `.zeroterm-sync/` collection itself (no trailing key).
+    /// URL of the `zeroterm-sync/` collection itself (no trailing key).
     pub(crate) fn repo_root_url(&self) -> String {
         if self.root_path.is_empty() {
             format!("{}/{}", self.base_url, REPO_DIR)
@@ -141,20 +141,70 @@ impl WebDavAdapter {
     }
 
     async fn mkcol_one(&self, url: &str) -> Result<(), Error> {
+        let mkcol_url = if url.ends_with('/') {
+            url.to_string()
+        } else {
+            format!("{url}/")
+        };
         let res = self
             .client
-            .request(Method::from_bytes(b"MKCOL").unwrap(), url)
+            .request(Method::from_bytes(b"MKCOL").unwrap(), &mkcol_url)
             .send()
             .await
             .map_err(transport_err)?;
-        // 201 Created, 405 Method Not Allowed (already a collection),
-        // 409 Conflict (already exists as a file — rare for our layout)
-        // are all "fine, keep going".
-        match res.status() {
+        // 201 Created and 405 Method Not Allowed (already exists) are
+        // both idempotent-success for our directory bootstrap flow.
+        //
+        // Some servers (including certain Nextcloud setups) return 409
+        // when the collection already exists. For 409 we probe with HEAD:
+        // if the path exists, treat as success; otherwise bubble the error.
+        let status = res.status();
+        match status {
             s if s.is_success() => Ok(()),
-            StatusCode::METHOD_NOT_ALLOWED | StatusCode::CONFLICT => Ok(()),
-            other => Err(http_err("MKCOL", url, other)),
+            StatusCode::METHOD_NOT_ALLOWED => Ok(()),
+            StatusCode::CONFLICT => {
+                let mkcol_body = res.text().await.unwrap_or_default();
+                let probe = self
+                    .client
+                    .head(&mkcol_url)
+                    .send()
+                    .await
+                    .map_err(transport_err)?;
+                match probe.status() {
+                    s if s.is_success() => Ok(()),
+                    other => Err(Error::Io(std::io::Error::other(format!(
+                        "webdav MKCOL {mkcol_url} failed: {status}; HEAD probe: {other}; body: {mkcol_body}"
+                    )))),
+                }
+            }
+            other => {
+                let body = res.text().await.unwrap_or_default();
+                Err(Error::Io(std::io::Error::other(format!(
+                    "webdav MKCOL {mkcol_url} failed: {other}; body: {body}"
+                ))))
+            }
         }
+    }
+
+    async fn ensure_root_path_dirs(&self) -> Result<(), Error> {
+        let root = self.paths.root_path.trim_matches('/');
+        if root.is_empty() {
+            return Ok(());
+        }
+
+        let mut acc = String::new();
+        for part in root.split('/') {
+            if part.is_empty() {
+                continue;
+            }
+            if !acc.is_empty() {
+                acc.push('/');
+            }
+            acc.push_str(part);
+            let url = format!("{}/{}", self.paths.base_url, acc);
+            self.mkcol_one(&url).await?;
+        }
+        Ok(())
     }
 }
 
@@ -329,10 +379,12 @@ impl SyncAdapter for WebDavAdapter {
         // Idempotent: 405/409 mean "already a collection", which is
         // what we want.
         let key = key.trim_matches('/');
+        self.ensure_root_path_dirs().await?;
+        // Ensure the repo root collection exists before creating
+        // descendants like `snapshots/` or `events/YYYY-MM/`.
+        self.mkcol_one(&self.paths.repo_root_url()).await?;
         if key.is_empty() {
-            // Ensuring the repo root itself exists is a useful no-op
-            // for the engine's `create_repo` path.
-            return self.mkcol_one(&self.paths.repo_root_url()).await;
+            return Ok(());
         }
         let mut acc = String::new();
         for part in key.split('/') {

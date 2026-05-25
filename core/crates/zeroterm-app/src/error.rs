@@ -23,7 +23,7 @@ pub enum AppError {
     #[error("sync engine error: {0}")]
     Sync(#[from] zeroterm_sync::error::Error),
 
-    #[error("sync engine for profile '{0}' is not bootstrapped — call create_repo or join_repo first")]
+    #[error("sync is not connected yet — please create or join a repo first")]
     SyncEngineMissing(String),
 
     #[error("no sync profile with id '{0}'")]

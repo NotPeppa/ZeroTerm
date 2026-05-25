@@ -1,7 +1,6 @@
 //! Errors raised by the (new) sync engine.
 //!
-//! These are deliberately distinct from [`crate::legacy::SyncError`] —
-//! the new repo-based engine has a different error shape (per-record
+//! These are deliberately shaped for the repo-based engine (per-record
 //! conflicts, manifest parse errors, repo locking) and we don't want
 //! the migration to be gated on lining up enum variants.
 

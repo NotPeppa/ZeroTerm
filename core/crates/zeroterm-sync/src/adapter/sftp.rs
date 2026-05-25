@@ -8,8 +8,8 @@
 //!
 //! Path scheme: every adapter method receives a repo-relative key (e.g.
 //! `"manifest.json"`, `"events/2024-03/ev-…json"`); this adapter
-//! prepends `<remote_dir>/.zeroterm-sync/` to form an absolute remote
-//! path. The repo dir name `.zeroterm-sync/` matches the local-folder
+//! prepends `<remote_dir>/zeroterm-sync/` to form an absolute remote
+//! path. The repo dir name `zeroterm-sync/` matches the local-folder
 //! adapter so the two stores look identical on the wire.
 
 use std::sync::Arc;
@@ -76,7 +76,7 @@ impl SftpPaths {
         }
     }
 
-    /// Absolute path of the `.zeroterm-sync` repo dir.
+    /// Absolute path of the `zeroterm-sync` repo dir.
     pub(crate) fn repo_root(&self) -> String {
         if self.base_dir == "/" {
             format!("/{REPO_DIR}")
@@ -89,7 +89,7 @@ impl SftpPaths {
 impl SftpAdapter {
     /// Wrap a freshly-connected SFTP channel.
     ///
-    /// `remote_dir` is the directory under which `.zeroterm-sync/` will
+    /// `remote_dir` is the directory under which `zeroterm-sync/` will
     /// be created. It must be an absolute remote path (most SFTP servers
     /// have a per-user `$HOME` cwd, so relative paths *usually* work —
     /// but absolute is the only contract we can rely on).

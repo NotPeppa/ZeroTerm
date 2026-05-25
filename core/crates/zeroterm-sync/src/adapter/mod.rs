@@ -1,6 +1,6 @@
 //! The new sync adapter trait.
 //!
-//! Replaces the legacy ETag-CAS-based [`crate::legacy::SyncAdapter`] with
+//! Replaces the old ETag-CAS-based sync adapter model with
 //! a smaller API tailored to the repo layout:
 //!   - `write_new` for append-only files (events, snapshots) — fails if
 //!     the path already exists, so collisions are caught loudly instead

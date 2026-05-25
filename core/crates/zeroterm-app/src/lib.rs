@@ -14,8 +14,8 @@ pub use app::App;
 pub use error::AppError;
 pub use host::{ForwardSpec, Host, HostAuth};
 pub use sync::{
-    local_device_id, ConflictResolution, ConflictView, SyncBackend, SyncBackendKind,
-    SyncManager, SyncOutcome, SyncProfile, SyncStatus,
+    local_device_id, ConflictResolution, ConflictView, SyncBackend, SyncManager, SyncOutcome,
+    SyncProfile, SyncStatus,
 };
 
 // Re-exported so consumers can pattern-match on the inner vault error

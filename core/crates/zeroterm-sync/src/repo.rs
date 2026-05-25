@@ -1,7 +1,7 @@
-//! Layout of the `.zeroterm-sync/` repository on the remote (RFC-002 §7).
+//! Layout of the `zeroterm-sync/` repository on the remote (RFC-002 §7).
 //!
 //! ```text
-//! <root>/.zeroterm-sync/
+//! <root>/zeroterm-sync/
 //! ├── manifest.json              # top-level pointers (head_clock, snapshots, …)
 //! ├── keyring.json                # device entries (see [`crate::keyring`])
 //! ├── snapshots/
@@ -22,9 +22,8 @@
 
 use std::path::PathBuf;
 
-/// The directory name inside the user-chosen sync root. Hidden by
-/// default on Unix; on Windows it's just a normal directory.
-pub const REPO_DIR: &str = ".zeroterm-sync";
+/// The directory name inside the user-chosen sync root.
+pub const REPO_DIR: &str = "zeroterm-sync";
 
 /// Schema version of the *repo layout* itself. Distinct from the
 /// keyring schema and the manifest schema — those are independent
@@ -77,12 +76,39 @@ impl RepoPaths {
     }
 
     /// `events/YYYY-MM/ev-<clock12>-<device>-<ulid>.json`.
+    ///
+    /// The JSON path stays around so callers can write the legacy
+    /// format if they need to (e.g. for human-readable test fixtures);
+    /// new writers should prefer [`Self::event_filename_ztlog`].
     pub fn event_filename(unix_ms: i64, lamport_clock: u64, device_id: &str, ulid: &str) -> String {
         let bucket = Self::event_bucket(unix_ms);
         // 12 zero-padded digits so lexicographic order matches numeric
         // order up to ~10^12 events. (uuidv7 is sortable too, but the
         // Lamport clock is the authoritative ordering.)
         format!("{bucket}/ev-{lamport_clock:012}-{device_id}-{ulid}.json")
+    }
+
+    /// `events/YYYY-MM/ev-<clock12>-<device>-<ulid>.ztlog`.
+    ///
+    /// Compact binary format introduced in M10. Same lex-sort
+    /// invariant as the `.json` filename — both share the
+    /// `ev-<clock12>-` prefix so a mixed directory still iterates in
+    /// clock order.
+    pub fn event_filename_ztlog(
+        unix_ms: i64,
+        lamport_clock: u64,
+        device_id: &str,
+        ulid: &str,
+    ) -> String {
+        let bucket = Self::event_bucket(unix_ms);
+        format!("{bucket}/ev-{lamport_clock:012}-{device_id}-{ulid}.ztlog")
+    }
+
+    /// True if `path` looks like an event log file we should ingest.
+    /// Used by the engine's apply / compact loops so old `.json`
+    /// fixtures and new `.ztlog` writes both get picked up.
+    pub fn is_event_path(path: &str) -> bool {
+        path.ends_with(".json") || path.ends_with(".ztlog")
     }
 
     /// `snapshots/snapshot-<clock12>-<ulid>.bin`.
@@ -140,6 +166,30 @@ mod tests {
         let a = RepoPaths::event_filename(1_700_000_000_000, 5, "dev-A", "01J");
         let b = RepoPaths::event_filename(1_700_000_000_000, 1000, "dev-A", "01J");
         assert!(a < b, "{a} should sort before {b}");
+    }
+
+    #[test]
+    fn event_filename_ztlog_uses_ztlog_extension() {
+        let p = RepoPaths::event_filename_ztlog(1_710_460_800_000, 42, "dev-A", "01J");
+        assert!(p.starts_with("events/2024-03/ev-"));
+        assert!(p.ends_with(".ztlog"));
+    }
+
+    #[test]
+    fn mixed_event_files_sort_by_clock() {
+        // .json and .ztlog at the same clock interleave deterministically;
+        // ordering between them at equal (clock, device, ulid) is decided
+        // by extension, but the engine relies only on the (clock) prefix.
+        let json_path = RepoPaths::event_filename(1_710_460_800_000, 5, "dev-A", "01J");
+        let zt_path = RepoPaths::event_filename_ztlog(1_710_460_800_000, 1000, "dev-A", "01J");
+        assert!(json_path < zt_path);
+    }
+
+    #[test]
+    fn is_event_path_recognises_both_formats() {
+        assert!(RepoPaths::is_event_path("events/2024-03/ev-foo.json"));
+        assert!(RepoPaths::is_event_path("events/2024-03/ev-foo.ztlog"));
+        assert!(!RepoPaths::is_event_path("events/2024-03/ev-foo.txt"));
     }
 
     #[test]

@@ -2045,7 +2045,8 @@ label.checkbox input[type="checkbox"] {
 }
 
 .settings-page {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   display: block;
   background: linear-gradient(180deg, #1f2128 0%, #1c1f27 100%);
 }
@@ -2054,6 +2055,7 @@ label.checkbox input[type="checkbox"] {
   display: grid;
   grid-template-columns: 220px 1fr;
   height: 100%;
+  min-height: 0;
 }
 
 .settings-sidebar {
@@ -2118,6 +2120,7 @@ label.checkbox input[type="checkbox"] {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  min-height: 0;
 }
 
 .settings-page-body {
@@ -2436,9 +2439,93 @@ label.checkbox input[type="checkbox"] {
   min-height: 18px;
 }
 
+.settings-sync-stats-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  border-top: 1px solid rgba(90, 112, 151, 0.28);
+}
+
+.settings-sync-stat-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 2px;
+  border-bottom: 1px solid rgba(90, 112, 151, 0.24);
+}
+
+.settings-sync-stat-key {
+  color: #a8b9d8;
+  font-size: 12px;
+}
+
+.settings-sync-stat-value {
+  color: #e6eeff;
+  font-size: 12px;
+  font-weight: 620;
+  font-family: "JetBrains Mono", "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-sync-stat-row.is-total {
+  background: transparent;
+}
+
+.settings-sync-stat-row.is-total .settings-sync-stat-key {
+  color: #dbe7ff;
+  font-weight: 680;
+}
+
+.settings-sync-stat-row:last-child {
+  border-bottom: 0;
+}
+
 .sync-status-invalid {
   color: var(--warn, #d97706);
   font-weight: 500;
+}
+
+.zt-toast-host {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 4000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.zt-toast {
+  min-width: 240px;
+  max-width: 460px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #3b4c73;
+  background: rgba(23, 34, 61, 0.95);
+  color: #e9f1ff;
+  font-size: 13px;
+  line-height: 1.35;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+  transform: translateY(8px);
+  opacity: 0;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.zt-toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.zt-toast-success {
+  border-color: #3f7d64;
+  background: rgba(22, 55, 45, 0.95);
+}
+
+.zt-toast-error {
+  border-color: #8b4a4a;
+  background: rgba(64, 28, 28, 0.95);
 }
 
 .settings-row > :first-child {

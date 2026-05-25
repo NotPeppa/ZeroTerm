@@ -32,7 +32,7 @@ const SYNC_PROFILE_KIND: &str = "sync_profile";
 #[serde(tag = "backend", rename_all = "snake_case")]
 pub enum SyncBackend {
     /// Sync via a directory the user maintains (iCloud Drive, Dropbox,
-    /// Syncthing, USB stick, …). `.zeroterm-sync/` lives under `root`.
+    /// Syncthing, USB stick, …). `zeroterm-sync/` lives under `root`.
     LocalFolder { root: String },
     /// SFTP placeholder — `host_ref` is the vault id of an existing
     /// host record + remote dir on that host. Resolved into an SFTP
@@ -45,6 +45,7 @@ pub enum SyncBackend {
     /// profile — it lives in the OS keychain under a key derived from
     /// the profile id, matching the sync passphrase model.
     WebDav {
+        #[serde(default, alias = "base_url")]
         url: String,
         #[serde(default)]
         root_path: String,
@@ -911,11 +912,6 @@ impl LocalRecordStore for VaultBackedStore {
             .map_err(map_vault_err)
     }
 }
-
-// Legacy re-exports kept temporarily so the rest of the codebase can keep
-// compiling while the desktop crate is updated. M3-final removes these
-// once `commands.rs` is rewritten.
-pub use SyncBackend as SyncBackendKind;
 
 #[cfg(test)]
 mod tests {

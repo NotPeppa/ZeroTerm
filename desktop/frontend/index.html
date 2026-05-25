@@ -367,7 +367,7 @@ $ npm run build && npm run start</pre>
 
                           <section id="settings-sync-panel" class="settings-panel" hidden>
                             <div class="settings-sync-method-block">
-                              <div class="settings-item-title">同步方式</div>
+                              <div class="settings-item-title" id="settings-sync-method-title">同步方式</div>
                               <div class="settings-sync-method-row">
                                 <select id="settings-sync-backend">
                                   <option value="local_folder">Local Folder</option>
@@ -411,6 +411,7 @@ $ npm run build && npm run start</pre>
                                   <div id="settings-sync-webdav-pw-field" class="settings-sync-field settings-sync-field-full" hidden>
                                     <div id="settings-sync-webdav-pw-label" class="settings-item-title">密码</div>
                                     <input id="settings-sync-webdav-pw" type="password" placeholder="WebDAV 服务密码" autocomplete="off" />
+                                    <p id="settings-sync-webdav-pw-hint" class="muted tiny">已保存在系统钥匙串；留空表示不修改。</p>
                                   </div>
                                   <div id="settings-sync-s3-region-field" class="settings-sync-field settings-sync-field-full" hidden>
                                     <div id="settings-sync-s3-region-label" class="settings-item-title">S3 Region</div>
@@ -470,6 +471,7 @@ $ npm run build && npm run start</pre>
                                   <span></span>
                                   <em id="settings-sync-remember-passphrase-label">记住密码（系统钥匙串）</em>
                                 </label>
+                                <p id="settings-sync-enc-password-hint" class="muted tiny">已保存在系统钥匙串；留空表示不修改。</p>
                               </div>
                               <div class="settings-sync-actions">
                                 <button id="settings-sync-create-repo" type="button" class="primary">创建仓库</button>
@@ -485,6 +487,7 @@ $ npm run build && npm run start</pre>
                                 <button id="settings-sync-save" type="button">保存配置</button>
                                 <button id="settings-sync-now" type="button" class="primary">立即同步</button>
                                 <button id="settings-sync-forget-engine" type="button">断开会话</button>
+                                <button id="settings-sync-clear-all" type="button">清空配置</button>
                               </div>
                               <p id="settings-sync-status" class="muted tiny"></p>
                             </section>

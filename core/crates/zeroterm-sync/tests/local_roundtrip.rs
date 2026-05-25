@@ -180,3 +180,96 @@ async fn idempotent_sync_does_not_redo_events() {
     // initial replay) — what we care about is `r2 == steady-state`.
     drop(r1);
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn new_writes_are_ztlog_and_old_json_still_decodes() {
+    use zeroterm_sync::event::RemoteEvent;
+
+    let d = tempdir().unwrap();
+    let (store_a, engine_a) = make_engine(d.path(), "dev-A");
+    engine_a.create_repo("pw", "vlt", fast_kdf()).await.unwrap();
+
+    // Hand-write a legacy `.json` event before any sync runs. The
+    // engine should still read it back on the next apply pass.
+    let legacy_event = zeroterm_sync::event::new_delete(
+        "evt-legacy",
+        "dev-OLD",
+        7,
+        1_700_000_000_000,
+        "vlt-OTHER", // mismatched vault — will be skipped, but proves parser ran
+        "rec-legacy",
+        "host",
+        "rev-legacy",
+        None,
+    );
+    let legacy_path = d
+        .path()
+        .join(".zeroterm-sync/events/2024-03/ev-000000000007-dev-OLD-legacy.json");
+    std::fs::create_dir_all(legacy_path.parent().unwrap()).unwrap();
+    std::fs::write(&legacy_path, legacy_event.to_json().unwrap()).unwrap();
+
+    // Now generate a real local edit and sync — this triggers a
+    // .ztlog write.
+    store_a.put_local("rec-1", "host", b"hello".to_vec());
+    let report = engine_a.sync_once().await.unwrap();
+    assert!(report.events_pushed >= 1);
+    assert!(report.skipped >= 1, "legacy .json event must be observed");
+
+    // Walk the events dir and confirm: at least one .ztlog (new
+    // writer), and the .json fixture is still around (we never
+    // touch foreign-vault events).
+    let mut found_ztlog = false;
+    let mut found_json = false;
+    let mut min_ztlog_bytes = usize::MAX;
+    let mut max_json_bytes = 0usize;
+    for entry in walkdir(d.path()) {
+        let name = entry.to_string_lossy().replace('\\', "/");
+        if !name.contains(".zeroterm-sync") {
+            continue;
+        }
+        if name.ends_with(".ztlog") {
+            found_ztlog = true;
+            let bytes = std::fs::read(&entry).unwrap();
+            assert!(RemoteEvent::looks_like_ztlog(&bytes));
+            // Confirm the frame really is parseable end-to-end.
+            let _ev = RemoteEvent::from_bytes(&bytes).unwrap();
+            min_ztlog_bytes = min_ztlog_bytes.min(bytes.len());
+        }
+        if name.ends_with(".json") && name.contains("/events/") {
+            found_json = true;
+            let bytes = std::fs::read(&entry).unwrap();
+            max_json_bytes = max_json_bytes.max(bytes.len());
+        }
+    }
+    assert!(found_ztlog, "expected at least one .ztlog file after sync");
+    assert!(found_json, "expected the legacy .json fixture to survive");
+
+    // Size sanity: both files describe a record-level event; the
+    // .ztlog header is ~46 B plus shorter ids while the .json wraps
+    // each field with quotes + key names. We don't pin an exact
+    // ratio — sample sizes are too small — but the binary should
+    // never exceed the JSON.
+    assert!(
+        min_ztlog_bytes <= max_json_bytes,
+        "ztlog size ({min_ztlog_bytes} B) should not exceed json ({max_json_bytes} B)"
+    );
+}
+
+fn walkdir(root: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for ent in rd.flatten() {
+            let p = ent.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else {
+                out.push(p);
+            }
+        }
+    }
+    out
+}

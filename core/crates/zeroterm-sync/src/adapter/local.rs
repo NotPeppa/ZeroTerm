@@ -1,8 +1,8 @@
 //! Local-folder sync adapter.
 //!
-//! The sync "repo" lives at `<root>/.zeroterm-sync/`. The root is just
+//! The sync "repo" lives at `<root>/zeroterm-sync/`. The root is just
 //! a directory the user picks (synced cloud folder, USB stick, network
-//! share). All adapter paths are relative to `.zeroterm-sync/` — the
+//! share). All adapter paths are relative to `zeroterm-sync/` — the
 //! adapter prepends the prefix internally so the engine never sees the
 //! marker directory.
 

@@ -33,11 +33,6 @@ fn entry(vault_path: &Path) -> Result<keyring::Entry, KeychainError> {
     keyring::Entry::new(SERVICE, &user).map_err(|e| KeychainError::Backend(e.to_string()))
 }
 
-fn sync_profile_entry(profile_id: &str) -> Result<keyring::Entry, KeychainError> {
-    let user = format!("sync-profile:{profile_id}");
-    keyring::Entry::new(SERVICE, &user).map_err(|e| KeychainError::Backend(e.to_string()))
-}
-
 fn sync_encryption_entry(profile_id: &str) -> Result<keyring::Entry, KeychainError> {
     let user = format!("sync-encryption:{profile_id}");
     keyring::Entry::new(SERVICE, &user).map_err(|e| KeychainError::Backend(e.to_string()))
@@ -116,30 +111,6 @@ pub fn forget_master_password(vault_path: &Path) -> Result<(), KeychainError> {
     }
 }
 
-pub fn save_sync_profile_secret(profile_id: &str, secret: &str) -> Result<(), KeychainError> {
-    let e = sync_profile_entry(profile_id)?;
-    e.set_password(secret)
-        .map_err(|e| KeychainError::Backend(e.to_string()))
-}
-
-pub fn get_sync_profile_secret(profile_id: &str) -> Result<Option<String>, KeychainError> {
-    let e = sync_profile_entry(profile_id)?;
-    match e.get_password() {
-        Ok(v) => Ok(Some(v)),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(other) => Err(KeychainError::Backend(other.to_string())),
-    }
-}
-
-pub fn forget_sync_profile_secret(profile_id: &str) -> Result<(), KeychainError> {
-    let e = sync_profile_entry(profile_id)?;
-    match e.delete_password() {
-        Ok(()) => Ok(()),
-        Err(keyring::Error::NoEntry) => Ok(()),
-        Err(other) => Err(KeychainError::Backend(other.to_string())),
-    }
-}
-
 pub fn save_sync_encryption_secret(profile_id: &str, secret: &str) -> Result<(), KeychainError> {
     let e = sync_encryption_entry(profile_id)?;
     e.set_password(secret)
@@ -166,18 +137,13 @@ pub fn forget_sync_encryption_secret(profile_id: &str) -> Result<(), KeychainErr
 
 /// Persist a backend credential (e.g. WebDAV password) under
 /// `sync-backend-credential:<profile_id>`.
-pub fn save_sync_backend_credential(
-    profile_id: &str,
-    secret: &str,
-) -> Result<(), KeychainError> {
+pub fn save_sync_backend_credential(profile_id: &str, secret: &str) -> Result<(), KeychainError> {
     let e = sync_backend_credential_entry(profile_id)?;
     e.set_password(secret)
         .map_err(|e| KeychainError::Backend(e.to_string()))
 }
 
-pub fn get_sync_backend_credential(
-    profile_id: &str,
-) -> Result<Option<String>, KeychainError> {
+pub fn get_sync_backend_credential(profile_id: &str) -> Result<Option<String>, KeychainError> {
     let e = sync_backend_credential_entry(profile_id)?;
     match e.get_password() {
         Ok(v) => Ok(Some(v)),

@@ -5,7 +5,7 @@
 //!
 //! Key layout: every adapter method receives a repo-relative key
 //! (`"manifest.json"`, `"events/2024-03/ev-…json"`); this adapter
-//! prepends `<prefix>/.zeroterm-sync/` to form the S3 object key.
+//! prepends `<prefix>/zeroterm-sync/` to form the S3 object key.
 //! Mirrors the local-folder and WebDAV layouts so the three backends
 //! stay interchangeable per repo.
 //!
@@ -42,7 +42,7 @@ use crate::repo::REPO_DIR;
 pub struct S3Config {
     pub region: String,
     pub bucket: String,
-    /// Sub-path under which `.zeroterm-sync/` will live. May be empty
+    /// Sub-path under which `zeroterm-sync/` will live. May be empty
     /// (then the repo sits at the bucket root).
     pub prefix: String,
     /// Override for S3-compatible services (MinIO / R2 / B2). Use the
@@ -103,7 +103,7 @@ impl S3Paths {
         }
     }
 
-    /// The full repo prefix (`<prefix>/.zeroterm-sync/`) used both to
+    /// The full repo prefix (`<prefix>/zeroterm-sync/`) used both to
     /// build object keys and to strip them back to repo-relative.
     pub(crate) fn repo_prefix(&self) -> String {
         if self.prefix.is_empty() {

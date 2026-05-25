@@ -7,16 +7,6 @@ repository.workspace = true
 
 [features]
 default = []
-# Old single-blob WebDAV / S3 / filesystem backends. RFC-002 deprecated
-# them; the code lives on under `src/legacy.rs` until M7/M8 port the
-# new repo-layout SyncAdapter trait to those backends.
-legacy-backends = [
-    "dep:reqwest",
-    "dep:quick-xml",
-    "dep:aws-config",
-    "dep:aws-sdk-s3",
-    "dep:aws-credential-types",
-]
 # Repo-layout WebDAV adapter (M7). Pulls reqwest + quick-xml; opt-in
 # because not every consumer (e.g. the CLI / mobile FFI) needs it.
 webdav-backend = ["dep:reqwest", "dep:quick-xml"]
@@ -37,7 +27,7 @@ tracing.workspace = true
 uuid.workspace = true
 zeroize.workspace = true
 base64.workspace = true
-# Legacy-only deps; only pulled in when `legacy-backends` is enabled.
+# Optional transport deps used by repo-layout WebDAV/S3 adapters.
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"], optional = true }
 quick-xml = { version = "0.38", optional = true }
 aws-config = { version = "1", optional = true }
