@@ -232,6 +232,12 @@ impl Vault {
         Ok(self.store.max_version()?)
     }
 
+    /// Wipe all records and sync metadata from this vault.
+    pub fn clear_all_data(&self) -> Result<(), VaultError> {
+        self.store.clear_all_data()?;
+        Ok(())
+    }
+
     /// Apply a remote upsert: write the record at the caller-chosen id
     /// with `dirty=0` and the server-known revision stamped into
     /// `server_rev`/`base_server_rev`. This is the path the sync engine

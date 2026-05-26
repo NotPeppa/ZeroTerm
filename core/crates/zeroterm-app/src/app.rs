@@ -16,6 +16,13 @@ use crate::host::Host;
 
 const HOST_KIND: &str = "host";
 
+#[derive(Debug, Clone)]
+pub struct HostDiagnostics {
+    pub raw_host_records: usize,
+    pub parsed_hosts: usize,
+    pub malformed_hosts: usize,
+}
+
 pub struct App {
     pub(crate) vault: Vault,
 }
@@ -66,6 +73,26 @@ impl App {
         Ok(hosts)
     }
 
+    pub fn host_diagnostics(&self) -> Result<HostDiagnostics, AppError> {
+        let records = self.vault.list(HOST_KIND)?;
+        let mut parsed_hosts = 0usize;
+        let mut malformed_hosts = 0usize;
+        for (id, plaintext) in records.iter() {
+            match serde_json::from_slice::<Host>(plaintext) {
+                Ok(_) => parsed_hosts += 1,
+                Err(e) => {
+                    malformed_hosts += 1;
+                    tracing::warn!(record_id = %id, error = %e, "malformed host record while collecting diagnostics");
+                }
+            }
+        }
+        Ok(HostDiagnostics {
+            raw_host_records: records.len(),
+            parsed_hosts,
+            malformed_hosts,
+        })
+    }
+
     pub fn find_host_by_name(&self, name: &str) -> Result<Option<Host>, AppError> {
         Ok(self.list_hosts()?.into_iter().find(|h| h.name == name))
     }
@@ -101,6 +128,11 @@ impl App {
 
     pub fn delete_host(&self, id: &str) -> Result<(), AppError> {
         self.vault.delete(id)?;
+        Ok(())
+    }
+
+    pub fn clear_vault_data(&self) -> Result<(), AppError> {
+        self.vault.clear_all_data()?;
         Ok(())
     }
 

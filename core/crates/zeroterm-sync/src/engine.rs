@@ -99,6 +99,17 @@ pub struct SyncReport {
     pub head_clock: u64,
 }
 
+#[derive(Debug, Clone)]
+pub struct JoinReport {
+    pub vault_id: String,
+    pub events_pulled: usize,
+    pub upserts_applied: usize,
+    pub deletes_applied: usize,
+    pub conflicts_detected: usize,
+    pub already_seen: usize,
+    pub skipped: usize,
+}
+
 #[derive(Serialize, Deserialize, Default)]
 struct AppliedEventsBlob {
     ids: Vec<String>,
@@ -232,6 +243,10 @@ impl SyncEngine {
     /// shared passphrase, then bootstraps from the latest snapshot (if
     /// any) and replays every event since.
     pub async fn join_repo(&self, passphrase: &str) -> Result<String, Error> {
+        Ok(self.join_repo_with_report(passphrase).await?.vault_id)
+    }
+
+    pub async fn join_repo_with_report(&self, passphrase: &str) -> Result<JoinReport, Error> {
         let kr_bytes = self
             .adapter
             .read(RepoPaths::keyring())
@@ -292,10 +307,22 @@ impl SyncEngine {
         }
 
         // Then replay any events the snapshot didn't already cover.
-        let _tally = self.apply_remote_events().await?;
+        let tally = self.apply_remote_events().await?;
 
         self.persist_logical_clock().await?;
-        Ok(manifest.vault_id)
+        Ok(JoinReport {
+            vault_id: manifest.vault_id,
+            events_pulled: tally.upserts_applied
+                + tally.deletes_applied
+                + tally.conflicts_detected
+                + tally.already_seen
+                + tally.skipped,
+            upserts_applied: tally.upserts_applied,
+            deletes_applied: tally.deletes_applied,
+            conflicts_detected: tally.conflicts_detected,
+            already_seen: tally.already_seen,
+            skipped: tally.skipped,
+        })
     }
 
     // --- workhorse ------------------------------------------------------

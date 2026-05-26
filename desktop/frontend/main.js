@@ -263,7 +263,9 @@ const I18N = {
     "hosts.search.placeholder": "Find a host or ssh user@hostname...",
     "hosts.new_host": "+ New host",
     "hosts.empty.search": "No host matched your search.",
-    "hosts.empty.default": "No saved hosts yet. Click + New host or add from CLI.",
+    "hosts.empty.title": "No saved hosts yet",
+    "hosts.empty.default": "Click the button below to add your first host.",
+    "hosts.empty.search.desc": "Try another keyword or clear the search filter.",
     "hosts.button.connect": "Connect",
     "hosts.button.files": "Files",
     "hosts.button.edit": "Edit",
@@ -505,6 +507,7 @@ const I18N = {
     "settings.nav.general": "General",
     "settings.nav.terminal": "Terminal",
     "settings.nav.sync": "Sync",
+    "settings.nav.data": "Data",
     "settings.nav.about": "About",
     "settings.general.subtab.basic": "Basic",
     "settings.general.subtab.sftp": "SFTP",
@@ -521,6 +524,7 @@ const I18N = {
     "settings.sync.alert.repo_failed": "Create repo failed:\n{error}",
     "settings.sync.error.not_connected": "Sync is not connected yet. Please create or join a repo first.",
     "settings.sync.status.joined": "Joined existing sync repo",
+    "settings.sync.status.joined_detail": "Joined existing sync repo: pulled {pulled}, applied {applied}, conflicts {conflicts}",
     "settings.sync.status.aborted": "Aborted — vault id mismatch",
     "settings.sync.status.forgotten": "Engine forgotten (passphrase required to resume)",
     "settings.sync.status.cleared_all": "Cleared {count} sync profile(s)",
@@ -575,6 +579,7 @@ const I18N = {
     "settings.sync.conflicts.keep_local": "Keep local",
     "settings.sync.conflicts.keep_remote": "Keep remote",
     "settings.sync.conflicts.resolved": "Conflict resolved",
+    "settings.sync.host_diag.malformed": "Synced host records include {bad} malformed item(s); showing {ok}/{total} valid hosts.",
     "settings.sync.stats.no_profile": "Configure a sync profile to see stats.",
     "settings.sync.stats.total": "Total",
     "settings.sync.stats.manifest": "manifest.json",
@@ -609,6 +614,11 @@ const I18N = {
     "settings.sync.button.busy.forget_engine": "Disconnecting...",
     "settings.sync.button.busy.clear_all": "Clearing...",
     "settings.sync.button.busy.resolve_conflict": "Resolving...",
+    "settings.data.title": "Data Management",
+    "settings.data.desc": "Clear all records and sync metadata in the current vault. This action cannot be undone.",
+    "settings.data.button.clear_vault": "Clear Vault Data",
+    "settings.data.confirm.clear_vault": "Clear all data in this vault now? This cannot be undone.",
+    "settings.data.status.cleared": "Vault data cleared",
     "settings.update.status.installing": "Installing update...",
     "settings.sync.backend.local_folder": "Local Folder",
     "settings.sync.label.path": "Sync Folder",
@@ -718,7 +728,9 @@ const I18N = {
     "hosts.search.placeholder": "搜索主机或 ssh user@hostname...",
     "hosts.new_host": "+ 新建主机",
     "hosts.empty.search": "没有匹配搜索条件的主机。",
-    "hosts.empty.default": "还没有保存的主机。点击 + 新建主机，或在 CLI 中添加。",
+    "hosts.empty.title": "还没有保存的主机",
+    "hosts.empty.default": "点击下面的按钮添加第一台主机。",
+    "hosts.empty.search.desc": "试试其他关键词，或清空搜索条件。",
     "hosts.button.connect": "连接",
     "hosts.button.files": "文件",
     "hosts.button.edit": "编辑",
@@ -957,6 +969,7 @@ const I18N = {
     "settings.nav.general": "常规",
     "settings.nav.terminal": "终端",
     "settings.nav.sync": "同步",
+    "settings.nav.data": "数据管理",
     "settings.nav.about": "关于",
     "settings.general.subtab.basic": "基础",
     "settings.general.subtab.sftp": "SFTP",
@@ -973,6 +986,7 @@ const I18N = {
     "settings.sync.alert.repo_failed": "创建仓库失败：\n{error}",
     "settings.sync.error.not_connected": "同步尚未连接，请先创建或加入仓库。",
     "settings.sync.status.joined": "已加入现有同步仓库",
+    "settings.sync.status.joined_detail": "已加入现有同步仓库：拉取 {pulled}，应用 {applied}，冲突 {conflicts}",
     "settings.sync.status.aborted": "已中止 — vault id 不匹配",
     "settings.sync.status.forgotten": "已断开会话（需要密码重新连接）",
     "settings.sync.status.cleared_all": "已清空 {count} 个同步配置",
@@ -1027,6 +1041,7 @@ const I18N = {
     "settings.sync.conflicts.keep_local": "保留本地",
     "settings.sync.conflicts.keep_remote": "保留远端",
     "settings.sync.conflicts.resolved": "冲突已解决",
+    "settings.sync.host_diag.malformed": "同步到的主机记录里有 {bad} 条格式不兼容，当前显示 {ok}/{total} 条可解析主机。",
     "settings.sync.stats.no_profile": "请先配置同步以查看大小。",
     "settings.sync.stats.total": "总计",
     "settings.sync.stats.manifest": "manifest.json",
@@ -1061,6 +1076,11 @@ const I18N = {
     "settings.sync.button.busy.forget_engine": "断开中...",
     "settings.sync.button.busy.clear_all": "清空中...",
     "settings.sync.button.busy.resolve_conflict": "处理中...",
+    "settings.data.title": "数据管理",
+    "settings.data.desc": "清空当前 Vault 内的全部记录与同步元数据。此操作不可撤销。",
+    "settings.data.button.clear_vault": "清空 Vault 数据",
+    "settings.data.confirm.clear_vault": "确定要清空当前 Vault 的全部数据吗？此操作不可撤销。",
+    "settings.data.status.cleared": "Vault 数据已清空",
     "settings.update.status.installing": "正在安装更新...",
     "settings.sync.backend.local_folder": "本地文件夹",
     "settings.sync.label.path": "同步文件夹",
@@ -1451,6 +1471,9 @@ unlockForm.addEventListener("submit", async (ev) => {
 
 const hostsList = document.getElementById("hosts-list");
 const hostsEmpty = document.getElementById("hosts-empty");
+const hostsEmptyTitle = document.getElementById("hosts-empty-title");
+const hostsEmptyDesc = document.getElementById("hosts-empty-desc");
+const hostsEmptyAdd = document.getElementById("hosts-empty-add");
 const hostSearch = document.getElementById("host-search");
 const hostsContextMenu = document.getElementById("hosts-context-menu");
 const hostsMenuConnect = document.getElementById("hosts-menu-connect");
@@ -1603,7 +1626,11 @@ const settingsSyncS3SkToggle = null;
 const settingsSyncPasswordToggle = null;
 const settingsSyncRootField = document.getElementById("settings-sync-root-field");
 const settingsNavAbout = document.getElementById("settings-nav-about");
+const settingsNavData = document.getElementById("settings-nav-data");
 const settingsAboutPanel = document.getElementById("settings-about-panel");
+const settingsDataPanel = document.getElementById("settings-data-panel");
+const settingsDataClearVault = document.getElementById("settings-data-clear-vault");
+const settingsDataStatus = document.getElementById("settings-data-status");
 const settingsGeneralSubtabBasic = document.getElementById("settings-general-subtab-basic");
 const settingsGeneralSubtabSftp = document.getElementById("settings-general-subtab-sftp");
 const settingsGeneralBasicSection = document.getElementById("settings-general-basic-section");
@@ -1713,7 +1740,7 @@ let syncAutoTimer = null;
 let syncSingleProfileId = null;
 let syncSecretsLoadToken = 0;
 const syncDraftByBackend = {
-  filesystem: null,
+  local_folder: null,
   webdav: null,
   s3: null,
 };
@@ -2144,6 +2171,26 @@ async function refreshHostsCacheFromVault({ silent = false } = {}) {
   }
 }
 
+async function warnIfMalformedSyncedHosts() {
+  try {
+    const d = await invoke("host_sync_diagnostics");
+    const bad = Number(d?.malformedHosts ?? 0);
+    if (bad > 0) {
+      showToast(
+        t("settings.sync.host_diag.malformed", {
+          bad,
+          ok: Number(d?.parsedHosts ?? 0),
+          total: Number(d?.rawHostRecords ?? 0),
+        }),
+        "warning",
+        6200,
+      );
+    }
+  } catch {
+    // Best-effort diagnostics only.
+  }
+}
+
 function setWorkspaceMode(mode) {
   workspaceMode = mode;
   if (mode !== "sftp") {
@@ -2197,22 +2244,28 @@ function setSettingsSection(section) {
     ? "terminal"
     : section === "sync"
       ? "sync"
+      : section === "data"
+        ? "data"
       : section === "about"
         ? "about"
         : "general";
   settingsNavGeneral?.classList.toggle("active", settingsSection === "general");
   settingsNavTerminal?.classList.toggle("active", settingsSection === "terminal");
   settingsNavSync?.classList.toggle("active", settingsSection === "sync");
+  settingsNavData?.classList.toggle("active", settingsSection === "data");
   settingsNavAbout?.classList.toggle("active", settingsSection === "about");
   if (settingsGeneralPanel) settingsGeneralPanel.hidden = settingsSection !== "general";
   if (settingsTerminalPanel) settingsTerminalPanel.hidden = settingsSection !== "terminal";
   if (settingsSyncPanel) settingsSyncPanel.hidden = settingsSection !== "sync";
+  if (settingsDataPanel) settingsDataPanel.hidden = settingsSection !== "data";
   if (settingsAboutPanel) settingsAboutPanel.hidden = settingsSection !== "about";
   if (settingsGeneralTitle) {
     settingsGeneralTitle.textContent = settingsSection === "terminal"
       ? t("settings.nav.terminal")
       : settingsSection === "sync"
         ? t("settings.nav.sync")
+        : settingsSection === "data"
+          ? t("settings.nav.data")
         : settingsSection === "about"
           ? t("settings.nav.about")
       : t("settings.general.title");
@@ -2222,6 +2275,8 @@ function setSettingsSection(section) {
       ? t("settings.terminal.desc")
       : settingsSection === "sync"
         ? t("settings.sync.desc")
+        : settingsSection === "data"
+          ? t("settings.data.desc")
         : settingsSection === "about"
           ? ""
       : t("settings.general.desc");
@@ -2237,6 +2292,8 @@ function setSettingsSection(section) {
       if (settingsAboutVersionValue) settingsAboutVersionValue.textContent = v;
     });
     refreshUpdateStatus().catch(() => {});
+  } else if (settingsSection === "data") {
+    if (settingsDataStatus) settingsDataStatus.textContent = "";
   } else {
     setSettingsGeneralSubtab(settingsGeneralSubtab);
   }
@@ -3080,6 +3137,9 @@ function applyI18n() {
 
   setPlaceholder("host-search", "hosts.search.placeholder");
   setAttr("add-host-button", "title", "hosts.new_host");
+  setText("hosts-empty-title", "hosts.empty.title");
+  setText("hosts-empty-desc", "hosts.empty.default");
+  setText("hosts-empty-add", "hosts.new_host");
 
   setPlaceholder("sftp-left-path-input", "sftp.path.placeholder");
   setPlaceholder("sftp-right-path-input", "sftp.path.placeholder");
@@ -3193,6 +3253,7 @@ function applyI18n() {
   setText("settings-nav-general", "settings.nav.general");
   setText("settings-nav-terminal", "settings.nav.terminal");
   setText("settings-nav-sync", "settings.nav.sync");
+  setText("settings-nav-data", "settings.nav.data");
   setText("settings-nav-about", "settings.nav.about");
   setText("settings-general-subtab-basic", "settings.general.subtab.basic");
   setText("settings-general-subtab-sftp", "settings.general.subtab.sftp");
@@ -3261,6 +3322,9 @@ function applyI18n() {
   setText("settings-sync-repo-stats-empty", "settings.sync.repo_stats.empty");
   setText("settings-sync-refresh-stats", "settings.sync.button.refresh_stats");
   setText("settings-sync-compact-now", "settings.sync.button.compact_now");
+  setText("settings-data-title", "settings.data.title");
+  setText("settings-data-desc", "settings.data.desc");
+  setText("settings-data-clear-vault", "settings.data.button.clear_vault");
   setOptionText("settings-sync-backend", "local_folder", "settings.sync.backend.local_folder");
   setOptionText("settings-sync-backend", "sftp", "settings.sync.backend.sftp");
   setOptionText("settings-sync-backend", "webdav", "settings.sync.backend.webdav");
@@ -3436,6 +3500,7 @@ document.getElementById("lock-button").addEventListener("click", async () => {
 });
 
 document.getElementById("add-host-button").addEventListener("click", () => openHostEditor());
+hostsEmptyAdd?.addEventListener("click", () => openHostEditor());
 hostsMenuConnect?.addEventListener("click", () => {
   const host = hostsCache.find((h) => h.id === hostsContextHostId);
   hideHostsContextMenu();
@@ -3593,7 +3658,25 @@ settingsBackButton?.addEventListener("click", () => setWorkspaceMode("vaults"));
 settingsNavGeneral?.addEventListener("click", () => setSettingsSection("general"));
 settingsNavTerminal?.addEventListener("click", () => setSettingsSection("terminal"));
 settingsNavSync?.addEventListener("click", () => setSettingsSection("sync"));
+settingsNavData?.addEventListener("click", () => setSettingsSection("data"));
 settingsNavAbout?.addEventListener("click", () => setSettingsSection("about"));
+settingsDataClearVault?.addEventListener("click", async () => {
+  const ok = confirm(t("settings.data.confirm.clear_vault"));
+  if (!ok) return;
+  await runSyncButtonAction(settingsDataClearVault, t("settings.data.button.clear_vault"), async () => {
+    try {
+      await invoke("clear_vault_data");
+      if (settingsDataStatus) settingsDataStatus.textContent = t("settings.data.status.cleared");
+      await refreshHostsCacheFromVault({ silent: true });
+      await loadSyncProfiles().catch(() => {});
+      showToast(t("settings.data.status.cleared"), "success");
+    } catch (e) {
+      const msg = String(e);
+      if (settingsDataStatus) settingsDataStatus.textContent = msg;
+      showToast(msg, "error", 4200);
+    }
+  });
+});
 settingsUpdateInstall?.addEventListener("click", async () => {
   await runSyncButtonAction(settingsUpdateInstall, t("settings.update.status.installing"), async () => {
     try {
@@ -3756,12 +3839,19 @@ settingsSyncJoinRepo?.addEventListener("click", async () => {
           return;
         }
       }
-      if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.joined");
+      if (settingsSyncStatus) {
+        settingsSyncStatus.textContent = t("settings.sync.status.joined_detail", {
+          pulled: Number(r?.eventsPulled ?? 0),
+          applied: Number((r?.upsertsApplied ?? 0) + (r?.deletesApplied ?? 0)),
+          conflicts: Number(r?.conflictsDetected ?? 0),
+        });
+      }
       await refreshSyncStatusLine();
       await refreshHostsCacheFromVault({ silent: true });
+      await warnIfMalformedSyncedHosts();
       await refreshSyncConflicts();
       await refreshSyncRepoStats();
-      showToast(t("settings.sync.status.joined"), "success");
+      showToast(settingsSyncStatus?.textContent || t("settings.sync.status.joined"), "success");
     } catch (e) {
       const msg = userFriendlySyncError(e);
       if (settingsSyncStatus) settingsSyncStatus.textContent = msg;
@@ -3830,6 +3920,7 @@ settingsSyncNow?.addEventListener("click", async () => {
         pulled: outcome.eventsPulled ?? 0,
       });
       await refreshHostsCacheFromVault({ silent: true });
+      await warnIfMalformedSyncedHosts();
       await refreshSyncStatusLine();
       await refreshSyncConflicts();
       await refreshSyncRepoStats();
@@ -4193,7 +4284,9 @@ async function enterHosts() {
   } catch (e) {
     hostsCache = [];
     hostsEmpty.hidden = false;
-    hostsEmpty.textContent = t("hosts.error.load_failed", { error: e });
+    if (hostsEmptyTitle) hostsEmptyTitle.textContent = t("hosts.error.load_failed", { error: e });
+    if (hostsEmptyDesc) hostsEmptyDesc.textContent = "";
+    if (hostsEmptyAdd) hostsEmptyAdd.hidden = true;
     return;
   }
 }
@@ -4211,9 +4304,9 @@ function renderHosts() {
 
   if (rows.length === 0) {
     hostsEmpty.hidden = false;
-    hostsEmpty.textContent = q
-      ? t("hosts.empty.search")
-      : t("hosts.empty.default");
+    if (hostsEmptyTitle) hostsEmptyTitle.textContent = q ? t("hosts.empty.search") : t("hosts.empty.title");
+    if (hostsEmptyDesc) hostsEmptyDesc.textContent = q ? t("hosts.empty.search.desc") : t("hosts.empty.default");
+    if (hostsEmptyAdd) hostsEmptyAdd.hidden = !!q;
   } else {
     hostsEmpty.hidden = true;
   }

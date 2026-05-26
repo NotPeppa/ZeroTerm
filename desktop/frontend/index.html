@@ -111,9 +111,12 @@
                     <div id="vaults-content" class="vaults-main-content">
                       <div class="hosts-grid-wrap">
                         <ul id="hosts-list" class="host-cards"></ul>
-                        <p id="hosts-empty" class="muted" hidden>
-                          No saved hosts yet. Click <strong>+ New host</strong> or add from CLI.
-                        </p>
+                        <div id="hosts-empty" class="hosts-empty-state" hidden>
+                          <div class="hosts-empty-icon" aria-hidden="true">+</div>
+                          <p id="hosts-empty-title" class="hosts-empty-title">No saved hosts yet</p>
+                          <p id="hosts-empty-desc" class="hosts-empty-desc">Click the button below to add your first host.</p>
+                          <button id="hosts-empty-add" type="button" class="primary">+ New host</button>
+                        </div>
                       </div>
                     </div>
 
@@ -213,6 +216,7 @@
                             <button id="settings-nav-general" type="button" class="settings-nav-item active">常规</button>
                             <button id="settings-nav-terminal" type="button" class="settings-nav-item">终端</button>
                             <button id="settings-nav-sync" type="button" class="settings-nav-item">同步</button>
+                            <button id="settings-nav-data" type="button" class="settings-nav-item">数据管理</button>
                             <button id="settings-nav-about" type="button" class="settings-nav-item">关于</button>
                           </div>
                         </aside>
@@ -531,6 +535,17 @@ $ npm run build && npm run start</pre>
                                 <button id="settings-update-install" type="button" class="primary">安装并重启</button>
                               </div>
                               <p id="settings-update-status" class="muted tiny"></p>
+                            </section>
+                          </section>
+
+                          <section id="settings-data-panel" class="settings-panel" hidden>
+                            <section class="settings-section">
+                              <div id="settings-data-title" class="settings-item-title">数据管理</div>
+                              <p id="settings-data-desc" class="muted tiny">清空当前 Vault 内的全部记录与同步元数据。此操作不可撤销。</p>
+                              <div class="settings-sync-actions">
+                                <button id="settings-data-clear-vault" type="button" class="danger">清空 Vault 数据</button>
+                              </div>
+                              <p id="settings-data-status" class="muted tiny"></p>
                             </section>
                           </section>
                         </div>

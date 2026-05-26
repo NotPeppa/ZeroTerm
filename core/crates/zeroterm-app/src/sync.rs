@@ -93,6 +93,17 @@ pub struct SyncOutcome {
     pub finished_at: i64,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct SyncJoinOutcome {
+    pub repo_vault_id: String,
+    pub events_pulled: usize,
+    pub upserts_applied: usize,
+    pub deletes_applied: usize,
+    pub conflicts_detected: usize,
+    pub already_seen: usize,
+    pub skipped: usize,
+}
+
 impl SyncOutcome {
     fn from_report(profile_id: &str, r: SyncReport) -> Self {
         Self {
@@ -321,6 +332,15 @@ fn now_ms() -> i64 {
 }
 
 impl App {
+    pub fn list_sync_profile_ids_raw(&self) -> Result<Vec<String>, AppError> {
+        Ok(self
+            .vault
+            .list(SYNC_PROFILE_KIND)?
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect())
+    }
+
     pub fn list_sync_profiles(&self) -> Result<Vec<SyncProfile>, AppError> {
         let records = self.vault.list(SYNC_PROFILE_KIND)?;
         let mut out = Vec::with_capacity(records.len());
@@ -331,7 +351,9 @@ impl App {
                     out.push(p);
                 }
                 Err(e) => {
-                    tracing::warn!(record_id = %id, error = %e, "skipping malformed sync profile");
+                    return Err(AppError::SyncConfig(format!(
+                        "malformed sync profile '{id}': {e}"
+                    )));
                 }
             }
         }
@@ -574,12 +596,20 @@ impl App {
         manager: &SyncManager,
         profile_id: &str,
         passphrase: &str,
-    ) -> Result<String, AppError> {
+    ) -> Result<SyncJoinOutcome, AppError> {
         let profile = self.find_sync_profile(profile_id)?;
         let engine = self.engine_for_profile(&profile).await?;
-        let repo_vault_id = engine.join_repo(passphrase).await?;
+        let report = engine.join_repo_with_report(passphrase).await?;
         manager.insert(profile_id, engine).await;
-        Ok(repo_vault_id)
+        Ok(SyncJoinOutcome {
+            repo_vault_id: report.vault_id,
+            events_pulled: report.events_pulled,
+            upserts_applied: report.upserts_applied,
+            deletes_applied: report.deletes_applied,
+            conflicts_detected: report.conflicts_detected,
+            already_seen: report.already_seen,
+            skipped: report.skipped,
+        })
     }
 
     pub async fn sync_now(

@@ -114,6 +114,17 @@ pub async fn lock_vault(state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+pub async fn clear_vault_data(state: State<'_, AppState>) -> Result<(), String> {
+    {
+        let app_lock = state.app.lock().unwrap();
+        let app = app_lock.as_ref().ok_or("vault is locked")?;
+        app.clear_vault_data().map_err(|e| e.to_string())?;
+    }
+    state.sync.forget_all().await;
+    Ok(())
+}
+
 /// Try to unlock the vault using the password cached in the OS keychain.
 /// Returns `true` on success, `false` if there's no cache, the cache is
 /// stale (password rotated), or the keychain backend is unavailable.
@@ -287,6 +298,14 @@ pub struct HostSummary {
     pub os_type: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostSyncDiagnostics {
+    pub raw_host_records: usize,
+    pub parsed_hosts: usize,
+    pub malformed_hosts: usize,
+}
+
 #[tauri::command]
 pub async fn list_hosts(state: State<'_, AppState>) -> Result<Vec<HostSummary>, String> {
     let app_lock = state.app.lock().unwrap();
@@ -308,6 +327,18 @@ pub async fn list_hosts(state: State<'_, AppState>) -> Result<Vec<HostSummary>, 
             os_type: h.os_type,
         })
         .collect())
+}
+
+#[tauri::command]
+pub async fn host_sync_diagnostics(state: State<'_, AppState>) -> Result<HostSyncDiagnostics, String> {
+    let app_lock = state.app.lock().unwrap();
+    let app = app_lock.as_ref().ok_or("vault is locked")?;
+    let d = app.host_diagnostics().map_err(|e| e.to_string())?;
+    Ok(HostSyncDiagnostics {
+        raw_host_records: d.raw_host_records,
+        parsed_hosts: d.parsed_hosts,
+        malformed_hosts: d.malformed_hosts,
+    })
 }
 
 // --------------------------------------------------------------------------
@@ -424,7 +455,7 @@ fn profile_to_io(p: SyncProfile) -> SyncProfileIO {
 
 fn profile_from_input(id: String, input: SyncProfileInput) -> Result<SyncProfile, String> {
     let backend = match input.backend.as_str() {
-        "local_folder" | "filesystem" => {
+        "local_folder" => {
             let root = input
                 .root
                 .clone()
@@ -520,10 +551,7 @@ fn profile_from_input(id: String, input: SyncProfileInput) -> Result<SyncProfile
 }
 
 fn sync_backend_key_from_input(input: &SyncProfileInput) -> &str {
-    match input.backend.as_str() {
-        "filesystem" => "local_folder",
-        other => other,
-    }
+    input.backend.as_str()
 }
 
 fn sync_backend_key_from_profile(profile: &SyncProfile) -> &'static str {
@@ -614,11 +642,7 @@ pub async fn delete_all_sync_profiles(
     let ids = {
         let app_lock = state.app.lock().unwrap();
         let app = app_lock.as_ref().ok_or("vault is locked")?;
-        app.list_sync_profiles()
-            .map_err(|e| e.to_string())?
-            .into_iter()
-            .map(|p| p.id)
-            .collect::<Vec<_>>()
+        app.list_sync_profile_ids_raw().map_err(|e| e.to_string())?
     };
 
     let mut deleted_count = 0usize;
@@ -715,7 +739,7 @@ pub async fn sync_join_repo(
     remember_passphrase: Option<bool>,
 ) -> Result<SyncJoinResult, String> {
     let (app, manager) = clone_app_and_sync(&state)?;
-    let repo_vault_id = app
+    let join = app
         .sync_join_repo(&manager, &profile_id, &passphrase)
         .await
         .map_err(|e| e.to_string())?;
@@ -728,10 +752,16 @@ pub async fn sync_join_repo(
     if remember_passphrase.unwrap_or(false) {
         let _ = zeroterm_app::keychain::save_sync_encryption_secret(&profile_id, &passphrase);
     }
-    let local_vault_id_matches = local_vault_id == repo_vault_id;
+    let local_vault_id_matches = local_vault_id == join.repo_vault_id;
     Ok(SyncJoinResult {
-        repo_vault_id,
+        repo_vault_id: join.repo_vault_id,
         local_vault_id_matches,
+        events_pulled: join.events_pulled,
+        upserts_applied: join.upserts_applied,
+        deletes_applied: join.deletes_applied,
+        conflicts_detected: join.conflicts_detected,
+        already_seen: join.already_seen,
+        skipped: join.skipped,
     })
 }
 
@@ -743,6 +773,12 @@ pub struct SyncJoinResult {
     /// local vault — the engine will reject `sync_now` with
     /// VaultIdMismatch, but the UI can warn early.
     pub local_vault_id_matches: bool,
+    pub events_pulled: usize,
+    pub upserts_applied: usize,
+    pub deletes_applied: usize,
+    pub conflicts_detected: usize,
+    pub already_seen: usize,
+    pub skipped: usize,
 }
 
 #[tauri::command]

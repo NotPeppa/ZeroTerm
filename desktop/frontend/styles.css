@@ -642,6 +642,51 @@ label.checkbox input[type="checkbox"] {
   gap: 2px;
 }
 
+.hosts-empty-state {
+  margin: 18px 4px 0;
+  padding: 18px 14px;
+  border: 1px dashed #355286;
+  border-radius: 12px;
+  background: rgba(26, 42, 74, 0.28);
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  gap: 8px;
+}
+
+.hosts-empty-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid #4c78bd;
+  color: #9dc2ff;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.hosts-empty-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+  color: #e5efff;
+}
+
+.hosts-empty-desc {
+  margin: 0;
+  font-size: 12px;
+  color: #9cb2db;
+  line-height: 1.5;
+}
+
+#hosts-empty-add {
+  height: 30px;
+  border-radius: 9px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
 .host-card {
   border: none;
   border-radius: 6px;
@@ -2258,7 +2303,7 @@ label.checkbox input[type="checkbox"] {
 }
 
 .settings-sync-grid {
-  margin-top: 10px;
+  margin-top: 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
@@ -2304,6 +2349,19 @@ label.checkbox input[type="checkbox"] {
 .settings-sync-password-block .settings-item-title {
   font-size: 13px;
   font-weight: 620;
+}
+
+#settings-sync-panel .settings-item-title {
+  font-size: 13px;
+  font-weight: 620;
+}
+
+#settings-sync-panel .settings-section {
+  padding-top: 8px;
+}
+
+#settings-sync-panel p.muted.tiny {
+  margin-top: 6px;
 }
 
 .settings-sync-field {
