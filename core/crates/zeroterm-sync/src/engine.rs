@@ -418,6 +418,12 @@ impl SyncEngine {
                 continue;
             }
 
+            if !is_syncable_kind(&ev.kind) {
+                tally.skipped += 1;
+                applied.insert(ev.event_id);
+                continue;
+            }
+
             self.apply_event(&ev, &root_key, &vault_id, &mut tally)?;
             applied.insert(ev.event_id);
         }
@@ -489,7 +495,12 @@ impl SyncEngine {
     }
 
     async fn push_local_events(&self) -> Result<usize, Error> {
-        let dirty = self.store.list_dirty()?;
+        let dirty: Vec<LocalRecord> = self
+            .store
+            .list_dirty()?
+            .into_iter()
+            .filter(|r| is_syncable_kind(&r.kind))
+            .collect();
         if dirty.is_empty() {
             return Ok(0);
         }
@@ -567,7 +578,7 @@ impl SyncEngine {
             .store
             .list_all_live()?
             .into_iter()
-            .filter(|r| !r.dirty)
+            .filter(|r| !r.dirty && is_syncable_kind(&r.kind))
             .collect();
         if clean_live.is_empty() {
             return Ok(0);
@@ -1089,6 +1100,10 @@ fn now_ms() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
+}
+
+fn is_syncable_kind(kind: &str) -> bool {
+    kind == "host"
 }
 
 // Suppress dead-code warning for the LocalRecord import — the file uses
