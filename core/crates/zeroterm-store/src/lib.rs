@@ -213,6 +213,17 @@ impl Store {
         Ok(())
     }
 
+    /// Remove all user and sync data while keeping schema intact.
+    pub fn clear_all_data(&self) -> Result<(), StoreError> {
+        let conn = self.conn.lock().unwrap();
+        let tx = conn.unchecked_transaction()?;
+        tx.execute("DELETE FROM records", [])?;
+        tx.execute("DELETE FROM sync_state", [])?;
+        tx.execute("DELETE FROM sync_conflicts", [])?;
+        tx.commit()?;
+        Ok(())
+    }
+
     // -- records ------------------------------------------------------------
 
     /// Highest version number across all records. 0 if the table is empty.
