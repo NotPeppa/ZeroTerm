@@ -520,13 +520,35 @@ fn href_to_rel(href: &str, server_prefix: &str) -> String {
         }
         None => decoded.as_str(),
     };
-    match path_only.find(server_prefix) {
-        Some(idx) => path_only[idx + server_prefix.len()..]
+    let path_norm = if path_only.starts_with('/') {
+        path_only.to_string()
+    } else {
+        format!("/{path_only}")
+    };
+    let prefix_norm = if server_prefix.starts_with('/') {
+        server_prefix.to_string()
+    } else {
+        format!("/{server_prefix}")
+    };
+
+    if let Some(idx) = path_norm.find(&prefix_norm) {
+        return path_norm[idx + prefix_norm.len()..]
             .trim_start_matches('/')
             .trim_end_matches('/')
-            .to_string(),
-        None => String::new(),
+            .to_string();
     }
+
+    // Some servers reshape/redirect base paths but keep the repo marker.
+    // Fall back to matching from `<repo_dir>/` so listing still works.
+    let repo_anchor = format!("/{REPO_DIR}/");
+    if let Some(idx) = path_norm.find(&repo_anchor) {
+        return path_norm[idx + repo_anchor.len()..]
+            .trim_start_matches('/')
+            .trim_end_matches('/')
+            .to_string();
+    }
+
+    String::new()
 }
 
 fn percent_decode(s: &str) -> String {
@@ -619,7 +641,7 @@ mod tests {
         let p = WebDavPaths::new("https://dav.example.com/remote.php/dav/files/alice", "zeroterm");
         assert_eq!(
             p.url_of("manifest.json"),
-            "https://dav.example.com/remote.php/dav/files/alice/zeroterm/.zeroterm-sync/manifest.json"
+            "https://dav.example.com/remote.php/dav/files/alice/zeroterm/zeroterm-sync/manifest.json"
         );
     }
 
@@ -628,7 +650,7 @@ mod tests {
         let p = WebDavPaths::new("https://dav.example.com/files/alice/", "");
         assert_eq!(
             p.url_of("events/2024-03/ev-foo.json"),
-            "https://dav.example.com/files/alice/.zeroterm-sync/events/2024-03/ev-foo.json"
+            "https://dav.example.com/files/alice/zeroterm-sync/events/2024-03/ev-foo.json"
         );
     }
 
@@ -637,7 +659,7 @@ mod tests {
         let p = WebDavPaths::new("https://dav.example.com/dav///", "zeroterm///");
         assert_eq!(
             p.url_of("manifest.json"),
-            "https://dav.example.com/dav/zeroterm/.zeroterm-sync/manifest.json"
+            "https://dav.example.com/dav/zeroterm/zeroterm-sync/manifest.json"
         );
     }
 
@@ -646,7 +668,7 @@ mod tests {
         let p = WebDavPaths::new("https://dav.example.com", "z");
         assert_eq!(
             p.url_of("/manifest.json"),
-            "https://dav.example.com/z/.zeroterm-sync/manifest.json"
+            "https://dav.example.com/z/zeroterm-sync/manifest.json"
         );
     }
 
@@ -655,7 +677,7 @@ mod tests {
         let p = WebDavPaths::new("https://dav.example.com/remote.php/dav/files/alice", "zeroterm");
         assert_eq!(
             p.server_path_prefix(),
-            "/remote.php/dav/files/alice/zeroterm/.zeroterm-sync/"
+            "/remote.php/dav/files/alice/zeroterm/zeroterm-sync/"
         );
     }
 
@@ -664,16 +686,16 @@ mod tests {
         let p = WebDavPaths::new("https://dav.example.com/files/alice", "");
         assert_eq!(
             p.server_path_prefix(),
-            "/files/alice/.zeroterm-sync/"
+            "/files/alice/zeroterm-sync/"
         );
     }
 
     #[test]
     fn href_to_rel_strips_server_prefix() {
-        let server_prefix = "/dav/zeroterm/.zeroterm-sync/";
+        let server_prefix = "/dav/zeroterm/zeroterm-sync/";
         assert_eq!(
             href_to_rel(
-                "/dav/zeroterm/.zeroterm-sync/events/2024-03/ev-foo.json",
+                "/dav/zeroterm/zeroterm-sync/events/2024-03/ev-foo.json",
                 server_prefix
             ),
             "events/2024-03/ev-foo.json"
@@ -682,10 +704,10 @@ mod tests {
 
     #[test]
     fn href_to_rel_handles_full_url() {
-        let server_prefix = "/dav/zeroterm/.zeroterm-sync/";
+        let server_prefix = "/dav/zeroterm/zeroterm-sync/";
         assert_eq!(
             href_to_rel(
-                "https://dav.example.com/dav/zeroterm/.zeroterm-sync/manifest.json",
+                "https://dav.example.com/dav/zeroterm/zeroterm-sync/manifest.json",
                 server_prefix
             ),
             "manifest.json"
@@ -694,10 +716,10 @@ mod tests {
 
     #[test]
     fn href_to_rel_percent_decodes() {
-        let server_prefix = "/dav/zeroterm/.zeroterm-sync/";
+        let server_prefix = "/dav/zeroterm/zeroterm-sync/";
         assert_eq!(
             href_to_rel(
-                "/dav/zeroterm/.zeroterm-sync/events/2024-03/ev-with%20space.json",
+                "/dav/zeroterm/zeroterm-sync/events/2024-03/ev-with%20space.json",
                 server_prefix
             ),
             "events/2024-03/ev-with space.json"
@@ -710,11 +732,35 @@ mod tests {
     }
 
     #[test]
+    fn href_to_rel_handles_path_without_leading_slash() {
+        let server_prefix = "/dav/zeroterm/zeroterm-sync/";
+        assert_eq!(
+            href_to_rel(
+                "dav/zeroterm/zeroterm-sync/events/2024-03/ev-foo.ztlog",
+                server_prefix
+            ),
+            "events/2024-03/ev-foo.ztlog"
+        );
+    }
+
+    #[test]
+    fn href_to_rel_falls_back_to_repo_anchor() {
+        // Prefix mismatch, but path still contains `/zeroterm-sync/`.
+        assert_eq!(
+            href_to_rel(
+                "/redirected/base/zeroterm-sync/events/2024-03/ev-2.ztlog",
+                "/unexpected/prefix/"
+            ),
+            "events/2024-03/ev-2.ztlog"
+        );
+    }
+
+    #[test]
     fn parse_propfind_extracts_files_skips_collections() {
         let xml = r#"<?xml version="1.0" encoding="utf-8"?>
 <d:multistatus xmlns:d="DAV:">
   <d:response>
-    <d:href>/dav/zeroterm/.zeroterm-sync/</d:href>
+    <d:href>/dav/zeroterm/zeroterm-sync/</d:href>
     <d:propstat>
       <d:prop>
         <d:resourcetype><d:collection/></d:resourcetype>
@@ -723,7 +769,7 @@ mod tests {
     </d:propstat>
   </d:response>
   <d:response>
-    <d:href>/dav/zeroterm/.zeroterm-sync/manifest.json</d:href>
+    <d:href>/dav/zeroterm/zeroterm-sync/manifest.json</d:href>
     <d:propstat>
       <d:prop>
         <d:getcontentlength>120</d:getcontentlength>
@@ -734,7 +780,7 @@ mod tests {
     </d:propstat>
   </d:response>
   <d:response>
-    <d:href>/dav/zeroterm/.zeroterm-sync/events/2024-03/ev-1.json</d:href>
+    <d:href>/dav/zeroterm/zeroterm-sync/events/2024-03/ev-1.json</d:href>
     <d:propstat>
       <d:prop>
         <d:getcontentlength>42</d:getcontentlength>
@@ -744,7 +790,7 @@ mod tests {
     </d:propstat>
   </d:response>
 </d:multistatus>"#;
-        let prefix = "/dav/zeroterm/.zeroterm-sync/";
+        let prefix = "/dav/zeroterm/zeroterm-sync/";
         let entries = parse_propfind(xml, prefix).unwrap();
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].path, "manifest.json");
