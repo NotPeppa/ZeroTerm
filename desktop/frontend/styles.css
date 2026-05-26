@@ -2551,6 +2551,18 @@ label.checkbox input[type="checkbox"] {
   box-shadow: 0 4px 15px rgba(37, 99, 235, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 
+.settings-sync-actions button.danger {
+  border: none;
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 15px rgba(220, 38, 38, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.settings-sync-actions button.danger:hover {
+  background: linear-gradient(135deg, #f87171 0%, #ef4444 100%) !important;
+  box-shadow: 0 6px 20px rgba(220, 38, 38, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+}
+
 .settings-sync-auto {
   display: inline-flex;
   align-items: center;
