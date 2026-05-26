@@ -1140,7 +1140,23 @@ function t(key, vars = {}) {
 function setText(id, key, vars) {
   const el = document.getElementById(id);
   if (!el) return;
-  el.textContent = t(key, vars);
+  const svg = el.querySelector("svg");
+  if (svg) {
+    let span = el.querySelector("span.zt-btn-text");
+    if (!span) {
+      span = document.createElement("span");
+      span.className = "zt-btn-text";
+      Array.from(el.childNodes).forEach(node => {
+        if (node !== svg) {
+          span.appendChild(node);
+        }
+      });
+      el.appendChild(span);
+    }
+    span.textContent = t(key, vars);
+  } else {
+    el.textContent = t(key, vars);
+  }
 }
 
 function setPlaceholder(id, key, vars) {
