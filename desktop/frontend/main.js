@@ -2949,11 +2949,11 @@ function bindDblclickMaximizeOnBar(el) {
 }
 
 function sidebarToggleIconMarkup(collapsed) {
-  const arrowPath = collapsed ? "m10 7 4 5-4 5" : "m14 7-4 5 4 5";
+  const arrowPath = collapsed ? "m11 9 3 3-3 3" : "m14 9-3 3 3 3";
   return `
     <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <rect x="3.5" y="4.5" width="17" height="15" rx="2.5"></rect>
-      <path d="M9.5 4.5v15"></path>
+      <rect x="4" y="4" width="16" height="16" rx="2"></rect>
+      <path d="M9 4v16"></path>
       <path d="${arrowPath}"></path>
     </svg>
   `;
