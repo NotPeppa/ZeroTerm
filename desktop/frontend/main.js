@@ -598,6 +598,25 @@ const I18N = {
     "settings.sync.bootstrap.hint": "First device: Create a new repo. Other devices: use the same passphrase to Join.",
     "settings.sync.remember_passphrase": "Remember passphrase (OS keychain)",
     "settings.sync.title": "Sync",
+    "settings.sync.auto.title": "Auto-sync",
+    "settings.sync.auto.enabled": "Enable auto-sync",
+    "settings.sync.auto.interval": "Heartbeat interval",
+    "settings.sync.auto.interval_suffix": "seconds (30–600)",
+    "settings.sync.auto.on_visibility": "Sync immediately when window becomes visible",
+    "sync.indicator.idle": "Sync ready",
+    "sync.indicator.syncing": "Syncing…",
+    "sync.indicator.ok": "Synced {when}",
+    "sync.indicator.failed": "Sync failed (retry #{n})",
+    "sync.indicator.auto_off": "Auto-sync off",
+    "sync.indicator.no_profile": "No sync profile",
+    "sync.indicator.just_now": "just now",
+    "sync.indicator.seconds_ago": "{n}s ago",
+    "sync.indicator.minutes_ago": "{n}m ago",
+    "sync.indicator.hours_ago": "{n}h ago",
+    "sync.conflict_modal.title": "Sync conflicts detected",
+    "sync.conflict_modal.body": "{n} record(s) have conflicting changes from another device. Open the sync settings to choose which version to keep.",
+    "sync.conflict_modal.later": "Later",
+    "sync.conflict_modal.go": "Open sync settings",
     "settings.sync.method": "Sync Method",
     "settings.sync.button.save": "Save Config",
     "settings.sync.button.browse": "Browse",
@@ -1060,6 +1079,25 @@ const I18N = {
     "settings.sync.bootstrap.hint": "首台设备点\"创建仓库\"；其他设备用同样的密码点\"加入仓库\"。",
     "settings.sync.remember_passphrase": "记住密码（系统钥匙串）",
     "settings.sync.title": "同步",
+    "settings.sync.auto.title": "自动同步",
+    "settings.sync.auto.enabled": "启用自动同步",
+    "settings.sync.auto.interval": "心跳间隔",
+    "settings.sync.auto.interval_suffix": "秒（30–600）",
+    "settings.sync.auto.on_visibility": "窗口恢复可见时立即同步",
+    "sync.indicator.idle": "同步就绪",
+    "sync.indicator.syncing": "同步中…",
+    "sync.indicator.ok": "已同步 {when}",
+    "sync.indicator.failed": "同步失败（重试 #{n}）",
+    "sync.indicator.auto_off": "自动同步已关闭",
+    "sync.indicator.no_profile": "未配置同步",
+    "sync.indicator.just_now": "刚刚",
+    "sync.indicator.seconds_ago": "{n} 秒前",
+    "sync.indicator.minutes_ago": "{n} 分钟前",
+    "sync.indicator.hours_ago": "{n} 小时前",
+    "sync.conflict_modal.title": "发现同步冲突",
+    "sync.conflict_modal.body": "有 {n} 条记录与其他设备的修改产生冲突，请前往同步设置选择保留哪一份。",
+    "sync.conflict_modal.later": "稍后处理",
+    "sync.conflict_modal.go": "前往同步设置",
     "settings.sync.method": "同步方式",
     "settings.sync.button.save": "保存配置",
     "settings.sync.button.browse": "浏览",
@@ -1563,6 +1601,13 @@ const settingsSyncRefreshStats = document.getElementById("settings-sync-refresh-
 const settingsSyncCompactNow = document.getElementById("settings-sync-compact-now");
 const settingsSyncCompactStatus = document.getElementById("settings-sync-compact-status");
 
+if (hostsContextMenu && hostsContextMenu.parentElement !== document.body) {
+  document.body.appendChild(hostsContextMenu);
+}
+if (groupsContextMenu && groupsContextMenu.parentElement !== document.body) {
+  document.body.appendChild(groupsContextMenu);
+}
+
 let toastHost = null;
 function ensureToastHost() {
   if (toastHost) return toastHost;
@@ -1752,7 +1797,6 @@ let syncProfiles = [];
 let syncEditingId = null;
 let settingsSftpHomeCache = null;
 let appVersionCache = null;
-let syncAutoTimer = null;
 let syncSingleProfileId = null;
 let syncSecretsLoadToken = 0;
 const syncDraftByBackend = {
@@ -2856,21 +2900,461 @@ async function resolveConflict(profileId, conflictId, resolution, button) {
   });
 }
 
-function isAutoSyncEnabled() {
-  // Auto-sync is gone for M3 — every push is a full snapshot so timer-driven
-  // pushes are wasteful. M5 reintroduces it once events are record-level.
-  return false;
+// --- Auto-sync engine ------------------------------------------------------
+//
+// Heartbeat-based: on each tick we run `sync_now`, which is a pull+push
+// round trip in the engine. Triggers:
+//   - heartbeat (every N seconds while the vault is unlocked)
+//   - on_unlock (immediately after the vault is unlocked)
+//   - visibility (when the window goes from hidden to visible)
+//   - manual (user-pressed "sync now")
+//
+// Single-flight: only one sync runs at a time. Backoff: consecutive
+// failures stretch the next heartbeat (60→120→240→480→600s) until a
+// success resets the counter. Manual sync resets backoff too.
+//
+// Hidden window: heartbeat stretches to 5 minutes to be considerate, and
+// resumes the normal cadence on the next `visibilitychange` event.
+//
+// Conflicts that come back in the outcome bubble up as a modal because
+// they need user action to resolve and shouldn't get lost in a toast.
+const SETTINGS_KEY_SYNC_AUTO_ENABLED = "zeroterm.settings.sync.auto.enabled";
+const SETTINGS_KEY_SYNC_AUTO_INTERVAL = "zeroterm.settings.sync.auto.interval";
+const SETTINGS_KEY_SYNC_AUTO_ON_VISIBILITY = "zeroterm.settings.sync.auto.on_visibility";
+
+const AUTO_SYNC_DEFAULT_INTERVAL_SEC = 30;
+const AUTO_SYNC_MIN_INTERVAL_SEC = 30;
+const AUTO_SYNC_MAX_INTERVAL_SEC = 600;
+const AUTO_SYNC_HIDDEN_INTERVAL_SEC = 300;
+// Failure backoff schedule; index = (consecutiveFailures - 1), clamped.
+const AUTO_SYNC_BACKOFF_STEPS_SEC = [60, 120, 240, 480, 600];
+
+const autoSync = {
+  timer: null,
+  inFlight: false,
+  pendingReason: null,
+  consecutiveFailures: 0,
+  lastOutcome: null,
+  running: false,
+};
+
+function autoSyncEnabled() {
+  const v = localStorage.getItem(SETTINGS_KEY_SYNC_AUTO_ENABLED);
+  return v === null ? true : v === "true";
 }
 
-function scheduleAutoSync() {
-  if (syncAutoTimer !== null) {
-    clearTimeout(syncAutoTimer);
-    syncAutoTimer = null;
+function autoSyncInterval() {
+  const raw = parseInt(localStorage.getItem(SETTINGS_KEY_SYNC_AUTO_INTERVAL) || "", 10);
+  if (Number.isFinite(raw) && raw >= AUTO_SYNC_MIN_INTERVAL_SEC && raw <= AUTO_SYNC_MAX_INTERVAL_SEC) {
+    return raw;
+  }
+  return AUTO_SYNC_DEFAULT_INTERVAL_SEC;
+}
+
+function autoSyncOnVisibility() {
+  const v = localStorage.getItem(SETTINGS_KEY_SYNC_AUTO_ON_VISIBILITY);
+  return v === null ? true : v === "true";
+}
+
+function computeNextSyncIntervalSec() {
+  if (autoSync.consecutiveFailures > 0) {
+    const idx = Math.min(autoSync.consecutiveFailures - 1, AUTO_SYNC_BACKOFF_STEPS_SEC.length - 1);
+    return AUTO_SYNC_BACKOFF_STEPS_SEC[idx];
+  }
+  if (document.hidden) return AUTO_SYNC_HIDDEN_INTERVAL_SEC;
+  return autoSyncInterval();
+}
+
+function isAutoSyncEnabled() {
+  return autoSyncEnabled();
+}
+
+function autoSyncProfileId() {
+  // Reuse the active-profile bookkeeping the manual sync button uses.
+  // Falls back to localStorage when `activeSyncProfileId` isn't ready
+  // yet (e.g. during the very first tick right after unlock).
+  if (typeof activeSyncProfileId === "function") {
+    const id = activeSyncProfileId();
+    if (id) return id;
+  }
+  return localStorage.getItem(SETTINGS_KEY_SYNC_ACTIVE_PROFILE) || syncSingleProfileId || null;
+}
+
+function clearAutoSyncTimer() {
+  if (autoSync.timer !== null) {
+    clearTimeout(autoSync.timer);
+    autoSync.timer = null;
   }
 }
 
+function scheduleAutoSync() {
+  // Public hook used by mutation paths. The backend has its own 4s
+  // debounce that pushes local changes shortly after a CRUD, so the
+  // frontend doesn't need to layer a second debounce on top — we just
+  // make sure the heartbeat is armed and let the backend handle the
+  // immediate push.
+  if (!autoSync.running) return;
+  clearAutoSyncTimer();
+  if (!autoSyncEnabled()) {
+    updateSyncIndicator();
+    return;
+  }
+  const sec = computeNextSyncIntervalSec();
+  autoSync.timer = window.setTimeout(() => {
+    autoSync.timer = null;
+    runAutoSync("heartbeat").catch(() => {});
+  }, sec * 1000);
+  updateSyncIndicator();
+}
+
 function autoSyncAfterDataChange() {
-  // No-op in M3 — see isAutoSyncEnabled().
+  // Backend debounce (SyncManager) handles the actual push 4s after a
+  // CRUD. Frontend just re-arms its heartbeat so the UI's "last synced"
+  // indicator catches the new state quickly afterwards.
+  scheduleAutoSync();
+}
+
+async function runAutoSync(reason) {
+  if (!autoSync.running) return null;
+  if (!autoSyncEnabled() && reason === "heartbeat") return null;
+  if (autoSync.inFlight) {
+    autoSync.pendingReason = reason;
+    return null;
+  }
+  const profileId = autoSyncProfileId();
+  if (!profileId) {
+    autoSync.lastOutcome = { at: Date.now(), ok: true, action: reason, skipped: true };
+    updateSyncIndicator();
+    if (reason === "heartbeat") scheduleAutoSync();
+    return null;
+  }
+
+  autoSync.inFlight = true;
+  updateSyncIndicator();
+
+  let outcome = null;
+  let error = null;
+  try {
+    outcome = await invoke("sync_now", { profileId });
+    autoSync.consecutiveFailures = 0;
+  } catch (e) {
+    error = e;
+    autoSync.consecutiveFailures += 1;
+  } finally {
+    autoSync.inFlight = false;
+  }
+
+  if (outcome) {
+    const pulled = outcome.eventsPulled ?? 0;
+    const pushed = outcome.eventsPushed ?? 0;
+    const conflicts = outcome.conflictsDetected ?? 0;
+    autoSync.lastOutcome = {
+      at: Date.now(),
+      ok: true,
+      action: reason,
+      pulled,
+      pushed,
+      conflicts,
+    };
+    markSyncLast(reason, pushed, { pulled, ok: true, conflicts });
+    if (pulled > 0) {
+      try {
+        await refreshHostsCacheFromVault({ silent: true });
+        if (typeof reloadHostGroupsFromVault === "function") {
+          await reloadHostGroupsFromVault();
+        }
+        const hostsView = document.getElementById("view-hosts");
+        if (hostsView && !hostsView.hidden && typeof renderHosts === "function") {
+          renderHosts();
+        }
+      } catch (e) {
+        console.warn("post-sync refresh failed", e);
+      }
+    }
+    if (conflicts > 0) {
+      openConflictModal(conflicts, profileId);
+    }
+  } else if (error) {
+    autoSync.lastOutcome = {
+      at: Date.now(),
+      ok: false,
+      action: reason,
+      error: String(error),
+    };
+    markSyncLast(reason, 0, { ok: false, error: String(error) });
+    if (reason !== "heartbeat") {
+      // Manual / on_unlock / visibility failures get a toast so the user
+      // isn't left wondering. Heartbeat failures are silent — the
+      // indicator carries the status.
+      try {
+        showToast(userFriendlySyncError(error), "error", 4200);
+      } catch {}
+    }
+  }
+
+  updateSyncIndicator();
+  const pending = autoSync.pendingReason;
+  autoSync.pendingReason = null;
+  // Always re-arm the timer when running, regardless of pull/push direction.
+  scheduleAutoSync();
+  if (pending) {
+    runAutoSync(pending).catch(() => {});
+  }
+  return outcome;
+}
+
+function startAutoSync() {
+  if (autoSync.running) return;
+  autoSync.running = true;
+  autoSync.consecutiveFailures = 0;
+  autoSync.lastOutcome = null;
+  ensureSyncIndicator();
+  ensureAutoSyncSettingsControls();
+  // Fire one immediate sync to catch anything that happened while we
+  // were locked / offline. The .catch keeps unhandled-promise errors
+  // out of the console; failure is reported via the indicator.
+  runAutoSync("on_unlock").catch(() => {});
+}
+
+function stopAutoSync() {
+  autoSync.running = false;
+  clearAutoSyncTimer();
+  autoSync.inFlight = false;
+  autoSync.pendingReason = null;
+  autoSync.consecutiveFailures = 0;
+  autoSync.lastOutcome = null;
+  updateSyncIndicator();
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (!autoSync.running) return;
+  if (!autoSyncOnVisibility()) {
+    scheduleAutoSync();
+    return;
+  }
+  if (!document.hidden) {
+    // Window came back. Run immediately to catch up; this resets the
+    // heartbeat to the visible-cadence afterwards.
+    runAutoSync("visibility").catch(() => {});
+  } else {
+    // Going hidden — re-arm the timer with the stretched interval.
+    scheduleAutoSync();
+  }
+});
+
+// --- Sync status indicator -------------------------------------------------
+//
+// Small floating chip pinned to the top-right of the hosts view. Click
+// to jump to the sync settings page. State machine driven entirely by
+// `autoSync.lastOutcome` and `autoSync.inFlight`.
+let syncIndicatorEl = null;
+let syncIndicatorRefreshTimer = null;
+
+function ensureSyncIndicator() {
+  if (syncIndicatorEl) return syncIndicatorEl;
+  const el = document.createElement("button");
+  el.id = "sync-indicator";
+  el.type = "button";
+  el.className = "sync-indicator";
+  el.setAttribute("aria-live", "polite");
+  el.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (typeof openSettingsSyncPanel === "function") {
+      openSettingsSyncPanel();
+    } else if (settingsButton) {
+      settingsButton.click();
+      // best-effort: switch to sync nav after settings opens
+      setTimeout(() => settingsNavSync?.click(), 30);
+    }
+  });
+  
+  // Insert inside the vault-bottom-settings-row (sidebar settings footer)
+  const settingsRow = document.getElementById("vault-bottom-settings-row");
+  if (settingsRow) {
+    settingsRow.appendChild(el);
+  } else {
+    document.body.appendChild(el);
+  }
+  
+  syncIndicatorEl = el;
+  // Refresh the "N minutes ago" label without re-syncing.
+  if (syncIndicatorRefreshTimer === null) {
+    syncIndicatorRefreshTimer = window.setInterval(updateSyncIndicator, 15_000);
+  }
+  return el;
+}
+
+function formatRelativeTime(ms) {
+  const delta = Math.max(0, Date.now() - ms);
+  const sec = Math.round(delta / 1000);
+  if (sec < 10) return t("sync.indicator.just_now");
+  if (sec < 60) return t("sync.indicator.seconds_ago", { n: sec });
+  const min = Math.round(sec / 60);
+  if (min < 60) return t("sync.indicator.minutes_ago", { n: min });
+  const hr = Math.round(min / 60);
+  return t("sync.indicator.hours_ago", { n: hr });
+}
+
+function updateSyncIndicator() {
+  const el = syncIndicatorEl;
+  if (!el) return;
+  const hostsView = document.getElementById("view-hosts");
+  // Only visible while inside an unlocked vault and sync is configured and enabled
+  const isConfigured = autoSyncEnabled() && autoSyncProfileId();
+  el.hidden = !(autoSync.running && hostsView && !hostsView.hidden && isConfigured);
+
+  let state = "idle";
+  let label = "";
+  if (!autoSyncEnabled()) {
+    state = "off";
+    label = t("sync.indicator.auto_off");
+  } else if (!autoSyncProfileId()) {
+    state = "unconfigured";
+    label = t("sync.indicator.no_profile");
+  } else if (autoSync.inFlight) {
+    state = "syncing";
+    label = t("sync.indicator.syncing");
+  } else if (autoSync.lastOutcome && !autoSync.lastOutcome.ok) {
+    state = "error";
+    const n = autoSync.consecutiveFailures;
+    label = t("sync.indicator.failed", { n });
+  } else if (autoSync.lastOutcome) {
+    state = "ok";
+    label = t("sync.indicator.ok", { when: formatRelativeTime(autoSync.lastOutcome.at) });
+  } else {
+    state = "idle";
+    label = t("sync.indicator.idle");
+  }
+  el.dataset.state = state;
+  el.textContent = "";
+  el.setAttribute("title", label);
+}
+
+// --- Conflict modal --------------------------------------------------------
+//
+// Auto-sync surfaces conflicts via a modal because they need user
+// action to resolve. Suppressed for 60 seconds after a "Later" so a
+// rapid heartbeat doesn't re-poke the user repeatedly.
+let conflictModalEl = null;
+let conflictModalSuppressedUntil = 0;
+
+function ensureConflictModal() {
+  if (conflictModalEl) return conflictModalEl;
+  const overlay = document.createElement("div");
+  overlay.id = "sync-conflict-overlay";
+  overlay.className = "sync-conflict-overlay";
+  overlay.hidden = true;
+  overlay.innerHTML = `
+    <div class="sync-conflict-card" role="dialog" aria-modal="true" aria-labelledby="sync-conflict-title">
+      <h3 id="sync-conflict-title"></h3>
+      <p id="sync-conflict-body"></p>
+      <div class="sync-conflict-actions">
+        <button type="button" id="sync-conflict-later"></button>
+        <button type="button" id="sync-conflict-go" class="primary"></button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  conflictModalEl = overlay;
+  overlay.querySelector("#sync-conflict-later")?.addEventListener("click", () => {
+    overlay.hidden = true;
+    conflictModalSuppressedUntil = Date.now() + 60_000;
+  });
+  overlay.querySelector("#sync-conflict-go")?.addEventListener("click", () => {
+    overlay.hidden = true;
+    if (typeof openSettingsSyncPanel === "function") {
+      openSettingsSyncPanel();
+    } else if (settingsButton) {
+      settingsButton.click();
+      setTimeout(() => settingsNavSync?.click(), 30);
+    }
+  });
+  return overlay;
+}
+
+function openConflictModal(count, _profileId) {
+  if (!count || count <= 0) return;
+  if (Date.now() < conflictModalSuppressedUntil) return;
+  const overlay = ensureConflictModal();
+  const title = overlay.querySelector("#sync-conflict-title");
+  const body = overlay.querySelector("#sync-conflict-body");
+  const later = overlay.querySelector("#sync-conflict-later");
+  const go = overlay.querySelector("#sync-conflict-go");
+  if (title) title.textContent = t("sync.conflict_modal.title");
+  if (body) body.textContent = t("sync.conflict_modal.body", { n: count });
+  if (later) later.textContent = t("sync.conflict_modal.later");
+  if (go) go.textContent = t("sync.conflict_modal.go");
+  overlay.hidden = false;
+}
+
+// --- Auto-sync settings controls -------------------------------------------
+//
+// The setting panel doesn't have static markup for these toggles, so we
+// inject them at the bottom of the sync panel on first display. Values
+// persist via localStorage; changes take effect immediately via
+// scheduleAutoSync().
+function ensureAutoSyncSettingsControls() {
+  if (!settingsSyncPanel) return;
+  if (document.getElementById("settings-sync-auto-block")) return;
+
+  const block = document.createElement("div");
+  block.id = "settings-sync-auto-block";
+  block.className = "settings-sync-auto-block";
+  block.innerHTML = `
+    <h4 id="settings-sync-auto-title"></h4>
+    <label class="settings-sync-auto-row">
+      <input type="checkbox" id="settings-sync-auto-enabled" />
+      <span id="settings-sync-auto-enabled-label"></span>
+    </label>
+    <label class="settings-sync-auto-row">
+      <span id="settings-sync-auto-interval-label"></span>
+      <input type="number" id="settings-sync-auto-interval" min="30" max="600" step="10" />
+      <span id="settings-sync-auto-interval-suffix"></span>
+    </label>
+    <label class="settings-sync-auto-row">
+      <input type="checkbox" id="settings-sync-auto-visibility" />
+      <span id="settings-sync-auto-visibility-label"></span>
+    </label>
+  `;
+  settingsSyncPanel.appendChild(block);
+
+  const enabledEl = document.getElementById("settings-sync-auto-enabled");
+  const intervalEl = document.getElementById("settings-sync-auto-interval");
+  const visibilityEl = document.getElementById("settings-sync-auto-visibility");
+
+  // i18n
+  document.getElementById("settings-sync-auto-title").textContent = t("settings.sync.auto.title");
+  document.getElementById("settings-sync-auto-enabled-label").textContent = t("settings.sync.auto.enabled");
+  document.getElementById("settings-sync-auto-interval-label").textContent = t("settings.sync.auto.interval");
+  document.getElementById("settings-sync-auto-interval-suffix").textContent = t("settings.sync.auto.interval_suffix");
+  document.getElementById("settings-sync-auto-visibility-label").textContent = t("settings.sync.auto.on_visibility");
+
+  // initial values
+  enabledEl.checked = autoSyncEnabled();
+  intervalEl.value = String(autoSyncInterval());
+  visibilityEl.checked = autoSyncOnVisibility();
+
+  enabledEl.addEventListener("change", () => {
+    localStorage.setItem(SETTINGS_KEY_SYNC_AUTO_ENABLED, enabledEl.checked ? "true" : "false");
+    scheduleAutoSync();
+    updateSyncIndicator();
+  });
+  intervalEl.addEventListener("change", () => {
+    let n = parseInt(intervalEl.value, 10);
+    if (!Number.isFinite(n)) n = AUTO_SYNC_DEFAULT_INTERVAL_SEC;
+    n = Math.max(AUTO_SYNC_MIN_INTERVAL_SEC, Math.min(AUTO_SYNC_MAX_INTERVAL_SEC, n));
+    intervalEl.value = String(n);
+    localStorage.setItem(SETTINGS_KEY_SYNC_AUTO_INTERVAL, String(n));
+    scheduleAutoSync();
+  });
+  visibilityEl.addEventListener("change", () => {
+    localStorage.setItem(SETTINGS_KEY_SYNC_AUTO_ON_VISIBILITY, visibilityEl.checked ? "true" : "false");
+  });
+}
+
+function openSettingsSyncPanel() {
+  if (settingsButton) settingsButton.click();
+  setTimeout(() => settingsNavSync?.click(), 30);
 }
 
 function markSyncLast(action, events = 0, extra = {}) {
@@ -2884,8 +3368,30 @@ function markSyncLast(action, events = 0, extra = {}) {
 
 async function runImmediateSync(_opts) {
   const id = await ensureSyncProfileReadyForActions();
-  const outcome = await invoke("sync_now", { profileId: id });
-  return outcome;
+  try {
+    const outcome = await invoke("sync_now", { profileId: id });
+    autoSync.consecutiveFailures = 0;
+    autoSync.lastOutcome = {
+      at: Date.now(),
+      ok: true,
+      action: "manual",
+      pulled: outcome.eventsPulled ?? 0,
+      pushed: outcome.eventsPushed ?? 0,
+      conflicts: outcome.conflictsDetected ?? 0,
+    };
+    if ((outcome.conflictsDetected ?? 0) > 0) {
+      openConflictModal(outcome.conflictsDetected, id);
+    }
+    updateSyncIndicator();
+    scheduleAutoSync();
+    return outcome;
+  } catch (e) {
+    autoSync.consecutiveFailures += 1;
+    autoSync.lastOutcome = { at: Date.now(), ok: false, action: "manual", error: String(e) };
+    updateSyncIndicator();
+    scheduleAutoSync();
+    throw e;
+  }
 }
 
 async function fillSftpLocalDirDefaultIfEmpty() {
@@ -3539,6 +4045,7 @@ applyVaultSidebarWidth(vaultSidebarWidth);
 setWorkspaceSidebarCollapsed(false);
 
 document.getElementById("lock-button").addEventListener("click", async () => {
+  stopAutoSync();
   for (const pane of Object.values(sftpPanes)) {
     await disconnectSftpPane(pane);
   }
@@ -4353,6 +4860,8 @@ async function enterHosts() {
   hostSearch.value = "";
   loadGroupExpansionState();
   await reloadHostGroupsFromVault();
+  startAutoSync();
+  updateSyncIndicator();
 
   try {
     await refreshHostsCacheFromVault();
