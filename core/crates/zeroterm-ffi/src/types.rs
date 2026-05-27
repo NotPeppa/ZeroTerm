@@ -109,5 +109,6 @@ pub(crate) fn host_input_to_host(input: HostInput) -> zeroterm_app::Host {
         // via CLI to add them.
         forwards: Vec::new(),
         proxy_jump: None,
+        group_id: None,
     }
 }

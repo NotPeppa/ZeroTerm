@@ -138,6 +138,12 @@ select {
   outline: none;
 }
 
+/* We render custom password-eye toggles; hide native Edge reveal/clear. */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none;
+}
+
 input:focus,
 select:focus {
   border-color: var(--accent);

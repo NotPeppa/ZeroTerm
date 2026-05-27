@@ -34,6 +34,13 @@ pub struct Host {
     /// must already exist in the vault.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proxy_jump: Option<String>,
+
+    /// Vault id of the `host_group` this host belongs to, or `None` for
+    /// the "Ungrouped" bucket. References that point to a non-existent /
+    /// tombstoned group are treated as "Ungrouped" by the UI without
+    /// rewriting the vault — see [`crate::host_group::HostGroup`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_id: Option<String>,
 }
 
 fn default_port() -> u16 {

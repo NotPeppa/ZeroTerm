@@ -1103,7 +1103,7 @@ fn now_ms() -> i64 {
 }
 
 fn is_syncable_kind(kind: &str) -> bool {
-    kind == "host"
+    matches!(kind, "host" | "host_group")
 }
 
 // Suppress dead-code warning for the LocalRecord import — the file uses

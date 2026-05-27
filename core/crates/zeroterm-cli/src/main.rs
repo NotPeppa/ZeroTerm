@@ -848,6 +848,7 @@ fn cmd_add(
         os_type: None,
         forwards: Vec::new(),
         proxy_jump: None,
+        group_id: None,
     };
 
     let id = app.save_host(&host)?;

@@ -201,9 +201,10 @@ function uniqueId(prefix) {
 }
 
 const LOCALE_STORAGE_KEY = "zeroterm.locale";
-const GROUPS_STORAGE_KEY = "zeroterm.vault.groups";
+// Group tree expand/collapse state is a per-device UI preference, kept in
+// localStorage. The group records themselves (and host→group membership)
+// live in the encrypted vault and sync across devices.
 const GROUP_STATE_STORAGE_KEY = "zeroterm.vault.group.state";
-const HOST_GROUP_MAP_STORAGE_KEY = "zeroterm.vault.host.group.map";
 
 const I18N = {
   en: {
@@ -1730,7 +1731,6 @@ let selectedVaultHostId = null;
 let vaultSidebarWidth = 320;
 let hostGroups = [];
 let groupExpandedState = {};
-let hostGroupMap = {};
 let draggingHostId = null;
 let hostsContextHostId = null;
 let groupsContextGroupId = null;
@@ -2006,38 +2006,68 @@ function rebuildTerminalThemeSelectOptions() {
 const VAULT_SIDEBAR_MIN = 240;
 const VAULT_SIDEBAR_MAX = 700;
 
-function loadVaultGroupsState() {
+function loadGroupExpansionState() {
   try {
-    hostGroups = JSON.parse(localStorage.getItem(GROUPS_STORAGE_KEY) || "[]");
     groupExpandedState = JSON.parse(localStorage.getItem(GROUP_STATE_STORAGE_KEY) || "{}");
-    hostGroupMap = JSON.parse(localStorage.getItem(HOST_GROUP_MAP_STORAGE_KEY) || "{}");
-    if (!Array.isArray(hostGroups)) hostGroups = [];
     if (!groupExpandedState || typeof groupExpandedState !== "object") groupExpandedState = {};
-    if (!hostGroupMap || typeof hostGroupMap !== "object") hostGroupMap = {};
   } catch {
-    hostGroups = [];
     groupExpandedState = {};
-    hostGroupMap = {};
   }
 }
 
-function saveVaultGroupsState() {
-  localStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify(hostGroups));
+function saveGroupExpansionState() {
   localStorage.setItem(GROUP_STATE_STORAGE_KEY, JSON.stringify(groupExpandedState));
-  localStorage.setItem(HOST_GROUP_MAP_STORAGE_KEY, JSON.stringify(hostGroupMap));
-  autoSyncAfterDataChange();
 }
 
-function migrateAutoSeededGroupsIfNeeded() {
-  if (!Array.isArray(hostGroups) || hostGroups.length !== 2) return;
-  const names = hostGroups.map((g) => g?.name).sort();
-  const looksSeeded = names[0] === "分组一" && names[1] === "分组二";
-  if (!looksSeeded) return;
-  const hasHostMapping = Object.keys(hostGroupMap || {}).length > 0;
-  if (hasHostMapping) return;
-  hostGroups = [];
-  groupExpandedState = {};
-  saveVaultGroupsState();
+/// Pull the host_group list from the vault and stash it in memory.
+/// Detects cycles and breaks them in-memory only — the vault stays
+/// unchanged so a concurrent edit on another device that breaks the
+/// cycle "naturally" wins next sync. Orphan child references (parent_id
+/// points at a group that no longer exists) are also cleared in memory
+/// so the tree renders them as roots.
+async function reloadHostGroupsFromVault() {
+  try {
+    const dtos = await invoke("list_host_groups");
+    hostGroups = Array.isArray(dtos)
+      ? dtos.map((g) => ({
+          id: String(g.id || ""),
+          name: String(g.name || ""),
+          parentId: g.parentId ? String(g.parentId) : "",
+          sortOrder: Number.isFinite(g.sortOrder) ? Number(g.sortOrder) : 0,
+        }))
+      : [];
+  } catch (e) {
+    console.warn("list_host_groups failed", e);
+    hostGroups = [];
+  }
+  reconcileHostGroupTree();
+}
+
+/// Walk the in-memory `hostGroups` and clear `parentId` when:
+///   - the parent doesn't exist (orphan child),
+///   - the chain of parents loops back to the node itself (cycle).
+/// Mutates `hostGroups[*].parentId` only — never touches the vault.
+function reconcileHostGroupTree() {
+  const byId = new Map(hostGroups.map((g) => [g.id, g]));
+  for (const g of hostGroups) {
+    if (!g.parentId) continue;
+    if (!byId.has(g.parentId)) {
+      g.parentId = "";
+      continue;
+    }
+    const seen = new Set([g.id]);
+    let cursor = byId.get(g.parentId);
+    let cycle = false;
+    while (cursor) {
+      if (seen.has(cursor.id)) {
+        cycle = true;
+        break;
+      }
+      seen.add(cursor.id);
+      cursor = cursor.parentId ? byId.get(cursor.parentId) : null;
+    }
+    if (cycle) g.parentId = "";
+  }
 }
 
 function populateHostGroupOptions(selectedGroupId = "") {
@@ -2430,8 +2460,10 @@ function syncFormToInput() {
 
 function collectSyncClientState() {
   // Repo-based sync (M3+) doesn't piggy-back client UI state through the
-  // sync layer — groups / hostGroupMap stay client-local for now and will
-  // get their own sync record kinds in a later milestone.
+  // sync layer — host groups and host→group membership now ride along in
+  // the vault via the `host_group` kind and `Host.group_id`. The only
+  // group-related state still client-local is expand/collapse, which is
+  // intentionally per-device.
   return null;
 }
 
@@ -3452,11 +3484,16 @@ document.getElementById("add-group-button")?.addEventListener("click", async () 
     placeholder: t("groups.prompt.add.placeholder"),
   });
   if (!name) return;
-  const g = { id: uniqueId("group"), name, parentId: "" };
-  hostGroups.push(g);
-  groupExpandedState[g.id] = true;
-  saveVaultGroupsState();
-  renderHosts();
+  try {
+    const id = await invoke("create_host_group", { input: { name, parentId: null, sortOrder: 0 } });
+    groupExpandedState[id] = true;
+    saveGroupExpansionState();
+    await reloadHostGroupsFromVault();
+    autoSyncAfterDataChange();
+    renderHosts();
+  } catch (e) {
+    alert(String(e));
+  }
 });
 
 if (vaultSplitter) {
@@ -3576,25 +3613,30 @@ groupsMenuAddSub?.addEventListener("click", async () => {
     placeholder: t("groups.prompt.add_sub.placeholder"),
   });
   if (!name) return;
-  const g = { id: uniqueId("group"), name, parentId };
-  hostGroups.push(g);
-  groupExpandedState[parentId] = true;
-  groupExpandedState[g.id] = true;
-  saveVaultGroupsState();
-  renderHosts();
+  try {
+    const id = await invoke("create_host_group", { input: { name, parentId, sortOrder: 0 } });
+    groupExpandedState[parentId] = true;
+    groupExpandedState[id] = true;
+    saveGroupExpansionState();
+    await reloadHostGroupsFromVault();
+    autoSyncAfterDataChange();
+    renderHosts();
+  } catch (e) {
+    alert(String(e));
+  }
 });
 
 groupsMenuExpand?.addEventListener("click", () => {
   if (!groupsContextGroupId) return;
   groupExpandedState[groupsContextGroupId] = true;
-  saveVaultGroupsState();
+  saveGroupExpansionState();
   hideGroupsContextMenu();
   renderHosts();
 });
 
 groupsMenuExpandAll?.addEventListener("click", () => {
   for (const g of hostGroups) groupExpandedState[g.id] = true;
-  saveVaultGroupsState();
+  saveGroupExpansionState();
   hideGroupsContextMenu();
   renderHosts();
 });
@@ -3602,14 +3644,14 @@ groupsMenuExpandAll?.addEventListener("click", () => {
 groupsMenuCollapse?.addEventListener("click", () => {
   if (!groupsContextGroupId) return;
   groupExpandedState[groupsContextGroupId] = false;
-  saveVaultGroupsState();
+  saveGroupExpansionState();
   hideGroupsContextMenu();
   renderHosts();
 });
 
 groupsMenuCollapseAll?.addEventListener("click", () => {
   for (const g of hostGroups) groupExpandedState[g.id] = false;
-  saveVaultGroupsState();
+  saveGroupExpansionState();
   hideGroupsContextMenu();
   renderHosts();
 });
@@ -3624,17 +3666,29 @@ groupsMenuCollapseAll?.addEventListener("click", () => {
     defaultValue: group.name,
   });
   if (!name) return;
-  group.name = name;
-  saveVaultGroupsState();
-  renderHosts();
+  try {
+    await invoke("update_host_group", {
+      id: group.id,
+      input: { name, parentId: group.parentId || null, sortOrder: group.sortOrder || 0 },
+    });
+    await reloadHostGroupsFromVault();
+    autoSyncAfterDataChange();
+    renderHosts();
+  } catch (e) {
+    alert(String(e));
+  }
 });
 
-groupsMenuDelete?.addEventListener("click", () => {
+groupsMenuDelete?.addEventListener("click", async () => {
   const groupId = groupsContextGroupId;
   const group = hostGroups.find((g) => g.id === groupId);
   hideGroupsContextMenu();
   if (!group) return;
   if (!confirm(t("groups.confirm.delete", { name: group.name }))) return;
+  // Collect descendants so we can delete the whole subtree. Member
+  // hosts (and any "stranger" children that were never resolved here
+  // because their parent was tombstoned on another device) are left
+  // alone — they'll render as Ungrouped / root via the fallback path.
   const toDelete = new Set([groupId]);
   let changed = true;
   while (changed) {
@@ -3647,14 +3701,19 @@ groupsMenuDelete?.addEventListener("click", () => {
       }
     }
   }
-  hostGroups = hostGroups.filter((g) => !toDelete.has(g.id));
+  try {
+    for (const gid of toDelete) {
+      await invoke("delete_host_group", { id: gid });
+    }
+  } catch (e) {
+    alert(String(e));
+  }
   for (const gid of toDelete) {
     delete groupExpandedState[gid];
   }
-  for (const key of Object.keys(hostGroupMap)) {
-    if (toDelete.has(hostGroupMap[key])) delete hostGroupMap[key];
-  }
-  saveVaultGroupsState();
+  saveGroupExpansionState();
+  await reloadHostGroupsFromVault();
+  autoSyncAfterDataChange();
   renderHosts();
 });
 
@@ -4292,8 +4351,8 @@ async function enterHosts() {
   show("hosts");
   setWorkspaceMode("vaults");
   hostSearch.value = "";
-  loadVaultGroupsState();
-  migrateAutoSeededGroupsIfNeeded();
+  loadGroupExpansionState();
+  await reloadHostGroupsFromVault();
 
   try {
     await refreshHostsCacheFromVault();
@@ -4305,6 +4364,19 @@ async function enterHosts() {
     if (hostsEmptyAdd) hostsEmptyAdd.hidden = true;
     return;
   }
+}
+
+async function moveHostToGroup(hostId, groupId) {
+  try {
+    await invoke("set_host_group", { hostId, groupId: groupId || null });
+  } catch (e) {
+    alert(String(e));
+    return;
+  }
+  const cached = hostsCache.find((h) => h.id === hostId);
+  if (cached) cached.groupId = groupId || null;
+  autoSyncAfterDataChange();
+  renderHosts();
 }
 
 function renderHosts() {
@@ -4464,10 +4536,13 @@ function renderHosts() {
   const ungroupedRows = [];
 
   for (const host of rows) {
-    const gid = hostGroupMap[host.id];
+    const gid = host.groupId || "";
     if (gid && groupedRows.has(gid)) {
       groupedRows.get(gid).push(host);
     } else {
+      // Orphan reference: host.groupId points at a tombstoned/missing
+      // group. Render as Ungrouped without rewriting the vault — a peer
+      // may still have that group alive and re-introduce it.
       ungroupedRows.push(host);
     }
   }
@@ -4493,7 +4568,7 @@ function renderHosts() {
     row.append(left, count);
     row.addEventListener("click", () => {
       groupExpandedState[group.id] = !expanded;
-      saveVaultGroupsState();
+      saveGroupExpansionState();
       renderHosts();
     });
     row.addEventListener("contextmenu", (ev) => {
@@ -4510,14 +4585,12 @@ function renderHosts() {
     row.addEventListener("dragleave", () => {
       row.classList.remove("drop-target");
     });
-    row.addEventListener("drop", (ev) => {
+    row.addEventListener("drop", async (ev) => {
       ev.preventDefault();
       row.classList.remove("drop-target");
       const hostId = (ev.dataTransfer && ev.dataTransfer.getData("text/plain")) || draggingHostId;
       if (!hostId) return;
-      hostGroupMap[hostId] = group.id;
-      saveVaultGroupsState();
-      renderHosts();
+      await moveHostToGroup(hostId, group.id);
     });
     hostsList.appendChild(row);
 
@@ -5810,7 +5883,7 @@ async function openHostEditor(id = null) {
   syncPasswordToggleButton(hfPasswordToggle, false, { show: "显示密码", hide: "隐藏密码" });
   syncPasswordToggleButton(hfKeyPassphraseToggle, false, { show: "显示口令", hide: "隐藏口令" });
   hfForwards = [];
-  loadVaultGroupsState();
+  await reloadHostGroupsFromVault();
 
   await populateJumpOptions(id);
 
@@ -5831,7 +5904,7 @@ async function openHostEditor(id = null) {
         hfKeyPassphrase.value = h.keyPassphrase ?? "";
       }
 
-      populateHostGroupOptions(hostGroupMap[id] || "");
+      populateHostGroupOptions(h.groupId || "");
 
       hfJump.value = h.proxyJump ?? "";
       hfForwards = h.forwards.map(forwardFromIO);
@@ -6109,6 +6182,7 @@ async function saveHostForm(ev) {
     auth,
     forwards,
     proxy_jump: hfJump.value || null,
+    groupId: hfGroup?.value || null,
   };
 
   if (!input.name || !input.host || !input.user) {
@@ -6122,16 +6196,6 @@ async function saveHostForm(ev) {
       await invoke("update_host", { id: editingHostId, input });
     } else {
       savedHostId = await invoke("save_host", { input });
-    }
-
-    if (savedHostId) {
-      const groupId = hfGroup?.value || "";
-      if (groupId) {
-        hostGroupMap[savedHostId] = groupId;
-      } else {
-        delete hostGroupMap[savedHostId];
-      }
-      saveVaultGroupsState();
     }
 
     autoSyncAfterDataChange();

@@ -296,6 +296,7 @@ pub struct HostSummary {
     pub user: String,
     pub auth_type: &'static str,
     pub os_type: Option<String>,
+    pub group_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -325,6 +326,7 @@ pub async fn list_hosts(state: State<'_, AppState>) -> Result<Vec<HostSummary>, 
                 HostAuth::Agent => "agent",
             },
             os_type: h.os_type,
+            group_id: h.group_id,
         })
         .collect())
 }
@@ -920,6 +922,8 @@ pub struct HostInput {
     pub forwards: Vec<ForwardSpecIO>,
     #[serde(default)]
     pub proxy_jump: Option<String>,
+    #[serde(default)]
+    pub group_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1052,6 +1056,7 @@ impl HostInput {
             os_type: self.os_type.and_then(|v| normalize_os_type(&v)),
             forwards: self.forwards.into_iter().map(|f| f.into_app()).collect(),
             proxy_jump: self.proxy_jump,
+            group_id: self.group_id.filter(|s| !s.is_empty()),
         }
     }
 }
@@ -1073,6 +1078,7 @@ pub struct HostFull {
     /// Structured forwards for the editor.
     pub forwards: Vec<ForwardSpecIO>,
     pub proxy_jump: Option<String>,
+    pub group_id: Option<String>,
 }
 
 #[tauri::command]
@@ -1113,6 +1119,107 @@ pub async fn update_host(
 pub async fn delete_host(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let (app, manager) = clone_app_and_sync(&state)?;
     app.delete_host(&id).map_err(|e| e.to_string())?;
+    manager.schedule_debounced_sync_for_all(app);
+    Ok(())
+}
+
+// ---- host group CRUD -----------------------------------------------------
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostGroupDto {
+    pub id: String,
+    pub name: String,
+    pub parent_id: Option<String>,
+    pub sort_order: i32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostGroupInput {
+    pub name: String,
+    #[serde(default)]
+    pub parent_id: Option<String>,
+    #[serde(default)]
+    pub sort_order: Option<i32>,
+}
+
+fn group_to_dto(g: zeroterm_app::HostGroup) -> HostGroupDto {
+    HostGroupDto {
+        id: g.id,
+        name: g.name,
+        parent_id: g.parent_id,
+        sort_order: g.sort_order,
+    }
+}
+
+#[tauri::command]
+pub async fn list_host_groups(state: State<'_, AppState>) -> Result<Vec<HostGroupDto>, String> {
+    let app_lock = state.app.lock().unwrap();
+    let app = app_lock.as_ref().ok_or("vault is locked")?;
+    let groups = app.list_host_groups().map_err(|e| e.to_string())?;
+    Ok(groups.into_iter().map(group_to_dto).collect())
+}
+
+#[tauri::command]
+pub async fn create_host_group(
+    state: State<'_, AppState>,
+    input: HostGroupInput,
+) -> Result<String, String> {
+    let (app, manager) = clone_app_and_sync(&state)?;
+    let g = zeroterm_app::HostGroup {
+        id: String::new(),
+        name: input.name,
+        parent_id: input.parent_id.filter(|s| !s.is_empty()),
+        sort_order: input.sort_order.unwrap_or(0),
+    };
+    let id = app.save_host_group(&g).map_err(|e| e.to_string())?;
+    manager.schedule_debounced_sync_for_all(app);
+    Ok(id)
+}
+
+#[tauri::command]
+pub async fn update_host_group(
+    state: State<'_, AppState>,
+    id: String,
+    input: HostGroupInput,
+) -> Result<(), String> {
+    let (app, manager) = clone_app_and_sync(&state)?;
+    let g = zeroterm_app::HostGroup {
+        id,
+        name: input.name,
+        parent_id: input.parent_id.filter(|s| !s.is_empty()),
+        sort_order: input.sort_order.unwrap_or(0),
+    };
+    app.update_host_group(&g).map_err(|e| e.to_string())?;
+    manager.schedule_debounced_sync_for_all(app);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn delete_host_group(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let (app, manager) = clone_app_and_sync(&state)?;
+    app.delete_host_group(&id).map_err(|e| e.to_string())?;
+    manager.schedule_debounced_sync_for_all(app);
+    Ok(())
+}
+
+/// Move a host into a group (or out of any group with `groupId = None`).
+/// Convenience over update_host so the frontend doesn't need to round-trip
+/// the entire host payload just to drag it onto a different group node.
+#[tauri::command]
+pub async fn set_host_group(
+    state: State<'_, AppState>,
+    host_id: String,
+    group_id: Option<String>,
+) -> Result<(), String> {
+    let (app, manager) = clone_app_and_sync(&state)?;
+    let mut host = app
+        .find_host_by_id(&host_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("no host with id {host_id}"))?;
+    host.group_id = group_id.filter(|s| !s.is_empty());
+    app.update_host(&host).map_err(|e| e.to_string())?;
     manager.schedule_debounced_sync_for_all(app);
     Ok(())
 }
@@ -1217,6 +1324,7 @@ pub async fn get_host(state: State<'_, AppState>, id: String) -> Result<HostFull
         key_passphrase,
         forwards: h.forwards.iter().map(ForwardSpecIO::from_app).collect(),
         proxy_jump: h.proxy_jump,
+        group_id: h.group_id,
     })
 }
 

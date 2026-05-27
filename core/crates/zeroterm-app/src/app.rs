@@ -13,8 +13,10 @@ use zeroterm_vault::Vault;
 
 use crate::error::AppError;
 use crate::host::Host;
+use crate::host_group::HostGroup;
 
 const HOST_KIND: &str = "host";
+const HOST_GROUP_KIND: &str = "host_group";
 
 #[derive(Debug, Clone)]
 pub struct HostDiagnostics {
@@ -136,6 +138,118 @@ impl App {
         Ok(())
     }
 
+    // -- host group CRUD ----------------------------------------------------
+
+    pub fn list_host_groups(&self) -> Result<Vec<HostGroup>, AppError> {
+        let records = self.vault.list(HOST_GROUP_KIND)?;
+        let mut groups = Vec::with_capacity(records.len());
+        for (id, plaintext) in records {
+            match serde_json::from_slice::<HostGroup>(&plaintext) {
+                Ok(mut g) => {
+                    g.id = id;
+                    groups.push(g);
+                }
+                Err(e) => {
+                    tracing::warn!(record_id = %id, error = %e, "skipping malformed host_group record");
+                }
+            }
+        }
+        groups.sort_by(|a, b| a.sort_order.cmp(&b.sort_order).then_with(|| a.name.cmp(&b.name)));
+        Ok(groups)
+    }
+
+    pub fn find_host_group_by_id(&self, id: &str) -> Result<Option<HostGroup>, AppError> {
+        match self.vault.get(id) {
+            Ok(plaintext) => {
+                let mut g: HostGroup =
+                    serde_json::from_slice(&plaintext).map_err(AppError::BadHostRecord)?;
+                g.id = id.to_string();
+                Ok(Some(g))
+            }
+            Err(zeroterm_vault::VaultError::NotFound(_)) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Insert a new host group. Pre-validates parent existence and rejects
+    /// pointing at a non-existent group. Caller assigns no id; the vault
+    /// returns one.
+    pub fn save_host_group(&self, group: &HostGroup) -> Result<String, AppError> {
+        if let Some(pid) = group.parent_id.as_deref() {
+            if pid.is_empty() {
+                return Err(AppError::BadHostGroup("parent_id cannot be empty".into()));
+            }
+            if self.find_host_group_by_id(pid)?.is_none() {
+                return Err(AppError::BadHostGroup(format!(
+                    "parent host_group {pid} does not exist"
+                )));
+            }
+        }
+        if group.name.trim().is_empty() {
+            return Err(AppError::BadHostGroup("name cannot be empty".into()));
+        }
+        let json = serde_json::to_vec(group).map_err(AppError::BadHostRecord)?;
+        Ok(self.vault.insert(HOST_GROUP_KIND, &json)?)
+    }
+
+    /// Replace an existing host group by id. Rejects self-parenting,
+    /// parents that don't exist, and any change that would form a cycle.
+    pub fn update_host_group(&self, group: &HostGroup) -> Result<(), AppError> {
+        if group.id.is_empty() {
+            return Err(AppError::BadHostGroup("id is required for update".into()));
+        }
+        if group.name.trim().is_empty() {
+            return Err(AppError::BadHostGroup("name cannot be empty".into()));
+        }
+        if let Some(pid) = group.parent_id.as_deref() {
+            if pid == group.id {
+                return Err(AppError::BadHostGroup("group cannot be its own parent".into()));
+            }
+            if self.find_host_group_by_id(pid)?.is_none() {
+                return Err(AppError::BadHostGroup(format!(
+                    "parent host_group {pid} does not exist"
+                )));
+            }
+            // Walk up from the proposed parent; if we hit `group.id`, the
+            // change would form a cycle (group becomes its own ancestor).
+            let all = self.list_host_groups()?;
+            let mut cursor = pid.to_string();
+            let mut steps = 0usize;
+            while let Some(parent) = all.iter().find(|g| g.id == cursor) {
+                if let Some(next) = parent.parent_id.as_deref() {
+                    if next == group.id {
+                        return Err(AppError::BadHostGroup(
+                            "move would create a cycle".into(),
+                        ));
+                    }
+                    cursor = next.to_string();
+                    steps += 1;
+                    if steps > all.len() {
+                        // Existing data already has a cycle. Refuse the
+                        // write so we don't entrench it; the caller can
+                        // break the cycle by clearing parent_id elsewhere.
+                        return Err(AppError::BadHostGroup(
+                            "cannot traverse parents: existing cycle".into(),
+                        ));
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
+        let json = serde_json::to_vec(group).map_err(AppError::BadHostRecord)?;
+        self.vault.update(&group.id, &json)?;
+        Ok(())
+    }
+
+    /// Delete a host group. Member hosts and child groups are NOT
+    /// rewritten — the UI treats orphan references as "Ungrouped" / root
+    /// respectively. See [`HostGroup`] doc.
+    pub fn delete_host_group(&self, id: &str) -> Result<(), AppError> {
+        self.vault.delete(id)?;
+        Ok(())
+    }
+
     // -- ssh connect helper -------------------------------------------------
 
     /// Build the SSH-layer config for a saved host. The caller decides
@@ -194,6 +308,7 @@ mod tests {
             os_type: None,
             forwards: Vec::new(),
             proxy_jump: None,
+            group_id: None,
         }
     }
 
