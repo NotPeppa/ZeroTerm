@@ -972,6 +972,10 @@ fn open_app_with_remember(
     remember: bool,
 ) -> Result<App> {
     if App::vault_exists(path) {
+        // Preload master password from keychain in one burst (single
+        // macOS Touch ID / password prompt).
+        zeroterm_app::keychain::cache().preload(path, &[]);
+
         // Try keychain-cached password first.
         if let Some(cached) = keychain_load(path) {
             match App::open(path, &cached) {

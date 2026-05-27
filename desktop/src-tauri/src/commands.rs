@@ -74,7 +74,7 @@ pub async fn unlock_vault(
             tracing::warn!(error = %e, "could not cache master password in keychain");
         }
     }
-    bootstrap_sync_engines_from_keychain(app, state.sync.clone()).await;
+    bootstrap_sync_engines_from_keychain(app, state.sync.clone(), &path).await;
     info!(remember, "vault unlocked");
     Ok(())
 }
@@ -129,6 +129,10 @@ pub async fn clear_vault_data(state: State<'_, AppState>) -> Result<(), String> 
 /// Returns `true` on success, `false` if there's no cache, the cache is
 /// stale (password rotated), or the keychain backend is unavailable.
 /// Never errors — keychain absence is a normal state.
+///
+/// On macOS, all keychain reads are batched via [`KeychainCache::preload`]
+/// so the user only sees a single Touch ID / password prompt instead of
+/// one per stored secret.
 #[tauri::command]
 pub async fn try_keychain_unlock(state: State<'_, AppState>) -> Result<bool, String> {
     let path = zeroterm_app::default_vault_path()
@@ -136,6 +140,10 @@ pub async fn try_keychain_unlock(state: State<'_, AppState>) -> Result<bool, Str
     if !App::vault_exists(&path) {
         return Ok(false);
     }
+
+    // Phase 1: preload just the master password (single keychain access).
+    zeroterm_app::keychain::cache().preload(&path, &[]);
+
     let pw = match zeroterm_app::keychain::get_master_password(&path) {
         Ok(Some(p)) => p,
         Ok(None) => return Ok(false),
@@ -148,7 +156,7 @@ pub async fn try_keychain_unlock(state: State<'_, AppState>) -> Result<bool, Str
         Ok(app) => {
             let app = Arc::new(app);
             *state.app.lock().unwrap() = Some(app.clone());
-            bootstrap_sync_engines_from_keychain(app, state.sync.clone()).await;
+            bootstrap_sync_engines_from_keychain(app, state.sync.clone(), &path).await;
             info!("vault unlocked from keychain cache");
             Ok(true)
         }
@@ -163,6 +171,7 @@ pub async fn try_keychain_unlock(state: State<'_, AppState>) -> Result<bool, Str
 async fn bootstrap_sync_engines_from_keychain(
     app: Arc<zeroterm_app::App>,
     manager: Arc<zeroterm_app::SyncManager>,
+    vault_path: &Path,
 ) {
     let profiles = match app.list_sync_profiles() {
         Ok(v) => v,
@@ -171,6 +180,17 @@ async fn bootstrap_sync_engines_from_keychain(
             return;
         }
     };
+
+    if profiles.is_empty() {
+        return;
+    }
+
+    // Phase 2: now that we know the profile IDs, batch-preload all
+    // sync-related secrets in one burst. On macOS this collapses into
+    // a single authorization prompt (or none at all if the grace window
+    // from Phase 1 is still open).
+    let profile_ids: Vec<String> = profiles.iter().map(|p| p.id.clone()).collect();
+    zeroterm_app::keychain::cache().preload(vault_path, &profile_ids);
 
     for profile in profiles {
         let profile_id = profile.id;

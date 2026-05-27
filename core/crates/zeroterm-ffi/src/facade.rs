@@ -125,11 +125,18 @@ impl ZeroTerm {
     /// password, if any. Returns `true` on success, `false` if there's no
     /// cache, the cache is stale, or the keychain backend is unavailable.
     /// Never errors — keychain absence is a normal state.
+    ///
+    /// On macOS, all keychain reads are batched via preload so the user
+    /// only sees a single Touch ID / password prompt.
     pub fn try_keychain_unlock(&self) -> Result<bool, FfiError> {
         let path = self.resolved_vault_path()?;
         if !zeroterm_app::App::vault_exists(&path) {
             return Ok(false);
         }
+
+        // Preload master password in one burst (single macOS prompt).
+        zeroterm_app::keychain::cache().preload(&path, &[]);
+
         let pw = match zeroterm_app::keychain::get_master_password(&path) {
             Ok(Some(p)) => p,
             Ok(None) => return Ok(false),

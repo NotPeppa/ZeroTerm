@@ -6470,19 +6470,28 @@ async function populateJumpOptions(currentId) {
 }
 
 function forwardFromIO(spec) {
-  if (spec.kind === "local") {
+  const bindAddr = spec?.bindAddr ?? spec?.bind_addr ?? "";
+  const bindPort = spec?.bindPort ?? spec?.bind_port ?? "";
+  const targetHost = spec?.targetHost ?? spec?.target_host ?? "";
+  const targetPort = spec?.targetPort ?? spec?.target_port ?? "";
+  const kind =
+    spec?.kind ||
+    spec?.type ||
+    (targetHost || targetPort ? "local" : "dynamic");
+
+  if (kind === "local") {
     return {
       kind: "local",
-      bindAddr: spec.bindAddr,
-      bindPort: String(spec.bindPort),
-      targetHost: spec.targetHost,
-      targetPort: String(spec.targetPort),
+      bindAddr,
+      bindPort: String(bindPort),
+      targetHost,
+      targetPort: String(targetPort),
     };
   }
   return {
     kind: "dynamic",
-    bindAddr: spec.bindAddr,
-    bindPort: String(spec.bindPort),
+    bindAddr,
+    bindPort: String(bindPort),
   };
 }
 
