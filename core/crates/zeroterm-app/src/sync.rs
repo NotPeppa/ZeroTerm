@@ -80,6 +80,7 @@ pub struct SyncProfile {
 
 /// Flattened [`SyncReport`] with the bits the UI cares about.
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SyncOutcome {
     pub profile_id: String,
     pub events_pulled: usize,
@@ -122,6 +123,7 @@ impl SyncOutcome {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SyncStatus {
     pub profile_id: String,
     pub bootstrapped: bool,

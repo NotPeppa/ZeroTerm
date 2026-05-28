@@ -208,16 +208,16 @@ const GROUP_STATE_STORAGE_KEY = "zeroterm.vault.group.state";
 
 const I18N = {
   en: {
-    "unlock.checking": "checking vault...",
+    "unlock.checking": "loading...",
     "unlock.enter_password": "Enter your master password to continue.",
-    "unlock.no_vault": "No vault yet. Choose a master password - it cannot be recovered.",
+    "unlock.no_vault": "First time? Choose a master password - it cannot be recovered.",
     "unlock.label.master": "Master password",
     "unlock.label.new_master": "New master password",
     "unlock.remember": "Remember password (store in OS keychain)",
     "unlock.button.unlock": "Unlock",
-    "unlock.button.create": "Create vault",
+    "unlock.button.create": "Get Started",
     "unlock.confirm_placeholder": "Confirm master password",
-    "unlock.path": "vault: {path}",
+    "unlock.path": "data: {path}",
     "unlock.error.passwords_mismatch": "passwords do not match",
     "common.error": "error: {error}",
     "common.ok": "OK",
@@ -232,7 +232,7 @@ const I18N = {
     "sidebar.settings": "Settings",
     "sidebar.quick_connect": "Quick connect",
     "sidebar.local_terminal": "Local terminal",
-    "sidebar.lock": "Lock Vault",
+    "sidebar.lock": "Lock",
     "sidebar.collapse": "Collapse",
     "sidebar.expand": "Expand",
     "window.minimize": "Minimize",
@@ -382,7 +382,7 @@ const I18N = {
     "host_editor.forward.dynamic": "SOCKS5 (-D)",
     "host_editor.forward.bind": "bind",
     "host_editor.forward.port": "port",
-    "host_editor.forward.target_host": "target host",
+    "host_editor.forward.target_host": "remote host",
     "host_editor.forward.remove": "Remove",
     "host_editor.key.pick_title": "Choose a private key",
     "host_editor.key.loaded": "loaded {name} ({bytes} bytes)",
@@ -396,8 +396,8 @@ const I18N = {
     "host_editor.error.required_fields": "name, host and user are required",
     "host_editor.error.load_failed": "load failed: {error}",
     "host_editor.error.forward_bind_port": "forward {index}: invalid bind port",
-    "host_editor.error.forward_target_host": "forward {index}: target host required",
-    "host_editor.error.forward_target_port": "forward {index}: invalid target port",
+    "host_editor.error.forward_target_host": "forward {index}: remote host required",
+    "host_editor.error.forward_target_port": "forward {index}: invalid remote port",
     "files.title": "Files",
     "files.button.back": "Back",
     "files.button.up": "Up",
@@ -526,12 +526,12 @@ const I18N = {
     "settings.sync.error.not_connected": "Sync is not connected yet. Please create or join a repo first.",
     "settings.sync.status.joined": "Joined existing sync repo",
     "settings.sync.status.joined_detail": "Joined existing sync repo: pulled {pulled}, applied {applied}, conflicts {conflicts}",
-    "settings.sync.status.aborted": "Aborted — vault id mismatch",
+    "settings.sync.status.aborted": "Aborted — data source mismatch",
     "settings.sync.status.forgotten": "Engine forgotten (passphrase required to resume)",
     "settings.sync.status.cleared_all": "Cleared {count} sync profile(s)",
     "settings.sync.confirm.clear_all": "Delete all sync profiles and credentials? This cannot be undone.",
     "settings.sync.status.no_profile": "No sync profile configured",
-    "settings.sync.status.bootstrapped": "Connected — head clock {clock}",
+    "settings.sync.status.bootstrapped": "Connected",
     "settings.sync.status.not_bootstrapped": "Not connected — Create or Join the repo to begin",
     "settings.sync.status.invalid.host_record_missing": "The SFTP host this profile points at was deleted — pick another host below and save again.",
     "settings.sync.status.invalid.profile_missing": "The sync profile no longer exists. Recreate it to continue.",
@@ -548,7 +548,7 @@ const I18N = {
     "settings.sync.error.s3_ak_required": "Enter the S3 access key ID first",
     "settings.sync.sftp.host": "SFTP host",
     "settings.sync.sftp.remote_dir": "Remote directory",
-    "settings.sync.sftp.no_hosts": "Add an SSH host in the vault first",
+    "settings.sync.sftp.no_hosts": "Add an SSH host first",
     "settings.sync.webdav.url": "WebDAV Server URL",
     "settings.sync.webdav.root_path": "Repo Subpath (optional)",
     "settings.sync.webdav.username": "Username",
@@ -567,7 +567,7 @@ const I18N = {
     "settings.sync.backend.sftp": "SFTP",
     "settings.sync.backend.webdav": "WebDAV",
     "settings.sync.backend.s3": "S3",
-    "settings.sync.confirm.vault_mismatch": "The repo was created against a different vault (vault id = {remote}). Continuing will reject every sync. Proceed anyway?",
+    "settings.sync.confirm.vault_mismatch": "This repo was created from a different data source (id = {remote}). Syncing will be rejected every time. Proceed anyway?",
     "settings.sync.devices.title": "Joined Devices",
     "settings.sync.devices.empty": "Device list appears after you join a repo and run sync.",
     "settings.sync.conflicts.title": "Conflict Inbox",
@@ -635,10 +635,10 @@ const I18N = {
     "settings.sync.button.busy.clear_all": "Clearing...",
     "settings.sync.button.busy.resolve_conflict": "Resolving...",
     "settings.data.title": "Data Management",
-    "settings.data.desc": "Clear all records and sync metadata in the current vault. This action cannot be undone.",
-    "settings.data.button.clear_vault": "Clear Vault Data",
-    "settings.data.confirm.clear_vault": "Clear all data in this vault now? This cannot be undone.",
-    "settings.data.status.cleared": "Vault data cleared",
+    "settings.data.desc": "Clear all saved records and sync metadata. This action cannot be undone.",
+    "settings.data.button.clear_vault": "Clear All Data",
+    "settings.data.confirm.clear_vault": "Clear all data now? This cannot be undone.",
+    "settings.data.status.cleared": "All data cleared",
     "settings.update.status.installing": "Installing update...",
     "settings.sync.backend.local_folder": "Local Folder",
     "settings.sync.label.path": "Sync Folder",
@@ -692,16 +692,16 @@ const I18N = {
     "input.placeholder": "Enter value...",
   },
   "zh-CN": {
-    "unlock.checking": "正在检查保险库...",
+    "unlock.checking": "正在加载...",
     "unlock.enter_password": "请输入主密码继续。",
-    "unlock.no_vault": "当前没有保险库。请设置主密码，主密码无法找回。",
+    "unlock.no_vault": "首次使用，请设置主密码。主密码无法找回。",
     "unlock.label.master": "主密码",
     "unlock.label.new_master": "新主密码",
     "unlock.remember": "记住密码（保存到系统钥匙串）",
     "unlock.button.unlock": "解锁",
-    "unlock.button.create": "创建保险库",
+    "unlock.button.create": "开始使用",
     "unlock.confirm_placeholder": "确认主密码",
-    "unlock.path": "保险库：{path}",
+    "unlock.path": "数据位置：{path}",
     "unlock.error.passwords_mismatch": "两次输入的密码不一致",
     "common.error": "错误：{error}",
     "common.ok": "确定",
@@ -716,7 +716,7 @@ const I18N = {
     "sidebar.settings": "设置",
     "sidebar.quick_connect": "临时连接",
     "sidebar.local_terminal": "本地终端",
-    "sidebar.lock": "锁定保险库",
+    "sidebar.lock": "锁定",
     "sidebar.collapse": "收起",
     "sidebar.expand": "展开",
     "window.minimize": "最小化",
@@ -865,7 +865,7 @@ const I18N = {
     "host_editor.forward.dynamic": "SOCKS5 (-D)",
     "host_editor.forward.bind": "监听地址",
     "host_editor.forward.port": "端口",
-    "host_editor.forward.target_host": "目标主机",
+    "host_editor.forward.target_host": "远端地址",
     "host_editor.forward.remove": "移除",
     "host_editor.key.pick_title": "选择私钥文件",
     "host_editor.key.loaded": "已加载 {name}（{bytes} 字节）",
@@ -879,8 +879,8 @@ const I18N = {
     "host_editor.error.required_fields": "名称、主机、用户为必填项",
     "host_editor.error.load_failed": "加载失败：{error}",
     "host_editor.error.forward_bind_port": "第 {index} 条转发：监听端口无效",
-    "host_editor.error.forward_target_host": "第 {index} 条转发：目标主机必填",
-    "host_editor.error.forward_target_port": "第 {index} 条转发：目标端口无效",
+    "host_editor.error.forward_target_host": "第 {index} 条转发：远端地址必填",
+    "host_editor.error.forward_target_port": "第 {index} 条转发：远端端口无效",
     "files.title": "文件",
     "files.button.back": "返回",
     "files.button.up": "上级目录",
@@ -1007,12 +1007,12 @@ const I18N = {
     "settings.sync.error.not_connected": "同步尚未连接，请先创建或加入仓库。",
     "settings.sync.status.joined": "已加入现有同步仓库",
     "settings.sync.status.joined_detail": "已加入现有同步仓库：拉取 {pulled}，应用 {applied}，冲突 {conflicts}",
-    "settings.sync.status.aborted": "已中止 — vault id 不匹配",
+    "settings.sync.status.aborted": "已中止 — 数据源不匹配",
     "settings.sync.status.forgotten": "已断开会话（需要密码重新连接）",
     "settings.sync.status.cleared_all": "已清空 {count} 个同步配置",
     "settings.sync.confirm.clear_all": "确定要删除所有同步配置和凭据吗？此操作不可撤销。",
     "settings.sync.status.no_profile": "尚未配置同步",
-    "settings.sync.status.bootstrapped": "已连接 — 逻辑时钟 {clock}",
+    "settings.sync.status.bootstrapped": "已连接",
     "settings.sync.status.not_bootstrapped": "未连接 — 请创建或加入仓库",
     "settings.sync.status.invalid.host_record_missing": "该 SFTP 仓库引用的主机已被删除,请在下方重新选择主机后保存。",
     "settings.sync.status.invalid.profile_missing": "同步配置已不存在,请重新创建。",
@@ -1029,7 +1029,7 @@ const I18N = {
     "settings.sync.error.s3_ak_required": "请先填写 S3 Access Key ID",
     "settings.sync.sftp.host": "SFTP 主机",
     "settings.sync.sftp.remote_dir": "远端目录",
-    "settings.sync.sftp.no_hosts": "请先在保险库添加 SSH 主机",
+    "settings.sync.sftp.no_hosts": "请先添加 SSH 主机",
     "settings.sync.webdav.url": "WebDAV 服务地址",
     "settings.sync.webdav.root_path": "仓库子路径(可选)",
     "settings.sync.webdav.username": "用户名",
@@ -1048,7 +1048,7 @@ const I18N = {
     "settings.sync.backend.sftp": "SFTP",
     "settings.sync.backend.webdav": "WebDAV",
     "settings.sync.backend.s3": "S3",
-    "settings.sync.confirm.vault_mismatch": "该仓库是基于另一个 vault 创建的（vault id = {remote}）。继续将导致每次同步被拒。仍要继续吗？",
+    "settings.sync.confirm.vault_mismatch": "该仓库来自另一台设备的不同数据源（id = {remote}）。继续将导致每次同步被拒。仍要继续吗？",
     "settings.sync.devices.title": "已加入设备",
     "settings.sync.devices.empty": "设备列表会在加入仓库并完成同步后显示。",
     "settings.sync.conflicts.title": "冲突收件箱",
@@ -1116,10 +1116,10 @@ const I18N = {
     "settings.sync.button.busy.clear_all": "清空中...",
     "settings.sync.button.busy.resolve_conflict": "处理中...",
     "settings.data.title": "数据管理",
-    "settings.data.desc": "清空当前 Vault 内的全部记录与同步元数据。此操作不可撤销。",
-    "settings.data.button.clear_vault": "清空 Vault 数据",
-    "settings.data.confirm.clear_vault": "确定要清空当前 Vault 的全部数据吗？此操作不可撤销。",
-    "settings.data.status.cleared": "Vault 数据已清空",
+    "settings.data.desc": "清空当前保存的全部记录与同步元数据。此操作不可撤销。",
+    "settings.data.button.clear_vault": "清空所有数据",
+    "settings.data.confirm.clear_vault": "确定要清空全部数据吗？此操作不可撤销。",
+    "settings.data.status.cleared": "数据已清空",
     "settings.update.status.installing": "正在安装更新...",
     "settings.sync.backend.local_folder": "本地文件夹",
     "settings.sync.label.path": "同步文件夹",
@@ -5610,10 +5610,12 @@ function ensurePaneTerminal(pane) {
   if (WebLinksAddon) {
     try {
       const linksAddon = new WebLinksAddon((event, uri) => {
-        event?.preventDefault?.();
         if (!uri) return;
+        // Mac: Option+Click; Windows/Linux: Ctrl+Click
+        if (isMacPlatform ? !event?.altKey : !event?.ctrlKey) return;
+        event?.preventDefault?.();
         const url = /^https?:\/\//i.test(uri) ? uri : `http://${uri}`;
-        invoke("plugin:opener|open", { path: url }).catch(() => {
+        invoke("plugin:opener|open_url", { url }).catch(() => {
           window.open(url, "_blank", "noopener");
         });
       });
@@ -5737,9 +5739,10 @@ function installIpLinkProvider(pane) {
             end: { x: end, y },
           },
           text: value,
-          activate: () => {
+          activate: (event) => {
+            if (isMacPlatform ? !event?.altKey : !event?.ctrlKey) return;
             const url = /^https?:\/\//i.test(value) ? value : `http://${value}`;
-            invoke("plugin:opener|open", { path: url }).catch(() => {
+            invoke("plugin:opener|open_url", { url }).catch(() => {
               window.open(url, "_blank", "noopener");
             });
           },
@@ -5757,9 +5760,10 @@ function installIpLinkProvider(pane) {
             end: { x: end, y },
           },
           text: value,
-          activate: () => {
+          activate: (event) => {
+            if (isMacPlatform ? !event?.altKey : !event?.ctrlKey) return;
             const url = /^https?:\/\//i.test(value) ? value : `http://${value}`;
-            invoke("plugin:opener|open", { path: url }).catch(() => {
+            invoke("plugin:opener|open_url", { url }).catch(() => {
               window.open(url, "_blank", "noopener");
             });
           },
@@ -6529,6 +6533,7 @@ function renderForwards() {
       }
       renderForwards();
     });
+    li.appendChild(kind);
     buildCustomSelect(kind);
 
     const fields = document.createElement("div");
@@ -6587,7 +6592,7 @@ function renderForwards() {
       renderForwards();
     });
 
-    li.append(kind, fields, remove);
+    li.append(fields, remove);
     hfForwardsList.appendChild(li);
   });
 }
