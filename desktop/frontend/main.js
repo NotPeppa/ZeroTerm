@@ -2074,12 +2074,10 @@ const VAULT_SIDEBAR_MIN = 240;
 const VAULT_SIDEBAR_MAX = 700;
 
 function loadGroupExpansionState() {
-  try {
-    groupExpandedState = JSON.parse(localStorage.getItem(GROUP_STATE_STORAGE_KEY) || "{}");
-    if (!groupExpandedState || typeof groupExpandedState !== "object") groupExpandedState = {};
-  } catch {
-    groupExpandedState = {};
-  }
+  // Product decision: always start with all groups collapsed.
+  // We still update/save the state during runtime for immediate UX,
+  // but on next app launch we reset to collapsed again.
+  groupExpandedState = {};
 }
 
 function saveGroupExpansionState() {
@@ -5113,7 +5111,7 @@ function renderHosts() {
 
   function renderGroupNode(group, depth) {
     const items = groupedRows.get(group.id) || [];
-    const expanded = groupExpandedState[group.id] !== false;
+    const expanded = groupExpandedState[group.id] === true;
 
     const row = document.createElement("li");
     row.className = "group-row";
