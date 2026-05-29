@@ -531,37 +531,90 @@ $ npm run build && npm run start</pre>
                           </section>
 
                           <section id="settings-about-panel" class="settings-panel" hidden>
-                            <section class="settings-section">
-                              <div class="settings-row">
-                                <div>
-                                  <div id="settings-about-version-label" class="settings-item-title">Version</div>
-                                  <p id="settings-about-version-value" class="muted tiny">-</p>
+                            <div class="settings-about-container">
+                              <div class="settings-about-header">
+                                <div class="settings-about-logo">
+                                  <svg class="zt-icon settings-about-logo-svg" viewBox="0 0 24 24" fill="none" stroke="url(#logo-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <defs>
+                                      <linearGradient id="logo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                        <stop offset="0%" stop-color="#60a5fa" />
+                                        <stop offset="100%" stop-color="#2563eb" />
+                                      </linearGradient>
+                                    </defs>
+                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                    <line x1="21" y1="9" x2="3" y2="9"></line>
+                                    <path d="m8 14-2 2 2 2"></path>
+                                    <line x1="12" y1="18" x2="16" y2="18"></line>
+                                  </svg>
+                                  <div class="logo-glow"></div>
+                                </div>
+                                <h2 class="settings-about-appname">ZeroTerm</h2>
+                                <p class="settings-about-tagline">下一代极速、现代的跨平台 SSH 终端工具</p>
+                              </div>
+
+                              <div class="settings-about-grid">
+                                <div class="settings-about-card">
+                                  <div class="about-card-icon">
+                                    <svg class="zt-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                      <rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect>
+                                      <rect x="9" y="9" width="11" height="11" rx="2" ry="2"></rect>
+                                    </svg>
+                                  </div>
+                                  <div class="about-card-content">
+                                    <div id="settings-about-version-label" class="about-card-label">Version</div>
+                                    <div id="settings-about-version-value" class="about-card-val">-</div>
+                                  </div>
+                                </div>
+
+                                <div class="settings-about-card">
+                                  <div class="about-card-icon">
+                                    <svg class="zt-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                                      <circle cx="12" cy="7" r="4"></circle>
+                                    </svg>
+                                  </div>
+                                  <div class="about-card-content">
+                                    <div id="settings-about-author-label" class="about-card-label">Author</div>
+                                    <div id="settings-about-author-value" class="about-card-val">NotPeppa</div>
+                                  </div>
+                                </div>
+
+                                <div class="settings-about-card">
+                                  <div class="about-card-icon">
+                                    <svg class="zt-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                      <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1a5.07 5.07 0 0 0 5 4.77 5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7a3.37 3.37 0 0 0 9 18.13V22"></path>
+                                    </svg>
+                                  </div>
+                                  <div class="about-card-content">
+                                    <div id="settings-about-repo-label" class="about-card-label">GitHub</div>
+                                    <div class="about-card-val">
+                                      <a
+                                        id="settings-about-repo-link"
+                                        href="https://github.com/NotPeppa/ZeroTerm"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                      >ZeroTerm</a>
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
-                              <div class="settings-row">
-                                <div>
-                                  <div id="settings-about-author-label" class="settings-item-title">Author</div>
-                                  <p id="settings-about-author-value" class="muted tiny">NotPeppa</p>
+
+                              <div class="settings-about-update-card">
+                                <div class="update-card-left">
+                                  <div class="update-pulse-indicator">
+                                    <div class="update-pulse-ring"></div>
+                                    <div class="update-pulse-dot"></div>
+                                  </div>
+                                  <div class="update-status-info">
+                                    <div class="update-status-title">系统升级</div>
+                                    <p id="settings-update-status" class="update-status-text">正在检查更新或已经是最新版本...</p>
+                                  </div>
+                                </div>
+                                <div class="settings-update-actions">
+                                  <button id="settings-update-install" type="button" class="primary">安装并重启</button>
                                 </div>
                               </div>
-                              <div class="settings-row">
-                                <div>
-                                  <div id="settings-about-repo-label" class="settings-item-title">GitHub</div>
-                                  <p class="muted tiny">
-                                    <a
-                                      id="settings-about-repo-link"
-                                      href="https://github.com/NotPeppa/ZeroTerm"
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                    >https://github.com/NotPeppa/ZeroTerm</a>
-                                  </p>
-                                </div>
-                              </div>
-                              <div class="settings-update-actions">
-                                <button id="settings-update-install" type="button" class="primary">安装并重启</button>
-                              </div>
-                              <p id="settings-update-status" class="muted tiny"></p>
-                            </section>
+                            </div>
                           </section>
 
                           <section id="settings-data-panel" class="settings-panel" hidden>

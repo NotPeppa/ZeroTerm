@@ -4220,3 +4220,283 @@ fieldset.advanced legend {
 .settings-sync-auto-row input[type="number"] {
   width: 80px;
 }
+
+/* --- Settings About Page Redesign ----------------------------------------- */
+
+.settings-about-container {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 6px 4px;
+}
+
+.settings-about-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 24px 0 16px 0;
+  position: relative;
+  background: rgba(255, 255, 255, 0.01);
+  border: 1px solid rgba(255, 255, 255, 0.03);
+  border-radius: 16px;
+  backdrop-filter: blur(10px);
+}
+
+.settings-about-logo {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.settings-about-logo-svg {
+  width: 56px !important;
+  height: 56px !important;
+  color: #3b82f6;
+  filter: drop-shadow(0 4px 14px rgba(59, 130, 246, 0.35));
+  z-index: 2;
+}
+
+.logo-glow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 64px;
+  height: 64px;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.38) 0%, rgba(59, 130, 246, 0) 70%);
+  filter: blur(8px);
+  z-index: 1;
+  pointer-events: none;
+  animation: logo-pulse 4s ease-in-out infinite alternate;
+}
+
+@keyframes logo-pulse {
+  0% {
+    transform: translate(-50%, -50%) scale(0.9);
+    opacity: 0.55;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.18);
+    opacity: 0.95;
+  }
+}
+
+.settings-about-appname {
+  font-family: 'Outfit', 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, #ffffff 40%, #a2c4ff 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 6px;
+}
+
+.settings-about-tagline {
+  font-size: 13px;
+  color: rgba(165, 181, 214, 0.72);
+  font-weight: 400;
+  max-width: 320px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Metadata Grid */
+.settings-about-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.settings-about-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(10px);
+}
+
+.settings-about-card:hover {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+.about-card-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.about-card-icon .zt-icon {
+  width: 18px !important;
+  height: 18px !important;
+}
+
+.about-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.about-card-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(165, 181, 214, 0.55);
+  font-weight: 700;
+}
+
+.about-card-val {
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.about-card-val a {
+  color: #60a5fa;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.about-card-val a:hover {
+  color: #93c5fd;
+  text-decoration: underline;
+}
+
+/* Update Card */
+.settings-about-update-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 14px;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.update-card-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.update-pulse-indicator {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.update-pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10b981; /* emerald-500 default */
+  z-index: 2;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+  transition: background 0.3s;
+}
+
+.update-pulse-ring {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(16, 185, 129, 0.4);
+  animation: update-pulse 2s cubic-bezier(0.24, 0, 0.38, 1) infinite;
+  z-index: 1;
+  transition: background 0.3s;
+}
+
+/* State-driven indicator coloring mapped via CSS :has() */
+.settings-about-update-card:has(#settings-update-install:not(:disabled)) .update-pulse-dot {
+  background: #f59e0b;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.6);
+}
+.settings-about-update-card:has(#settings-update-install:not(:disabled)) .update-pulse-ring {
+  background: rgba(245, 158, 11, 0.4);
+}
+
+.settings-about-update-card:has(#settings-update-install:disabled) .update-pulse-dot {
+  background: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+}
+.settings-about-update-card:has(#settings-update-install:disabled) .update-pulse-ring {
+  background: rgba(16, 185, 129, 0.4);
+}
+
+@keyframes update-pulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.55);
+    opacity: 0;
+  }
+}
+
+.update-status-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.update-status-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.update-status-text {
+  font-size: 12px;
+  color: rgba(165, 181, 214, 0.65) !important;
+  margin: 0 !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-about-update-card .settings-update-actions {
+  margin-top: 0 !important;
+}
+
+.settings-about-update-card #settings-update-install {
+  height: 32px !important;
+  border-radius: 8px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  padding: 0 14px !important;
+}
