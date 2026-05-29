@@ -1799,6 +1799,7 @@ let selectedVaultHostId = null;
 let vaultSidebarWidth = 320;
 let hostGroups = [];
 let groupExpandedState = {};
+let groupStateInitialized = false;
 let draggingHostId = null;
 let hostsContextHostId = null;
 let groupsContextGroupId = null;
@@ -2082,6 +2083,17 @@ function loadGroupExpansionState() {
 
 function saveGroupExpansionState() {
   localStorage.setItem(GROUP_STATE_STORAGE_KEY, JSON.stringify(groupExpandedState));
+}
+
+function expandGroupWithAncestors(groupId) {
+  let current = String(groupId || "");
+  const seen = new Set();
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    groupExpandedState[current] = true;
+    const g = hostGroups.find((it) => it.id === current);
+    current = g?.parentId ? String(g.parentId) : "";
+  }
 }
 
 /// Pull the host_group list from the vault and stash it in memory.
@@ -4911,7 +4923,10 @@ async function enterHosts() {
   show("hosts");
   setWorkspaceMode("vaults");
   hostSearch.value = "";
-  loadGroupExpansionState();
+  if (!groupStateInitialized) {
+    loadGroupExpansionState();
+    groupStateInitialized = true;
+  }
   await reloadHostGroupsFromVault();
   startAutoSync();
   updateSyncIndicator();
@@ -6772,6 +6787,11 @@ async function saveHostForm(ev) {
       await invoke("update_host", { id: editingHostId, input });
     } else {
       savedHostId = await invoke("save_host", { input });
+    }
+
+    if (input.groupId) {
+      expandGroupWithAncestors(input.groupId);
+      saveGroupExpansionState();
     }
 
     autoSyncAfterDataChange();
