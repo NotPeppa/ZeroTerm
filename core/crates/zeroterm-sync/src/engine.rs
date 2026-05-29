@@ -174,6 +174,10 @@ impl SyncEngine {
         self
     }
 
+    pub async fn delete_remote_repo_dir(&self) -> Result<(), Error> {
+        self.adapter.delete_repo_root_dir().await
+    }
+
     // --- bootstrap ------------------------------------------------------
 
     /// Initialise a brand-new repo. Fails if a manifest is already there.

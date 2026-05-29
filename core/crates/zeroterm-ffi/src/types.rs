@@ -39,7 +39,9 @@ pub struct HostInput {
 
 #[derive(Debug, Clone, uniffi::Enum)]
 pub enum HostAuthInput {
-    Password { value: String },
+    Password {
+        value: String,
+    },
     PrivateKey {
         key_pem: String,
         passphrase: Option<String>,
@@ -95,12 +97,13 @@ pub(crate) fn host_input_to_host(input: HostInput) -> zeroterm_app::Host {
         user: input.user,
         auth: match input.auth {
             HostAuthInput::Password { value } => zeroterm_app::HostAuth::Password { value },
-            HostAuthInput::PrivateKey { key_pem, passphrase } => {
-                zeroterm_app::HostAuth::PrivateKey {
-                    key_pem,
-                    passphrase,
-                }
-            }
+            HostAuthInput::PrivateKey {
+                key_pem,
+                passphrase,
+            } => zeroterm_app::HostAuth::PrivateKey {
+                key_pem,
+                passphrase,
+            },
             HostAuthInput::Agent => zeroterm_app::HostAuth::Agent,
         },
         os_type: None,
@@ -108,7 +111,7 @@ pub(crate) fn host_input_to_host(input: HostInput) -> zeroterm_app::Host {
         // saved hosts coming from the FFI side are forward-less. Edit
         // via CLI to add them.
         forwards: Vec::new(),
-        proxy_jump: None,
+        proxy_jump_host_id: None,
         group_id: None,
     }
 }

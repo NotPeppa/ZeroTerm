@@ -316,7 +316,7 @@ async fn connect_via_picker(vault_path: &Path, args: &Args) -> Result<()> {
     run_session(cfg, args, &host.forwards, saved_jump).await
 }
 
-/// If the host has `proxy_jump` set, look up the jump alias in the
+/// If the host has `proxy_jump_host_id` set, look up the jump host in the
 /// vault and return a fully-formed `ConnectConfig` for it. Returns
 /// `None` when the host has no jump configured. The CLI `--jump` flag
 /// takes precedence over this; we only resolve a saved jump when no
@@ -329,12 +329,12 @@ fn resolve_saved_jump(
     if args.jump.is_some() {
         return Ok(None);
     }
-    let Some(jump_alias) = host.proxy_jump.as_deref() else {
+    let Some(jump_id) = host.proxy_jump_host_id.as_deref() else {
         return Ok(None);
     };
     let jump_host = app
-        .find_host_by_name(jump_alias)?
-        .ok_or_else(|| anyhow!("ProxyJump alias '{}' not found in vault", jump_alias))?;
+        .find_host_by_id(jump_id)?
+        .ok_or_else(|| anyhow!("ProxyJump host id '{}' not found in vault", jump_id))?;
     let cfg = app.connect_config(
         &jump_host,
         build_host_key_policy(args)?,
@@ -351,7 +351,7 @@ async fn run_session(
 ) -> Result<()> {
     info!(host = %cfg.host, port = cfg.port, "connecting");
 
-    // Effective ProxyJump: CLI flag wins over the host's saved alias.
+    // Effective ProxyJump: CLI flag wins over the host's saved jump host.
     let jump_cfg = if let Some(jump_spec) = args.jump.as_deref() {
         let jump_target = parse_target(jump_spec, None)?;
         Some(ConnectConfig {
@@ -847,7 +847,7 @@ fn cmd_add(
         auth,
         os_type: None,
         forwards: Vec::new(),
-        proxy_jump: None,
+        proxy_jump_host_id: None,
         group_id: None,
     };
 
@@ -876,8 +876,8 @@ fn cmd_forward(args: &Args, vault_path: &Path, action: &ForwardAction) -> Result
             let h = app
                 .find_host_by_name(host)?
                 .ok_or_else(|| anyhow!("no host named '{host}'"))?;
-            if let Some(jump) = &h.proxy_jump {
-                println!("ProxyJump: {jump}");
+            if let Some(jump_id) = &h.proxy_jump_host_id {
+                println!("ProxyJump host id: {jump_id}");
             }
             if h.forwards.is_empty() {
                 println!("(no forwards)");
@@ -933,13 +933,19 @@ fn cmd_forward(args: &Args, vault_path: &Path, action: &ForwardAction) -> Result
                 .find_host_by_name(host)?
                 .ok_or_else(|| anyhow!("no host named '{host}'"))?;
             if *clear {
-                h.proxy_jump = None;
+                h.proxy_jump_host_id = None;
                 println!("cleared ProxyJump on '{host}'");
             } else if let Some(j) = jump {
-                if app.find_host_by_name(j)?.is_none() {
+                let jump_host = app
+                    .find_host_by_name(j)?
+                    .ok_or_else(|| anyhow!("no host named '{j}' to use as jump"))?;
+                if jump_host.id == h.id {
+                    bail!("host cannot ProxyJump through itself");
+                }
+                if app.find_host_by_id(&jump_host.id)?.is_none() {
                     bail!("no host named '{j}' to use as jump");
                 }
-                h.proxy_jump = Some(j.clone());
+                h.proxy_jump_host_id = Some(jump_host.id);
                 println!("set '{host}' ProxyJump to '{j}'");
             } else {
                 bail!("pass either an alias or --clear");

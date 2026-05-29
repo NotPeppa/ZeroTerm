@@ -112,11 +112,8 @@ impl App {
         }
     }
 
-    /// Save a new host. Fails if a host with this name already exists.
+    /// Save a new host.
     pub fn save_host(&self, host: &Host) -> Result<String, AppError> {
-        if self.find_host_by_name(&host.name)?.is_some() {
-            return Err(AppError::HostNameTaken(host.name.clone()));
-        }
         let json = serde_json::to_vec(host).map_err(AppError::BadHostRecord)?;
         Ok(self.vault.insert(HOST_KIND, &json)?)
     }
@@ -154,7 +151,11 @@ impl App {
                 }
             }
         }
-        groups.sort_by(|a, b| a.sort_order.cmp(&b.sort_order).then_with(|| a.name.cmp(&b.name)));
+        groups.sort_by(|a, b| {
+            a.sort_order
+                .cmp(&b.sort_order)
+                .then_with(|| a.name.cmp(&b.name))
+        });
         Ok(groups)
     }
 
@@ -203,7 +204,9 @@ impl App {
         }
         if let Some(pid) = group.parent_id.as_deref() {
             if pid == group.id {
-                return Err(AppError::BadHostGroup("group cannot be its own parent".into()));
+                return Err(AppError::BadHostGroup(
+                    "group cannot be its own parent".into(),
+                ));
             }
             if self.find_host_group_by_id(pid)?.is_none() {
                 return Err(AppError::BadHostGroup(format!(
@@ -218,9 +221,7 @@ impl App {
             while let Some(parent) = all.iter().find(|g| g.id == cursor) {
                 if let Some(next) = parent.parent_id.as_deref() {
                     if next == group.id {
-                        return Err(AppError::BadHostGroup(
-                            "move would create a cycle".into(),
-                        ));
+                        return Err(AppError::BadHostGroup("move would create a cycle".into()));
                     }
                     cursor = next.to_string();
                     steps += 1;
@@ -307,7 +308,7 @@ mod tests {
             },
             os_type: None,
             forwards: Vec::new(),
-            proxy_jump: None,
+            proxy_jump_host_id: None,
             group_id: None,
         }
     }
@@ -330,15 +331,13 @@ mod tests {
     }
 
     #[test]
-    fn save_duplicate_name_rejected() {
+    fn save_duplicate_name_allowed() {
         let dir = tempdir().unwrap();
         let app = fresh_app(dir.path());
 
-        app.save_host(&sample_host("a")).unwrap();
-        match app.save_host(&sample_host("a")) {
-            Err(AppError::HostNameTaken(name)) => assert_eq!(name, "a"),
-            other => panic!("expected HostNameTaken, got {other:?}"),
-        }
+        let id_a = app.save_host(&sample_host("a")).unwrap();
+        let id_b = app.save_host(&sample_host("a")).unwrap();
+        assert_ne!(id_a, id_b);
     }
 
     #[test]

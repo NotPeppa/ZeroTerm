@@ -589,6 +589,13 @@ label.checkbox input[type="checkbox"] {
   gap: 10px;
 }
 
+.vaults-main-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .search {
   flex: 1;
   min-width: 180px;
@@ -654,6 +661,28 @@ label.checkbox input[type="checkbox"] {
   overflow: auto;
   overflow-x: hidden;
   padding: 10px 10px 14px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(93, 147, 232, 0.35) rgba(13, 19, 35, 0.4);
+}
+
+.hosts-grid-wrap::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.hosts-grid-wrap::-webkit-scrollbar-track {
+  background: rgba(9, 14, 27, 0.28);
+  border-radius: 10px;
+}
+
+.hosts-grid-wrap::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(92, 132, 204, 0.56) 0%, rgba(71, 108, 176, 0.5) 100%);
+  border-radius: 10px;
+  border: 2px solid rgba(9, 14, 27, 0.3);
+}
+
+.hosts-grid-wrap::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(117, 157, 226, 0.72) 0%, rgba(87, 126, 192, 0.64) 100%);
 }
 
 .host-cards {

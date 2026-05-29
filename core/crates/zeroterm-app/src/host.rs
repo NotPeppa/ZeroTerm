@@ -30,10 +30,10 @@ pub struct Host {
     #[serde(default)]
     pub forwards: Vec<ForwardSpec>,
 
-    /// Name of another saved host to use as a ProxyJump. The jump host
+    /// Id of another saved host to use as a ProxyJump. The jump host
     /// must already exist in the vault.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub proxy_jump: Option<String>,
+    pub proxy_jump_host_id: Option<String>,
 
     /// Vault id of the `host_group` this host belongs to, or `None` for
     /// the "Ungrouped" bucket. References that point to a non-existent /
@@ -53,7 +53,9 @@ fn default_port() -> u16 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum HostAuth {
-    Password { value: String },
+    Password {
+        value: String,
+    },
     PrivateKey {
         key_pem: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -125,7 +127,10 @@ impl Host {
     pub fn to_auth_methods(&self) -> Vec<AuthMethod> {
         match &self.auth {
             HostAuth::Password { value } => vec![AuthMethod::Password(value.clone())],
-            HostAuth::PrivateKey { key_pem, passphrase } => vec![AuthMethod::PrivateKeyData {
+            HostAuth::PrivateKey {
+                key_pem,
+                passphrase,
+            } => vec![AuthMethod::PrivateKeyData {
                 pem: key_pem.clone(),
                 passphrase: passphrase.clone(),
             }],

@@ -380,6 +380,39 @@ impl SyncAdapter for S3Adapter {
         Ok(())
     }
 
+    async fn delete_repo_root_dir(&self) -> Result<(), Error> {
+        let prefix = self.paths.repo_prefix();
+        let mut token: Option<String> = None;
+        loop {
+            let mut req = self
+                .client
+                .list_objects_v2()
+                .bucket(&self.bucket)
+                .prefix(&prefix);
+            if let Some(t) = token.as_deref() {
+                req = req.continuation_token(t);
+            }
+            let out = req.send().await.map_err(err_str)?;
+            for obj in out.contents() {
+                if let Some(k) = obj.key() {
+                    self.client
+                        .delete_object()
+                        .bucket(&self.bucket)
+                        .key(k)
+                        .send()
+                        .await
+                        .map_err(err_str)?;
+                }
+            }
+            if out.is_truncated().unwrap_or(false) {
+                token = out.next_continuation_token().map(ToOwned::to_owned);
+            } else {
+                break;
+            }
+        }
+        Ok(())
+    }
+
     async fn try_lock(
         &self,
         _name: &str,

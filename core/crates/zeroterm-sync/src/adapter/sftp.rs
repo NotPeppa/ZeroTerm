@@ -352,6 +352,51 @@ impl SyncAdapter for SftpAdapter {
         self.mkdir_p_absolute(&path).await
     }
 
+    async fn delete_repo_root_dir(&self) -> Result<(), Error> {
+        let root = self.repo_root();
+        match self.sftp.stat(&root).await {
+            Ok(m) if matches!(m.kind, FileKind::Dir) => {}
+            Ok(_) => {
+                let _ = self.sftp.remove_file(&root).await;
+                return Ok(());
+            }
+            Err(e) if is_not_found(&e) => return Ok(()),
+            Err(e) => return Err(map_ssh_err(e)),
+        }
+
+        let mut stack = vec![root.clone()];
+        let mut dirs: Vec<String> = Vec::new();
+        while let Some(dir) = stack.pop() {
+            dirs.push(dir.clone());
+            let entries = self.sftp.list(&dir).await.map_err(map_ssh_err)?;
+            for e in entries {
+                if e.name == "." || e.name == ".." {
+                    continue;
+                }
+                let full = format!("{dir}/{}", e.name);
+                match e.kind {
+                    FileKind::Dir => stack.push(full),
+                    FileKind::File | FileKind::Symlink | FileKind::Other => {
+                        match self.sftp.remove_file(&full).await {
+                            Ok(()) => {}
+                            Err(err) if is_not_found(&err) => {}
+                            Err(err) => return Err(map_ssh_err(err)),
+                        }
+                    }
+                }
+            }
+        }
+
+        for dir in dirs.into_iter().rev() {
+            match self.sftp.remove_dir(&dir).await {
+                Ok(()) => {}
+                Err(err) if is_not_found(&err) => {}
+                Err(err) => return Err(map_ssh_err(err)),
+            }
+        }
+        Ok(())
+    }
+
     async fn try_lock(
         &self,
         _name: &str,

@@ -345,7 +345,7 @@ const I18N = {
     "host_editor.label.password": "Password",
     "host_editor.label.private_key": "Private key",
     "host_editor.label.passphrase": "Passphrase (optional)",
-    "host_editor.label.proxy_jump": "ProxyJump (saved alias)",
+    "host_editor.label.proxy_jump": "ProxyJump (saved host)",
     "host_editor.label.advanced": "ProxyJump and forwards",
     "host_editor.label.port_forwards": "Port forwards",
     "host_editor.button.add_forward": "+ Add forward",
@@ -529,7 +529,14 @@ const I18N = {
     "settings.sync.status.aborted": "Aborted — data source mismatch",
     "settings.sync.status.forgotten": "Engine forgotten (passphrase required to resume)",
     "settings.sync.status.cleared_all": "Cleared {count} sync profile(s)",
+    "settings.sync.status.remote_deleted": "Remote repo contents cleared (directory may remain)",
     "settings.sync.confirm.clear_all": "Delete all sync profiles and credentials? This cannot be undone.",
+    "settings.sync.confirm.delete_remote": "Clear remote repo contents now? This affects all devices and cannot be undone.",
+    "settings.sync.confirm.delete_remote.title": "Clear remote repo contents",
+    "settings.sync.confirm.delete_remote.message": "Type DELETE to confirm clearing remote repo contents.",
+    "settings.sync.confirm.delete_remote.placeholder": "Type DELETE",
+    "settings.sync.confirm.delete_remote.keyword": "DELETE",
+    "settings.sync.confirm.delete_remote.mismatch": "Confirmation text mismatch. Deletion cancelled.",
     "settings.sync.status.no_profile": "No sync profile configured",
     "settings.sync.status.bootstrapped": "Connected",
     "settings.sync.status.not_bootstrapped": "Not connected — Create or Join the repo to begin",
@@ -625,6 +632,7 @@ const I18N = {
     "settings.sync.button.join_repo": "Join Repo",
     "settings.sync.button.forget_engine": "Disconnect",
     "settings.sync.button.clear_all": "Clear all",
+    "settings.sync.button.delete_remote": "Clear remote contents",
     "settings.sync.button.busy.save": "Saving...",
     "settings.sync.button.busy.create_repo": "Creating...",
     "settings.sync.button.busy.join_repo": "Joining...",
@@ -633,6 +641,7 @@ const I18N = {
     "settings.sync.button.busy.compact_now": "Compacting...",
     "settings.sync.button.busy.forget_engine": "Disconnecting...",
     "settings.sync.button.busy.clear_all": "Clearing...",
+    "settings.sync.button.busy.delete_remote": "Deleting...",
     "settings.sync.button.busy.resolve_conflict": "Resolving...",
     "settings.data.title": "Data Management",
     "settings.data.desc": "Clear all saved records and sync metadata. This action cannot be undone.",
@@ -660,6 +669,8 @@ const I18N = {
     "settings.language.hint": "Changes apply immediately and are saved locally.",
     "settings.version.label": "Version",
     "settings.about.title": "About",
+    "settings.about.author": "Author",
+    "settings.about.repo": "GitHub Repository",
     "settings.update.install": "Install & Restart",
     "settings.update.latest": "You are on the latest version ({version}).",
     "settings.update.available": "Update available: {current} -> {latest}",
@@ -828,7 +839,7 @@ const I18N = {
     "host_editor.label.password": "密码",
     "host_editor.label.private_key": "私钥",
     "host_editor.label.passphrase": "私钥口令（可选）",
-    "host_editor.label.proxy_jump": "ProxyJump（已保存别名）",
+    "host_editor.label.proxy_jump": "ProxyJump（已保存主机）",
     "host_editor.label.advanced": "ProxyJump 与转发",
     "host_editor.label.port_forwards": "端口转发",
     "host_editor.button.add_forward": "+ 添加转发",
@@ -1010,7 +1021,14 @@ const I18N = {
     "settings.sync.status.aborted": "已中止 — 数据源不匹配",
     "settings.sync.status.forgotten": "已断开会话（需要密码重新连接）",
     "settings.sync.status.cleared_all": "已清空 {count} 个同步配置",
+    "settings.sync.status.remote_deleted": "已清空远端仓库内容（目录可能保留）",
     "settings.sync.confirm.clear_all": "确定要删除所有同步配置和凭据吗？此操作不可撤销。",
+    "settings.sync.confirm.delete_remote": "确定清空远端仓库内容吗？这会影响所有设备，且不可撤销。",
+    "settings.sync.confirm.delete_remote.title": "清空远端仓库内容",
+    "settings.sync.confirm.delete_remote.message": "请输入 DELETE 以确认清空远端仓库内容。",
+    "settings.sync.confirm.delete_remote.placeholder": "请输入 DELETE",
+    "settings.sync.confirm.delete_remote.keyword": "DELETE",
+    "settings.sync.confirm.delete_remote.mismatch": "确认文本不匹配，已取消删除。",
     "settings.sync.status.no_profile": "尚未配置同步",
     "settings.sync.status.bootstrapped": "已连接",
     "settings.sync.status.not_bootstrapped": "未连接 — 请创建或加入仓库",
@@ -1106,6 +1124,7 @@ const I18N = {
     "settings.sync.button.join_repo": "加入仓库",
     "settings.sync.button.forget_engine": "断开会话",
     "settings.sync.button.clear_all": "清空配置",
+    "settings.sync.button.delete_remote": "清空远端内容",
     "settings.sync.button.busy.save": "保存中...",
     "settings.sync.button.busy.create_repo": "创建中...",
     "settings.sync.button.busy.join_repo": "加入中...",
@@ -1114,6 +1133,7 @@ const I18N = {
     "settings.sync.button.busy.compact_now": "压缩中...",
     "settings.sync.button.busy.forget_engine": "断开中...",
     "settings.sync.button.busy.clear_all": "清空中...",
+    "settings.sync.button.busy.delete_remote": "删除中...",
     "settings.sync.button.busy.resolve_conflict": "处理中...",
     "settings.data.title": "数据管理",
     "settings.data.desc": "清空当前保存的全部记录与同步元数据。此操作不可撤销。",
@@ -1141,6 +1161,8 @@ const I18N = {
     "settings.language.hint": "修改立即生效，并会保存在本地。",
     "settings.version.label": "版本",
     "settings.about.title": "关于",
+    "settings.about.author": "作者",
+    "settings.about.repo": "GitHub 仓库",
     "settings.update.install": "安装并重启",
     "settings.update.latest": "当前已是最新版本（{version}）。",
     "settings.update.available": "发现新版本：{current} -> {latest}",
@@ -1584,6 +1606,7 @@ const settingsSyncCreateRepo = document.getElementById("settings-sync-create-rep
 const settingsSyncJoinRepo = document.getElementById("settings-sync-join-repo");
 const settingsSyncForgetEngine = document.getElementById("settings-sync-forget-engine");
 const settingsSyncClearAll = document.getElementById("settings-sync-clear-all");
+const settingsSyncDeleteRemote = document.getElementById("settings-sync-delete-remote");
 const settingsSyncBackend = document.getElementById("settings-sync-backend");
 const settingsSyncRoot = document.getElementById("settings-sync-root");
 const settingsSyncRootRow = document.getElementById("settings-sync-root-row");
@@ -3819,6 +3842,8 @@ function applyI18n() {
   setText("settings-language-hint", "settings.language.hint");
   setText("settings-about-title", "settings.about.title");
   setText("settings-about-version-label", "settings.version.label");
+  setText("settings-about-author-label", "settings.about.author");
+  setText("settings-about-repo-label", "settings.about.repo");
   setText("settings-update-install", "settings.update.install");
   setText("settings-terminal-theme-title", "settings.terminal_theme.title");
   setText("terminal-theme-light-title", "settings.terminal_theme.light_title");
@@ -3866,6 +3891,7 @@ function applyI18n() {
   setText("settings-sync-join-repo", "settings.sync.button.join_repo");
   setText("settings-sync-forget-engine", "settings.sync.button.forget_engine");
   setText("settings-sync-clear-all", "settings.sync.button.clear_all");
+  setText("settings-sync-delete-remote", "settings.sync.button.delete_remote");
   setText("settings-sync-remember-passphrase-label", "settings.sync.remember_passphrase");
   setText("settings-sync-webdav-pw-hint", "settings.sync.hint.keychain_keep");
   setText("settings-sync-enc-password-hint", "settings.sync.hint.keychain_keep");
@@ -4104,8 +4130,9 @@ hostsMenuDelete?.addEventListener("click", async () => {
 });
 
 groupsMenuAddHost?.addEventListener("click", () => {
+  const groupId = groupsContextGroupId;
   hideGroupsContextMenu();
-  openHostEditor();
+  openHostEditor(null, groupId || "");
 });
 
 groupsMenuAddSub?.addEventListener("click", async () => {
@@ -4480,6 +4507,34 @@ settingsSyncClearAll?.addEventListener("click", async () => {
         "success",
       );
       await loadSyncProfiles();
+    } catch (e) {
+      const msg = userFriendlySyncError(e);
+      if (settingsSyncStatus) settingsSyncStatus.textContent = msg;
+      showToast(msg, "error", 4200);
+    }
+  });
+});
+
+settingsSyncDeleteRemote?.addEventListener("click", async () => {
+  const id = activeSyncProfileId();
+  if (!id) return;
+  const confirmText = await openTextInputDialog({
+    title: t("settings.sync.confirm.delete_remote.title"),
+    message: t("settings.sync.confirm.delete_remote.message"),
+    placeholder: t("settings.sync.confirm.delete_remote.placeholder"),
+  });
+  if (String(confirmText || "").trim().toUpperCase() !== t("settings.sync.confirm.delete_remote.keyword")) {
+    showToast(t("settings.sync.confirm.delete_remote.mismatch"), "error", 3200);
+    return;
+  }
+  await runSyncButtonAction(settingsSyncDeleteRemote, t("settings.sync.button.busy.delete_remote"), async () => {
+    try {
+      await invoke("sync_delete_remote_repo", { profileId: id });
+      if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.remote_deleted");
+      showToast(t("settings.sync.status.remote_deleted"), "success");
+      await refreshSyncStatusLine();
+      await refreshSyncRepoStats();
+      await refreshSyncConflicts();
     } catch (e) {
       const msg = userFriendlySyncError(e);
       if (settingsSyncStatus) settingsSyncStatus.textContent = msg;
@@ -6381,7 +6436,7 @@ hfForwardAdd.addEventListener("click", () => {
 document.getElementById("host-edit-cancel").addEventListener("click", closeHostEditor);
 hostForm.addEventListener("submit", saveHostForm);
 
-async function openHostEditor(id = null) {
+async function openHostEditor(id = null, defaultGroupId = "") {
   editingHostId = id;
   hostError.hidden = true;
   hostError.textContent = "";
@@ -6419,7 +6474,7 @@ async function openHostEditor(id = null) {
 
       populateHostGroupOptions(h.groupId || "");
 
-      hfJump.value = h.proxyJump ?? "";
+      hfJump.value = h.proxyJumpHostId ?? "";
       hfForwards = h.forwards.map(forwardFromIO);
     } catch (e) {
       hostError.textContent = t("host_editor.error.load_failed", { error: e });
@@ -6432,7 +6487,7 @@ async function openHostEditor(id = null) {
     hfPort.value = "22";
     hfUser.value = "";
     hfAuthType.value = "password";
-    populateHostGroupOptions("");
+    populateHostGroupOptions(defaultGroupId || "");
     hfJump.value = "";
   }
 
@@ -6462,7 +6517,7 @@ async function populateJumpOptions(currentId) {
     for (const h of hosts) {
       if (h.id === currentId) continue;
       const opt = document.createElement("option");
-      opt.value = h.name;
+      opt.value = h.id;
       opt.textContent = `${h.name} (${h.user}@${h.host}:${h.port})`;
       hfJump.appendChild(opt);
     }
@@ -6704,7 +6759,7 @@ async function saveHostForm(ev) {
     user: hfUser.value.trim(),
     auth,
     forwards,
-    proxy_jump: hfJump.value || null,
+    proxyJumpHostId: hfJump.value || null,
     groupId: hfGroup?.value || null,
   };
 

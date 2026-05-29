@@ -907,6 +907,17 @@ pub async fn sync_compact_now(
 }
 
 #[tauri::command]
+pub async fn sync_delete_remote_repo(
+    state: State<'_, AppState>,
+    profile_id: String,
+) -> Result<(), String> {
+    let (app, manager) = clone_app_and_sync(&state)?;
+    app.sync_delete_remote_repo(&manager, &profile_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn sync_repo_stats(
     state: State<'_, AppState>,
     profile_id: String,
@@ -940,8 +951,8 @@ pub struct HostInput {
     pub os_type: Option<String>,
     #[serde(default)]
     pub forwards: Vec<ForwardSpecIO>,
-    #[serde(default)]
-    pub proxy_jump: Option<String>,
+    #[serde(default, alias = "proxy_jump")]
+    pub proxy_jump_host_id: Option<String>,
     #[serde(default)]
     pub group_id: Option<String>,
 }
@@ -1075,7 +1086,7 @@ impl HostInput {
             },
             os_type: self.os_type.and_then(|v| normalize_os_type(&v)),
             forwards: self.forwards.into_iter().map(|f| f.into_app()).collect(),
-            proxy_jump: self.proxy_jump,
+            proxy_jump_host_id: self.proxy_jump_host_id.filter(|s| !s.is_empty()),
             group_id: self.group_id.filter(|s| !s.is_empty()),
         }
     }
@@ -1097,7 +1108,7 @@ pub struct HostFull {
     pub key_passphrase: Option<String>,
     /// Structured forwards for the editor.
     pub forwards: Vec<ForwardSpecIO>,
-    pub proxy_jump: Option<String>,
+    pub proxy_jump_host_id: Option<String>,
     pub group_id: Option<String>,
 }
 
@@ -1343,7 +1354,7 @@ pub async fn get_host(state: State<'_, AppState>, id: String) -> Result<HostFull
         password,
         key_passphrase,
         forwards: h.forwards.iter().map(ForwardSpecIO::from_app).collect(),
-        proxy_jump: h.proxy_jump,
+        proxy_jump_host_id: h.proxy_jump_host_id,
         group_id: h.group_id,
     })
 }
@@ -1388,11 +1399,11 @@ fn build_connect_chain_for_host(
 
     let cfg = app.connect_config(&host, policy, Some(Duration::from_secs(15)));
 
-    let jump_cfg = if let Some(alias) = host.proxy_jump.as_deref() {
+    let jump_cfg = if let Some(jump_id) = host.proxy_jump_host_id.as_deref() {
         let jump_host = app
-            .find_host_by_name(alias)
+            .find_host_by_id(jump_id)
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("ProxyJump alias '{alias}' not found in vault"))?;
+            .ok_or_else(|| format!("ProxyJump host id '{jump_id}' not found in vault"))?;
         let jump_policy = HostKeyPolicy::Interactive {
             store: known_hosts,
             prompt,
@@ -1433,11 +1444,11 @@ fn build_connect_chain_for_host_strict(
         Some(Duration::from_secs(15)),
     );
 
-    let jump_cfg = if let Some(alias) = host.proxy_jump.as_deref() {
+    let jump_cfg = if let Some(jump_id) = host.proxy_jump_host_id.as_deref() {
         let jump_host = app
-            .find_host_by_name(alias)
+            .find_host_by_id(jump_id)
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("ProxyJump alias '{alias}' not found in vault"))?;
+            .ok_or_else(|| format!("ProxyJump host id '{jump_id}' not found in vault"))?;
         Some(app.connect_config(
             &jump_host,
             HostKeyPolicy::Strict(known_hosts),

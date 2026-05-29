@@ -441,10 +441,10 @@ impl App {
                     Some(Duration::from_secs(15)),
                 );
 
-                let jump_cfg = if let Some(alias) = host.proxy_jump.as_deref() {
-                    let jump_host = self.find_host_by_name(alias)?.ok_or_else(|| {
+                let jump_cfg = if let Some(jump_id) = host.proxy_jump_host_id.as_deref() {
+                    let jump_host = self.find_host_by_id(jump_id)?.ok_or_else(|| {
                         AppError::SyncConfig(format!(
-                            "ProxyJump alias '{alias}' not found in vault"
+                            "ProxyJump host id '{jump_id}' not found in vault"
                         ))
                     })?;
                     Some(self.connect_config(
@@ -708,6 +708,18 @@ impl App {
             .await
             .ok_or_else(|| AppError::SyncEngineMissing(profile_id.to_string()))?;
         Ok(engine.repo_stats().await?)
+    }
+
+    pub async fn sync_delete_remote_repo(
+        self: &Arc<Self>,
+        manager: &SyncManager,
+        profile_id: &str,
+    ) -> Result<(), AppError> {
+        let profile = self.find_sync_profile(profile_id)?;
+        let engine = self.engine_for_profile(&profile).await?;
+        engine.delete_remote_repo_dir().await?;
+        manager.forget(profile_id).await;
+        Ok(())
     }
 
     // -- conflict inbox --------------------------------------------------

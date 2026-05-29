@@ -212,6 +212,15 @@ impl SyncAdapter for LocalAdapter {
         fs::create_dir_all(self.full(key)).await?;
         Ok(())
     }
+
+    async fn delete_repo_root_dir(&self) -> Result<(), Error> {
+        let root = self.repo_dir();
+        match fs::remove_dir_all(root).await {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(Error::Io(e)),
+        }
+    }
 }
 
 #[cfg(test)]

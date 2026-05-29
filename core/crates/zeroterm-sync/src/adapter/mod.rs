@@ -63,6 +63,10 @@ pub trait SyncAdapter: Send + Sync {
 
     async fn mkdir_p(&self, path: &str) -> Result<(), Error>;
 
+    /// Delete the whole repo root directory (`.../zeroterm-sync/`) for
+    /// this adapter.
+    async fn delete_repo_root_dir(&self) -> Result<(), Error>;
+
     /// Best-effort distributed lock. Default returns `None` ("not
     /// supported"); engines must work correctly without it.
     async fn try_lock(&self, _name: &str, _ttl: Duration) -> Result<Option<LockToken>, Error> {

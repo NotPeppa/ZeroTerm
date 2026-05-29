@@ -400,6 +400,64 @@ impl SyncAdapter for WebDavAdapter {
         }
         Ok(())
     }
+
+    async fn delete_repo_root_dir(&self) -> Result<(), Error> {
+        let url = self.paths.repo_root_url();
+        let res = self.client.delete(&url).send().await.map_err(transport_err)?;
+        match res.status() {
+            StatusCode::NOT_FOUND => Ok(()),
+            s if s.is_success() => Ok(()),
+            StatusCode::METHOD_NOT_ALLOWED => {
+                // Some WebDAV servers (e.g. SeaweedFS behind certain
+                // proxies) forbid deleting a collection directly but do
+                // allow deleting files inside it. Fallback to content wipe.
+                let mut listed = self.list("", true).await?;
+                listed.sort_by(|a, b| b.path.len().cmp(&a.path.len()));
+                for entry in listed {
+                    let u = self.paths.url_of(&entry.path);
+                    let rr = self.client.delete(&u).send().await.map_err(transport_err)?;
+                    if rr.status() == StatusCode::NOT_FOUND || rr.status().is_success() {
+                        continue;
+                    }
+                    return Err(http_err("DELETE", &u, rr.status()));
+                }
+
+                // When the repo currently contains only directories (no
+                // files), `list()` returns nothing. Explicitly clear known
+                // top-level entries as a best-effort pass.
+                for file in ["manifest.json", "keyring.json"] {
+                    let u = self.paths.url_of(file);
+                    let rr = self.client.delete(&u).send().await.map_err(transport_err)?;
+                    if rr.status() == StatusCode::NOT_FOUND || rr.status().is_success() {
+                        continue;
+                    }
+                }
+                for dir in ["events", "snapshots", "trash", "devices", "locks"] {
+                    let u = self.paths.url_of(dir);
+                    let rr = self.client.delete(&u).send().await.map_err(transport_err)?;
+                    if rr.status() == StatusCode::NOT_FOUND || rr.status().is_success() {
+                        continue;
+                    }
+                    let u_slash = format!("{u}/");
+                    let rr2 = self
+                        .client
+                        .delete(&u_slash)
+                        .send()
+                        .await
+                        .map_err(transport_err)?;
+                    if rr2.status() == StatusCode::NOT_FOUND || rr2.status().is_success() {
+                        continue;
+                    }
+                }
+
+                // Try deleting the root once more; if still forbidden, we've
+                // already wiped what the backend lets us wipe.
+                let _ = self.client.delete(&url).send().await;
+                Ok(())
+            }
+            other => Err(http_err("DELETE", &url, other)),
+        }
+    }
 }
 
 impl WebDavAdapter {

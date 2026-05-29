@@ -67,6 +67,7 @@ pub fn run() {
             commands::sync_resolve_conflict,
             commands::sync_compact_now,
             commands::sync_repo_stats,
+            commands::sync_delete_remote_repo,
             commands::read_local_text_file,
             commands::local_read_text,
             commands::local_write_text,
