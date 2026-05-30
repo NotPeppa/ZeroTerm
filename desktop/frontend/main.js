@@ -1955,19 +1955,23 @@ function getResolvedAppTheme() {
 }
 
 function applyAppTheme() {
-  document.body.dataset.appTheme = getResolvedAppTheme();
-  if (themeModeButton) {
-    const mode = getAppThemeMode();
-    themeModeButton.dataset.mode = mode;
-    themeModeButton.setAttribute("title", `${t("theme.mode.button")}: ${t(`theme.mode.${mode}`)}`);
-    themeModeButton.setAttribute("aria-label", `${t("theme.mode.button")}: ${t(`theme.mode.${mode}`)}`);
+  try {
+    document.body.dataset.appTheme = getResolvedAppTheme();
+    if (themeModeButton) {
+      const mode = getAppThemeMode();
+      themeModeButton.dataset.mode = mode;
+      themeModeButton.setAttribute("title", `${t("theme.mode.button")}: ${t(`theme.mode.${mode}`)}`);
+      themeModeButton.setAttribute("aria-label", `${t("theme.mode.button")}: ${t(`theme.mode.${mode}`)}`);
+    }
+    themeModeSystem?.classList.toggle("active", getAppThemeMode() === "system");
+    themeModeDark?.classList.toggle("active", getAppThemeMode() === "dark");
+    themeModeLight?.classList.toggle("active", getAppThemeMode() === "light");
+
+    // Apply changes to terminal views instantly
+    applyTerminalThemeToAllPanes();
+  } catch (e) {
+    console.warn("applyAppTheme failed", e);
   }
-  themeModeSystem?.classList.toggle("active", getAppThemeMode() === "system");
-  themeModeDark?.classList.toggle("active", getAppThemeMode() === "dark");
-  themeModeLight?.classList.toggle("active", getAppThemeMode() === "light");
-  
-  // Apply changes to terminal views instantly
-  applyTerminalThemeToAllPanes();
 }
 
 function setAppThemeMode(mode) {
@@ -1991,14 +1995,18 @@ function toggleThemeModeMenu(anchor) {
   themeModeMenu.style.top = `${Math.max(8, rect.top - themeModeMenu.offsetHeight - 8)}px`;
 }
 
-if (window.matchMedia) {
-  systemThemeMedia = window.matchMedia("(prefers-color-scheme: light)");
-  systemThemeMedia.addEventListener?.("change", () => {
-    if (getAppThemeMode() === "system") applyAppTheme();
-  });
-}
+try {
+  if (window.matchMedia) {
+    systemThemeMedia = window.matchMedia("(prefers-color-scheme: light)");
+    systemThemeMedia.addEventListener?.("change", () => {
+      if (getAppThemeMode() === "system") applyAppTheme();
+    });
+  }
 
-applyAppTheme();
+  applyAppTheme();
+} catch (e) {
+  console.warn("theme init failed", e);
+}
 
 function getTerminalThemeConfig() {
   return allTerminalThemes()[getTerminalThemeName()] || TERMINAL_THEMES["termark-dark"];
