@@ -72,6 +72,8 @@ pub enum HostAuth {
 pub enum ForwardSpec {
     /// `ssh -L bind_addr:bind_port:target_host:target_port`
     Local {
+        #[serde(default = "default_forward_enabled")]
+        enabled: bool,
         #[serde(default = "default_bind_addr")]
         bind_addr: String,
         bind_port: u16,
@@ -80,10 +82,16 @@ pub enum ForwardSpec {
     },
     /// `ssh -D bind_addr:bind_port` (SOCKS5)
     Dynamic {
+        #[serde(default = "default_forward_enabled")]
+        enabled: bool,
         #[serde(default = "default_bind_addr")]
         bind_addr: String,
         bind_port: u16,
     },
+}
+
+fn default_forward_enabled() -> bool {
+    true
 }
 
 fn default_bind_addr() -> String {
@@ -96,25 +104,29 @@ impl ForwardSpec {
     pub fn summary(&self) -> String {
         match self {
             ForwardSpec::Local {
+                enabled,
                 bind_addr,
                 bind_port,
                 target_host,
                 target_port,
             } => {
+                let prefix = if *enabled { "L" } else { "L(off)" };
                 if bind_addr == "127.0.0.1" {
-                    format!("L {bind_port}:{target_host}:{target_port}")
+                    format!("{prefix} {bind_port}:{target_host}:{target_port}")
                 } else {
-                    format!("L {bind_addr}:{bind_port}:{target_host}:{target_port}")
+                    format!("{prefix} {bind_addr}:{bind_port}:{target_host}:{target_port}")
                 }
             }
             ForwardSpec::Dynamic {
+                enabled,
                 bind_addr,
                 bind_port,
             } => {
+                let prefix = if *enabled { "D" } else { "D(off)" };
                 if bind_addr == "127.0.0.1" {
-                    format!("D {bind_port}")
+                    format!("{prefix} {bind_port}")
                 } else {
-                    format!("D {bind_addr}:{bind_port}")
+                    format!("{prefix} {bind_addr}:{bind_port}")
                 }
             }
         }

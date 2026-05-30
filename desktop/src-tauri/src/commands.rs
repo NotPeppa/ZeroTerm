@@ -982,6 +982,8 @@ pub enum HostAuthInput {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ForwardSpecIO {
     Local {
+        #[serde(default = "default_forward_enabled")]
+        enabled: bool,
         #[serde(default = "default_bind_addr")]
         bind_addr: String,
         bind_port: u16,
@@ -989,6 +991,8 @@ pub enum ForwardSpecIO {
         target_port: u16,
     },
     Dynamic {
+        #[serde(default = "default_forward_enabled")]
+        enabled: bool,
         #[serde(default = "default_bind_addr")]
         bind_addr: String,
         bind_port: u16,
@@ -997,6 +1001,10 @@ pub enum ForwardSpecIO {
 
 fn default_bind_addr() -> String {
     "127.0.0.1".to_string()
+}
+
+fn default_forward_enabled() -> bool {
+    true
 }
 
 fn normalize_os_type(raw: &str) -> Option<String> {
@@ -1028,20 +1036,24 @@ impl ForwardSpecIO {
     fn into_app(self) -> zeroterm_app::ForwardSpec {
         match self {
             ForwardSpecIO::Local {
+                enabled,
                 bind_addr,
                 bind_port,
                 target_host,
                 target_port,
             } => zeroterm_app::ForwardSpec::Local {
+                enabled,
                 bind_addr,
                 bind_port,
                 target_host,
                 target_port,
             },
             ForwardSpecIO::Dynamic {
+                enabled,
                 bind_addr,
                 bind_port,
             } => zeroterm_app::ForwardSpec::Dynamic {
+                enabled,
                 bind_addr,
                 bind_port,
             },
@@ -1051,20 +1063,24 @@ impl ForwardSpecIO {
     fn from_app(spec: &zeroterm_app::ForwardSpec) -> Self {
         match spec {
             zeroterm_app::ForwardSpec::Local {
+                enabled,
                 bind_addr,
                 bind_port,
                 target_host,
                 target_port,
             } => ForwardSpecIO::Local {
+                enabled: *enabled,
                 bind_addr: bind_addr.clone(),
                 bind_port: *bind_port,
                 target_host: target_host.clone(),
                 target_port: *target_port,
             },
             zeroterm_app::ForwardSpec::Dynamic {
+                enabled,
                 bind_addr,
                 bind_port,
             } => ForwardSpecIO::Dynamic {
+                enabled: *enabled,
                 bind_addr: bind_addr.clone(),
                 bind_port: *bind_port,
             },
@@ -1672,9 +1688,17 @@ pub async fn connect_host(
     let mut forwards: Vec<zeroterm_ssh::ForwardHandle> = Vec::new();
     let mut forward_summaries: Vec<String> = Vec::new();
     for spec in &host.forwards {
+        let enabled = match spec {
+            zeroterm_app::ForwardSpec::Local { enabled, .. } => *enabled,
+            zeroterm_app::ForwardSpec::Dynamic { enabled, .. } => *enabled,
+        };
+        if !enabled {
+            continue;
+        }
         let summary = spec.summary();
         let h = match spec {
             zeroterm_app::ForwardSpec::Local {
+                enabled: _,
                 bind_addr,
                 bind_port,
                 target_host,
@@ -1689,6 +1713,7 @@ pub async fn connect_host(
             .await
             .map_err(|e| format!("forward `{summary}`: {e}"))?,
             zeroterm_app::ForwardSpec::Dynamic {
+                enabled: _,
                 bind_addr,
                 bind_port,
             } => zeroterm_ssh::forward_dynamic(&session, bind_addr, *bind_port)

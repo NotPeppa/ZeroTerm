@@ -4408,13 +4408,22 @@ fieldset.advanced legend {
   background: rgba(255, 255, 255, 0.02) !important;
   border: 1px solid rgba(255, 255, 255, 0.06) !important;
   border-radius: 8px !important;
-  padding: 8px 12px !important;
+  padding: 8px 10px !important;
   display: flex !important;
   flex-direction: row !important;
   align-items: center !important;
-  gap: 10px !important;
+  gap: 8px !important;
   backdrop-filter: blur(5px);
   box-shadow: 0 4px 12px rgba(4, 10, 24, 0.15);
+}
+
+.forward-list li > label.checkbox.slim {
+  flex: 0 0 auto;
+  margin: 0 -2px;
+}
+
+.forward-list li > label.checkbox.slim input[type="checkbox"] {
+  margin: 0;
 }
 
 .forward-list .zt-select-wrap {
@@ -4469,18 +4478,18 @@ fieldset.advanced legend {
 }
 
 .forward-list li .fields input.bind {
-  width: 105px !important;
-  flex: 0 0 105px !important;
+  width: 92px !important;
+  flex: 0 0 92px !important;
 }
 
 .forward-list li .fields input.short {
-  width: 58px !important;
-  flex: 0 0 58px !important;
+  width: 70px !important;
+  flex: 0 0 70px !important;
 }
 
 .forward-list li .fields input.medium {
-  width: 105px !important;
-  flex: 0 0 105px !important;
+  width: 92px !important;
+  flex: 0 0 92px !important;
 }
 
 /* Elegant horizontal flow separator span */
@@ -5775,6 +5784,4 @@ body[data-app-theme="light"] .hosts-context-menu .menu-separator,
 body[data-app-theme="light"] #groups-context-menu .menu-separator {
   background: rgba(190, 173, 144, 0.45) !important;
 }
-
-
 

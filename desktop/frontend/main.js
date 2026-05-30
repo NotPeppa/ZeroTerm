@@ -382,6 +382,7 @@ const I18N = {
     "host_editor.forward.none": "(no forwards)",
     "host_editor.forward.local": "Local (-L)",
     "host_editor.forward.dynamic": "SOCKS5 (-D)",
+    "host_editor.forward.enabled": "Enabled",
     "host_editor.forward.bind": "bind",
     "host_editor.forward.port": "port",
     "host_editor.forward.target_host": "remote host",
@@ -893,6 +894,7 @@ const I18N = {
     "host_editor.forward.none": "（无转发）",
     "host_editor.forward.local": "本地转发 (-L)",
     "host_editor.forward.dynamic": "SOCKS5 (-D)",
+    "host_editor.forward.enabled": "启用",
     "host_editor.forward.bind": "监听地址",
     "host_editor.forward.port": "端口",
     "host_editor.forward.target_host": "远端地址",
@@ -6812,6 +6814,7 @@ settingsSyncS3StToggle?.addEventListener("click", () => {
 hfForwardAdd.addEventListener("click", () => {
   hfForwards.push({
     kind: "local",
+    enabled: true,
     bindAddr: "127.0.0.1",
     bindPort: "",
     targetHost: "",
@@ -6916,6 +6919,7 @@ async function populateJumpOptions(currentId) {
 }
 
 function forwardFromIO(spec) {
+  const enabled = spec?.enabled !== false;
   const bindAddr = spec?.bindAddr ?? spec?.bind_addr ?? "";
   const bindPort = spec?.bindPort ?? spec?.bind_port ?? "";
   const targetHost = spec?.targetHost ?? spec?.target_host ?? "";
@@ -6928,6 +6932,7 @@ function forwardFromIO(spec) {
   if (kind === "local") {
     return {
       kind: "local",
+      enabled,
       bindAddr,
       bindPort: String(bindPort),
       targetHost,
@@ -6936,6 +6941,7 @@ function forwardFromIO(spec) {
   }
   return {
     kind: "dynamic",
+    enabled,
     bindAddr,
     bindPort: String(bindPort),
   };
@@ -6955,6 +6961,20 @@ function renderForwards() {
 
   hfForwards.forEach((fwd, idx) => {
     const li = document.createElement("li");
+
+    const enabledRow = document.createElement("label");
+    enabledRow.className = "checkbox slim";
+    enabledRow.style.gridColumn = "1 / -1";
+    const enabledInput = document.createElement("input");
+    enabledInput.type = "checkbox";
+    enabledInput.checked = fwd.enabled !== false;
+    enabledInput.addEventListener("change", () => {
+      fwd.enabled = enabledInput.checked;
+    });
+    enabledInput.setAttribute("aria-label", t("host_editor.forward.enabled"));
+    enabledInput.setAttribute("title", t("host_editor.forward.enabled"));
+    enabledRow.append(enabledInput);
+    li.appendChild(enabledRow);
 
     const kind = document.createElement("select");
     [["local", t("host_editor.forward.local")], ["dynamic", t("host_editor.forward.dynamic")]].forEach(([v, label]) => {
@@ -7125,6 +7145,7 @@ async function saveHostForm(ev) {
 
       forwards.push({
         kind: "local",
+        enabled: fwd.enabled !== false,
         bind_addr: fwd.bindAddr || "127.0.0.1",
         bind_port: bindPort,
         target_host: fwd.targetHost.trim(),
@@ -7133,6 +7154,7 @@ async function saveHostForm(ev) {
     } else {
       forwards.push({
         kind: "dynamic",
+        enabled: fwd.enabled !== false,
         bind_addr: fwd.bindAddr || "127.0.0.1",
         bind_port: bindPort,
       });
