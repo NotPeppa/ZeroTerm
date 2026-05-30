@@ -267,6 +267,8 @@ const I18N = {
     "hosts.empty.title": "No saved hosts yet",
     "hosts.empty.default": "Click the button below to add your first host.",
     "hosts.empty.search.desc": "Try another keyword or clear the search filter.",
+    "select.search.placeholder": "Type to filter...",
+    "select.search.empty": "No matches",
     "hosts.button.connect": "Connect",
     "hosts.button.files": "Files",
     "hosts.button.edit": "Edit",
@@ -345,8 +347,8 @@ const I18N = {
     "host_editor.label.password": "Password",
     "host_editor.label.private_key": "Private key",
     "host_editor.label.passphrase": "Passphrase (optional)",
-    "host_editor.label.proxy_jump": "ProxyJump (saved host)",
-    "host_editor.label.advanced": "ProxyJump and forwards",
+    "host_editor.label.proxy_jump": "Jump host (saved host)",
+    "host_editor.label.advanced": "Jump host and forwards",
     "host_editor.label.port_forwards": "Port forwards",
     "host_editor.button.add_forward": "+ Add forward",
     "host_editor.hint.forwards": "Supports local forward (-L) and dynamic SOCKS5 (-D).",
@@ -662,6 +664,10 @@ const I18N = {
     "theme.edit.reset": "Reset",
     "theme.edit.cancel": "Cancel",
     "theme.edit.save": "Save",
+    "theme.mode.button": "Theme mode",
+    "theme.mode.system": "System",
+    "theme.mode.dark": "Dark",
+    "theme.mode.light": "Light",
     "settings.nav.sftp": "SFTP",
     "settings.nav.hotkeys": "Hotkeys",
     "settings.terminal.desc": "Configure terminal themes and visual behavior.",
@@ -762,6 +768,8 @@ const I18N = {
     "hosts.empty.title": "还没有保存的主机",
     "hosts.empty.default": "点击下面的按钮添加第一台主机。",
     "hosts.empty.search.desc": "试试其他关键词，或清空搜索条件。",
+    "select.search.placeholder": "输入以筛选...",
+    "select.search.empty": "没有匹配项",
     "hosts.button.connect": "连接",
     "hosts.button.files": "文件",
     "hosts.button.edit": "编辑",
@@ -839,8 +847,8 @@ const I18N = {
     "host_editor.label.password": "密码",
     "host_editor.label.private_key": "私钥",
     "host_editor.label.passphrase": "私钥口令（可选）",
-    "host_editor.label.proxy_jump": "ProxyJump（已保存主机）",
-    "host_editor.label.advanced": "ProxyJump 与转发",
+    "host_editor.label.proxy_jump": "跳板机（已保存主机）",
+    "host_editor.label.advanced": "跳板机与转发",
     "host_editor.label.port_forwards": "端口转发",
     "host_editor.button.add_forward": "+ 添加转发",
     "host_editor.hint.forwards": "支持本地转发（-L）和动态 SOCKS5（-D）。",
@@ -1154,6 +1162,10 @@ const I18N = {
     "theme.edit.reset": "重置",
     "theme.edit.cancel": "取消",
     "theme.edit.save": "保存",
+    "theme.mode.button": "主题模式",
+    "theme.mode.system": "跟随系统",
+    "theme.mode.dark": "深色",
+    "theme.mode.light": "浅色",
     "settings.nav.sftp": "SFTP",
     "settings.nav.hotkeys": "快捷键",
     "settings.terminal.desc": "配置终端主题与视觉表现。",
@@ -1589,6 +1601,11 @@ const quickConnectButton = document.getElementById("quick-connect-button");
 const localTerminalButton = document.getElementById("local-terminal-button");
 const vaultBottomSettingsButton = document.getElementById("vault-bottom-settings");
 const vaultBottomSettingsRow = document.getElementById("vault-bottom-settings-row");
+const themeModeButton = document.getElementById("theme-mode-button");
+const themeModeMenu = document.getElementById("theme-mode-menu");
+const themeModeSystem = document.getElementById("theme-mode-system");
+const themeModeDark = document.getElementById("theme-mode-dark");
+const themeModeLight = document.getElementById("theme-mode-light");
 const settingsBackButton = document.getElementById("settings-back");
 const settingsNavGeneral = document.getElementById("settings-nav-general");
 const settingsNavTerminal = document.getElementById("settings-nav-terminal");
@@ -1809,6 +1826,7 @@ const SETTINGS_KEY_SFTP_AUTO_DETECT = "zeroterm.settings.sftp.auto_detect";
 const SETTINGS_KEY_SFTP_LOCAL_DIR = "zeroterm.settings.sftp.local_dir";
 const SETTINGS_KEY_SYNC_AUTO = "zeroterm.settings.sync.auto";
 const SETTINGS_KEY_SYNC_ACTIVE_PROFILE = "zeroterm.settings.sync.active_profile";
+const SETTINGS_KEY_APP_THEME_MODE = "zeroterm.settings.app_theme_mode";
 const SETTINGS_KEY_TERMINAL_THEME = "zeroterm.settings.terminal.theme";
 const SETTINGS_KEY_TERMINAL_CUSTOM_THEMES = "zeroterm.settings.terminal.custom_themes";
 const SETTINGS_KEY_TERMINAL_FONT_FAMILY = "zeroterm.settings.terminal.font_family";
@@ -1869,6 +1887,7 @@ let terminalCustomThemes = [];
 let terminalEditingThemeId = null;
 let themeMenuTargetId = null;
 let themeEditOriginal = null;
+let systemThemeMedia = null;
 
 function loadCustomThemes() {
   try {
@@ -1896,6 +1915,60 @@ function getTerminalThemeName() {
   const saved = localStorage.getItem(SETTINGS_KEY_TERMINAL_THEME) || "termark-dark";
   return allTerminalThemes()[saved] ? saved : "termark-dark";
 }
+
+function getAppThemeMode() {
+  const saved = localStorage.getItem(SETTINGS_KEY_APP_THEME_MODE) || "system";
+  return ["system", "dark", "light"].includes(saved) ? saved : "system";
+}
+
+function getResolvedAppTheme() {
+  const mode = getAppThemeMode();
+  if (mode === "dark" || mode === "light") return mode;
+  return window.matchMedia?.("(prefers-color-scheme: light)")?.matches ? "light" : "dark";
+}
+
+function applyAppTheme() {
+  document.body.dataset.appTheme = getResolvedAppTheme();
+  if (themeModeButton) {
+    const mode = getAppThemeMode();
+    themeModeButton.dataset.mode = mode;
+    themeModeButton.setAttribute("title", `${t("theme.mode.button")}: ${t(`theme.mode.${mode}`)}`);
+    themeModeButton.setAttribute("aria-label", `${t("theme.mode.button")}: ${t(`theme.mode.${mode}`)}`);
+  }
+  themeModeSystem?.classList.toggle("active", getAppThemeMode() === "system");
+  themeModeDark?.classList.toggle("active", getAppThemeMode() === "dark");
+  themeModeLight?.classList.toggle("active", getAppThemeMode() === "light");
+}
+
+function setAppThemeMode(mode) {
+  localStorage.setItem(SETTINGS_KEY_APP_THEME_MODE, mode);
+  applyAppTheme();
+}
+
+function hideThemeModeMenu() {
+  if (themeModeMenu) themeModeMenu.hidden = true;
+}
+
+function toggleThemeModeMenu(anchor) {
+  if (!themeModeMenu || !anchor) return;
+  if (!themeModeMenu.hidden) {
+    hideThemeModeMenu();
+    return;
+  }
+  const rect = anchor.getBoundingClientRect();
+  themeModeMenu.hidden = false;
+  themeModeMenu.style.left = `${Math.max(8, rect.right - themeModeMenu.offsetWidth)}px`;
+  themeModeMenu.style.top = `${Math.max(8, rect.top - themeModeMenu.offsetHeight - 8)}px`;
+}
+
+if (window.matchMedia) {
+  systemThemeMedia = window.matchMedia("(prefers-color-scheme: light)");
+  systemThemeMedia.addEventListener?.("change", () => {
+    if (getAppThemeMode() === "system") applyAppTheme();
+  });
+}
+
+applyAppTheme();
 
 function getTerminalThemeConfig() {
   return allTerminalThemes()[getTerminalThemeName()] || TERMINAL_THEMES["termark-dark"];
@@ -2149,6 +2222,7 @@ function reconcileHostGroupTree() {
 
 function populateHostGroupOptions(selectedGroupId = "") {
   if (!hfGroup) return;
+  hfGroup.dataset.emptyDisplay = "";
   hfGroup.innerHTML = "";
   const none = document.createElement("option");
   none.value = "";
@@ -3605,18 +3679,45 @@ const customSelectState = {
   openId: null,
 };
 
+function fuzzyMatchSelectOption(label, query) {
+  const text = String(label || "").toLowerCase();
+  const needle = String(query || "").trim().toLowerCase();
+  if (!needle) return true;
+  if (text.includes(needle)) return true;
+  let qi = 0;
+  for (let i = 0; i < text.length && qi < needle.length; i += 1) {
+    if (text[i] === needle[qi]) qi += 1;
+  }
+  return qi === needle.length;
+}
+
 function buildCustomSelect(selectEl) {
   if (!selectEl || selectEl.dataset.customSelectBound === "1") return;
   const wrap = document.createElement("div");
   wrap.className = "zt-select-wrap";
-  const trigger = document.createElement("button");
-  trigger.type = "button";
+  const trigger = document.createElement("div");
   trigger.className = "zt-select-trigger";
+  trigger.tabIndex = 0;
   trigger.setAttribute("aria-haspopup", "listbox");
   trigger.setAttribute("aria-expanded", "false");
+  const triggerInput = document.createElement("input");
+  triggerInput.type = "text";
+  triggerInput.className = "zt-select-trigger-input";
+  triggerInput.autocomplete = "off";
+  triggerInput.spellcheck = false;
+  const triggerCaret = document.createElement("span");
+  triggerCaret.className = "zt-select-trigger-caret";
+  trigger.append(triggerInput, triggerCaret);
   const menu = document.createElement("div");
   menu.className = "zt-select-menu";
   menu.hidden = true;
+  const optionsBox = document.createElement("div");
+  optionsBox.className = "zt-select-options";
+  const empty = document.createElement("div");
+  empty.className = "zt-select-empty";
+  empty.textContent = t("select.search.empty");
+  empty.hidden = true;
+  menu.append(optionsBox, empty);
 
   const parent = selectEl.parentElement;
   if (!parent) return;
@@ -3626,9 +3727,12 @@ function buildCustomSelect(selectEl) {
   wrap.append(trigger, menu);
   wrap.appendChild(selectEl);
 
+  let selectedLabel = "";
+
   const close = () => {
     menu.hidden = true;
     trigger.setAttribute("aria-expanded", "false");
+    triggerInput.value = selectedLabel;
     if (customSelectState.openId === selectEl.id) {
       customSelectState.openId = null;
     }
@@ -3647,9 +3751,19 @@ function buildCustomSelect(selectEl) {
   const sync = () => {
     const opts = Array.from(selectEl.options);
     const current = opts.find((o) => o.value === selectEl.value) || opts[0];
-    trigger.textContent = current ? current.textContent : "";
-    menu.innerHTML = "";
-    for (const opt of opts) {
+    selectedLabel = current ? current.textContent || "" : "";
+    if (current?.value === "" && selectEl.dataset.emptyDisplay !== undefined) {
+      selectedLabel = selectEl.dataset.emptyDisplay;
+    }
+    if (document.activeElement !== triggerInput || menu.hidden) {
+      triggerInput.value = selectedLabel;
+    }
+    empty.textContent = t("select.search.empty");
+    optionsBox.innerHTML = "";
+    const query = triggerInput.value || "";
+    const visible = opts.filter((opt) => fuzzyMatchSelectOption(opt.textContent, query));
+    empty.hidden = visible.length > 0;
+    for (const opt of visible) {
       const item = document.createElement("button");
       item.type = "button";
       item.className = "zt-select-option" + (opt.value === selectEl.value ? " active" : "");
@@ -3662,21 +3776,42 @@ function buildCustomSelect(selectEl) {
         sync();
         close();
       });
-      menu.appendChild(item);
+      optionsBox.appendChild(item);
     }
   };
 
-  trigger.addEventListener("click", (ev) => {
-    ev.preventDefault();
-    ev.stopPropagation();
-    if (menu.hidden) open(); else close();
-  });
+  trigger.addEventListener("mousedown", (ev) => ev.stopPropagation());
+  trigger.addEventListener("click", (ev) => ev.stopPropagation());
   wrap.addEventListener("zt-select-close", close);
   document.addEventListener("click", (ev) => {
     if (!wrap.contains(ev.target)) close();
   });
   wrap.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape") close();
+  });
+  triggerInput.addEventListener("focus", () => {
+    open();
+    triggerInput.select();
+    sync();
+  });
+  triggerInput.addEventListener("click", () => {
+    open();
+  });
+  triggerInput.addEventListener("input", () => {
+    open();
+    sync();
+  });
+  triggerInput.addEventListener("keydown", (ev) => {
+    if (ev.key === "ArrowDown") {
+      ev.preventDefault();
+      optionsBox.querySelector(".zt-select-option")?.focus();
+      return;
+    }
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      const first = optionsBox.querySelector(".zt-select-option");
+      first?.click();
+    }
   });
 
   selectEl.addEventListener("change", sync);
@@ -3828,10 +3963,16 @@ function applyI18n() {
   setText("theme-menu-edit", "theme.menu.edit");
   setText("theme-menu-duplicate", "theme.menu.duplicate");
   setText("theme-menu-delete", "theme.menu.delete");
+  setAttr("theme-mode-button", "title", "theme.mode.button");
+  setAttr("theme-mode-button", "aria-label", "theme.mode.button");
+  setText("theme-mode-system", "theme.mode.system");
+  setText("theme-mode-dark", "theme.mode.dark");
+  setText("theme-mode-light", "theme.mode.light");
   setText("theme-edit-title", "theme.edit.title");
   setText("theme-edit-reset", "theme.edit.reset");
   setText("theme-edit-cancel", "theme.edit.cancel");
   setText("theme-edit-save", "theme.edit.save");
+  applyAppTheme();
 
   setText("settings-title", "settings.title");
   setText("settings-general-title", "settings.general.title");
@@ -4263,6 +4404,7 @@ groupsMenuDelete?.addEventListener("click", async () => {
 
 window.addEventListener("click", () => hideHostsContextMenu());
 window.addEventListener("click", () => hideGroupsContextMenu());
+window.addEventListener("click", () => hideThemeModeMenu());
 window.addEventListener("blur", () => hideHostsContextMenu());
 window.addEventListener("blur", () => hideGroupsContextMenu());
 window.addEventListener("keydown", handleGlobalTerminalFindShortcut, true);
@@ -4273,6 +4415,25 @@ localTerminalButton?.addEventListener("click", () => {
   openLocalTerminalInTab().catch((e) => alert(String(e)));
 });
 vaultBottomSettingsButton?.addEventListener("click", openSettingsPage);
+themeModeButton?.addEventListener("click", (ev) => {
+  ev.stopPropagation();
+  toggleThemeModeMenu(themeModeButton);
+});
+themeModeSystem?.addEventListener("click", (ev) => {
+  ev.stopPropagation();
+  setAppThemeMode("system");
+  hideThemeModeMenu();
+});
+themeModeDark?.addEventListener("click", (ev) => {
+  ev.stopPropagation();
+  setAppThemeMode("dark");
+  hideThemeModeMenu();
+});
+themeModeLight?.addEventListener("click", (ev) => {
+  ev.stopPropagation();
+  setAppThemeMode("light");
+  hideThemeModeMenu();
+});
 settingsBackButton?.addEventListener("click", () => setWorkspaceMode("vaults"));
 settingsNavGeneral?.addEventListener("click", () => setSettingsSection("general"));
 settingsNavTerminal?.addEventListener("click", () => setSettingsSection("terminal"));
@@ -4313,7 +4474,7 @@ settingsGeneralSubtabSftp?.addEventListener("click", () => setSettingsGeneralSub
 settingsTerminalSubtabTheme?.addEventListener("click", () => setSettingsTerminalSubtab("theme"));
 settingsTerminalSubtabFont?.addEventListener("click", () => setSettingsTerminalSubtab("font"));
 vaultBottomSettingsRow?.addEventListener("click", (ev) => {
-  if (ev.target?.closest?.("#vault-bottom-settings")) return;
+  if (ev.target?.closest?.("#vault-bottom-settings") || ev.target?.closest?.("#theme-mode-button")) return;
   openSettingsPage();
 });
 vaultBottomSettingsRow?.addEventListener("keydown", (ev) => {
@@ -6498,7 +6659,7 @@ async function openHostEditor(id = null, defaultGroupId = "") {
     hfName.value = "";
     hfHost.value = "";
     hfPort.value = "22";
-    hfUser.value = "";
+    hfUser.value = "root";
     hfAuthType.value = "password";
     populateHostGroupOptions(defaultGroupId || "");
     hfJump.value = "";
@@ -6519,6 +6680,7 @@ function closeHostEditor() {
 }
 
 async function populateJumpOptions(currentId) {
+  hfJump.dataset.emptyDisplay = "";
   hfJump.innerHTML = "";
   const none = document.createElement("option");
   none.value = "";
@@ -7476,6 +7638,7 @@ function renderSftpPathBar(pane) {
 function syncSftpHostOptions() {
   for (const pane of Object.values(sftpPanes)) {
     const selected = pane.hostId || pane.host?.id || "";
+    pane.hostSelect.dataset.emptyDisplay = "";
     pane.hostSelect.innerHTML = "";
 
     if (pane.key === "right") {

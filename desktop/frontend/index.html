@@ -149,6 +149,19 @@
                         </svg>
                       </button>
                       <span id="vault-settings-text">设置</span>
+                      <button id="theme-mode-button" type="button" class="workspace-icon-btn" aria-label="主题模式" title="主题模式">
+                        <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M12 3v2"></path>
+                          <path d="M12 19v2"></path>
+                          <path d="m4.93 4.93 1.41 1.41"></path>
+                          <path d="m17.66 17.66 1.41 1.41"></path>
+                          <path d="M3 12h2"></path>
+                          <path d="M19 12h2"></path>
+                          <path d="m4.93 19.07 1.41-1.41"></path>
+                          <path d="m17.66 6.34 1.41-1.41"></path>
+                          <circle cx="12" cy="12" r="4"></circle>
+                        </svg>
+                      </button>
                     </footer>
                   </aside>
 
@@ -849,9 +862,9 @@ $ npm run build && npm run start</pre>
             </div>
 
             <fieldset class="advanced">
-              <legend id="hf-advanced-legend">ProxyJump and forwards</legend>
+              <legend id="hf-advanced-legend">跳板机与转发</legend>
               <label>
-                <span id="hf-jump-label">ProxyJump (saved alias)</span>
+                <span id="hf-jump-label">跳板机（已保存主机）</span>
                 <select id="hf-jump"></select>
               </label>
 
@@ -964,6 +977,12 @@ $ npm run build && npm run start</pre>
         <button id="theme-menu-edit" type="button">编辑主题</button>
         <button id="theme-menu-duplicate" type="button">复制为自定义</button>
         <button id="theme-menu-delete" type="button" class="danger">删除主题</button>
+      </div>
+
+      <div id="theme-mode-menu" class="hosts-context-menu" hidden>
+        <button id="theme-mode-system" type="button">跟随系统</button>
+        <button id="theme-mode-dark" type="button">深色</button>
+        <button id="theme-mode-light" type="button">浅色</button>
       </div>
 
       <div id="theme-edit-overlay" class="overlay" hidden>
