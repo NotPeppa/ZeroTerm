@@ -1872,7 +1872,20 @@ const TERMINAL_THEMES = {
     cursor: "#88c0d0",
     selectionBackground: "#3b4252",
   },
+  "tokyo-day": {
+    background: "#00000000",
+    foreground: "#343b58",
+    cursor: "#343b58",
+    selectionBackground: "rgba(52, 59, 88, 0.2)",
+  },
+  "catppuccin-latte": {
+    background: "#00000000",
+    foreground: "#4c4f69",
+    cursor: "#4c4f69",
+    selectionBackground: "rgba(76, 79, 105, 0.2)",
+  },
 };
+
 
 const TERMINAL_THEME_META = {
   "tokyo-day": { label: "Tokyo Day", group: "light" },
@@ -1912,8 +1925,22 @@ function allTerminalThemes() {
 }
 
 function getTerminalThemeName() {
-  const saved = localStorage.getItem(SETTINGS_KEY_TERMINAL_THEME) || "termark-dark";
-  return allTerminalThemes()[saved] ? saved : "termark-dark";
+  const saved = localStorage.getItem(SETTINGS_KEY_TERMINAL_THEME);
+  const allThemes = allTerminalThemes();
+  const appTheme = getResolvedAppTheme();
+  
+  if (saved && allThemes[saved]) {
+    // If the saved theme matches the current app theme's group (light or dark), use it.
+    // Otherwise, if the app theme is light, and the saved theme is a dark theme, fall back to "tokyo-day"
+    // to guarantee high-contrast text visibility on transparent backdrops inside light panels.
+    const meta = TERMINAL_THEME_META[saved];
+    if (meta && meta.group !== appTheme) {
+      return appTheme === "light" ? "tokyo-day" : "termark-dark";
+    }
+    return saved;
+  }
+  
+  return appTheme === "light" ? "tokyo-day" : "termark-dark";
 }
 
 function getAppThemeMode() {
@@ -1938,6 +1965,9 @@ function applyAppTheme() {
   themeModeSystem?.classList.toggle("active", getAppThemeMode() === "system");
   themeModeDark?.classList.toggle("active", getAppThemeMode() === "dark");
   themeModeLight?.classList.toggle("active", getAppThemeMode() === "light");
+  
+  // Apply changes to terminal views instantly
+  applyTerminalThemeToAllPanes();
 }
 
 function setAppThemeMode(mode) {
@@ -1989,6 +2019,7 @@ function getTerminalLineHeight() {
 }
 
 function applyTerminalThemeToAllPanes() {
+  if (typeof termState === "undefined" || !termState || !termState.tabs) return;
   const theme = getTerminalThemeConfig();
   for (const tab of termState.tabs) {
     for (const pane of tab.panes) {
@@ -3406,9 +3437,9 @@ function ensureAutoSyncSettingsControls() {
 
   const block = document.createElement("div");
   block.id = "settings-sync-auto-block";
-  block.className = "settings-sync-auto-block";
+  block.className = "settings-sync-auto-block settings-section settings-sync-card";
   block.innerHTML = `
-    <h4 id="settings-sync-auto-title"></h4>
+    <div class="settings-item-title" id="settings-sync-auto-title"></div>
     <label class="settings-sync-auto-row">
       <input type="checkbox" id="settings-sync-auto-enabled" />
       <span id="settings-sync-auto-enabled-label"></span>

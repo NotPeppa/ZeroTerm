@@ -19,20 +19,20 @@
 }
 
 body[data-app-theme="light"] {
-  --bg: #f2ebdf;
-  --bg-2: #f8f3e9;
-  --panel: #fbf7ef;
-  --panel-2: #f4eadb;
-  --panel-3: #e9dcc7;
-  --stroke: #ddd0ba;
-  --text: #342a1f;
-  --muted: #93856f;
-  --accent: #917449;
-  --accent-2: #836740;
-  --ok: #5a8b49;
-  --warn: #a87921;
-  --danger: #a25749;
-  --shadow: 0 20px 60px rgba(114, 90, 56, 0.16);
+  --bg: #f4f6f9;
+  --bg-2: #ffffff;
+  --panel: rgba(255, 255, 255, 0.85);
+  --panel-2: rgba(241, 245, 249, 0.9);
+  --panel-3: rgba(226, 232, 240, 0.9);
+  --stroke: rgba(203, 213, 225, 0.5);
+  --text: #0f172a;
+  --muted: #64748b;
+  --accent: #2563eb;
+  --accent-2: #1d4ed8;
+  --ok: #10b981;
+  --warn: #f59e0b;
+  --danger: #ef4444;
+  --shadow: 0 15px 45px rgba(15, 23, 42, 0.08);
 }
 
 @font-face {
@@ -89,7 +89,7 @@ body,
 
 body[data-app-theme="light"],
 body[data-app-theme="light"] #root {
-  background: radial-gradient(circle at 10% 10%, #fdf9f1 0%, #f6eee2 50%, #e7dac6 100%);
+  background: radial-gradient(circle at 10% 10%, #f8fafc 0%, #f1f5f9 60%, #e2e8f0 100%);
 }
 
 h1,
@@ -474,7 +474,7 @@ label.checkbox input[type="checkbox"] {
 
 body[data-app-theme="light"] .workspace-panels,
 body[data-app-theme="light"] #panel-sftp {
-  background: #f4ebdd;
+  background: var(--bg);
 }
 
 .workspace-panel {
@@ -508,7 +508,9 @@ body[data-app-theme="light"] #panel-sftp {
 
 body[data-app-theme="light"] .vault-sidebar,
 body[data-app-theme="light"] .settings-sidebar {
-  background: rgba(252, 247, 239, 0.95);
+  background: rgba(244, 246, 249, 0.96) !important;
+  backdrop-filter: blur(25px) !important;
+  -webkit-backdrop-filter: blur(25px) !important;
   color: var(--text);
 }
 
@@ -565,7 +567,7 @@ body[data-app-theme="light"] .settings-sidebar {
 }
 
 body[data-app-theme="light"] .vault-main {
-  background: radial-gradient(circle at 86% 95%, rgba(175, 145, 98, 0.08) 0%, rgba(250, 244, 234, 0.97) 54%, #eee2cf 100%);
+  background: radial-gradient(circle at 86% 95%, rgba(37, 99, 235, 0.03) 0%, rgba(255, 255, 255, 0.98) 54%, #f1f5f9 100%);
 }
 
 .vault-right-topbar {
@@ -582,12 +584,19 @@ body[data-app-theme="light"] .vault-main {
 }
 
 body[data-app-theme="light"] .vault-right-topbar,
-body[data-app-theme="light"] .vault-left-topbar,
+body[data-app-theme="light"] .vault-left-topbar {
+  background: rgba(244, 246, 249, 0.96) !important;
+  backdrop-filter: blur(25px) !important;
+  -webkit-backdrop-filter: blur(25px) !important;
+  border-bottom: 1px solid rgba(203, 213, 225, 0.5) !important;
+  color: var(--text) !important;
+}
+
 body[data-app-theme="light"] .pane-header,
 body[data-app-theme="light"] .sftp-pane-topbar,
 body[data-app-theme="light"] .settings-page-head {
-  background: rgba(251, 246, 238, 0.84);
-  border-bottom-color: rgba(186, 170, 142, 0.18);
+  background: rgba(248, 250, 252, 0.85) !important;
+  border-bottom: 1px solid rgba(203, 213, 225, 0.4) !important;
   color: var(--text);
 }
 
@@ -664,15 +673,15 @@ body[data-app-theme="light"] input[type="number"],
 body[data-app-theme="light"] select,
 body[data-app-theme="light"] .zt-select-trigger,
 body[data-app-theme="light"] .custom-select-trigger {
-  background: rgba(248, 242, 230, 0.96) !important;
-  border-color: rgba(183, 164, 129, 0.75) !important;
-  color: #342a1f !important;
-  box-shadow: inset 0 1px 0 rgba(255, 250, 242, 0.78);
+  background: #ffffff !important;
+  border-color: rgba(203, 213, 225, 0.8) !important;
+  color: var(--text) !important;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
 body[data-app-theme="light"] .search::placeholder,
 body[data-app-theme="light"] input::placeholder {
-  color: #8d7e67;
+  color: var(--muted) !important;
 }
 
 .search:focus {
@@ -780,22 +789,28 @@ body[data-app-theme="light"] .dialog,
 body[data-app-theme="light"] .window-mock,
 body[data-app-theme="light"] .settings-about-card,
 body[data-app-theme="light"] .settings-about-update-card {
-  background: linear-gradient(180deg, rgba(252, 248, 241, 0.95) 0%, rgba(245, 237, 224, 0.91) 100%) !important;
-  border-color: rgba(197, 181, 153, 0.34) !important;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(248, 250, 252, 0.91) 100%) !important;
+  border-color: rgba(203, 213, 225, 0.5) !important;
   color: var(--text);
-  box-shadow: 0 16px 36px rgba(118, 95, 62, 0.07), inset 0 1px 0 rgba(255, 251, 245, 0.84);
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
-body[data-app-theme="light"] .host-card,
-body[data-app-theme="light"] .group-row,
 body[data-app-theme="light"] .tab-item,
 body[data-app-theme="light"] .settings-nav-item,
 body[data-app-theme="light"] .files-context-menu,
 body[data-app-theme="light"] .hosts-context-menu,
 body[data-app-theme="light"] .zt-select-menu,
 body[data-app-theme="light"] .custom-select-menu {
-  background: #fbf7ef !important;
-  border-color: rgba(197, 181, 153, 0.42) !important;
+  background: #ffffff !important;
+  border-color: rgba(203, 213, 225, 0.5) !important;
+  color: var(--text) !important;
+}
+
+body[data-app-theme="light"] .host-card,
+body[data-app-theme="light"] .group-row {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
   color: var(--text) !important;
 }
 
@@ -809,95 +824,115 @@ body[data-app-theme="light"] .settings-page-head h3 {
 }
 
 body[data-app-theme="light"] .workspace-tabbar {
-  background: rgba(243, 234, 217, 0.9);
-  border-bottom: 1px solid rgba(175, 155, 121, 0.46);
+  background: rgba(244, 246, 249, 0.95);
+  border-bottom: 1px solid rgba(203, 213, 225, 0.5);
 }
 
 body[data-app-theme="light"] .workspace-icon-btn {
-  color: #75664f;
+  color: var(--muted);
 }
 
 body[data-app-theme="light"] .workspace-icon-btn:hover {
-  background: rgba(136, 107, 64, 0.12);
-  color: #4e3c22;
+  background: rgba(37, 99, 235, 0.05);
+  color: var(--accent);
 }
 
 body[data-app-theme="light"] .workspace-nav-btn.active {
-  background: rgba(123, 92, 46, 0.16);
-  color: #4a3920;
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--accent);
 }
 
 body[data-app-theme="light"] .vault-sidebar-footer {
-  border-top-color: rgba(173, 152, 119, 0.44);
-  color: #3e3121;
+  border-top-color: rgba(203, 213, 225, 0.5);
+  color: var(--text);
 }
 
 body[data-app-theme="light"] .vault-sidebar-footer:hover {
-  background: rgba(136, 107, 64, 0.08);
+  background: rgba(37, 99, 235, 0.04);
 }
 
 body[data-app-theme="light"] .vault-sidebar-footer .workspace-icon-btn {
-  color: #786852;
+  color: var(--muted);
 }
 
 body[data-app-theme="light"] .sync-indicator[data-state="ok"] {
-  background: #15a26d;
-  box-shadow: 0 0 8px rgba(21, 162, 109, 0.38);
+  background: #10b981;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.38);
 }
 
 body[data-app-theme="light"] .group-row {
-  color: #433528;
+  color: var(--text);
 }
 
 body[data-app-theme="light"] .group-row::after {
-  background: rgba(181, 163, 131, 0.5);
+  background: rgba(203, 213, 225, 0.5);
 }
 
 body[data-app-theme="light"] .group-row .group-count,
 body[data-app-theme="light"] .group-row .group-caret {
-  color: #8a7a62;
+  color: var(--muted);
 }
 
-body[data-app-theme="light"] .host-card:hover {
-  background: rgba(130, 100, 54, 0.08);
+body[data-app-theme="light"] .host-card:hover,
+body[data-app-theme="light"] .group-row:hover {
+  background: rgba(37, 99, 235, 0.04) !important;
 }
 
 body[data-app-theme="light"] .host-card.selected {
-  background: rgba(123, 92, 46, 0.16);
+  background: rgba(37, 99, 235, 0.08) !important;
 }
 
 body[data-app-theme="light"] .host-card .name,
 body[data-app-theme="light"] .host-card .host-conn-inline,
 body[data-app-theme="light"] .host-card .badge {
-  color: #342a1f;
+  color: var(--text);
 }
 
 body[data-app-theme="light"] .host-card-grouped::before {
-  background: #a08b69;
+  background: rgba(203, 213, 225, 0.8);
 }
 
 body[data-app-theme="light"] .vault-welcome h2 {
-  color: rgba(105, 84, 51, 0.18);
+  color: rgba(15, 23, 42, 0.08);
 }
 
 body[data-app-theme="light"] .vault-welcome p {
-  color: #7b6c57;
+  color: var(--text);
 }
 
 body[data-app-theme="light"] .vault-welcome p.muted {
-  color: #97866f;
+  color: var(--muted);
 }
 
-body[data-app-theme="light"] .sftp-pane + .sftp-pane,
-body[data-app-theme="light"] .titlebar-sep,
+body[data-app-theme="light"] .sftp-pane + .sftp-pane {
+  border-left: 1px solid rgba(203, 213, 225, 0.5) !important;
+}
+
+body[data-app-theme="light"] .titlebar-sep {
+  background: rgba(203, 213, 225, 0.5) !important;
+}
+
 body[data-app-theme="light"] .vault-splitter {
-  border-color: rgba(163, 143, 111, 0.35);
-  background: rgba(208, 191, 162, 0.7);
+  background: rgba(244, 246, 249, 0.96) !important;
+  backdrop-filter: blur(25px) !important;
+  -webkit-backdrop-filter: blur(25px) !important;
+  border: none !important;
+}
+
+body[data-app-theme="light"] .vault-splitter::before {
+  background: rgba(203, 213, 225, 0.5) !important;
+}
+
+body[data-app-theme="light"] .vault-splitter:hover::before,
+body[data-app-theme="light"] .app-shell.resizing-sidebar .vault-splitter::before {
+  background: var(--accent) !important;
+  width: 2px !important;
+  left: 2px !important;
 }
 
 body[data-app-theme="light"] .sftp-inline-filter-icon,
 body[data-app-theme="light"] .sftp-inline-filter-label {
-  color: #8d7a5e;
+  color: var(--muted);
 }
 
 body[data-app-theme="light"] .sftp-inline-filter:hover .sftp-inline-filter-icon,
@@ -906,92 +941,92 @@ body[data-app-theme="light"] .sftp-inline-filter.active .sftp-inline-filter-icon
 body[data-app-theme="light"] .sftp-inline-filter:hover .sftp-inline-filter-label,
 body[data-app-theme="light"] .sftp-inline-filter:focus-within .sftp-inline-filter-label,
 body[data-app-theme="light"] .sftp-inline-filter.active .sftp-inline-filter-label {
-  color: #5e4830;
+  color: var(--accent);
 }
 
 body[data-app-theme="light"] .sftp-inline-filter-input[type="text"] {
-  color: #4a3825;
+  color: var(--text);
 }
 
 body[data-app-theme="light"] .sftp-inline-filter-input::placeholder {
-  color: #a09076;
+  color: var(--muted);
 }
 
 body[data-app-theme="light"] .sftp-inline-filter:hover .sftp-inline-filter-input,
 body[data-app-theme="light"] .sftp-inline-filter:focus-within .sftp-inline-filter-input,
 body[data-app-theme="light"] .sftp-inline-filter.active .sftp-inline-filter-input {
-  border-bottom-color: #a58a60;
+  border-bottom-color: var(--accent);
 }
 
 body[data-app-theme="light"] .sftp-pathbar {
-  background: rgba(249, 243, 232, 0.82);
-  border-color: rgba(190, 172, 140, 0.46);
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(203, 213, 225, 0.6);
 }
 
 body[data-app-theme="light"] .sftp-pathbar:hover {
-  background: rgba(251, 246, 238, 0.92);
-  border-color: rgba(170, 147, 109, 0.54);
+  background: #ffffff;
+  border-color: rgba(203, 213, 225, 0.8);
 }
 
 body[data-app-theme="light"] .sftp-pathbar.editing {
-  background: rgba(246, 238, 225, 0.96);
-  border-color: rgba(145, 116, 70, 0.52);
-  box-shadow: 0 0 10px rgba(145, 116, 70, 0.12), inset 0 1px 0 rgba(255, 250, 242, 0.3);
+  background: #ffffff;
+  border-color: var(--accent);
+  box-shadow: 0 0 10px rgba(37, 99, 235, 0.15), inset 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
 body[data-app-theme="light"] .sftp-crumb-btn {
-  background: rgba(246, 238, 224, 0.9);
-  border-color: rgba(192, 174, 142, 0.44);
-  color: #8d7b61;
+  background: #ffffff;
+  border-color: rgba(203, 213, 225, 0.6);
+  color: var(--muted);
 }
 
 body[data-app-theme="light"] .sftp-crumb-btn:hover {
-  background: rgba(240, 228, 207, 0.96);
-  border-color: rgba(170, 147, 109, 0.54);
-  color: #5d4730;
+  background: rgba(37, 99, 235, 0.05);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 body[data-app-theme="light"] .sftp-crumb-btn.active {
-  border-color: rgba(145, 116, 70, 0.5);
-  background: rgba(163, 132, 84, 0.16);
-  color: #4d3925;
-  box-shadow: 0 0 8px rgba(145, 116, 70, 0.1);
+  border-color: rgba(37, 99, 235, 0.3);
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--accent);
+  box-shadow: 0 0 8px rgba(37, 99, 235, 0.05);
 }
 
 body[data-app-theme="light"] .sftp-crumb-sep,
 body[data-app-theme="light"] .sftp-host-selector .zt-select-trigger-input,
 body[data-app-theme="light"] .sftp-host-selector .zt-select-trigger-caret {
-  color: #a08f73;
+  color: var(--muted);
 }
 
 body[data-app-theme="light"] .sftp-empty-icon {
-  background: radial-gradient(circle at center, rgba(145, 116, 70, 0.12) 0%, rgba(145, 116, 70, 0.03) 100%);
-  border-color: rgba(145, 116, 70, 0.2);
-  box-shadow: 0 0 20px rgba(145, 116, 70, 0.08), inset 0 1px 0 rgba(255, 250, 242, 0.45);
+  background: radial-gradient(circle at center, rgba(37, 99, 235, 0.06) 0%, rgba(37, 99, 235, 0.01) 100%);
+  border-color: rgba(37, 99, 235, 0.15);
+  box-shadow: 0 0 20px rgba(37, 99, 235, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.85);
 }
 
 body[data-app-theme="light"] .sftp-empty-title {
-  color: #6a5130;
-  background: linear-gradient(135deg, #6a5130 0%, #a28558 100%);
+  color: var(--text);
+  background: linear-gradient(135deg, var(--text) 0%, var(--muted) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
 body[data-app-theme="light"] .sftp-empty-desc {
-  color: #96846a;
+  color: var(--muted);
 }
 
 body[data-app-theme="light"] .sftp-empty-btn {
-  border-color: rgba(145, 116, 70, 0.4);
-  background: rgba(145, 116, 70, 0.12);
-  color: #5a4428;
+  border-color: rgba(37, 99, 235, 0.25);
+  background: rgba(37, 99, 235, 0.06);
+  color: var(--accent);
 }
 
 body[data-app-theme="light"] .sftp-empty-btn:hover {
-  background: rgba(145, 116, 70, 0.18);
-  border-color: rgba(145, 116, 70, 0.5);
-  box-shadow: 0 0 10px rgba(145, 116, 70, 0.12);
+  background: rgba(37, 99, 235, 0.12);
+  border-color: var(--accent);
+  box-shadow: 0 0 10px rgba(37, 99, 235, 0.1);
 }
 
 body[data-app-theme="light"] .sftp-pane-tool-btn,
@@ -1000,58 +1035,73 @@ body[data-app-theme="light"] .pane-reconnect-btn,
 body[data-app-theme="light"] .files-context-menu button,
 body[data-app-theme="light"] .hosts-context-menu button,
 body[data-app-theme="light"] .settings-nav-item {
-  color: #4a3a28 !important;
+  color: var(--text) !important;
 }
 
 body[data-app-theme="light"] .file-row:hover {
-  background: rgba(132, 103, 59, 0.08);
+  background: rgba(37, 99, 235, 0.04);
 }
 
 body[data-app-theme="light"] .file-row.selected {
-  background: rgba(123, 92, 46, 0.16);
-  border-left-color: #8e6a34;
+  background: rgba(37, 99, 235, 0.08);
+  border-left-color: var(--accent);
 }
 
 body[data-app-theme="light"] .file-row .name {
-  color: #342a1f;
+  color: var(--text);
 }
 
 body[data-app-theme="light"] .file-row.dir .name {
-  color: #7a5d33;
+  color: var(--accent);
 }
 
 body[data-app-theme="light"] .file-row .size {
-  color: #8b7c65;
+  color: var(--muted);
 }
 
 body[data-app-theme="light"] .settings-page-head h3 {
-  color: #4e3b23;
-  background: linear-gradient(135deg, #4e3b23 30%, #8a6a3b 100%);
+  color: var(--text);
+  background: linear-gradient(135deg, var(--text) 30%, var(--muted) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 body[data-app-theme="light"] .settings-nav-item:hover {
-  background: rgba(136, 107, 64, 0.08);
-  color: #4b3920;
+  background: rgba(37, 99, 235, 0.05);
+  color: var(--accent) !important;
 }
 
 body[data-app-theme="light"] .settings-nav-item.active {
-  background: rgba(123, 92, 46, 0.14);
-  border-color: rgba(136, 107, 64, 0.32);
-  color: #6d4f24;
-  box-shadow: 0 4px 15px rgba(123, 92, 46, 0.12), inset 0 1px 0 rgba(255, 248, 236, 0.06);
+  background: rgba(37, 99, 235, 0.08);
+  border-color: rgba(37, 99, 235, 0.25);
+  color: var(--accent) !important;
+  box-shadow: 0 4px 15px rgba(37, 99, 235, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+body[data-app-theme="light"] .settings-nav-item .zt-icon {
+  stroke: var(--muted) !important;
+  filter: none !important;
+}
+
+body[data-app-theme="light"] .settings-nav-item.active .zt-icon {
+  stroke: var(--accent) !important;
+  filter: drop-shadow(0 0 4px rgba(37, 99, 235, 0.2)) !important;
+}
+
+body[data-app-theme="light"] .settings-nav-item:hover .zt-icon {
+  stroke: var(--accent) !important;
 }
 
 body[data-app-theme="light"] .overlay {
-  background: rgba(103, 85, 57, 0.22);
+  background: rgba(15, 23, 42, 0.12);
 }
 
 body[data-app-theme="light"] .muted,
 body[data-app-theme="light"] .pane-status,
 body[data-app-theme="light"] .settings-nav-label,
 body[data-app-theme="light"] .about-card-label {
-  color: #8a7a62 !important;
+  color: var(--muted) !important;
 }
 
 .hosts-empty-icon-wrap {
@@ -3101,6 +3151,7 @@ body[data-app-theme="light"] .about-card-label {
   cursor: pointer;
 }
 
+.settings-switch em,
 .settings-sync-auto em {
   font-style: normal;
   color: #dfe9ff;
@@ -3679,6 +3730,27 @@ body[data-app-theme="light"] .about-card-label {
 
 #settings-sftp-local-dir {
   flex: 1;
+}
+
+#settings-sftp-local-dir-browse {
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, #2a3555 0%, #1f2843 100%);
+  color: #eef3ff;
+  font-weight: 600;
+  padding: 0 16px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+}
+
+#settings-sftp-local-dir-browse:hover {
+  border-color: #4f6397;
+  background: linear-gradient(180deg, #32416a 0%, #2a385e 100%);
+}
+
+#settings-sftp-local-dir-browse:active {
+  transform: translateY(1px);
 }
 
 #settings-sync-status-line {
@@ -4666,14 +4738,7 @@ fieldset.advanced legend {
 }
 
 .settings-sync-auto-block {
-  margin-top: 18px;
-  padding-top: 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-.settings-sync-auto-block h4 {
-  margin: 0 0 10px;
-  font-size: 13px;
-  color: #c4c9d2;
+  /* Inherits .settings-section and .settings-sync-card styles */
 }
 .settings-sync-auto-row {
   display: flex;
@@ -4681,6 +4746,7 @@ fieldset.advanced legend {
   gap: 8px;
   margin-bottom: 8px;
   font-size: 13px;
+  color: #dfe9ff;
 }
 .settings-sync-auto-row input[type="number"] {
   width: 80px;
@@ -4977,3 +5043,464 @@ fieldset.advanced legend {
   mask: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iY3VycmVudENvbG9yIj48cGF0aCBkPSJNMTcuNjEuNDU1YTMuNDEgMy40MSAwIDAgMC0zLjQxIDMuNDEgMy40MSAzLjQxIDAgMCAwIDMuNDEgMy40MSAzLjQxIDMuNDEgMCAwIDAgMy40MS0zLjQxIDMuNDEgMy40MSAwIDAgMC0zLjQxLTMuNDF6TTEyLjkyLjhDOC45MjMuNzc3IDUuMTM3IDIuOTQxIDMuMTQ4IDYuNDUxYTQuNSA0LjUgMCAwIDEgLjI2LS4wMDcgNC45MiA0LjkyIDAgMCAxIDIuNTg1LjczN0E4LjMxNiA4LjMxNiAwIDAgMSAxMi42ODggMy42IDQuOTQ0IDQuOTQ0IDAgMCAxIDEzLjcyMy44MzQgMTEuMDA4IDExLjAwOCAwIDAgMCAxMi45Mi44em05LjIyNiA0Ljk5NGE0LjkxNSA0LjkxNSAwIDAgMS0xLjkxOCAyLjI0NiA4LjM2IDguMzYgMCAwIDEtLjI3MyA4LjMwMyA0Ljg5IDQuODkgMCAwIDEgMS42MzIgMi41NCAxMS4xNTYgMTEuMTU2IDAgMCAwIC41NTktMTMuMDg5ek0zLjQxIDcuOTMyQTMuNDEgMy40MSAwIDAgMCAwIDExLjM0MmEzLjQxIDMuNDEgMCAwIDAgMy40MSAzLjQwOSAzLjQxIDMuNDEgMCAwIDAgMy40MS0zLjQxIDMuNDEgMy40MSAwIDAgMC0zLjQxLTMuNDF6bTIuMDI3IDcuODY2YTQuOTA4IDQuOTA4IDAgMCAxLTIuOTE1LjM1OCAxMS4xIDExLjEgMCAwIDAgNy45OTEgNi42OTggMTEuMjM0IDExLjIzNCAwIDAgMCAyLjQyMi4yNDkgNC44NzkgNC44NzkgMCAwIDEtLjk5OS0yLjg1IDguNDg0IDguNDg0IDAgMCAxLS44MzYtLjEzNiA4LjMwNCA4LjMwNCAwIDAgMS01LjY2My00LjMyem0xMS40MDUuOTI4YTMuNDEgMy40MSAwIDAgMC0zLjQxIDMuNDEgMy40MSAzLjQxIDAgMCAwIDMuNDEgMy40MSAzLjQxIDMuNDEgMCAwIDAgMy40MS0zLjQxIDMuNDEgMy40MSAwIDAgMC0zLjQxLTMuNDF6Ii8+PC9zdmc+") no-repeat center / contain;
   vertical-align: middle;
 }
+
+/* ==========================================
+   Light Theme Integration & Contrast Fixes
+   ========================================== */
+
+/* 1. Sync Panel Card Inputs, Selects & Placeholders */
+body[data-app-theme="light"] .settings-sync-password-block input,
+body[data-app-theme="light"] .settings-sync-grid input {
+  background: #ffffff !important;
+  border-color: rgba(203, 213, 225, 0.8) !important;
+  color: var(--text) !important;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+}
+
+body[data-app-theme="light"] .settings-sync-password-block input::placeholder,
+body[data-app-theme="light"] .settings-sync-grid input::placeholder {
+  color: var(--muted) !important;
+}
+
+body[data-app-theme="light"] .settings-sync-password-block input:focus,
+body[data-app-theme="light"] .settings-sync-grid input:focus {
+  background: #ffffff !important;
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 8px rgba(37, 99, 235, 0.2) !important;
+}
+
+body[data-app-theme="light"] .settings-item-title {
+  color: var(--text) !important;
+}
+
+body[data-app-theme="light"] .settings-switch em,
+body[data-app-theme="light"] .settings-sync-auto em,
+body[data-app-theme="light"] .settings-sync-auto-row {
+  color: var(--text) !important;
+}
+
+body[data-app-theme="light"] #settings-sync-status-line {
+  color: var(--text) !important;
+}
+
+body[data-app-theme="light"] .settings-sync-stats-list {
+  border-top-color: rgba(203, 213, 225, 0.5) !important;
+}
+
+body[data-app-theme="light"] .settings-sync-stat-row {
+  border-bottom-color: rgba(203, 213, 225, 0.35) !important;
+}
+
+body[data-app-theme="light"] .settings-sync-stat-key {
+  color: var(--muted) !important;
+}
+
+body[data-app-theme="light"] .settings-sync-stat-row.is-total .settings-sync-stat-key {
+  color: var(--text) !important;
+}
+
+body[data-app-theme="light"] .settings-sync-stat-value {
+  color: var(--text) !important;
+}
+
+body[data-app-theme="light"] .settings-sync-actions button {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%) !important;
+  border: 1px solid rgba(203, 213, 225, 0.8) !important;
+  color: var(--text) !important;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05) !important;
+}
+
+body[data-app-theme="light"] .settings-sync-actions button:hover {
+  background: #ffffff !important;
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+}
+
+body[data-app-theme="light"] button.primary:not(.window-control-btn),
+body[data-app-theme="light"] .settings-sync-actions button.primary {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%) !important;
+  border: 1px solid rgba(37, 99, 235, 0.45) !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+body[data-app-theme="light"] button.primary:not(.window-control-btn):hover,
+body[data-app-theme="light"] .settings-sync-actions button.primary:hover {
+  background: #2563eb !important;
+  border-color: #1d4ed8 !important;
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.35) !important;
+  color: #ffffff !important;
+}
+
+body[data-app-theme="light"] button.danger:not(.window-control-btn),
+body[data-app-theme="light"] .settings-sync-actions button.danger {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important;
+  border: 1px solid rgba(220, 38, 38, 0.45) !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+body[data-app-theme="light"] button.danger:not(.window-control-btn):hover,
+body[data-app-theme="light"] .settings-sync-actions button.danger:hover {
+  background: #dc2626 !important;
+  border-color: #b91c1c !important;
+  box-shadow: 0 6px 16px rgba(220, 38, 38, 0.35) !important;
+  color: #ffffff !important;
+}
+
+body[data-app-theme="light"] .window-control-btn {
+  color: var(--text) !important;
+  background: transparent !important;
+  border: none !important;
+}
+
+body[data-app-theme="light"] .window-control-btn:hover {
+  background: rgba(37, 99, 235, 0.05) !important;
+  color: var(--text) !important;
+  border: none !important;
+}
+
+body[data-app-theme="light"] .window-control-btn.danger {
+  background: transparent !important;
+  color: var(--text) !important;
+  border: none !important;
+}
+
+body[data-app-theme="light"] .window-control-btn.danger:hover {
+  background: #e81123 !important;
+  color: #ffffff !important;
+  border: none !important;
+}
+
+body[data-app-theme="light"] #settings-sync-root-browse,
+body[data-app-theme="light"] #settings-sftp-local-dir-browse {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%) !important;
+  border: 1px solid rgba(203, 213, 225, 0.8) !important;
+  color: var(--text) !important;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05) !important;
+  height: 38px;
+  border-radius: 10px;
+  padding: 0 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+body[data-app-theme="light"] #settings-sync-root-browse:hover,
+body[data-app-theme="light"] #settings-sftp-local-dir-browse:hover {
+  background: #ffffff !important;
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+}
+
+/* 2. About Page Branding & Grid Metadata Contrast */
+body[data-app-theme="light"] .settings-about-appname {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  background-clip: text !important;
+}
+
+body[data-app-theme="light"] .settings-about-tagline {
+  color: var(--muted) !important;
+}
+
+body[data-app-theme="light"] .about-card-label {
+  color: var(--muted) !important;
+}
+
+body[data-app-theme="light"] .about-card-val {
+  color: var(--text) !important;
+}
+
+body[data-app-theme="light"] .about-card-val a {
+  color: #2563eb !important;
+}
+
+body[data-app-theme="light"] .about-card-val a:hover {
+  color: #1d4ed8 !important;
+}
+
+body[data-app-theme="light"] .about-card-icon {
+  background: rgba(37, 99, 235, 0.08) !important;
+  border-color: rgba(37, 99, 235, 0.2) !important;
+  color: #2563eb !important;
+}
+
+body[data-app-theme="light"] .settings-about-card:hover {
+  background: rgba(37, 99, 235, 0.02) !important;
+  border-color: rgba(203, 213, 225, 0.8) !important;
+}
+
+body[data-app-theme="light"] .update-status-title {
+  color: var(--text) !important;
+}
+
+body[data-app-theme="light"] .update-status-text {
+  color: var(--muted) !important;
+}
+
+/* 3. Locker Vault Unlock Screen */
+body[data-app-theme="light"] .unlock-card {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(244, 246, 249, 0.95) 100%) !important;
+  border-color: rgba(203, 213, 225, 0.6) !important;
+  box-shadow: 0 30px 70px rgba(15, 23, 42, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.85) !important;
+  color: var(--text) !important;
+}
+
+body[data-app-theme="light"] .unlock-card h1 {
+  color: var(--text) !important;
+}
+
+/* 4. Active Connection Tabs legibility */
+body[data-app-theme="light"] .tab-item.active {
+  background: rgba(37, 99, 235, 0.08) !important;
+  border-color: rgba(37, 99, 235, 0.45) !important;
+  color: #2563eb !important;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+}
+
+body[data-app-theme="light"] .tab-item.active .close {
+  color: rgba(37, 99, 235, 0.7) !important;
+}
+
+body[data-app-theme="light"] .tab-item.active .close:hover {
+  background: rgba(37, 99, 235, 0.12) !important;
+  color: #1d4ed8 !important;
+}
+
+/* 5. Add/Edit Host Dialog Port Forwarding list rows */
+body[data-app-theme="light"] .forward-list li {
+  background: #ffffff !important;
+  border: 1px solid rgba(203, 213, 225, 0.6) !important;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.03) !important;
+}
+
+body[data-app-theme="light"] .forward-list .zt-select-trigger {
+  background: var(--panel) !important;
+  border: 1px solid rgba(203, 213, 225, 0.8) !important;
+  color: var(--text) !important;
+}
+
+body[data-app-theme="light"] .forward-list .zt-select-trigger:hover {
+  background: var(--panel-2) !important;
+  border-color: var(--accent) !important;
+}
+
+body[data-app-theme="light"] .forward-list li .fields input {
+  background: var(--panel) !important;
+  border: 1px solid rgba(203, 213, 225, 0.8) !important;
+  color: var(--text) !important;
+}
+
+body[data-app-theme="light"] .forward-list li .fields input:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 8px rgba(37, 99, 235, 0.2) !important;
+  background: var(--panel-2) !important;
+}
+
+body[data-app-theme="light"] .forward-list li button.danger {
+  background: rgba(239, 68, 68, 0.08) !important;
+  border: 1px solid rgba(239, 68, 68, 0.2) !important;
+  color: #dc2626 !important;
+}
+
+body[data-app-theme="light"] .forward-list li button.danger:hover {
+  background: rgba(239, 68, 68, 0.15) !important;
+  border-color: rgba(239, 68, 68, 0.4) !important;
+  color: #b91c1c !important;
+  box-shadow: 0 4px 10px rgba(220, 38, 220, 0.1) !important;
+}
+
+/* 6. Workspace Icon Buttons & SVGs High-Contrast Overrides */
+body[data-app-theme="light"] .workspace-icon-btn .zt-icon,
+body[data-app-theme="light"] .workspace-icon-btn {
+  color: var(--muted) !important;
+}
+
+body[data-app-theme="light"] .workspace-icon-btn:hover .zt-icon,
+body[data-app-theme="light"] .workspace-icon-btn:hover {
+  color: var(--accent) !important;
+}
+
+body[data-app-theme="light"] .workspace-nav-btn.active .zt-icon,
+body[data-app-theme="light"] .workspace-nav-btn.active {
+  color: var(--accent) !important;
+}
+
+/* 7. Settings Page Light Theme & Subtabs Contrast Overrides */
+body[data-app-theme="light"] .settings-page-head {
+  background: transparent !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
+}
+
+body[data-app-theme="light"] .settings-sidebar {
+  border-right: 1px solid rgba(203, 213, 225, 0.5) !important;
+}
+
+body[data-app-theme="light"] .settings-sidebar-head {
+  border-bottom: 1px solid rgba(203, 213, 225, 0.5) !important;
+}
+
+body[data-app-theme="light"] .settings-divider {
+  background: rgba(203, 213, 225, 0.5) !important;
+}
+
+body[data-app-theme="light"] .settings-subtabs {
+  background: rgba(15, 23, 42, 0.04) !important;
+  border: 1px solid rgba(203, 213, 225, 0.6) !important;
+  box-shadow: inset 0 1px 3px rgba(15, 23, 42, 0.06) !important;
+}
+
+body[data-app-theme="light"] .settings-subtab {
+  color: var(--muted) !important;
+}
+
+body[data-app-theme="light"] .settings-subtab:hover {
+  background: rgba(37, 99, 235, 0.04) !important;
+  color: var(--accent) !important;
+}
+
+body[data-app-theme="light"] .settings-subtab.active {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+}
+
+body[data-app-theme="light"] .settings-section h4 {
+  color: var(--text) !important;
+}
+
+body[data-app-theme="light"] .window-mock-header {
+  background: rgba(15, 23, 42, 0.03) !important;
+  border-bottom: 1px solid rgba(203, 213, 225, 0.5) !important;
+}
+
+body[data-app-theme="light"] .window-mock-title {
+  color: var(--muted) !important;
+}
+
+body[data-app-theme="light"] .window-mock-body pre {
+  color: #343b58 !important;
+}
+
+
+/* 8. Terminal Panel Light Theme Background & Scrollbars Overrides */
+body[data-app-theme="light"] #panel-terminal {
+  background: var(--bg-2) !important;
+}
+
+body[data-app-theme="light"] .hosts-grid-wrap,
+body[data-app-theme="light"] .settings-page-body,
+body[data-app-theme="light"] .sftp-pane .files-list,
+body[data-app-theme="light"] #file-editor-content .ace_scrollbar-v,
+body[data-app-theme="light"] #file-editor-content .ace_scrollbar-h,
+body[data-app-theme="light"] .pane-body .xterm .xterm-viewport {
+  scrollbar-color: #cbd5e1 #f1f5f9 !important;
+}
+
+body[data-app-theme="light"] .hosts-grid-wrap::-webkit-scrollbar-track,
+body[data-app-theme="light"] .settings-page-body::-webkit-scrollbar-track,
+body[data-app-theme="light"] .sftp-pane .files-list::-webkit-scrollbar-track,
+body[data-app-theme="light"] #file-editor-content .ace_scrollbar-v::-webkit-scrollbar-track,
+body[data-app-theme="light"] #file-editor-content .ace_scrollbar-h::-webkit-scrollbar-track,
+body[data-app-theme="light"] .pane-body .xterm .xterm-viewport::-webkit-scrollbar-track {
+  background: #f1f5f9 !important;
+  border-radius: 10px;
+}
+
+body[data-app-theme="light"] .hosts-grid-wrap::-webkit-scrollbar-thumb,
+body[data-app-theme="light"] .settings-page-body::-webkit-scrollbar-thumb,
+body[data-app-theme="light"] .sftp-pane .files-list::-webkit-scrollbar-thumb,
+body[data-app-theme="light"] #file-editor-content .ace_scrollbar-v::-webkit-scrollbar-thumb,
+body[data-app-theme="light"] #file-editor-content .ace_scrollbar-h::-webkit-scrollbar-thumb,
+body[data-app-theme="light"] .pane-body .xterm .xterm-viewport::-webkit-scrollbar-thumb {
+  background: #cbd5e1 !important;
+  border: 2px solid #f1f5f9 !important;
+  border-radius: 10px;
+}
+
+body[data-app-theme="light"] .hosts-grid-wrap::-webkit-scrollbar-thumb:hover,
+body[data-app-theme="light"] .settings-page-body::-webkit-scrollbar-thumb:hover,
+body[data-app-theme="light"] .sftp-pane .files-list::-webkit-scrollbar-thumb:hover,
+body[data-app-theme="light"] #file-editor-content .ace_scrollbar-v::-webkit-scrollbar-thumb:hover,
+body[data-app-theme="light"] #file-editor-content .ace_scrollbar-h::-webkit-scrollbar-thumb:hover,
+body[data-app-theme="light"] .pane-body .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8 !important;
+}
+
+/* 9. Modal Dialog Popups Light Theme & Contrast Overrides */
+body[data-app-theme="light"] .dialog h3 {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  background-clip: text !important;
+}
+
+body[data-app-theme="light"] .dialog p {
+  color: var(--muted) !important;
+}
+
+body[data-app-theme="light"] .dialog form label,
+body[data-app-theme="light"] .dialog label,
+body[data-app-theme="light"] .dialog label span {
+  color: var(--muted) !important;
+}
+
+body[data-app-theme="light"] .dialog form input[type="text"],
+body[data-app-theme="light"] .dialog form input[type="password"],
+body[data-app-theme="light"] .dialog form input[type="number"],
+body[data-app-theme="light"] .dialog form select,
+body[data-app-theme="light"] .dialog select {
+  background: #ffffff !important;
+  border-color: rgba(203, 213, 225, 0.8) !important;
+  color: var(--text) !important;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+}
+
+body[data-app-theme="light"] .dialog form input::placeholder {
+  color: var(--muted) !important;
+}
+
+body[data-app-theme="light"] .dialog form input:focus,
+body[data-app-theme="light"] .dialog form select:focus {
+  background: #ffffff !important;
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 8px rgba(37, 99, 235, 0.2) !important;
+}
+
+body[data-app-theme="light"] .dialog-actions button:not(.primary) {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%) !important;
+  border: 1px solid rgba(203, 213, 225, 0.8) !important;
+  color: var(--text) !important;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05) !important;
+}
+
+body[data-app-theme="light"] .dialog-actions button:not(.primary):hover {
+  background: #ffffff !important;
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+}
+
+/* 10. Dialog Fieldset Advanced Container Light Theme Border & Styling */
+body[data-app-theme="light"] fieldset.advanced {
+  border: 1px solid rgba(203, 213, 225, 0.5) !important;
+  background: rgba(15, 23, 42, 0.01) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+}
+
+body[data-app-theme="light"] fieldset.advanced legend {
+  color: #2563eb !important;
+}
+
+body[data-app-theme="light"] .forwards-label {
+  color: var(--muted) !important;
+}
+
+
+
+
+
+
