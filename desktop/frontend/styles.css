@@ -2700,6 +2700,42 @@ body[data-app-theme="light"] .about-card-label {
   height: 38px;
 }
 
+.dialog.permissions-dialog {
+  width: min(440px, calc(100vw - 24px));
+}
+
+.permissions-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.permissions-col {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.permissions-col-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #a9bde2;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+body[data-app-theme="light"] .permissions-col {
+  border-color: rgba(190, 173, 144, 0.42);
+  background: rgba(248, 242, 232, 0.88);
+}
+
+body[data-app-theme="light"] .permissions-col-title {
+  color: #86673a;
+}
+
 .settings-field {
   display: flex;
   flex-direction: column;
@@ -5701,16 +5737,29 @@ body[data-app-theme="light"] #groups-context-menu button:hover:not(:disabled) {
 body[data-app-theme="light"] .files-context-menu button:disabled,
 body[data-app-theme="light"] .hosts-context-menu button:disabled,
 body[data-app-theme="light"] #groups-context-menu button:disabled {
-  opacity: 0.38 !important;
-  color: var(--muted) !important;
+  opacity: 1 !important;
+  color: #b9ac97 !important;
   background: transparent !important;
   border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+body[data-app-theme="light"] .files-context-menu button.danger:disabled,
+body[data-app-theme="light"] .hosts-context-menu button.danger:disabled,
+body[data-app-theme="light"] #groups-context-menu button.danger:disabled {
+  color: #c6b8a3 !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
 }
 
 body[data-app-theme="light"] .files-context-menu button.danger,
 body[data-app-theme="light"] .hosts-context-menu button.danger,
 body[data-app-theme="light"] #groups-context-menu button.danger {
   color: var(--danger) !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
 }
 
 body[data-app-theme="light"] .files-context-menu button.danger:hover:not(:disabled),
@@ -5724,11 +5773,8 @@ body[data-app-theme="light"] #groups-context-menu button.danger:hover:not(:disab
 body[data-app-theme="light"] .files-context-menu .menu-separator,
 body[data-app-theme="light"] .hosts-context-menu .menu-separator,
 body[data-app-theme="light"] #groups-context-menu .menu-separator {
-  background: rgba(203, 213, 225, 0.5) !important;
+  background: rgba(190, 173, 144, 0.45) !important;
 }
-
-
-
 
 
 

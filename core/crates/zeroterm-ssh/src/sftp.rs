@@ -62,6 +62,7 @@ pub struct DirEntry {
 pub struct FileMetadata {
     pub kind: FileKind,
     pub size: u64,
+    pub permissions_mode: Option<u32>,
     /// Last modification time in milliseconds since the Unix epoch.
     /// `None` when the server didn't report mtime.
     pub modified_unix_ms: Option<i64>,
@@ -117,6 +118,7 @@ impl Sftp {
         Ok(FileMetadata {
             kind: metadata.file_type().into(),
             size: metadata.size.unwrap_or(0),
+            permissions_mode: metadata.permissions,
             modified_unix_ms: metadata.mtime.map(|s| (s as i64) * 1000),
         })
     }
@@ -295,6 +297,17 @@ impl Sftp {
     pub async fn create_dir(&self, path: &str) -> Result<(), SshError> {
         self.inner
             .create_dir(path.to_string())
+            .await
+            .map_err(map_sftp_err)?;
+        Ok(())
+    }
+
+    pub async fn chmod(&self, path: &str, mode: u32) -> Result<(), SshError> {
+        let mut attrs = self.inner.metadata(path.to_string()).await.map_err(map_sftp_err)?;
+        let file_type_bits = attrs.permissions.unwrap_or_default() & 0o170000;
+        attrs.permissions = Some(file_type_bits | (mode & 0o7777));
+        self.inner
+            .set_metadata(path.to_string(), attrs)
             .await
             .map_err(map_sftp_err)?;
         Ok(())

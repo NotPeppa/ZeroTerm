@@ -423,13 +423,14 @@ const I18N = {
     "files.menu.hide_hidden": "Hide Hidden Files",
     "files.menu.permissions": "Edit Permissions",
     "files.menu.select_all": "Select All",
-    "files.menu.close": "Close",
+    "files.menu.close": "Disconnect",
     "files.selection.count": "{count} selected",
     "files.status.connecting": "Connecting...",
     "files.status.listing": "Listing {path}...",
     "files.error.mkdir_failed": "mkdir failed: {error}",
     "files.prompt.new_folder": "New folder name:",
     "files.prompt.copy_target_dir": "Target directory path:",
+    "files.prompt.permissions": "Enter octal permissions (for example 644 or 755):",
     "files.empty": "(empty)",
     "files.error.open_failed": "open failed: {error}",
     "files.error.list_failed": "list failed: {error}",
@@ -460,7 +461,17 @@ const I18N = {
     "files.error.copy_entry_failed": "copy {name} failed: {error}",
     "files.error.copy_partial": "Copied {ok}/{total} item(s), first error: {error}",
     "files.confirm.overwrite": "{path} already exists. Overwrite it?",
+    "files.error.permissions_invalid": "Permissions must be a 3- or 4-digit octal value, for example 644 or 755.",
+    "files.status.permissions_updated": "Permissions updated: {name} -> {mode}",
     "files.error.permissions_not_supported": "Editing permissions is not available yet.",
+    "files.permissions.title": "Edit Permissions",
+    "files.permissions.octal": "Octal permissions",
+    "files.permissions.owner": "Owner",
+    "files.permissions.group": "Group",
+    "files.permissions.other": "Other",
+    "files.permissions.read": "Read",
+    "files.permissions.write": "Write",
+    "files.permissions.exec": "Execute",
     "files.progress.uploading": "Uploading",
     "files.progress.downloading": "Downloading",
     "files.progress.eta": "ETA {eta}",
@@ -923,13 +934,14 @@ const I18N = {
     "files.menu.hide_hidden": "不显示隐藏文件",
     "files.menu.permissions": "编辑权限",
     "files.menu.select_all": "全选",
-    "files.menu.close": "关闭",
+    "files.menu.close": "断开连接",
     "files.selection.count": "已选 {count} 项",
     "files.status.connecting": "连接中...",
     "files.status.listing": "正在列出 {path}...",
     "files.error.mkdir_failed": "创建目录失败：{error}",
     "files.prompt.new_folder": "新文件夹名称：",
     "files.prompt.copy_target_dir": "目标目录路径：",
+    "files.prompt.permissions": "请输入八进制权限（例如 644 或 755）：",
     "files.empty": "（空）",
     "files.error.open_failed": "打开失败：{error}",
     "files.error.list_failed": "列表读取失败：{error}",
@@ -959,7 +971,17 @@ const I18N = {
     "files.error.copy_entry_failed": "复制 {name} 失败：{error}",
     "files.error.copy_partial": "已复制 {ok}/{total} 项，首个错误：{error}",
     "files.confirm.overwrite": "{path} 已存在，是否覆盖？",
+    "files.error.permissions_invalid": "权限必须是 3 位或 4 位八进制值，例如 644 或 755。",
+    "files.status.permissions_updated": "权限已更新：{name} -> {mode}",
     "files.error.permissions_not_supported": "暂不支持编辑权限。",
+    "files.permissions.title": "编辑权限",
+    "files.permissions.octal": "八进制权限",
+    "files.permissions.owner": "所有者",
+    "files.permissions.group": "用户组",
+    "files.permissions.other": "其他人",
+    "files.permissions.read": "读",
+    "files.permissions.write": "写",
+    "files.permissions.exec": "执行",
     "files.progress.uploading": "上传中",
     "files.progress.downloading": "下载中",
     "files.progress.eta": "剩余 {eta}",
@@ -1791,6 +1813,24 @@ const textInputMessage = document.getElementById("text-input-message");
 const textInputValue = document.getElementById("text-input-value");
 const textInputCancelButton = document.getElementById("text-input-cancel");
 const textInputConfirmButton = document.getElementById("text-input-confirm");
+const permissionsOverlay = document.getElementById("permissions-overlay");
+const permissionsTitle = document.getElementById("permissions-title");
+const permissionsMessage = document.getElementById("permissions-message");
+const permissionsOctal = document.getElementById("permissions-octal");
+const permissionsError = document.getElementById("permissions-error");
+const permissionsCancelButton = document.getElementById("permissions-cancel");
+const permissionsConfirmButton = document.getElementById("permissions-confirm");
+const permissionCheckboxes = {
+  ownerRead: document.getElementById("permissions-owner-read"),
+  ownerWrite: document.getElementById("permissions-owner-write"),
+  ownerExec: document.getElementById("permissions-owner-exec"),
+  groupRead: document.getElementById("permissions-group-read"),
+  groupWrite: document.getElementById("permissions-group-write"),
+  groupExec: document.getElementById("permissions-group-exec"),
+  otherRead: document.getElementById("permissions-other-read"),
+  otherWrite: document.getElementById("permissions-other-write"),
+  otherExec: document.getElementById("permissions-other-exec"),
+};
 const quickConnectOverlay = document.getElementById("quick-connect-overlay");
 const quickConnectForm = document.getElementById("quick-connect-form");
 const quickConnectUser = document.getElementById("qc-user");
@@ -1810,6 +1850,9 @@ let quickConnectKeyPem = null;
 let hostsCache = [];
 let workspaceMode = "vaults";
 let textInputResolver = null;
+let permissionsResolver = null;
+let permissionsSyncingFromOctal = false;
+let permissionsSyncingFromChecks = false;
 let windowIsMaximized = false;
 let workspaceSidebarCollapsed = false;
 let selectedVaultHostId = null;
@@ -2389,6 +2432,84 @@ function openTextInputDialog({ title, message = "", defaultValue = "", placehold
     requestAnimationFrame(() => {
       textInputValue.focus();
       textInputValue.select();
+    });
+  });
+}
+
+function permissionsModeToCheckboxes(modeText) {
+  const normalized = normalizePermissionModeInput(modeText) || "000";
+  const mode = Number.parseInt(normalized, 8) & 0o777;
+  return {
+    ownerRead: Boolean(mode & 0o400),
+    ownerWrite: Boolean(mode & 0o200),
+    ownerExec: Boolean(mode & 0o100),
+    groupRead: Boolean(mode & 0o040),
+    groupWrite: Boolean(mode & 0o020),
+    groupExec: Boolean(mode & 0o010),
+    otherRead: Boolean(mode & 0o004),
+    otherWrite: Boolean(mode & 0o002),
+    otherExec: Boolean(mode & 0o001),
+  };
+}
+
+function permissionsCheckboxesToMode() {
+  let mode = 0;
+  if (permissionCheckboxes.ownerRead?.checked) mode |= 0o400;
+  if (permissionCheckboxes.ownerWrite?.checked) mode |= 0o200;
+  if (permissionCheckboxes.ownerExec?.checked) mode |= 0o100;
+  if (permissionCheckboxes.groupRead?.checked) mode |= 0o040;
+  if (permissionCheckboxes.groupWrite?.checked) mode |= 0o020;
+  if (permissionCheckboxes.groupExec?.checked) mode |= 0o010;
+  if (permissionCheckboxes.otherRead?.checked) mode |= 0o004;
+  if (permissionCheckboxes.otherWrite?.checked) mode |= 0o002;
+  if (permissionCheckboxes.otherExec?.checked) mode |= 0o001;
+  return mode.toString(8).padStart(3, "0");
+}
+
+function syncPermissionsCheckboxesFromOctal() {
+  if (!permissionsOctal) return;
+  const modeText = normalizePermissionModeInput(permissionsOctal.value);
+  if (!modeText) return;
+  permissionsSyncingFromOctal = true;
+  const next = permissionsModeToCheckboxes(modeText);
+  for (const [key, value] of Object.entries(next)) {
+    if (permissionCheckboxes[key]) permissionCheckboxes[key].checked = value;
+  }
+  permissionsSyncingFromOctal = false;
+}
+
+function syncPermissionsOctalFromCheckboxes() {
+  if (!permissionsOctal || permissionsSyncingFromOctal) return;
+  permissionsSyncingFromChecks = true;
+  permissionsOctal.value = permissionsCheckboxesToMode();
+  permissionsSyncingFromChecks = false;
+}
+
+function closePermissionsDialog(result) {
+  if (!permissionsResolver) return;
+  const resolve = permissionsResolver;
+  permissionsResolver = null;
+  permissionsOverlay.hidden = true;
+  permissionsError.hidden = true;
+  permissionsError.textContent = "";
+  permissionsOctal.value = "";
+  resolve(result);
+}
+
+function openPermissionsDialog({ defaultValue = "644" } = {}) {
+  if (permissionsResolver) closePermissionsDialog(null);
+  return new Promise((resolve) => {
+    permissionsResolver = resolve;
+    permissionsTitle.textContent = t("files.permissions.title");
+    permissionsMessage.textContent = t("files.prompt.permissions");
+    permissionsError.hidden = true;
+    permissionsError.textContent = "";
+    permissionsOctal.value = normalizePermissionModeInput(defaultValue) || "644";
+    syncPermissionsCheckboxesFromOctal();
+    permissionsOverlay.hidden = false;
+    requestAnimationFrame(() => {
+      permissionsOctal.focus();
+      permissionsOctal.select();
     });
   });
 }
@@ -4115,6 +4236,23 @@ function applyI18n() {
   }
   setText("text-input-cancel", "input.button.cancel");
   setText("text-input-confirm", "input.button.confirm");
+  setText("permissions-title", "files.permissions.title");
+  setText("permissions-message", "files.prompt.permissions");
+  setText("permissions-octal-label", "files.permissions.octal");
+  setText("permissions-owner-title", "files.permissions.owner");
+  setText("permissions-group-title", "files.permissions.group");
+  setText("permissions-other-title", "files.permissions.other");
+  setText("permissions-read-label", "files.permissions.read");
+  setText("permissions-write-label", "files.permissions.write");
+  setText("permissions-exec-label", "files.permissions.exec");
+  setText("permissions-read-label-2", "files.permissions.read");
+  setText("permissions-write-label-2", "files.permissions.write");
+  setText("permissions-exec-label-2", "files.permissions.exec");
+  setText("permissions-read-label-3", "files.permissions.read");
+  setText("permissions-write-label-3", "files.permissions.write");
+  setText("permissions-exec-label-3", "files.permissions.exec");
+  setText("permissions-cancel", "input.button.cancel");
+  setText("permissions-confirm", "input.button.confirm");
   setPlaceholder("text-input-value", "input.placeholder");
 
   if (!views.hosts.hidden) {
@@ -5113,6 +5251,41 @@ textInputValue.addEventListener("keydown", (ev) => {
     ev.preventDefault();
     closeTextInputDialog(textInputValue.value.trim());
   }
+});
+
+permissionsCancelButton.addEventListener("click", () => closePermissionsDialog(null));
+permissionsConfirmButton.addEventListener("click", () => {
+  const modeText = normalizePermissionModeInput(permissionsOctal.value);
+  if (!modeText) {
+    permissionsError.textContent = t("files.error.permissions_invalid");
+    permissionsError.hidden = false;
+    return;
+  }
+  closePermissionsDialog(modeText);
+});
+permissionsOverlay.addEventListener("click", (ev) => {
+  if (ev.target === permissionsOverlay) closePermissionsDialog(null);
+});
+permissionsOctal.addEventListener("input", () => {
+  permissionsError.hidden = true;
+  if (!permissionsSyncingFromChecks) syncPermissionsCheckboxesFromOctal();
+});
+permissionsOctal.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape") {
+    ev.preventDefault();
+    closePermissionsDialog(null);
+    return;
+  }
+  if (ev.key === "Enter") {
+    ev.preventDefault();
+    permissionsConfirmButton.click();
+  }
+});
+Object.values(permissionCheckboxes).forEach((checkbox) => {
+  checkbox?.addEventListener("change", () => {
+    permissionsError.hidden = true;
+    syncPermissionsOctalFromCheckboxes();
+  });
 });
 
 newWindowButton.addEventListener("click", () => {
@@ -7680,12 +7853,10 @@ function syncSftpHostOptions() {
     pane.hostSelect.dataset.emptyDisplay = "";
     pane.hostSelect.innerHTML = "";
 
-    if (pane.key === "right") {
-      const empty = document.createElement("option");
-      empty.value = "";
-      empty.textContent = t("sftp.host.placeholder");
-      pane.hostSelect.appendChild(empty);
-    }
+    const empty = document.createElement("option");
+    empty.value = "";
+    empty.textContent = t("sftp.host.placeholder");
+    pane.hostSelect.appendChild(empty);
 
     const local = document.createElement("option");
     local.value = LOCAL_HOST_ID;
@@ -7704,7 +7875,7 @@ function syncSftpHostOptions() {
       pane.hostId = LOCAL_HOST_ID;
     }
     pane.hostSelect.value = pane.key === "left" ? pane.hostId || LOCAL_HOST_ID : selected;
-    if (pane.key === "right" && !pane.hostSelect.value) pane.hostSelect.value = "";
+    if (!pane.hostSelect.value) pane.hostSelect.value = "";
     const localSelected = pane.hostSelect.value === LOCAL_HOST_ID;
     const selectedHost = hostsCache.find((h) => h.id === pane.hostSelect.value) || null;
     pane.hostSelect.title = localSelected
@@ -7949,7 +8120,7 @@ async function navigateSftpPane(pane, path, { source = "user", retryOnReconnect 
     normalizePaneSelection(pane);
     renderSftpPathBar(pane);
     pane.statusEl.textContent = local
-      ? t("sftp.status.local", { path: pane.path })
+      ? ""
       : pane.host
         ? t("sftp.status.connected", { name: pane.host.name })
         : "";
@@ -8220,7 +8391,7 @@ function showFilesContextMenu(pane, entry, x, y) {
   setFilesContextNodeVisible(filesMenuClose, true);
 
   filesMenuOpen.disabled = !(connected && hasSingleTarget);
-  filesMenuOpenWith.disabled = !(connected && !local && canInlineEdit);
+  filesMenuOpenWith.disabled = !(connected && isFile);
   filesMenuCopy.disabled = !(connected && !local && hasSingleTarget && isFile);
   filesMenuRename.disabled = !(connected && hasSingleTarget);
   filesMenuDelete.disabled = !(connected && hasDeleteTarget);
@@ -8228,11 +8399,11 @@ function showFilesContextMenu(pane, entry, x, y) {
   filesMenuMkdir.disabled = !connected;
   filesMenuUpload.disabled = !connected || local;
   filesMenuHidden.disabled = !connected;
-  filesMenuPermissions.disabled = true;
+  filesMenuPermissions.disabled = !(connected && hasSingleTarget);
   filesMenuSelectAll.disabled = !(connected && getVisibleEntriesForPane(pane).length > 0);
   filesMenuEdit.disabled = !(connected && canInlineEdit);
   filesMenuDownload.disabled = !(connected && !local && canDownload);
-  filesMenuClose.disabled = false;
+  filesMenuClose.disabled = !connected;
   filesMenuHidden.textContent = pane.showHidden ? t("files.menu.hide_hidden") : t("files.menu.show_hidden");
 
   filesContextMenu.style.left = "0px";
@@ -8299,6 +8470,41 @@ async function sftpDownloadFile(pane, entry) {
   } catch (e) {
     pane.statusEl.textContent = t("files.error.download_failed", { error: e });
   }
+}
+
+async function openEntryWithLocalApp(pane, entry) {
+  if (!pane || !entry || entry.kind !== "file") return;
+  const defaultAppPath = isMacPlatform
+    ? "/Applications"
+    : isWindowsPlatform
+      ? "C:\\Program Files"
+      : "/usr/bin";
+  const picked = await invoke("plugin:dialog|open", {
+    options: {
+      multiple: false,
+      directory: false,
+      title: t("files.menu.open_with"),
+      defaultPath: defaultAppPath,
+    },
+  });
+  if (!picked) return;
+
+  let localPath = "";
+  if (isLocalPane(pane)) {
+    localPath = joinPanePath(pane, entry.name);
+  } else {
+    localPath = await invoke("temp_open_path", { fileName: entry.name });
+    await invoke("sftp_download", {
+      sftpId: pane.sftpId,
+      remote: joinPanePath(pane, entry.name),
+      local: localPath,
+    });
+  }
+
+  await invoke("open_with_app", {
+    filePath: localPath,
+    appPath: String(picked),
+  });
 }
 
 async function sftpRenameEntry(pane, entry) {
@@ -8428,6 +8634,50 @@ async function sftpCopyEntry(pane, entry) {
     }
   } catch (e) {
     pane.statusEl.textContent = t("files.error.copy_failed", { error: e });
+  }
+}
+
+function normalizePermissionModeInput(raw) {
+  const text = String(raw || "").trim();
+  if (!/^[0-7]{3,4}$/.test(text)) return null;
+  return text.length === 4 && text.startsWith("0") ? text.slice(1) : text;
+}
+
+async function editEntryPermissions(pane, entry) {
+  if (!pane || !entry) return;
+  const target = joinPanePath(pane, entry.name);
+  let defaultMode = "644";
+  try {
+    const info = isLocalPane(pane)
+      ? await invoke("local_permission_mode", { path: target })
+      : await invoke("sftp_permission_mode", { sftpId: pane.sftpId, path: target });
+    if (info?.mode !== undefined && info?.mode !== null) {
+      defaultMode = Number(info.mode).toString(8).padStart(3, "0");
+    }
+  } catch (e) {
+    console.warn("read permission mode failed", e);
+  }
+  const rawMode = await openPermissionsDialog({ defaultValue: defaultMode });
+  if (rawMode === null) return;
+  const modeText = normalizePermissionModeInput(rawMode);
+  if (!modeText) {
+    pane.statusEl.textContent = t("files.error.permissions_invalid");
+    return;
+  }
+  const mode = Number.parseInt(modeText, 8);
+  try {
+    if (isLocalPane(pane)) {
+      await invoke("local_chmod", { path: target, mode });
+    } else {
+      await invoke("sftp_chmod", { sftpId: pane.sftpId, path: target, mode });
+    }
+    pane.statusEl.textContent = t("files.status.permissions_updated", {
+      name: entry.name,
+      mode: modeText,
+    });
+    await navigateSftpPane(pane, pane.path);
+  } catch (e) {
+    pane.statusEl.textContent = String(e);
   }
 }
 
@@ -9008,7 +9258,7 @@ filesMenuOpenWith.addEventListener("click", async () => {
   const entry = getFilesContextEntry(pane);
   hideFilesContextMenu();
   if (!pane || !entry || entry.kind !== "file") return;
-  await openSftpEntry(pane, entry, { forceEditor: true });
+  await openEntryWithLocalApp(pane, entry);
 });
 
 filesMenuCopy.addEventListener("click", async () => {
@@ -9065,11 +9315,12 @@ filesMenuHidden.addEventListener("click", () => {
   pane.statusEl.textContent = pane.showHidden ? t("files.status.hidden_shown") : t("files.status.hidden_hidden");
 });
 
-filesMenuPermissions.addEventListener("click", () => {
+filesMenuPermissions.addEventListener("click", async () => {
   const pane = getFilesContextPane();
+  const entry = getFilesContextEntry(pane);
   hideFilesContextMenu();
-  if (!pane || !isPaneConnected(pane)) return;
-  pane.statusEl.textContent = t("files.error.permissions_not_supported");
+  if (!pane || !isPaneConnected(pane) || !entry) return;
+  await editEntryPermissions(pane, entry);
 });
 
 filesMenuSelectAll.addEventListener("click", () => {
@@ -9098,8 +9349,18 @@ filesMenuDownload.addEventListener("click", async () => {
   await sftpDownloadFile(pane, entry);
 });
 
-filesMenuClose.addEventListener("click", () => {
+filesMenuClose.addEventListener("click", async () => {
+  const pane = getFilesContextPane();
   hideFilesContextMenu();
+  if (!pane || !isPaneConnected(pane)) return;
+  await disconnectSftpPane(pane);
+  pane.hostId = "";
+  pane.host = null;
+  pane.connectedHostId = null;
+  pane.hostSelect.value = "";
+  pane.hostSelect.title = t("sftp.host.placeholder");
+  if (pane.hostSelect?.id) syncCustomSelect(pane.hostSelect.id);
+  renderSftpPane(pane);
 });
 
 fileEditorCancelButton.addEventListener("click", () => closeRemoteEditor());

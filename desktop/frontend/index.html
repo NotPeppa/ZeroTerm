@@ -973,6 +973,42 @@ $ npm run build && npm run start</pre>
         </div>
       </div>
 
+      <div id="permissions-overlay" class="overlay" hidden>
+        <div class="dialog permissions-dialog">
+          <h3 id="permissions-title">编辑权限</h3>
+          <p id="permissions-message" class="muted">请输入八进制权限，或直接勾选 rwx。</p>
+          <label class="full-row">
+            <span id="permissions-octal-label">八进制权限</span>
+            <input id="permissions-octal" type="text" autocomplete="off" spellcheck="false" placeholder="644" />
+          </label>
+          <div class="permissions-grid">
+            <div class="permissions-col">
+              <div id="permissions-owner-title" class="permissions-col-title">Owner</div>
+              <label class="checkbox slim"><input id="permissions-owner-read" type="checkbox" /><span id="permissions-read-label">Read</span></label>
+              <label class="checkbox slim"><input id="permissions-owner-write" type="checkbox" /><span id="permissions-write-label">Write</span></label>
+              <label class="checkbox slim"><input id="permissions-owner-exec" type="checkbox" /><span id="permissions-exec-label">Execute</span></label>
+            </div>
+            <div class="permissions-col">
+              <div id="permissions-group-title" class="permissions-col-title">Group</div>
+              <label class="checkbox slim"><input id="permissions-group-read" type="checkbox" /><span id="permissions-read-label-2">Read</span></label>
+              <label class="checkbox slim"><input id="permissions-group-write" type="checkbox" /><span id="permissions-write-label-2">Write</span></label>
+              <label class="checkbox slim"><input id="permissions-group-exec" type="checkbox" /><span id="permissions-exec-label-2">Execute</span></label>
+            </div>
+            <div class="permissions-col">
+              <div id="permissions-other-title" class="permissions-col-title">Other</div>
+              <label class="checkbox slim"><input id="permissions-other-read" type="checkbox" /><span id="permissions-read-label-3">Read</span></label>
+              <label class="checkbox slim"><input id="permissions-other-write" type="checkbox" /><span id="permissions-write-label-3">Write</span></label>
+              <label class="checkbox slim"><input id="permissions-other-exec" type="checkbox" /><span id="permissions-exec-label-3">Execute</span></label>
+            </div>
+          </div>
+          <p id="permissions-error" class="error" hidden></p>
+          <div class="dialog-actions">
+            <button id="permissions-cancel" type="button">取消</button>
+            <button id="permissions-confirm" type="button" class="primary">确定</button>
+          </div>
+        </div>
+      </div>
+
       <div id="theme-card-menu" class="hosts-context-menu" hidden>
         <button id="theme-menu-edit" type="button">编辑主题</button>
         <button id="theme-menu-duplicate" type="button">复制为自定义</button>

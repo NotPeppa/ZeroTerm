@@ -14,6 +14,7 @@ use std::process::Command;
 #[cfg(not(target_os = "windows"))]
 use tokio::process::Command;
 use std::{
+    env,
     fs,
     path::{Path, PathBuf},
 };
@@ -44,6 +45,12 @@ pub struct VaultStatus {
     pub path: String,
     pub exists: bool,
     pub unlocked: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FilePermissionModeDto {
+    pub mode: Option<u32>,
 }
 
 #[tauri::command]
@@ -2265,6 +2272,98 @@ pub async fn local_rename(from: String, to: String) -> Result<(), String> {
     fs::rename(&from, &to).map_err(|e| format!("rename {} -> {}: {e}", from, to))
 }
 
+#[tauri::command]
+pub async fn local_permission_mode(path: String) -> Result<FilePermissionModeDto, String> {
+    let meta = fs::metadata(&path).map_err(|e| format!("stat {}: {e}", path))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        return Ok(FilePermissionModeDto {
+            mode: Some(meta.mode() & 0o7777),
+        });
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = meta;
+        Ok(FilePermissionModeDto { mode: None })
+    }
+}
+
+#[tauri::command]
+pub async fn local_chmod(path: String, mode: u32) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = fs::Permissions::from_mode(mode & 0o7777);
+        fs::set_permissions(&path, perms).map_err(|e| format!("chmod {} {:o}: {e}", path, mode))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (path, mode);
+        Err("editing permissions is only supported on Unix-like systems in this build".to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn temp_open_path(file_name: String) -> Result<String, String> {
+    let safe_name = Path::new(&file_name)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or("file.bin");
+    let mut dir = env::temp_dir();
+    dir.push("zeroterm-open-with");
+    fs::create_dir_all(&dir).map_err(|e| format!("mkdir {}: {e}", dir.display()))?;
+
+    let stem = Path::new(safe_name)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("file");
+    let ext = Path::new(safe_name)
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("");
+    let unique = uuid::Uuid::new_v4().to_string();
+    let target_name = if ext.is_empty() {
+        format!("{stem}-{unique}")
+    } else {
+        format!("{stem}-{unique}.{ext}")
+    };
+    Ok(dir.join(target_name).to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn open_with_app(file_path: String, app_path: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg("-a")
+            .arg(&app_path)
+            .arg(&file_path)
+            .spawn()
+            .map_err(|e| format!("open -a {} {}: {e}", app_path, file_path))?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        Command::new(&app_path)
+            .arg(&file_path)
+            .spawn()
+            .map_err(|e| format!("launch {} {}: {e}", app_path, file_path))?;
+        return Ok(());
+    }
+
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    {
+        Command::new(&app_path)
+            .arg(&file_path)
+            .spawn()
+            .map_err(|e| format!("launch {} {}: {e}", app_path, file_path))?;
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CopyNodeKind {
     File,
@@ -3017,6 +3116,19 @@ pub async fn sftp_read_text(
     })
 }
 
+#[tauri::command]
+pub async fn sftp_permission_mode(
+    state: State<'_, AppState>,
+    sftp_id: u64,
+    path: String,
+) -> Result<FilePermissionModeDto, String> {
+    let sftp = lookup_sftp(&state, sftp_id)?;
+    let meta = sftp.stat(&path).await.map_err(|e| e.to_string())?;
+    Ok(FilePermissionModeDto {
+        mode: meta.permissions_mode.map(|m| m & 0o7777),
+    })
+}
+
 /// Save UTF-8 text content back to a remote file path.
 #[tauri::command]
 pub async fn sftp_write_text(
@@ -3039,6 +3151,17 @@ pub async fn sftp_write_text(
         .await
         .map_err(|e| e.to_string())?;
     Ok(size)
+}
+
+#[tauri::command]
+pub async fn sftp_chmod(
+    state: State<'_, AppState>,
+    sftp_id: u64,
+    path: String,
+    mode: u32,
+) -> Result<(), String> {
+    let sftp = lookup_sftp(&state, sftp_id)?;
+    sftp.chmod(&path, mode).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
