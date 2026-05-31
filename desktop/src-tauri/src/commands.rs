@@ -20,7 +20,9 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use tauri::{AppHandle, Emitter, Manager, State};
+use futures_util::StreamExt;
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 use portable_pty::{CommandBuilder, PtySize as LocalPtySize};
@@ -53,6 +55,209 @@ pub struct FilePermissionModeDto {
     pub mode: Option<u32>,
 }
 
+const AI_CONFIG_FILE: &str = "ai-config.json";
+const AI_KEYCHAIN_PROFILE: &str = "default";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiConfig {
+    pub provider: String,
+    pub base_url: String,
+    pub model: String,
+    pub safe_mode: bool,
+    pub auto_read: bool,
+    pub show_commands: bool,
+    #[serde(default)]
+    pub has_api_key: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveAiConfigInput {
+    pub provider: String,
+    pub base_url: String,
+    pub model: String,
+    #[serde(default)]
+    pub api_key: String,
+    pub safe_mode: bool,
+    pub auto_read: bool,
+    pub show_commands: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiChatMessage {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiChatResponse {
+    pub content: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiChatStreamInput {
+    pub request_id: String,
+    pub messages: Vec<AiChatMessage>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiStreamEvent {
+    pub request_id: String,
+    pub delta: String,
+    pub done: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiChatResponse {
+    choices: Vec<OpenAiChoice>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiChoice {
+    message: OpenAiMessage,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiMessage {
+    content: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiStreamChunk {
+    choices: Vec<OpenAiStreamChoice>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiStreamChoice {
+    delta: OpenAiStreamDelta,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiStreamDelta {
+    content: Option<String>,
+}
+
+fn default_ai_config() -> AiConfig {
+    AiConfig {
+        provider: "openai-compatible".to_string(),
+        base_url: "".to_string(),
+        model: "gpt-4.1".to_string(),
+        safe_mode: true,
+        auto_read: true,
+        show_commands: false,
+        has_api_key: false,
+    }
+}
+
+fn ai_config_path() -> Result<PathBuf, String> {
+    let base = dirs::config_dir()
+        .ok_or_else(|| "no config directory on this OS".to_string())?
+        .join("ZeroTerm");
+    Ok(base.join(AI_CONFIG_FILE))
+}
+
+fn normalize_ai_config(mut cfg: AiConfig) -> AiConfig {
+    if cfg.provider.trim().is_empty() {
+        cfg.provider = "openai-compatible".to_string();
+    }
+    cfg.base_url = cfg.base_url.trim().trim_end_matches('/').to_string();
+    if cfg.base_url.is_empty() && cfg.provider == "openai" {
+        cfg.base_url = "https://api.openai.com/v1".to_string();
+    }
+    if cfg.model.trim().is_empty() {
+        cfg.model = "gpt-4.1".to_string();
+    } else {
+        cfg.model = cfg.model.trim().to_string();
+    }
+    cfg
+}
+
+fn read_ai_config_from_disk() -> Result<AiConfig, String> {
+    let path = ai_config_path()?;
+    if !path.exists() {
+        return Ok(default_ai_config());
+    }
+    let text = fs::read_to_string(&path).map_err(|e| format!("reading {}: {e}", path.display()))?;
+    let cfg: AiConfig = serde_json::from_str(&text)
+        .map_err(|e| format!("parsing {}: {e}", path.display()))?;
+    Ok(normalize_ai_config(cfg))
+}
+
+fn write_ai_config_to_disk(cfg: &AiConfig) -> Result<(), String> {
+    let path = ai_config_path()?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("creating {}: {e}", parent.display()))?;
+    }
+    let text = serde_json::to_string_pretty(cfg).map_err(|e| e.to_string())?;
+    fs::write(&path, text).map_err(|e| format!("writing {}: {e}", path.display()))
+}
+
+fn prepare_ai_request(messages: Vec<AiChatMessage>) -> Result<(AiConfig, String, Vec<serde_json::Value>), String> {
+    let cfg = read_ai_config_from_disk()?;
+    if cfg.provider != "openai-compatible" && cfg.provider != "openai" {
+        return Err("This preview only supports OpenAI-compatible APIs for now.".into());
+    }
+    if cfg.base_url.trim().is_empty() {
+        return Err("AI Base URL is not configured. Set it in Settings > AI.".into());
+    }
+    if messages.is_empty() {
+        return Err("message is empty".into());
+    }
+
+    let api_key = zeroterm_app::keychain::get_ai_api_key(AI_KEYCHAIN_PROFILE)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "AI API Key is not configured.".to_string())?;
+
+    let payload_messages: Vec<_> = messages
+        .into_iter()
+        .filter_map(|m| {
+            let role = m.role.trim();
+            let content = m.content.trim();
+            if content.is_empty() {
+                return None;
+            }
+            let role = match role {
+                "system" | "assistant" | "user" => role,
+                _ => "user",
+            };
+            Some(json!({ "role": role, "content": content }))
+        })
+        .collect();
+    if payload_messages.is_empty() {
+        return Err("message is empty".into());
+    }
+    Ok((cfg, api_key, payload_messages))
+}
+
+fn emit_ai_stream(app: &AppHandle, event: AiStreamEvent) {
+    let _ = app.emit("ai:stream", event);
+}
+
+fn emit_ai_stream_error(app: &AppHandle, request_id: &str, error: String) {
+    emit_ai_stream(app, AiStreamEvent {
+        request_id: request_id.to_string(),
+        delta: String::new(),
+        done: true,
+        error: Some(error),
+    });
+}
+
+fn parse_sse_frames(buffer: &mut String) -> Vec<String> {
+    let mut frames = Vec::new();
+    while let Some(idx) = buffer.find("\n\n") {
+        let frame = buffer[..idx].to_string();
+        buffer.drain(..idx + 2);
+        frames.push(frame);
+    }
+    frames
+}
+
 #[tauri::command]
 pub async fn vault_status(state: State<'_, AppState>) -> Result<VaultStatus, String> {
     let path = zeroterm_app::default_vault_path()
@@ -64,6 +269,189 @@ pub async fn vault_status(state: State<'_, AppState>) -> Result<VaultStatus, Str
         exists,
         unlocked,
     })
+}
+
+#[tauri::command]
+pub async fn get_ai_config() -> Result<AiConfig, String> {
+    let mut cfg = read_ai_config_from_disk()?;
+    cfg.has_api_key = zeroterm_app::keychain::get_ai_api_key(AI_KEYCHAIN_PROFILE)
+        .map_err(|e| e.to_string())?
+        .is_some();
+    Ok(cfg)
+}
+
+#[tauri::command]
+pub async fn save_ai_config(input: SaveAiConfigInput) -> Result<AiConfig, String> {
+    let mut cfg = normalize_ai_config(AiConfig {
+        provider: input.provider,
+        base_url: input.base_url,
+        model: input.model,
+        safe_mode: input.safe_mode,
+        auto_read: input.auto_read,
+        show_commands: input.show_commands,
+        has_api_key: false,
+    });
+
+    let api_key = input.api_key.trim();
+    if !api_key.is_empty() {
+        zeroterm_app::keychain::save_ai_api_key(AI_KEYCHAIN_PROFILE, api_key)
+            .map_err(|e| e.to_string())?;
+        cfg.has_api_key = true;
+    } else {
+        cfg.has_api_key = zeroterm_app::keychain::get_ai_api_key(AI_KEYCHAIN_PROFILE)
+            .map_err(|e| e.to_string())?
+            .is_some();
+    }
+
+    write_ai_config_to_disk(&cfg)?;
+    Ok(cfg)
+}
+
+#[tauri::command]
+pub async fn ai_chat(messages: Vec<AiChatMessage>) -> Result<AiChatResponse, String> {
+    let (cfg, api_key, payload_messages) = prepare_ai_request(messages)?;
+    let endpoint = format!("{}/chat/completions", cfg.base_url.trim_end_matches('/'));
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(90))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let response = client
+        .post(endpoint)
+        .bearer_auth(api_key)
+        .json(&json!({
+            "model": cfg.model,
+            "messages": payload_messages,
+            "temperature": 0.2,
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("AI request failed: {e}"))?;
+
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .map_err(|e| format!("reading AI response failed: {e}"))?;
+    if !status.is_success() {
+        return Err(format!("AI request failed ({status}): {body}"));
+    }
+
+    let parsed: OpenAiChatResponse = serde_json::from_str(&body)
+        .map_err(|e| format!("parsing AI response failed: {e}"))?;
+    let content = parsed
+        .choices
+        .into_iter()
+        .find_map(|c| c.message.content)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if content.is_empty() {
+        return Err("AI response was empty.".into());
+    }
+    Ok(AiChatResponse { content })
+}
+
+#[tauri::command]
+pub async fn ai_chat_stream(app: AppHandle, input: AiChatStreamInput) -> Result<(), String> {
+    let request_id = input.request_id.trim().to_string();
+    if request_id.is_empty() {
+        return Err("request id is empty".into());
+    }
+
+    let (cfg, api_key, payload_messages) = match prepare_ai_request(input.messages) {
+        Ok(v) => v,
+        Err(e) => {
+            emit_ai_stream_error(&app, &request_id, e.clone());
+            return Err(e);
+        }
+    };
+    let endpoint = format!("{}/chat/completions", cfg.base_url.trim_end_matches('/'));
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(120))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let response = match client
+        .post(endpoint)
+        .bearer_auth(api_key)
+        .json(&json!({
+            "model": cfg.model,
+            "messages": payload_messages,
+            "temperature": 0.2,
+            "stream": true,
+        }))
+        .send()
+        .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            let msg = format!("AI request failed: {e}");
+            emit_ai_stream_error(&app, &request_id, msg.clone());
+            return Err(msg);
+        }
+    };
+
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        let msg = format!("AI request failed ({status}): {body}");
+        emit_ai_stream_error(&app, &request_id, msg.clone());
+        return Err(msg);
+    }
+
+    let mut stream = response.bytes_stream();
+    let mut buffer = String::new();
+    while let Some(item) = stream.next().await {
+        let bytes = match item {
+            Ok(v) => v,
+            Err(e) => {
+                let msg = format!("AI stream failed: {e}");
+                emit_ai_stream_error(&app, &request_id, msg.clone());
+                return Err(msg);
+            }
+        };
+        buffer.push_str(&String::from_utf8_lossy(&bytes));
+        for frame in parse_sse_frames(&mut buffer) {
+            for line in frame.lines() {
+                let line = line.trim();
+                if !line.starts_with("data:") {
+                    continue;
+                }
+                let data = line.trim_start_matches("data:").trim();
+                if data == "[DONE]" {
+                    emit_ai_stream(&app, AiStreamEvent {
+                        request_id: request_id.clone(),
+                        delta: String::new(),
+                        done: true,
+                        error: None,
+                    });
+                    return Ok(());
+                }
+                let parsed: OpenAiStreamChunk = match serde_json::from_str(data) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+                for choice in parsed.choices {
+                    if let Some(delta) = choice.delta.content {
+                        if !delta.is_empty() {
+                            emit_ai_stream(&app, AiStreamEvent {
+                                request_id: request_id.clone(),
+                                delta,
+                                done: false,
+                                error: None,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+    emit_ai_stream(&app, AiStreamEvent {
+        request_id,
+        delta: String::new(),
+        done: true,
+        error: None,
+    });
+    Ok(())
 }
 
 #[tauri::command]

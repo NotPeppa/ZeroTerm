@@ -212,7 +212,100 @@
                     <div id="vault-welcome" class="vault-welcome">
                       <h2>ZeroTerm</h2>
                     </div>
-                    <div id="terminal-workspace" class="terminal-workspace" hidden></div>
+                    <div id="terminal-session-layout" class="terminal-session-layout" hidden>
+                      <div id="terminal-workspace" class="terminal-workspace"></div>
+                      <div id="ai-panel-splitter" class="ai-panel-splitter" role="separator" aria-orientation="vertical" aria-label="调整 AI 面板宽度"></div>
+                      <aside class="ai-assistant-panel" aria-label="AI 助手">
+                        <header class="ai-assistant-header">
+                          <div class="ai-assistant-title">
+                            <span class="ai-assistant-mark" aria-hidden="true">
+                              <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                <rect x="7" y="7" width="10" height="10" rx="2"></rect>
+                                <path d="M9 2v3"></path>
+                                <path d="M15 2v3"></path>
+                                <path d="M9 19v3"></path>
+                                <path d="M15 19v3"></path>
+                                <path d="M2 9h3"></path>
+                                <path d="M2 15h3"></path>
+                                <path d="M19 9h3"></path>
+                                <path d="M19 15h3"></path>
+                              </svg>
+                            </span>
+                            <div>
+                              <strong>AI 助手</strong>
+                              <span>当前 SSH 会话</span>
+                            </div>
+                          </div>
+                          <div class="ai-safe-pill" title="危险操作会先询问你">
+                            <span aria-hidden="true"></span>
+                            安全模式
+                          </div>
+                        </header>
+
+                        <div class="ai-assistant-body">
+                          <div id="ai-chat-log" class="ai-chat-log" hidden></div>
+                          <div id="ai-empty-state" class="ai-empty-state">
+                          <section class="ai-hero-card">
+                            <p class="ai-kicker">自然语言操作</p>
+                            <h3>告诉 AI 你的目标，不需要会命令。</h3>
+                            <p>
+                              AI 会理解当前服务器环境，先说明计划，确认后再操作。命令和日志默认折叠，需要时可以展开查看。
+                            </p>
+                          </section>
+
+                          <section class="ai-process-card" aria-label="AI 工作流程">
+                            <div class="ai-process-step">
+                              <span>1</span>
+                              <div>
+                                <strong>理解目标</strong>
+                                <p>把你的描述拆成可执行任务。</p>
+                              </div>
+                            </div>
+                            <div class="ai-process-step">
+                              <span>2</span>
+                              <div>
+                                <strong>制定计划</strong>
+                                <p>先做只读检查，再说明需要的操作。</p>
+                              </div>
+                            </div>
+                            <div class="ai-process-step">
+                              <span>3</span>
+                              <div>
+                                <strong>确认后执行</strong>
+                                <p>删除、覆盖、重启等风险动作会单独确认。</p>
+                              </div>
+                            </div>
+                          </section>
+
+                          <section class="ai-examples" aria-label="示例目标">
+                            <div class="ai-section-title">试着这样说</div>
+                            <button type="button" data-ai-example="帮我把当前项目运行起来">帮我把当前项目运行起来</button>
+                            <button type="button" data-ai-example="检查这台服务器是否正常">检查这台服务器是否正常</button>
+                            <button type="button" data-ai-example="解释刚才终端里的错误">解释刚才终端里的错误</button>
+                            <button type="button" data-ai-example="把这个目录打包备份一下">把这个目录打包备份一下</button>
+                          </section>
+                          </div>
+                        </div>
+
+                        <form class="ai-compose" id="ai-compose-form">
+                          <textarea
+                            id="ai-compose-input"
+                            rows="3"
+                            placeholder="描述你的目标，例如：帮我把这个项目运行起来"
+                            autocomplete="off"
+                          ></textarea>
+                          <div class="ai-compose-footer">
+                            <span>Enter 发送，Shift+Enter 换行</span>
+                            <button type="submit" class="ai-send-button" aria-label="发送给 AI">
+                              <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M12 19V5"></path>
+                                <path d="m5 12 7-7 7 7"></path>
+                              </svg>
+                            </button>
+                          </div>
+                        </form>
+                      </aside>
+                    </div>
                     <div id="settings-page" class="settings-page" hidden>
                       <div class="settings-layout">
                         <aside class="settings-sidebar">
@@ -224,6 +317,7 @@
                             <div id="settings-nav-pref" class="settings-nav-label">偏好</div>
                             <button id="settings-nav-general" type="button" class="settings-nav-item active"><svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>常规</button>
                             <button id="settings-nav-terminal" type="button" class="settings-nav-item"><svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="21" y1="9" x2="3" y2="9"></line><path d="m8 14-2 2 2 2"></path><line x1="12" y1="18" x2="16" y2="18"></line></svg>终端</button>
+                            <button id="settings-nav-ai" type="button" class="settings-nav-item"><svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 4.8L18.5 10l-4.7 2.2L12 17l-1.8-4.8L5.5 10l4.7-2.2z"></path><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"></path></svg>AI</button>
                             <button id="settings-nav-sync" type="button" class="settings-nav-item"><svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>同步</button>
                             <button id="settings-nav-data" type="button" class="settings-nav-item"><svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"></path></svg>数据管理</button>
                             <button id="settings-nav-about" type="button" class="settings-nav-item"><svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>关于</button>
@@ -386,6 +480,84 @@ $ npm run build && npm run start</pre>
                                 </div>
                               </div>
                             </section>
+                          </section>
+
+                          <section id="settings-ai-panel" class="settings-panel" hidden>
+                            <section class="settings-section ai-settings-card">
+                              <div class="ai-settings-head">
+                                <div>
+                                  <h4 id="settings-ai-provider-title">AI 服务</h4>
+                                  <p id="settings-ai-provider-desc" class="muted tiny">配置用于终端助手的模型服务。支持 OpenAI 兼容接口，密钥后续会保存到系统钥匙串。</p>
+                                </div>
+                                <span id="settings-ai-safe-badge" class="ai-settings-badge">安全模式</span>
+                              </div>
+
+                              <div class="settings-grid-2 ai-settings-grid">
+                                <label class="settings-field">
+                                  <span id="settings-ai-provider-label">服务商</span>
+                                  <select id="settings-ai-provider">
+                                    <option value="openai-compatible">OpenAI Compatible</option>
+                                    <option value="openai">OpenAI</option>
+                                    <option value="anthropic">Anthropic</option>
+                                    <option value="gemini">Gemini</option>
+                                    <option value="ollama">Ollama</option>
+                                  </select>
+                                </label>
+                                <label class="settings-field">
+                                  <span id="settings-ai-model-label">模型</span>
+                                  <input id="settings-ai-model" type="text" placeholder="例如：gpt-4.1 或 qwen2.5-coder" autocomplete="off" />
+                                </label>
+                                <label class="settings-field settings-grid-span-2">
+                                  <span id="settings-ai-base-url-label">接口地址</span>
+                                  <input id="settings-ai-base-url" type="text" placeholder="例如：https://api.example.com/v1" autocomplete="off" />
+                                </label>
+                                <label class="settings-field settings-grid-span-2">
+                                  <span id="settings-ai-api-key-label">API Key</span>
+                                  <input id="settings-ai-api-key" type="password" placeholder="输入后将保存到系统钥匙串（待接入）" autocomplete="off" />
+                                </label>
+                              </div>
+                            </section>
+
+                            <section class="settings-section ai-settings-card">
+                              <h4 id="settings-ai-permissions-title">操作权限</h4>
+                              <div class="settings-row">
+                                <div>
+                                  <div id="settings-ai-safe-mode-label" class="settings-item-title">安全模式</div>
+                                  <p id="settings-ai-safe-mode-hint" class="muted tiny">AI 可以自由制定计划，但修改、删除、重启等动作必须先确认。</p>
+                                </div>
+                                <label class="settings-switch">
+                                  <input id="settings-ai-safe-mode" type="checkbox" checked />
+                                  <span></span>
+                                </label>
+                              </div>
+                              <div class="settings-divider"></div>
+                              <div class="settings-row">
+                                <div>
+                                  <div id="settings-ai-auto-read-label" class="settings-item-title">允许自动只读检查</div>
+                                  <p id="settings-ai-auto-read-hint" class="muted tiny">允许 AI 自动查看系统状态、目录、服务、端口和最近日志。</p>
+                                </div>
+                                <label class="settings-switch">
+                                  <input id="settings-ai-auto-read" type="checkbox" checked />
+                                  <span></span>
+                                </label>
+                              </div>
+                              <div class="settings-divider"></div>
+                              <div class="settings-row">
+                                <div>
+                                  <div id="settings-ai-show-commands-label" class="settings-item-title">默认显示命令</div>
+                                  <p id="settings-ai-show-commands-hint" class="muted tiny">关闭后，命令会折叠在“查看命令”里，界面更适合普通用户。</p>
+                                </div>
+                                <label class="settings-switch">
+                                  <input id="settings-ai-show-commands" type="checkbox" />
+                                  <span></span>
+                                </label>
+                              </div>
+                            </section>
+
+                            <div class="settings-actions-row">
+                              <p id="settings-ai-status" class="muted tiny">AI 配置尚未保存。</p>
+                              <button id="settings-ai-save" type="button" class="primary">保存 AI 配置</button>
+                            </div>
                           </section>
 
                           <section id="settings-sync-panel" class="settings-panel" hidden>

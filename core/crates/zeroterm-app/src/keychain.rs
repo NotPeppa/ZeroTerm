@@ -108,7 +108,7 @@ impl KeychainCache {
     ///   - `None` — cache not populated (fall through to OS)
     fn get(&self, key: &str) -> Option<Option<String>> {
         let guard = self.inner.lock().unwrap();
-        guard.as_ref().map(|m| m.get(key).cloned().unwrap_or(None))
+        guard.as_ref().and_then(|m| m.get(key).cloned())
     }
 
     /// Insert or update a value in the cache (called after a successful
@@ -200,6 +200,11 @@ fn sync_backend_credential_entry(profile_id: &str) -> Result<keyring::Entry, Key
 /// doesn't disturb the secondary slot, and vice versa.
 fn sync_backend_extra_entry(profile_id: &str) -> Result<keyring::Entry, KeychainError> {
     let user = format!("sync-backend-extra:{profile_id}");
+    keyring::Entry::new(SERVICE, &user).map_err(|e| KeychainError::Backend(e.to_string()))
+}
+
+fn ai_api_key_entry(profile_id: &str) -> Result<keyring::Entry, KeychainError> {
+    let user = format!("ai-api-key:{profile_id}");
     keyring::Entry::new(SERVICE, &user).map_err(|e| KeychainError::Backend(e.to_string()))
 }
 
@@ -376,6 +381,37 @@ pub fn get_sync_backend_extra(profile_id: &str) -> Result<Option<String>, Keycha
 pub fn forget_sync_backend_extra(profile_id: &str) -> Result<(), KeychainError> {
     let e = sync_backend_extra_entry(profile_id)?;
     CACHE.evict(&format!("sync-backend-extra:{profile_id}"));
+    match e.delete_password() {
+        Ok(()) => Ok(()),
+        Err(keyring::Error::NoEntry) => Ok(()),
+        Err(other) => Err(KeychainError::Backend(other.to_string())),
+    }
+}
+
+pub fn save_ai_api_key(profile_id: &str, secret: &str) -> Result<(), KeychainError> {
+    let e = ai_api_key_entry(profile_id)?;
+    e.set_password(secret)
+        .map_err(|e| KeychainError::Backend(e.to_string()))?;
+    CACHE.put(format!("ai-api-key:{profile_id}"), Some(secret.to_string()));
+    Ok(())
+}
+
+pub fn get_ai_api_key(profile_id: &str) -> Result<Option<String>, KeychainError> {
+    let key = format!("ai-api-key:{profile_id}");
+    if let Some(cached) = CACHE.get(&key) {
+        return Ok(cached);
+    }
+    let e = ai_api_key_entry(profile_id)?;
+    match e.get_password() {
+        Ok(v) => Ok(Some(v)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(other) => Err(KeychainError::Backend(other.to_string())),
+    }
+}
+
+pub fn forget_ai_api_key(profile_id: &str) -> Result<(), KeychainError> {
+    let e = ai_api_key_entry(profile_id)?;
+    CACHE.evict(&format!("ai-api-key:{profile_id}"));
     match e.delete_password() {
         Ok(()) => Ok(()),
         Err(keyring::Error::NoEntry) => Ok(()),

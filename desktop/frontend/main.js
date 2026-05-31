@@ -521,6 +521,7 @@ const I18N = {
     "settings.nav.pref": "Preferences",
     "settings.nav.general": "General",
     "settings.nav.terminal": "Terminal",
+    "settings.nav.ai": "AI",
     "settings.nav.sync": "Sync",
     "settings.nav.data": "Data",
     "settings.nav.about": "About",
@@ -683,6 +684,35 @@ const I18N = {
     "settings.nav.sftp": "SFTP",
     "settings.nav.hotkeys": "Hotkeys",
     "settings.terminal.desc": "Configure terminal themes and visual behavior.",
+    "settings.ai.title": "AI Assistant",
+    "settings.ai.desc": "Configure the model service and what the assistant is allowed to do.",
+    "settings.ai.provider.title": "AI Service",
+    "settings.ai.provider.desc": "Configure the model service for the terminal assistant. OpenAI-compatible APIs are supported; keys will be stored in the OS keychain after backend integration.",
+    "settings.ai.safe_badge": "Safe mode",
+    "settings.ai.provider.label": "Provider",
+    "settings.ai.provider.openai_compatible": "OpenAI Compatible",
+    "settings.ai.provider.openai": "OpenAI",
+    "settings.ai.provider.anthropic": "Anthropic",
+    "settings.ai.provider.gemini": "Gemini",
+    "settings.ai.provider.ollama": "Ollama",
+    "settings.ai.model.label": "Model",
+    "settings.ai.model.placeholder": "e.g. gpt-4.1 or qwen2.5-coder",
+    "settings.ai.base_url.label": "Base URL",
+    "settings.ai.base_url.placeholder": "e.g. https://api.example.com/v1",
+    "settings.ai.api_key.label": "API Key",
+    "settings.ai.api_key.placeholder": "Will be stored in OS keychain after integration",
+    "settings.ai.permissions.title": "Operation Permissions",
+    "settings.ai.safe_mode.label": "Safe mode",
+    "settings.ai.safe_mode.hint": "AI can plan freely, but write, delete, restart, and other risky actions must be confirmed first.",
+    "settings.ai.auto_read.label": "Allow automatic read-only checks",
+    "settings.ai.auto_read.hint": "Allow AI to inspect system status, folders, services, ports, and recent logs automatically.",
+    "settings.ai.show_commands.label": "Show commands by default",
+    "settings.ai.show_commands.hint": "When off, commands stay folded under 'View command' for a simpler non-technical interface.",
+    "settings.ai.status.unsaved": "AI config has not been saved yet.",
+    "settings.ai.status.saved": "AI config saved locally.",
+    "settings.ai.status.ready": "AI config is ready.",
+    "settings.ai.status.no_key": "AI config loaded. Add an API Key before chatting.",
+    "settings.ai.button.save": "Save AI Config",
     "settings.language.label": "Language",
     "settings.language.hint": "Changes apply immediately and are saved locally.",
     "settings.version.label": "Version",
@@ -1031,6 +1061,7 @@ const I18N = {
     "settings.nav.pref": "偏好",
     "settings.nav.general": "常规",
     "settings.nav.terminal": "终端",
+    "settings.nav.ai": "AI",
     "settings.nav.sync": "同步",
     "settings.nav.data": "数据管理",
     "settings.nav.about": "关于",
@@ -1193,6 +1224,35 @@ const I18N = {
     "settings.nav.sftp": "SFTP",
     "settings.nav.hotkeys": "快捷键",
     "settings.terminal.desc": "配置终端主题与视觉表现。",
+    "settings.ai.title": "AI 助手",
+    "settings.ai.desc": "配置模型服务，以及 AI 可以执行哪些操作。",
+    "settings.ai.provider.title": "AI 服务",
+    "settings.ai.provider.desc": "配置终端助手使用的模型服务。支持 OpenAI 兼容接口，密钥后续会保存到系统钥匙串。",
+    "settings.ai.safe_badge": "安全模式",
+    "settings.ai.provider.label": "服务商",
+    "settings.ai.provider.openai_compatible": "OpenAI 兼容接口",
+    "settings.ai.provider.openai": "OpenAI",
+    "settings.ai.provider.anthropic": "Anthropic",
+    "settings.ai.provider.gemini": "Gemini",
+    "settings.ai.provider.ollama": "Ollama",
+    "settings.ai.model.label": "模型",
+    "settings.ai.model.placeholder": "例如：gpt-4.1 或 qwen2.5-coder",
+    "settings.ai.base_url.label": "接口地址",
+    "settings.ai.base_url.placeholder": "例如：https://api.example.com/v1",
+    "settings.ai.api_key.label": "API Key",
+    "settings.ai.api_key.placeholder": "接入后将保存到系统钥匙串",
+    "settings.ai.permissions.title": "操作权限",
+    "settings.ai.safe_mode.label": "安全模式",
+    "settings.ai.safe_mode.hint": "AI 可以自由制定计划，但修改、删除、重启等风险动作必须先确认。",
+    "settings.ai.auto_read.label": "允许自动只读检查",
+    "settings.ai.auto_read.hint": "允许 AI 自动查看系统状态、目录、服务、端口和最近日志。",
+    "settings.ai.show_commands.label": "默认显示命令",
+    "settings.ai.show_commands.hint": "关闭后，命令会折叠在“查看命令”里，界面更适合普通用户。",
+    "settings.ai.status.unsaved": "AI 配置尚未保存。",
+    "settings.ai.status.saved": "AI 配置已保存到本地。",
+    "settings.ai.status.ready": "AI 配置已就绪。",
+    "settings.ai.status.no_key": "AI 配置已加载，请先填写 API Key 再开始聊天。",
+    "settings.ai.button.save": "保存 AI 配置",
     "settings.language.label": "语言",
     "settings.language.hint": "修改立即生效，并会保存在本地。",
     "settings.version.label": "版本",
@@ -1614,6 +1674,12 @@ const panelTerminal = document.getElementById("panel-terminal");
 const panelSftp = document.getElementById("panel-sftp");
 const settingsPage = document.getElementById("settings-page");
 const vaultWelcome = document.getElementById("vault-welcome");
+const terminalSessionLayout = document.getElementById("terminal-session-layout");
+const aiPanelSplitter = document.getElementById("ai-panel-splitter");
+const aiComposeForm = document.getElementById("ai-compose-form");
+const aiComposeInput = document.getElementById("ai-compose-input");
+const aiChatLog = document.getElementById("ai-chat-log");
+const aiEmptyState = document.getElementById("ai-empty-state");
 const vaultsContent = document.getElementById("vaults-content");
 const vaultLayout = document.querySelector(".vault-layout");
 const vaultSplitter = document.getElementById("vault-splitter");
@@ -1633,10 +1699,21 @@ const themeModeLight = document.getElementById("theme-mode-light");
 const settingsBackButton = document.getElementById("settings-back");
 const settingsNavGeneral = document.getElementById("settings-nav-general");
 const settingsNavTerminal = document.getElementById("settings-nav-terminal");
+const settingsNavAi = document.getElementById("settings-nav-ai");
 const settingsNavSync = document.getElementById("settings-nav-sync");
 const settingsGeneralPanel = document.getElementById("settings-general-panel");
 const settingsTerminalPanel = document.getElementById("settings-terminal-panel");
+const settingsAiPanel = document.getElementById("settings-ai-panel");
 const settingsSyncPanel = document.getElementById("settings-sync-panel");
+const settingsAiProvider = document.getElementById("settings-ai-provider");
+const settingsAiModel = document.getElementById("settings-ai-model");
+const settingsAiBaseUrl = document.getElementById("settings-ai-base-url");
+const settingsAiApiKey = document.getElementById("settings-ai-api-key");
+const settingsAiSafeMode = document.getElementById("settings-ai-safe-mode");
+const settingsAiAutoRead = document.getElementById("settings-ai-auto-read");
+const settingsAiShowCommands = document.getElementById("settings-ai-show-commands");
+const settingsAiSave = document.getElementById("settings-ai-save");
+const settingsAiStatus = document.getElementById("settings-ai-status");
 const settingsSyncRefresh = document.getElementById("settings-sync-refresh");
 const settingsSyncSave = document.getElementById("settings-sync-save");
 const settingsSyncStatus = document.getElementById("settings-sync-status");
@@ -1692,6 +1769,519 @@ function showToast(message, kind = "info", timeoutMs = 2600) {
     node.classList.remove("show");
     window.setTimeout(() => node.remove(), 180);
   }, timeoutMs);
+}
+
+let aiMessages = [];
+let aiSending = false;
+let aiStreamUnlistenPromise = null;
+const aiConversationByPane = new Map();
+let aiActivePaneKey = null;
+let aiPanelCollapsed = true;
+
+function setAiPanelCollapsed(collapsed) {
+  aiPanelCollapsed = !!collapsed;
+  terminalSessionLayout?.classList.toggle("ai-collapsed", aiPanelCollapsed);
+  document.querySelectorAll(".pane-ai-toggle").forEach((button) => {
+    button.classList.toggle("active", !aiPanelCollapsed);
+    button.title = aiPanelCollapsed ? "展开 AI 助手" : "收起 AI 助手";
+  });
+}
+
+function toggleAiPanel() {
+  setAiPanelCollapsed(!aiPanelCollapsed);
+}
+
+function getAiPaneKey() {
+  const pane = getActivePane();
+  if (!pane) return "no-terminal";
+  return pane.sessionId !== null ? `session:${pane.sessionId}` : `pane:${pane.id}`;
+}
+
+function renderAiConversation() {
+  if (!aiChatLog) return;
+  aiChatLog.textContent = "";
+  const messages = aiMessages || [];
+  aiChatLog.hidden = messages.length === 0;
+  if (aiEmptyState) aiEmptyState.hidden = messages.length > 0;
+  for (const message of messages) {
+    appendAiMessage(message.role, message.content, { skipStore: true });
+  }
+}
+
+function syncAiConversationToActivePane() {
+  const key = getAiPaneKey();
+  if (key === aiActivePaneKey) return;
+  aiActivePaneKey = key;
+  aiMessages = aiConversationByPane.get(key) || [];
+  renderAiConversation();
+}
+
+function storeAiConversationForActivePane() {
+  const key = getAiPaneKey();
+  aiActivePaneKey = key;
+  aiConversationByPane.set(key, aiMessages);
+}
+
+function renderAiMarkdown(text) {
+  const fragment = document.createDocumentFragment();
+  const lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
+  let paragraph = [];
+  let list = null;
+  let codeLines = null;
+  let codeLang = "";
+
+  const renderInline = (value) => {
+    const frag = document.createDocumentFragment();
+    const re = /(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\))/g;
+    let last = 0;
+    String(value || "").replace(re, (match, _token, offset) => {
+      if (offset > last) frag.appendChild(document.createTextNode(value.slice(last, offset)));
+      if (match.startsWith("`")) {
+        const code = document.createElement("code");
+        code.textContent = match.slice(1, -1);
+        if (looksRunnableInlineCommand(code.textContent)) {
+          code.classList.add("ai-inline-command");
+          code.title = "点击执行";
+          code.addEventListener("click", () => runCommandInActiveTerminal(code.textContent));
+        }
+        frag.appendChild(code);
+      } else if (match.startsWith("**")) {
+        const strong = document.createElement("strong");
+        strong.textContent = match.slice(2, -2);
+        frag.appendChild(strong);
+      } else {
+        const link = match.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+        const a = document.createElement("a");
+        a.textContent = link?.[1] || match;
+        a.href = link?.[2] || "#";
+        a.target = "_blank";
+        a.rel = "noreferrer";
+        frag.appendChild(a);
+      }
+      last = offset + match.length;
+      return match;
+    });
+    if (last < value.length) frag.appendChild(document.createTextNode(value.slice(last)));
+    return frag;
+  };
+
+  const flushParagraph = () => {
+    if (!paragraph.length) return;
+    const p = document.createElement("p");
+    p.appendChild(renderInline(paragraph.join("\n")));
+    fragment.appendChild(p);
+    paragraph = [];
+  };
+  const flushList = () => {
+    if (!list) return;
+    fragment.appendChild(list);
+    list = null;
+  };
+  const flushCode = () => {
+    if (!codeLines) return;
+    const block = document.createElement("div");
+    block.className = "ai-code-block";
+    if (codeLang) {
+      const label = document.createElement("div");
+      label.className = "ai-code-label";
+      label.textContent = codeLang;
+      block.appendChild(label);
+    }
+    const pre = document.createElement("pre");
+    pre.textContent = codeLines.join("\n");
+    block.appendChild(pre);
+    fragment.appendChild(block);
+    codeLines = null;
+    codeLang = "";
+  };
+
+  for (const rawLine of lines) {
+    const fence = rawLine.match(/^\s*```\s*([\w-]+)?\s*$/);
+    if (fence) {
+      if (codeLines) {
+        flushCode();
+      } else {
+        flushParagraph();
+        flushList();
+        codeLines = [];
+        codeLang = fence[1] || "";
+      }
+      continue;
+    }
+    if (codeLines) {
+      codeLines.push(rawLine);
+      continue;
+    }
+    const line = rawLine.trim();
+    if (!line) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+    const heading = line.match(/^(#{1,4})\s+(.+)$/);
+    if (heading) {
+      flushParagraph();
+      flushList();
+      const level = Math.min(heading[1].length + 1, 5);
+      const h = document.createElement(`h${level}`);
+      h.className = "ai-md-heading";
+      h.appendChild(renderInline(heading[2]));
+      fragment.appendChild(h);
+      continue;
+    }
+    const bullet = line.match(/^[-*]\s+(.+)$/);
+    const numbered = line.match(/^\d+\.\s+(.+)$/);
+    if (bullet || numbered) {
+      flushParagraph();
+      if (!list) list = document.createElement(numbered ? "ol" : "ul");
+      const li = document.createElement("li");
+      li.appendChild(renderInline((bullet || numbered)[1]));
+      list.appendChild(li);
+      continue;
+    }
+    flushList();
+    paragraph.push(line);
+  }
+  flushCode();
+  flushParagraph();
+  flushList();
+  return fragment;
+}
+
+function looksRunnableInlineCommand(value) {
+  const text = String(value || "").trim();
+  if (!text || text.length > 140 || text.includes("\n")) return false;
+  if (/^https?:\/\//i.test(text)) return false;
+  if (/^[\w.-]+\.[a-z]{2,}(\/.*)?$/i.test(text)) return false;
+  return /^(sudo\s+)?[a-z][\w.-]*(\s+|$)/i.test(text);
+}
+
+function setAiMessageContent(node, content) {
+  const body = node?.querySelector?.(".ai-message-body");
+  if (!body) return;
+  body.textContent = "";
+  if (node.classList.contains("ai-message-assistant")) {
+    body.appendChild(renderAiMarkdown(content));
+    enhanceAiCodeBlocks(body);
+  } else if (node.classList.contains("ai-message-error")) {
+    body.appendChild(renderAiError(content));
+  } else {
+    body.textContent = content;
+  }
+  if (aiChatLog) aiChatLog.scrollTop = aiChatLog.scrollHeight;
+}
+
+function parseAiErrorMessage(error) {
+  const raw = String(error || "");
+  const jsonStart = raw.indexOf("{");
+  if (jsonStart >= 0) {
+    try {
+      const parsed = JSON.parse(raw.slice(jsonStart));
+      const err = parsed.error || parsed;
+      return {
+        title: err.message || "AI 请求失败",
+        detail: err.param || err.code || err.type || "",
+      };
+    } catch {}
+  }
+  const status = raw.match(/\((\d{3})\s+([^)]+)\)/);
+  return {
+    title: status ? `AI 请求失败：${status[1]} ${status[2]}` : raw,
+    detail: "",
+  };
+}
+
+function renderAiError(content) {
+  const info = parseAiErrorMessage(content);
+  const wrap = document.createElement("div");
+  wrap.className = "ai-error-card";
+  const title = document.createElement("strong");
+  title.textContent = info.title;
+  wrap.appendChild(title);
+  if (info.detail) {
+    const detail = document.createElement("p");
+    detail.textContent = info.detail;
+    wrap.appendChild(detail);
+  }
+  return wrap;
+}
+
+async function runCommandInActiveTerminal(command) {
+  const pane = getActivePane();
+  if (!pane?.sessionId) {
+    showToast("当前没有可执行命令的终端会话。", "error", 3600);
+    return;
+  }
+  const text = normalizeAiCommandBlock(command);
+  if (!text) return;
+  const ok = confirm(`将执行以下命令：\n\n${text}`);
+  if (!ok) return;
+  const marker = `# ZeroTerm AI 执行 ${new Date().toLocaleTimeString()}\n`;
+  const payload = `${marker}${text.endsWith("\n") ? text : `${text}\n`}`;
+  const bytes = Array.from(new TextEncoder().encode(payload));
+  try {
+    await invoke("send_input", { sessionId: pane.sessionId, data: bytes });
+    pane.term?.focus?.();
+    showToast("命令已发送到当前终端。", "success");
+  } catch (e) {
+    showToast(String(e), "error", 4200);
+  }
+}
+
+function normalizeAiCommandBlock(command) {
+  return String(command || "")
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#"))
+    .map((line) => line.replace(/\s+#\s+.*$/, "").trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+function getActiveTerminalSnapshot(maxLines = 160) {
+  const pane = getActivePane();
+  const term = pane?.term;
+  const buffer = term?.buffer?.active;
+  if (!buffer) return "";
+  const rows = [];
+  const length = buffer.length || 0;
+  const start = Math.max(0, length - maxLines);
+  for (let i = start; i < length; i += 1) {
+    const line = buffer.getLine(i)?.translateToString?.(true) || "";
+    rows.push(line);
+  }
+  return rows.join("\n").trim();
+}
+
+function isNonPublicIpv4(ip) {
+  const parts = ip.split(".").map((v) => Number(v));
+  if (parts.length !== 4 || parts.some((v) => !Number.isInteger(v) || v < 0 || v > 255)) return false;
+  const [a, b] = parts;
+  return a === 10
+    || a === 127
+    || (a === 172 && b >= 16 && b <= 31)
+    || (a === 192 && b === 168)
+    || (a === 169 && b === 254)
+    || (a === 100 && b >= 64 && b <= 127)
+    || a === 0;
+}
+
+function isNonPublicIpv6(ip) {
+  const normalized = String(ip || "").toLowerCase();
+  return normalized === "::1"
+    || normalized === "::"
+    || normalized.startsWith("fe8")
+    || normalized.startsWith("fe9")
+    || normalized.startsWith("fea")
+    || normalized.startsWith("feb")
+    || normalized.startsWith("fc")
+    || normalized.startsWith("fd");
+}
+
+function looksLikeClockTime(value) {
+  return /^\d{1,2}:\d{2}:\d{2}$/.test(String(value || ""));
+}
+
+function redactSensitiveText(text) {
+  let out = String(text || "");
+  out = out.replace(/\b(?:sk|pk|rk|ak)-[A-Za-z0-9_\-]{16,}\b/g, "[REDACTED_API_KEY]");
+  out = out.replace(/\b(?:ghp|gho|ghu|ghs|github_pat)_[A-Za-z0-9_]{16,}\b/g, "[REDACTED_GITHUB_TOKEN]");
+  out = out.replace(/\b(?:xox[baprs]-)[A-Za-z0-9-]{16,}\b/g, "[REDACTED_SLACK_TOKEN]");
+  out = out.replace(/\b(AKIA|ASIA)[A-Z0-9]{16}\b/g, "[REDACTED_AWS_KEY]");
+  out = out.replace(/\b(?:Bearer|Token|Authorization:)\s+[^\s]+/gi, "$1 [REDACTED_SECRET]");
+  out = out.replace(/\b(password|passwd|pwd|secret|token|api[_-]?key)\s*=\s*([^\s"']+)/gi, "$1=[REDACTED_SECRET]");
+  out = out.replace(/\b([0-9a-f]{2}:){5}[0-9a-f]{2}\b/gi, "[REDACTED_MAC]");
+  out = out.replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "[REDACTED_UUID]");
+  out = out.replace(/\b(?:[A-Z0-9][A-Z0-9_-]{7,})(?:\b)/g, (match) => {
+    if (/^[0-9]+$/.test(match)) return match;
+    return match.length >= 12 ? "[REDACTED_ID]" : match;
+  });
+  out = out.replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, (ip) => isNonPublicIpv4(ip) ? ip : "[REDACTED_PUBLIC_IP]");
+  out = out.replace(/(?<![\w:])(?:[0-9a-f]{1,4}:){2,7}[0-9a-f]{0,4}(?:%[\w.-]+)?(?![\w:])/gi, (ip) => {
+    if (looksLikeClockTime(ip)) return ip;
+    const plain = ip.replace(/%.*$/, "");
+    return isNonPublicIpv6(plain) ? ip : "[REDACTED_PUBLIC_IPV6]";
+  });
+  out = out.replace(/(?<![\w:])::(?:[0-9a-f]{1,4}:){0,6}[0-9a-f]{0,4}(?:%[\w.-]+)?(?![\w:])/gi, (ip) => {
+    const plain = ip.replace(/%.*$/, "");
+    return isNonPublicIpv6(plain) ? ip : "[REDACTED_PUBLIC_IPV6]";
+  });
+  out = out.replace(/(^|\s)([\w.-]+@[A-Za-z0-9_.-]+)(?=[:#$]\s?)/g, "$1[REDACTED_HOST_PROMPT]");
+  return out;
+}
+
+function buildAiTerminalContext() {
+  if (settingsAiAutoRead && !settingsAiAutoRead.checked) return "";
+  const snapshot = getActiveTerminalSnapshot();
+  if (!snapshot) return "";
+  const redacted = redactSensitiveText(snapshot);
+  return [
+    "下面是当前活动终端最近的屏幕内容，已在本地做基础脱敏后才发送给你。用户可能会说“我执行了”“看结果”等，你要优先根据这些终端内容判断。",
+    "如果看到 [REDACTED_*]，说明原始终端内容里存在可能敏感的信息；不要要求用户贴出原文，除非确实必要。",
+    "",
+    "```terminal",
+    redacted,
+    "```",
+  ].join("\n");
+}
+
+function redactAiMessagesForRequest(messages) {
+  return messages.map((message) => ({
+    ...message,
+    content: redactSensitiveText(message.content),
+  }));
+}
+
+function enhanceAiCodeBlocks(root) {
+  root.querySelectorAll?.(".ai-code-block:not([data-enhanced])").forEach((block) => {
+    block.dataset.enhanced = "1";
+    const pre = block.querySelector("pre");
+    const command = normalizeAiCommandBlock(pre?.textContent || "");
+    if (!command.trim()) return;
+    const tools = document.createElement("div");
+    tools.className = "ai-code-tools";
+    const run = document.createElement("button");
+    run.type = "button";
+    run.textContent = "执行";
+    run.addEventListener("click", () => runCommandInActiveTerminal(command));
+    tools.appendChild(run);
+    block.appendChild(tools);
+  });
+}
+
+function appendAiMessage(role, content, { pending = false, skipStore = false } = {}) {
+  if (!aiChatLog) return null;
+  aiChatLog.hidden = false;
+  if (aiEmptyState) aiEmptyState.hidden = true;
+  const node = document.createElement("article");
+  node.className = `ai-message ai-message-${role}`;
+  if (pending) node.classList.add("pending");
+
+  const label = document.createElement("div");
+  label.className = "ai-message-label";
+  label.textContent = role === "user" ? "你" : "AI";
+
+  const body = document.createElement("div");
+  body.className = "ai-message-body";
+
+  node.append(label, body);
+  aiChatLog.appendChild(node);
+  setAiMessageContent(node, content);
+  aiChatLog.scrollTop = aiChatLog.scrollHeight;
+  if (!skipStore) storeAiConversationForActivePane();
+  return node;
+}
+
+function setAiPendingMessage(node, content, kind = "assistant") {
+  if (!node) return;
+  node.classList.remove("pending");
+  node.className = `ai-message ai-message-${kind}`;
+  setAiMessageContent(node, content);
+}
+
+async function ensureAiStreamListener() {
+  if (aiStreamUnlistenPromise) return;
+  aiStreamUnlistenPromise = listen("ai:stream", (ev) => {
+    const payload = ev.payload || {};
+    const state = window.__ztAiStreams?.get?.(payload.requestId);
+    if (!state) return;
+    if (payload.error) {
+      state.node.classList.remove("pending");
+      state.node.className = "ai-message ai-message-error";
+      setAiMessageContent(state.node, payload.error);
+      window.__ztAiStreams.delete(payload.requestId);
+      return;
+    }
+    if (payload.delta) {
+      state.content += payload.delta;
+      state.node.classList.remove("pending");
+      state.node.className = "ai-message ai-message-assistant";
+      setAiMessageContent(state.node, state.content);
+    }
+    if (payload.done) {
+      state.node.classList.remove("pending");
+      aiMessages.push({ role: "assistant", content: state.content });
+      storeAiConversationForActivePane();
+      window.__ztAiStreams.delete(payload.requestId);
+    }
+  });
+}
+
+async function loadAiConfig() {
+  if (!settingsAiProvider) return;
+  try {
+    const cfg = await invoke("get_ai_config");
+    settingsAiProvider.value = cfg.provider || "openai-compatible";
+    if (settingsAiModel) settingsAiModel.value = cfg.model || "";
+    if (settingsAiBaseUrl) settingsAiBaseUrl.value = cfg.baseUrl || "";
+    if (settingsAiApiKey) settingsAiApiKey.value = "";
+    if (settingsAiSafeMode) settingsAiSafeMode.checked = cfg.safeMode !== false;
+    if (settingsAiAutoRead) settingsAiAutoRead.checked = cfg.autoRead !== false;
+    if (settingsAiShowCommands) settingsAiShowCommands.checked = !!cfg.showCommands;
+    if (settingsAiStatus) {
+      settingsAiStatus.textContent = cfg.hasApiKey
+        ? t("settings.ai.status.ready")
+        : t("settings.ai.status.no_key");
+    }
+    syncCustomSelect("settings-ai-provider");
+  } catch (e) {
+    if (settingsAiStatus) settingsAiStatus.textContent = String(e);
+  }
+}
+
+async function saveAiConfigFromForm() {
+  const input = {
+    provider: settingsAiProvider?.value || "openai-compatible",
+    model: settingsAiModel?.value || "",
+    baseUrl: settingsAiBaseUrl?.value || "",
+    apiKey: settingsAiApiKey?.value || "",
+    safeMode: settingsAiSafeMode?.checked !== false,
+    autoRead: settingsAiAutoRead?.checked !== false,
+    showCommands: !!settingsAiShowCommands?.checked,
+  };
+  const cfg = await invoke("save_ai_config", { input });
+  if (settingsAiApiKey) settingsAiApiKey.value = "";
+  if (settingsAiStatus) {
+    settingsAiStatus.textContent = cfg.hasApiKey
+      ? t("settings.ai.status.ready")
+      : t("settings.ai.status.no_key");
+  }
+  return cfg;
+}
+
+async function sendAiMessage(text) {
+  if (aiSending) return;
+  syncAiConversationToActivePane();
+  aiSending = true;
+  await ensureAiStreamListener();
+  if (!window.__ztAiStreams) window.__ztAiStreams = new Map();
+  const submitButton = aiComposeForm?.querySelector("button[type='submit']");
+  if (submitButton) submitButton.disabled = true;
+  try {
+    const system = "你是 ZeroTerm 的 AI 助手。用户是普通用户，不一定懂命令。请先用人话解释和规划，不要假装已经执行命令。需要用户执行命令时，请把每组命令放进独立的 fenced code block，例如 ```bash，不要只写成行内代码；这样界面可以显示执行按钮。";
+    const terminalContext = buildAiTerminalContext();
+    aiMessages.push({ role: "user", content: text });
+    storeAiConversationForActivePane();
+    appendAiMessage("user", text);
+    const pendingNode = appendAiMessage("assistant", "正在思考...", { pending: true });
+    const requestId = `ai-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    window.__ztAiStreams.set(requestId, { node: pendingNode, content: "" });
+    const messages = [{ role: "system", content: system }];
+    if (terminalContext) messages.push({ role: "system", content: terminalContext });
+    messages.push(...redactAiMessagesForRequest(aiMessages.slice(-10)));
+    await invoke("ai_chat_stream", {
+      input: {
+        requestId,
+        messages,
+      },
+    });
+  } catch (e) {
+    appendAiMessage("error", String(e));
+  } finally {
+    aiSending = false;
+    if (submitButton) submitButton.disabled = false;
+  }
 }
 
 async function runSyncButtonAction(button, busyLabel, task) {
@@ -2563,7 +3153,9 @@ function setWorkspaceMode(mode) {
   panelSftp.hidden = mode !== "sftp";
   if (settingsPage) settingsPage.hidden = !showingSettings;
   if (vaultWelcome) vaultWelcome.hidden = showingTerminal || showingSftp || showingSettings;
-  if (terminalWorkspace) terminalWorkspace.hidden = !showingTerminal;
+  if (terminalSessionLayout) terminalSessionLayout.hidden = !showingTerminal;
+  else if (terminalWorkspace) terminalWorkspace.hidden = !showingTerminal;
+  terminalSessionLayout?.classList.toggle("ai-collapsed", aiPanelCollapsed);
   workspaceTabVaults.classList.toggle("active", mode === "vaults");
   workspaceTabSftp.classList.toggle("active", mode === "sftp");
   workspaceNavVaults?.classList.toggle("active", mode === "vaults");
@@ -2601,44 +3193,52 @@ function setWorkspaceMode(mode) {
 function setSettingsSection(section) {
   settingsSection = section === "terminal"
     ? "terminal"
-    : section === "sync"
-      ? "sync"
-      : section === "data"
-        ? "data"
-      : section === "about"
-        ? "about"
-        : "general";
+    : section === "ai"
+      ? "ai"
+      : section === "sync"
+        ? "sync"
+        : section === "data"
+          ? "data"
+        : section === "about"
+          ? "about"
+          : "general";
   settingsNavGeneral?.classList.toggle("active", settingsSection === "general");
   settingsNavTerminal?.classList.toggle("active", settingsSection === "terminal");
+  settingsNavAi?.classList.toggle("active", settingsSection === "ai");
   settingsNavSync?.classList.toggle("active", settingsSection === "sync");
   settingsNavData?.classList.toggle("active", settingsSection === "data");
   settingsNavAbout?.classList.toggle("active", settingsSection === "about");
   if (settingsGeneralPanel) settingsGeneralPanel.hidden = settingsSection !== "general";
   if (settingsTerminalPanel) settingsTerminalPanel.hidden = settingsSection !== "terminal";
+  if (settingsAiPanel) settingsAiPanel.hidden = settingsSection !== "ai";
   if (settingsSyncPanel) settingsSyncPanel.hidden = settingsSection !== "sync";
   if (settingsDataPanel) settingsDataPanel.hidden = settingsSection !== "data";
   if (settingsAboutPanel) settingsAboutPanel.hidden = settingsSection !== "about";
   if (settingsGeneralTitle) {
     settingsGeneralTitle.textContent = settingsSection === "terminal"
       ? t("settings.nav.terminal")
-      : settingsSection === "sync"
-        ? t("settings.nav.sync")
-        : settingsSection === "data"
-          ? t("settings.nav.data")
-        : settingsSection === "about"
-          ? t("settings.nav.about")
-      : t("settings.general.title");
+      : settingsSection === "ai"
+        ? t("settings.ai.title")
+        : settingsSection === "sync"
+          ? t("settings.nav.sync")
+          : settingsSection === "data"
+            ? t("settings.nav.data")
+          : settingsSection === "about"
+            ? t("settings.nav.about")
+        : t("settings.general.title");
   }
   if (settingsGeneralDesc) {
     settingsGeneralDesc.textContent = settingsSection === "terminal"
       ? t("settings.terminal.desc")
-      : settingsSection === "sync"
-        ? t("settings.sync.desc")
-        : settingsSection === "data"
-          ? t("settings.data.desc")
-        : settingsSection === "about"
-          ? ""
-      : t("settings.general.desc");
+      : settingsSection === "ai"
+        ? t("settings.ai.desc")
+        : settingsSection === "sync"
+          ? t("settings.sync.desc")
+          : settingsSection === "data"
+            ? t("settings.data.desc")
+          : settingsSection === "about"
+            ? ""
+        : t("settings.general.desc");
   }
   if (settingsSection === "terminal") {
     setSettingsTerminalSubtab(settingsTerminalSubtab);
@@ -2866,7 +3466,6 @@ function applySyncProfileToForm(p) {
   if (settingsSyncS3Ak) settingsSyncS3Ak.value = p.accessKeyId || "";
   if (settingsSyncS3Sk) settingsSyncS3Sk.value = "";
   if (settingsSyncS3Token) settingsSyncS3Token.value = "";
-  refreshRememberPassphraseFlag().catch(() => {});
   syncFormToggleBackendFields(backend);
   // Passphrase is per-session, never echoed back from disk — leave empty
   // so the user is prompted on Create/Join.
@@ -4142,6 +4741,7 @@ function applyI18n() {
   setText("settings-nav-pref", "settings.nav.pref");
   setText("settings-nav-general", "settings.nav.general");
   setText("settings-nav-terminal", "settings.nav.terminal");
+  setText("settings-nav-ai", "settings.nav.ai");
   setText("settings-nav-sync", "settings.nav.sync");
   setText("settings-nav-data", "settings.nav.data");
   setText("settings-nav-about", "settings.nav.about");
@@ -4169,6 +4769,31 @@ function applyI18n() {
   setText("settings-terminal-font-family-label", "settings.terminal_font.family");
   setText("settings-terminal-font-size-label", "settings.terminal_font.size");
   setText("settings-terminal-line-height-label", "settings.terminal_font.line_height");
+  setText("settings-ai-provider-title", "settings.ai.provider.title");
+  setText("settings-ai-provider-desc", "settings.ai.provider.desc");
+  setText("settings-ai-safe-badge", "settings.ai.safe_badge");
+  setText("settings-ai-provider-label", "settings.ai.provider.label");
+  setText("settings-ai-model-label", "settings.ai.model.label");
+  setText("settings-ai-base-url-label", "settings.ai.base_url.label");
+  setText("settings-ai-api-key-label", "settings.ai.api_key.label");
+  setText("settings-ai-permissions-title", "settings.ai.permissions.title");
+  setText("settings-ai-safe-mode-label", "settings.ai.safe_mode.label");
+  setText("settings-ai-safe-mode-hint", "settings.ai.safe_mode.hint");
+  setText("settings-ai-auto-read-label", "settings.ai.auto_read.label");
+  setText("settings-ai-auto-read-hint", "settings.ai.auto_read.hint");
+  setText("settings-ai-show-commands-label", "settings.ai.show_commands.label");
+  setText("settings-ai-show-commands-hint", "settings.ai.show_commands.hint");
+  setText("settings-ai-status", "settings.ai.status.unsaved");
+  setText("settings-ai-save", "settings.ai.button.save");
+  setPlaceholder("settings-ai-model", "settings.ai.model.placeholder");
+  setPlaceholder("settings-ai-base-url", "settings.ai.base_url.placeholder");
+  setPlaceholder("settings-ai-api-key", "settings.ai.api_key.placeholder");
+  setOptionText("settings-ai-provider", "openai-compatible", "settings.ai.provider.openai_compatible");
+  setOptionText("settings-ai-provider", "openai", "settings.ai.provider.openai");
+  setOptionText("settings-ai-provider", "anthropic", "settings.ai.provider.anthropic");
+  setOptionText("settings-ai-provider", "gemini", "settings.ai.provider.gemini");
+  setOptionText("settings-ai-provider", "ollama", "settings.ai.provider.ollama");
+  syncCustomSelect("settings-ai-provider");
   setText("settings-sftp-title", "settings.sftp.title");
   setText("settings-sftp-auto-label", "settings.sftp.auto.label");
   setText("settings-sftp-auto-hint", "settings.sftp.auto.hint");
@@ -4293,10 +4918,12 @@ buildCustomSelect(document.getElementById("qc-auth-type"));
 buildCustomSelect(document.getElementById("hf-group"));
 buildCustomSelect(document.getElementById("hf-jump"));
 buildCustomSelect(document.getElementById("settings-language-select"));
+buildCustomSelect(document.getElementById("settings-ai-provider"));
 buildCustomSelect(document.getElementById("settings-terminal-theme"));
 buildCustomSelect(document.getElementById("settings-terminal-font-family"));
 buildCustomSelect(document.getElementById("settings-sync-profile"));
 buildCustomSelect(document.getElementById("settings-sync-backend"));
+installAiPanelResize();
 syncCustomSelect("settings-sync-backend");
 buildCustomSelect(document.getElementById("sftp-left-host"));
 buildCustomSelect(document.getElementById("sftp-right-host"));
@@ -4616,9 +5243,22 @@ themeModeLight?.addEventListener("click", (ev) => {
 settingsBackButton?.addEventListener("click", () => setWorkspaceMode("vaults"));
 settingsNavGeneral?.addEventListener("click", () => setSettingsSection("general"));
 settingsNavTerminal?.addEventListener("click", () => setSettingsSection("terminal"));
+settingsNavAi?.addEventListener("click", () => setSettingsSection("ai"));
 settingsNavSync?.addEventListener("click", () => setSettingsSection("sync"));
 settingsNavData?.addEventListener("click", () => setSettingsSection("data"));
 settingsNavAbout?.addEventListener("click", () => setSettingsSection("about"));
+settingsAiSave?.addEventListener("click", async () => {
+  await runSyncButtonAction(settingsAiSave, t("settings.sync.button.busy.save"), async () => {
+    try {
+      await saveAiConfigFromForm();
+      showToast(t("settings.ai.status.saved"), "success");
+    } catch (e) {
+      const msg = String(e);
+      if (settingsAiStatus) settingsAiStatus.textContent = msg;
+      showToast(msg, "error", 4200);
+    }
+  });
+});
 settingsDataClearVault?.addEventListener("click", async () => {
   const ok = confirm(t("settings.data.confirm.clear_vault"));
   if (!ok) return;
@@ -5796,6 +6436,7 @@ async function openLocalTerminalInTab() {
 function renderTerminalWorkspace() {
   sanitizeTerminalTabs();
   renderTabStrip();
+  syncAiConversationToActivePane();
 
   terminalWorkspace.innerHTML = "";
   const tab = getActiveTab();
@@ -5820,6 +6461,7 @@ function renderTerminalWorkspace() {
       ensurePaneElements(pane, tab);
       if (!pane.rootEl) continue;
       if (pane.reconnectBtn) pane.reconnectBtn.textContent = t("terminal.button.reconnect");
+      pane.rootEl.querySelector(".pane-ai-toggle")?.classList.toggle("active", !aiPanelCollapsed);
       pane.rootEl.classList.toggle("active", pane.id === tab.activePaneId);
       terminalWorkspace.appendChild(pane.rootEl);
       ensurePaneTerminal(pane);
@@ -5844,6 +6486,29 @@ function renderTerminalWorkspace() {
     if (active?.term) {
       active.term.focus();
     }
+  });
+}
+
+function installAiPanelResize() {
+  if (!aiPanelSplitter || !terminalSessionLayout) return;
+  aiPanelSplitter.addEventListener("pointerdown", (ev) => {
+    ev.preventDefault();
+    aiPanelSplitter.setPointerCapture?.(ev.pointerId);
+    document.body.classList.add("resizing-ai-panel");
+    const rect = terminalSessionLayout.getBoundingClientRect();
+    const onMove = (moveEv) => {
+      const width = Math.round(rect.right - moveEv.clientX);
+      const clamped = Math.max(300, Math.min(620, width));
+      terminalSessionLayout.style.setProperty("--ai-panel-width", `${clamped}px`);
+      if (aiPanelCollapsed) setAiPanelCollapsed(false);
+    };
+    const onUp = () => {
+      document.body.classList.remove("resizing-ai-panel");
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp, { once: true });
   });
 }
 
@@ -5902,6 +6567,16 @@ function ensurePaneElements(pane, tab) {
   status.className = "pane-status";
   status.textContent = t("terminal.status.connecting");
 
+  const aiToggle = document.createElement("button");
+  aiToggle.type = "button";
+  aiToggle.className = "pane-ai-toggle active";
+  aiToggle.title = "收起 AI 助手";
+  aiToggle.innerHTML = `<svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"></rect><path d="M9 2v3"></path><path d="M15 2v3"></path><path d="M9 19v3"></path><path d="M15 19v3"></path><path d="M2 9h3"></path><path d="M2 15h3"></path><path d="M19 9h3"></path><path d="M19 15h3"></path></svg>`;
+  aiToggle.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    toggleAiPanel();
+  });
+
   const latency = document.createElement("span");
   latency.className = "pane-latency";
   latency.hidden = true;
@@ -5921,7 +6596,7 @@ function ensurePaneElements(pane, tab) {
 
   const meta = document.createElement("div");
   meta.className = "pane-meta";
-  meta.append(latency, status, reconnectBtn);
+  meta.append(latency, status, aiToggle, reconnectBtn);
 
   const body = document.createElement("div");
   body.className = "pane-body";
@@ -9385,6 +10060,30 @@ filesMenuClose.addEventListener("click", async () => {
   renderSftpPane(pane);
 });
 
+document.querySelectorAll("[data-ai-example]").forEach((button) => {
+  button.addEventListener("click", () => {
+    if (!aiComposeInput) return;
+    aiComposeInput.value = button.getAttribute("data-ai-example") || "";
+    aiComposeInput.focus();
+  });
+});
+
+aiComposeInput?.addEventListener("keydown", (ev) => {
+  if (ev.key !== "Enter" || ev.shiftKey) return;
+  ev.preventDefault();
+  aiComposeForm?.requestSubmit();
+});
+
+aiComposeForm?.addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  const text = aiComposeInput?.value.trim();
+  if (!text) return;
+  aiComposeInput.value = "";
+  sendAiMessage(text).catch((e) => {
+    appendAiMessage("error", String(e));
+  });
+});
+
 fileEditorCancelButton.addEventListener("click", () => closeRemoteEditor());
 fileEditorSaveButton.addEventListener("click", () => saveRemoteEditor());
 fileEditorOverlay.addEventListener("click", (ev) => {
@@ -9482,6 +10181,7 @@ window.addEventListener("resize", () => {
 // --------------------------------------------------------------------------
 
 applyI18n();
+loadAiConfig().catch(() => {});
 refreshVaultStatus();
 function openSettingsPage() {
   setWorkspaceMode("settings");

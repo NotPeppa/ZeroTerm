@@ -30,6 +30,10 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::vault_status,
+            commands::get_ai_config,
+            commands::save_ai_config,
+            commands::ai_chat,
+            commands::ai_chat_stream,
             commands::unlock_vault,
             commands::create_vault,
             commands::lock_vault,
