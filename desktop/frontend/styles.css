@@ -951,13 +951,13 @@ body.resizing-ai-panel .ai-panel-splitter::before {
 }
 
 .ai-code-tools button {
-  min-height: 26px;
-  padding: 4px 10px;
-  border-radius: 8px;
+  min-height: 22px;
+  padding: 2px 8px;
+  border-radius: 7px;
   border-color: rgba(104, 168, 255, 0.34);
   background: rgba(104, 168, 255, 0.14);
   color: #cfe6ff;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 750;
 }
 
@@ -1150,6 +1150,33 @@ body.resizing-ai-panel .ai-panel-splitter::before {
   font-size: 11px;
 }
 
+.ai-context-toggle {
+  min-height: 24px;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(104, 168, 255, 0.22);
+  background: rgba(104, 168, 255, 0.08);
+  color: #b8d9ff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ai-context-toggle[data-mode="always"] {
+  border-color: rgba(72, 220, 165, 0.26);
+  background: rgba(72, 220, 165, 0.1);
+  color: #9df0cf;
+}
+
+.ai-context-toggle[data-mode="off"] {
+  border-color: rgba(255, 184, 108, 0.26);
+  background: rgba(255, 184, 108, 0.1);
+  color: #ffd39a;
+}
+
 .ai-send-button {
   width: 30px;
   height: 30px;
@@ -1267,6 +1294,11 @@ body[data-app-theme="light"] .ai-message-error .ai-message-body {
   background: rgba(239, 68, 68, 0.08);
 }
 
+body[data-app-theme="light"] .ai-message.pending .ai-message-body {
+  color: #475569;
+  background: rgba(255, 255, 255, 0.92);
+}
+
 body[data-app-theme="light"] .ai-examples button {
   color: #1e293b;
 }
@@ -1291,6 +1323,24 @@ body[data-app-theme="light"] .ai-assistant-mark {
 body[data-app-theme="light"] .ai-process-step > span {
   color: #1d4ed8;
   background: rgba(37, 99, 235, 0.12);
+}
+
+body[data-app-theme="light"] .ai-context-toggle {
+  border-color: rgba(37, 99, 235, 0.18);
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
+}
+
+body[data-app-theme="light"] .ai-context-toggle[data-mode="always"] {
+  border-color: rgba(16, 185, 129, 0.26);
+  background: rgba(16, 185, 129, 0.1);
+  color: #047857;
+}
+
+body[data-app-theme="light"] .ai-context-toggle[data-mode="off"] {
+  border-color: rgba(217, 119, 6, 0.22);
+  background: rgba(217, 119, 6, 0.08);
+  color: #92400e;
 }
 
 @media (max-width: 1180px) {
@@ -3856,6 +3906,27 @@ body[data-app-theme="light"] .permissions-col-title {
   width: 100%;
 }
 
+.ai-model-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.ai-model-picker .zt-select-wrap {
+  min-width: 0;
+}
+
+.ai-model-picker button {
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(104, 168, 255, 0.22);
+  background: rgba(104, 168, 255, 0.08);
+  color: #b8d9ff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .ai-settings-grid input,
 .ai-settings-grid .zt-select-wrap .zt-select-trigger {
   min-height: 40px;
@@ -3864,6 +3935,13 @@ body[data-app-theme="light"] .permissions-col-title {
   background: rgba(255, 255, 255, 0.03) !important;
   color: #ffffff;
   padding: 0 12px;
+}
+
+.ai-settings-grid .zt-select-trigger-input {
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
 }
 
 .ai-settings-grid input:focus {
@@ -3895,6 +3973,12 @@ body[data-app-theme="light"] .ai-settings-grid .zt-select-wrap .zt-select-trigge
   border-color: rgba(203, 213, 225, 0.72) !important;
   background: rgba(255, 255, 255, 0.78) !important;
   color: #0f172a;
+}
+
+body[data-app-theme="light"] .ai-model-picker button {
+  border-color: rgba(37, 99, 235, 0.2);
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
 }
 
 body[data-app-theme="light"] .ai-settings-grid input::placeholder {

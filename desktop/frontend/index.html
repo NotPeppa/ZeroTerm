@@ -80,13 +80,6 @@
                       <div class="vault-title-row">
                         <div id="vault-local-title" class="vault-group-title">本地</div>
                         <div class="vault-title-actions">
-                          <button id="vault-import-button" type="button" class="workspace-icon-btn" aria-label="Import">
-                            <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
-                              <path d="M12 3v11"></path>
-                              <path d="m7 9 5 5 5-5"></path>
-                              <path d="M4 20h16"></path>
-                            </svg>
-                          </button>
                           <button id="add-host-button" type="button" class="workspace-icon-btn" aria-label="Add host">
                             <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
                               <path d="M12 5v14"></path>
@@ -230,9 +223,9 @@
                               <span>当前 SSH 会话</span>
                             </div>
                           </div>
-                          <div class="ai-safe-pill" title="危险操作会先询问你">
+                          <div id="ai-model-pill" class="ai-safe-pill" title="当前 AI 模型">
                             <span aria-hidden="true"></span>
-                            安全模式
+                            未配置模型
                           </div>
                         </header>
 
@@ -289,6 +282,7 @@
                             autocomplete="off"
                           ></textarea>
                           <div class="ai-compose-footer">
+                            <button id="ai-context-toggle" type="button" class="ai-context-toggle" title="切换是否附带当前终端内容">智能判断终端内容</button>
                             <span>Enter 发送，Shift+Enter 换行</span>
                             <button type="submit" class="ai-send-button" aria-label="发送给 AI">
                               <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -483,7 +477,6 @@ $ npm run build && npm run start</pre>
                                   <h4 id="settings-ai-provider-title">AI 服务</h4>
                                   <p id="settings-ai-provider-desc" class="muted tiny">配置用于终端助手的模型服务。支持 OpenAI 兼容接口，密钥后续会保存到系统钥匙串。</p>
                                 </div>
-                                <span id="settings-ai-safe-badge" class="ai-settings-badge">安全模式</span>
                               </div>
 
                               <div class="settings-grid-2 ai-settings-grid">
@@ -499,7 +492,16 @@ $ npm run build && npm run start</pre>
                                 </label>
                                 <label class="settings-field">
                                   <span id="settings-ai-model-label">模型</span>
-                                  <input id="settings-ai-model" type="text" placeholder="例如：gpt-4.1 或 qwen2.5-coder" autocomplete="off" />
+                                  <div class="ai-model-picker">
+                                    <select id="settings-ai-model">
+                                      <option value="">手动填写或刷新模型列表</option>
+                                    </select>
+                                    <button id="settings-ai-refresh-models" type="button">刷新</button>
+                                  </div>
+                                </label>
+                                <label class="settings-field settings-grid-span-2" id="settings-ai-model-custom-row">
+                                  <span id="settings-ai-model-custom-label">自定义模型</span>
+                                  <input id="settings-ai-model-custom" type="text" placeholder="例如：gpt-4.1 或 qwen2.5-coder" autocomplete="off" />
                                 </label>
                                 <label class="settings-field settings-grid-span-2">
                                   <span id="settings-ai-base-url-label">接口地址</span>
@@ -508,42 +510,6 @@ $ npm run build && npm run start</pre>
                                 <label class="settings-field settings-grid-span-2">
                                   <span id="settings-ai-api-key-label">API Key</span>
                                   <input id="settings-ai-api-key" type="password" placeholder="输入后将保存到系统钥匙串（待接入）" autocomplete="off" />
-                                </label>
-                              </div>
-                            </section>
-
-                            <section class="settings-section ai-settings-card">
-                              <h4 id="settings-ai-permissions-title">操作权限</h4>
-                              <div class="settings-row">
-                                <div>
-                                  <div id="settings-ai-safe-mode-label" class="settings-item-title">安全模式</div>
-                                  <p id="settings-ai-safe-mode-hint" class="muted tiny">AI 可以自由制定计划，但修改、删除、重启等动作必须先确认。</p>
-                                </div>
-                                <label class="settings-switch">
-                                  <input id="settings-ai-safe-mode" type="checkbox" checked />
-                                  <span></span>
-                                </label>
-                              </div>
-                              <div class="settings-divider"></div>
-                              <div class="settings-row">
-                                <div>
-                                  <div id="settings-ai-auto-read-label" class="settings-item-title">允许自动只读检查</div>
-                                  <p id="settings-ai-auto-read-hint" class="muted tiny">允许 AI 自动查看系统状态、目录、服务、端口和最近日志。</p>
-                                </div>
-                                <label class="settings-switch">
-                                  <input id="settings-ai-auto-read" type="checkbox" checked />
-                                  <span></span>
-                                </label>
-                              </div>
-                              <div class="settings-divider"></div>
-                              <div class="settings-row">
-                                <div>
-                                  <div id="settings-ai-show-commands-label" class="settings-item-title">默认显示命令</div>
-                                  <p id="settings-ai-show-commands-hint" class="muted tiny">关闭后，命令会折叠在“查看命令”里，界面更适合普通用户。</p>
-                                </div>
-                                <label class="settings-switch">
-                                  <input id="settings-ai-show-commands" type="checkbox" />
-                                  <span></span>
                                 </label>
                               </div>
                             </section>

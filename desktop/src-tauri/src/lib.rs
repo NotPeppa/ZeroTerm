@@ -32,6 +32,7 @@ pub fn run() {
             commands::vault_status,
             commands::get_ai_config,
             commands::save_ai_config,
+            commands::list_ai_models,
             commands::ai_chat,
             commands::ai_chat_stream,
             commands::unlock_vault,

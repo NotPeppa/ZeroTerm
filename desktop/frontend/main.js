@@ -688,7 +688,6 @@ const I18N = {
     "settings.ai.desc": "Configure the model service and what the assistant is allowed to do.",
     "settings.ai.provider.title": "AI Service",
     "settings.ai.provider.desc": "Configure the model service for the terminal assistant. OpenAI-compatible APIs are supported; keys will be stored in the OS keychain after backend integration.",
-    "settings.ai.safe_badge": "Safe mode",
     "settings.ai.provider.label": "Provider",
     "settings.ai.provider.openai_compatible": "OpenAI Compatible",
     "settings.ai.provider.openai": "OpenAI",
@@ -696,18 +695,13 @@ const I18N = {
     "settings.ai.provider.gemini": "Gemini",
     "settings.ai.provider.ollama": "Ollama",
     "settings.ai.model.label": "Model",
+    "settings.ai.model.custom_label": "Custom model",
     "settings.ai.model.placeholder": "e.g. gpt-4.1 or qwen2.5-coder",
+    "settings.ai.model.refresh": "Refresh",
     "settings.ai.base_url.label": "Base URL",
     "settings.ai.base_url.placeholder": "e.g. https://api.example.com/v1",
     "settings.ai.api_key.label": "API Key",
     "settings.ai.api_key.placeholder": "Will be stored in OS keychain after integration",
-    "settings.ai.permissions.title": "Operation Permissions",
-    "settings.ai.safe_mode.label": "Safe mode",
-    "settings.ai.safe_mode.hint": "AI can plan freely, but write, delete, restart, and other risky actions must be confirmed first.",
-    "settings.ai.auto_read.label": "Allow automatic read-only checks",
-    "settings.ai.auto_read.hint": "Allow AI to inspect system status, folders, services, ports, and recent logs automatically.",
-    "settings.ai.show_commands.label": "Show commands by default",
-    "settings.ai.show_commands.hint": "When off, commands stay folded under 'View command' for a simpler non-technical interface.",
     "settings.ai.status.unsaved": "AI config has not been saved yet.",
     "settings.ai.status.saved": "AI config saved locally.",
     "settings.ai.status.ready": "AI config is ready.",
@@ -1228,7 +1222,6 @@ const I18N = {
     "settings.ai.desc": "配置模型服务，以及 AI 可以执行哪些操作。",
     "settings.ai.provider.title": "AI 服务",
     "settings.ai.provider.desc": "配置终端助手使用的模型服务。支持 OpenAI 兼容接口，密钥后续会保存到系统钥匙串。",
-    "settings.ai.safe_badge": "安全模式",
     "settings.ai.provider.label": "服务商",
     "settings.ai.provider.openai_compatible": "OpenAI 兼容接口",
     "settings.ai.provider.openai": "OpenAI",
@@ -1236,18 +1229,13 @@ const I18N = {
     "settings.ai.provider.gemini": "Gemini",
     "settings.ai.provider.ollama": "Ollama",
     "settings.ai.model.label": "模型",
+    "settings.ai.model.custom_label": "自定义模型",
     "settings.ai.model.placeholder": "例如：gpt-4.1 或 qwen2.5-coder",
+    "settings.ai.model.refresh": "刷新",
     "settings.ai.base_url.label": "接口地址",
     "settings.ai.base_url.placeholder": "例如：https://api.example.com/v1",
     "settings.ai.api_key.label": "API Key",
     "settings.ai.api_key.placeholder": "接入后将保存到系统钥匙串",
-    "settings.ai.permissions.title": "操作权限",
-    "settings.ai.safe_mode.label": "安全模式",
-    "settings.ai.safe_mode.hint": "AI 可以自由制定计划，但修改、删除、重启等风险动作必须先确认。",
-    "settings.ai.auto_read.label": "允许自动只读检查",
-    "settings.ai.auto_read.hint": "允许 AI 自动查看系统状态、目录、服务、端口和最近日志。",
-    "settings.ai.show_commands.label": "默认显示命令",
-    "settings.ai.show_commands.hint": "关闭后，命令会折叠在“查看命令”里，界面更适合普通用户。",
     "settings.ai.status.unsaved": "AI 配置尚未保存。",
     "settings.ai.status.saved": "AI 配置已保存到本地。",
     "settings.ai.status.ready": "AI 配置已就绪。",
@@ -1680,6 +1668,9 @@ const aiComposeForm = document.getElementById("ai-compose-form");
 const aiComposeInput = document.getElementById("ai-compose-input");
 const aiChatLog = document.getElementById("ai-chat-log");
 const aiEmptyState = document.getElementById("ai-empty-state");
+const aiContextToggle = document.getElementById("ai-context-toggle");
+const aiAssistantBody = document.querySelector(".ai-assistant-body");
+const aiModelPill = document.getElementById("ai-model-pill");
 const vaultsContent = document.getElementById("vaults-content");
 const vaultLayout = document.querySelector(".vault-layout");
 const vaultSplitter = document.getElementById("vault-splitter");
@@ -1707,11 +1698,10 @@ const settingsAiPanel = document.getElementById("settings-ai-panel");
 const settingsSyncPanel = document.getElementById("settings-sync-panel");
 const settingsAiProvider = document.getElementById("settings-ai-provider");
 const settingsAiModel = document.getElementById("settings-ai-model");
+const settingsAiModelCustom = document.getElementById("settings-ai-model-custom");
+const settingsAiRefreshModels = document.getElementById("settings-ai-refresh-models");
 const settingsAiBaseUrl = document.getElementById("settings-ai-base-url");
 const settingsAiApiKey = document.getElementById("settings-ai-api-key");
-const settingsAiSafeMode = document.getElementById("settings-ai-safe-mode");
-const settingsAiAutoRead = document.getElementById("settings-ai-auto-read");
-const settingsAiShowCommands = document.getElementById("settings-ai-show-commands");
 const settingsAiSave = document.getElementById("settings-ai-save");
 const settingsAiStatus = document.getElementById("settings-ai-status");
 const settingsSyncRefresh = document.getElementById("settings-sync-refresh");
@@ -1777,6 +1767,84 @@ let aiStreamUnlistenPromise = null;
 const aiConversationByPane = new Map();
 let aiActivePaneKey = null;
 let aiPanelCollapsed = true;
+const AI_CONTEXT_MODES = ["smart", "always", "off"];
+let aiContextMode = localStorage.getItem("zt.ai.contextMode") || "smart";
+if (!AI_CONTEXT_MODES.includes(aiContextMode)) aiContextMode = "smart";
+let lastAutoAiModelsKey = "";
+let currentAiModelLabel = "";
+let pendingAiCommandCounter = 0;
+
+function syncAiContextToggle() {
+  if (!aiContextToggle) return;
+  const labels = {
+    smart: "智能判断终端内容",
+    always: "总是附带终端内容",
+    off: "不附带终端内容",
+  };
+  aiContextToggle.textContent = labels[aiContextMode];
+  aiContextToggle.dataset.mode = aiContextMode;
+}
+
+function getAiModelValue() {
+  return settingsAiModel?.value || settingsAiModelCustom?.value || "";
+}
+
+function syncAiModelPill(model) {
+  if (!aiModelPill) return;
+  const value = String(model || getAiModelValue() || currentAiModelLabel || "").trim();
+  if (value) currentAiModelLabel = value;
+  const label = value || "未配置模型";
+  aiModelPill.replaceChildren();
+  const dot = document.createElement("span");
+  dot.setAttribute("aria-hidden", "true");
+  aiModelPill.append(dot, document.createTextNode(label));
+  aiModelPill.title = `当前 AI 模型：${label}`;
+}
+
+function setAiModelOptions(models, selected) {
+  if (!settingsAiModel) return;
+  const current = selected || getAiModelValue();
+  settingsAiModel.textContent = "";
+  const custom = document.createElement("option");
+  custom.value = "";
+  custom.textContent = "自定义模型";
+  settingsAiModel.appendChild(custom);
+  for (const model of models || []) {
+    const option = document.createElement("option");
+    option.value = model;
+    option.textContent = model;
+    settingsAiModel.appendChild(option);
+  }
+  if (current && Array.from(settingsAiModel.options).some((o) => o.value === current)) {
+    settingsAiModel.value = current;
+    if (settingsAiModelCustom) settingsAiModelCustom.value = "";
+  } else {
+    settingsAiModel.value = "";
+    if (settingsAiModelCustom) settingsAiModelCustom.value = current || "";
+  }
+  syncCustomSelect("settings-ai-model");
+  syncAiModelPill(current);
+}
+
+function cycleAiContextMode() {
+  const idx = AI_CONTEXT_MODES.indexOf(aiContextMode);
+  aiContextMode = AI_CONTEXT_MODES[(idx + 1) % AI_CONTEXT_MODES.length];
+  localStorage.setItem("zt.ai.contextMode", aiContextMode);
+  syncAiContextToggle();
+}
+
+function isAiPanelNearBottom() {
+  if (!aiAssistantBody) return true;
+  return aiAssistantBody.scrollHeight - aiAssistantBody.scrollTop - aiAssistantBody.clientHeight < 80;
+}
+
+function scrollAiPanelToBottom({ force = false } = {}) {
+  if (!aiAssistantBody) return;
+  if (!force && !isAiPanelNearBottom()) return;
+  requestAnimationFrame(() => {
+    aiAssistantBody.scrollTop = aiAssistantBody.scrollHeight;
+  });
+}
 
 function setAiPanelCollapsed(collapsed) {
   aiPanelCollapsed = !!collapsed;
@@ -1841,8 +1909,8 @@ function renderAiMarkdown(text) {
         code.textContent = match.slice(1, -1);
         if (looksRunnableInlineCommand(code.textContent)) {
           code.classList.add("ai-inline-command");
-          code.title = "点击执行";
-          code.addEventListener("click", () => runCommandInActiveTerminal(code.textContent));
+          code.title = "点击批准执行";
+          code.addEventListener("click", () => requestAiCommandApproval(code.textContent));
         }
         frag.appendChild(code);
       } else if (match.startsWith("**")) {
@@ -1881,6 +1949,7 @@ function renderAiMarkdown(text) {
     if (!codeLines) return;
     const block = document.createElement("div");
     block.className = "ai-code-block";
+    block.dataset.lang = (codeLang || "").toLowerCase();
     if (codeLang) {
       const label = document.createElement("div");
       label.className = "ai-code-label";
@@ -1968,7 +2037,7 @@ function setAiMessageContent(node, content) {
   } else {
     body.textContent = content;
   }
-  if (aiChatLog) aiChatLog.scrollTop = aiChatLog.scrollHeight;
+  scrollAiPanelToBottom();
 }
 
 function parseAiErrorMessage(error) {
@@ -2016,17 +2085,163 @@ async function runCommandInActiveTerminal(command) {
   if (!text) return;
   const ok = confirm(`将执行以下命令：\n\n${text}`);
   if (!ok) return;
-  const marker = `# ZeroTerm AI 执行 ${new Date().toLocaleTimeString()}\n`;
-  const payload = `${marker}${text.endsWith("\n") ? text : `${text}\n`}`;
+  const payload = text.endsWith("\n") ? text : `${text}\n`;
   const bytes = Array.from(new TextEncoder().encode(payload));
   try {
     await invoke("send_input", { sessionId: pane.sessionId, data: bytes });
     pane.term?.focus?.();
-    showToast("命令已发送到当前终端。", "success");
   } catch (e) {
     showToast(String(e), "error", 4200);
   }
 }
+
+function requestAiCommandApproval(command) {
+  const text = normalizeAiCommandBlock(command);
+  if (!text) return;
+  if (text.split("\n").filter(Boolean).length > 1) {
+    showToast("一次只能批准执行一条命令。", "error", 3200);
+    return;
+  }
+  return executeAiCommand(text);
+}
+
+async function executeAiCommand(command) {
+  const pane = getActivePane();
+  if (!pane?.sessionId) {
+    showToast("当前没有可执行命令的终端会话。", "error", 3600);
+    return;
+  }
+  const before = getActiveTerminalSnapshot(240);
+  const payload = command.endsWith("\n") ? command : `${command}\n`;
+  const bytes = Array.from(new TextEncoder().encode(payload));
+  try {
+    await invoke("send_input", { sessionId: pane.sessionId, data: bytes });
+    pane.term?.focus?.();
+    await waitForTerminalOutputSettle(before, { maxMs: commandWaitMaxMs(command) });
+    const after = getActiveTerminalSnapshot(260);
+    const output = after.startsWith(before) ? after.slice(before.length).trim() : after;
+    await continueAiAfterCommand(command, output || after);
+  } catch (e) {
+    showToast(String(e), "error", 4200);
+    throw e;
+  }
+}
+
+function wait(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function waitForTerminalOutputSettle(before, { quietMs = 900, maxMs = 15000 } = {}) {
+  const started = Date.now();
+  let last = before || "";
+  let lastChanged = Date.now();
+  while (Date.now() - started < maxMs) {
+    await wait(250);
+    const current = getActiveTerminalSnapshot(260);
+    if (current !== last) {
+      last = current;
+      lastChanged = Date.now();
+      continue;
+    }
+    if (Date.now() - lastChanged >= quietMs) return;
+  }
+}
+
+function commandWaitMaxMs(command) {
+  const sleeps = Array.from(String(command || "").matchAll(/\bsleep\s+(\d+(?:\.\d+)?)/g))
+    .map((m) => Number(m[1]))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (!sleeps.length) return 15000;
+  const totalSleepMs = sleeps.reduce((sum, n) => sum + n * 1000, 0);
+  return Math.min(90000, Math.max(15000, totalSleepMs + 8000));
+}
+
+async function continueAiAfterCommand(command, output) {
+  const userGoal = [...aiMessages].reverse().find((m) => m.role === "user")?.content || "";
+  await streamAiMessages([
+    {
+      role: "system",
+      content: [
+        "你是 ZeroTerm 的 AI 助手。用户刚批准执行了一条命令。",
+        "你的任务是根据这次命令输出继续推进用户目标，但不要为了推进而反复检查。",
+        "先判断当前输出是否已经回答了用户的问题，或者已经暴露了明确异常。",
+        "如果证据已经足够，必须停止继续排查，直接给出：结论、依据、影响、建议下一步。",
+        "如果问题是配置缺失、服务未运行、依赖不存在、权限不足、资源不足、网络不通等，应给出可执行的修复方向，而不是继续搜集同类信息。",
+        "只有在当前输出无法支持结论，且缺少一个关键事实时，才给下一条最有用的命令。",
+        "每次最多建议一条命令，且每个 fenced code block 只能包含一条命令。",
+        "引用终端输出、报错或日志时必须使用 ```terminal 代码块；只有真正需要用户批准执行的命令才使用 ```bash。",
+        "不要重复建议已经执行过或等价的检查命令。",
+        "不要假装执行未执行的命令。",
+      ].join("\n"),
+    },
+    ...redactAiMessagesForRequest(aiMessages.slice(-6)),
+    { role: "user", content: userGoal },
+    {
+      role: "system",
+      content: [
+        "已批准并执行的命令：",
+        "```bash",
+        command,
+        "```",
+        "本次终端输出（已本地脱敏）：",
+        "```terminal",
+        redactSensitiveText(output),
+        "```",
+      ].join("\n"),
+    },
+  ], "正在分析执行结果...");
+}
+
+async function streamAiMessages(messages, pendingText = "正在思考...") {
+  await ensureAiStreamListener();
+  if (!window.__ztAiStreams) window.__ztAiStreams = new Map();
+  const pendingNode = appendAiMessage("assistant", pendingText, { pending: true });
+  const requestId = `ai-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  window.__ztAiStreams.set(requestId, { node: pendingNode, content: "" });
+  const timeoutId = window.setTimeout(() => {
+    const state = window.__ztAiStreams?.get?.(requestId);
+    if (!state) return;
+    state.node.classList.remove("pending");
+    state.node.className = "ai-message ai-message-error";
+    setAiMessageContent(state.node, "AI 响应超时，请重试。");
+    window.__ztAiStreams.delete(requestId);
+  }, 45000);
+  window.__ztAiStreams.get(requestId).timeoutId = timeoutId;
+  try {
+    await invoke("ai_chat_stream", {
+      input: {
+        requestId,
+        messages,
+      },
+    });
+  } catch (e) {
+    const state = window.__ztAiStreams?.get?.(requestId);
+    if (!state) return;
+    if (state.timeoutId) window.clearTimeout(state.timeoutId);
+    try {
+      const fallback = await invoke("ai_chat", { messages });
+      const content = fallback?.content || "";
+      if (content.trim()) {
+        state.node.classList.remove("pending");
+        state.node.className = "ai-message ai-message-assistant";
+        setAiMessageContent(state.node, content);
+        aiMessages.push({ role: "assistant", content });
+        storeAiConversationForActivePane();
+      } else {
+        state.node.classList.remove("pending");
+        state.node.className = "ai-message ai-message-error";
+        setAiMessageContent(state.node, "AI 流式响应失败，且非流式重试没有返回内容。");
+      }
+    } catch (fallbackError) {
+      state.node.classList.remove("pending");
+      state.node.className = "ai-message ai-message-error";
+      setAiMessageContent(state.node, `AI 响应失败：${String(fallbackError || e)}`);
+    } finally {
+      window.__ztAiStreams.delete(requestId);
+    }
+  }
+}
+
 
 function normalizeAiCommandBlock(command) {
   return String(command || "")
@@ -2112,7 +2327,6 @@ function redactSensitiveText(text) {
 }
 
 function buildAiTerminalContext() {
-  if (settingsAiAutoRead && !settingsAiAutoRead.checked) return "";
   const snapshot = getActiveTerminalSnapshot();
   if (!snapshot) return "";
   const redacted = redactSensitiveText(snapshot);
@@ -2124,6 +2338,14 @@ function buildAiTerminalContext() {
     redacted,
     "```",
   ].join("\n");
+}
+
+function shouldAttachTerminalContext(text) {
+  if (aiContextMode === "off") return false;
+  if (aiContextMode === "always") return true;
+  const q = String(text || "").toLowerCase();
+  if (!q.trim()) return false;
+  return /终端|命令|输出|结果|报错|错误|日志|执行|刚才|上面|当前|这台|机器|服务器|主机|系统|环境|配置|性能|cpu|内存|磁盘|硬盘|网络|公网|ip|端口|进程|服务|登录|连接|ssh|shell|目录|文件|项目|部署|安装|启动|运行|检查|看看|分析|诊断/.test(q);
 }
 
 function redactAiMessagesForRequest(messages) {
@@ -2138,16 +2360,53 @@ function enhanceAiCodeBlocks(root) {
     block.dataset.enhanced = "1";
     const pre = block.querySelector("pre");
     const command = normalizeAiCommandBlock(pre?.textContent || "");
-    if (!command.trim()) return;
+    if (!isExecutableCodeBlock(block, command)) return;
     const tools = document.createElement("div");
     tools.className = "ai-code-tools";
-    const run = document.createElement("button");
-    run.type = "button";
-    run.textContent = "执行";
-    run.addEventListener("click", () => runCommandInActiveTerminal(command));
-    tools.appendChild(run);
+    const commands = command.split("\n").map((line) => line.trim()).filter(Boolean);
+    commands.slice(0, 4).forEach((singleCommand, index) => {
+      const run = document.createElement("button");
+      run.type = "button";
+      run.textContent = commands.length > 1 ? `批准 ${index + 1}` : "批准执行";
+      run.title = singleCommand;
+      run.addEventListener("click", async () => {
+        run.disabled = true;
+        run.textContent = "运行中";
+        block.classList.add("approved");
+        try {
+          await requestAiCommandApproval(singleCommand);
+          run.textContent = "已执行";
+        } catch {
+          run.textContent = "失败";
+        }
+      });
+      tools.appendChild(run);
+    });
     block.appendChild(tools);
   });
+}
+
+function isExecutableCodeBlock(block, command) {
+  const lang = (block?.dataset?.lang || "").toLowerCase();
+  if (["terminal", "output", "text", "log", "txt"].includes(lang)) return false;
+  const lines = String(command || "").split("\n").map((line) => line.trim()).filter(Boolean);
+  if (!lines.length) return false;
+  if (lines.some((line) => looksLikeTerminalOutput(line))) return false;
+  if (["bash", "sh", "shell", "zsh"].includes(lang)) return true;
+  return false;
+}
+
+function looksLikeTerminalOutput(line) {
+  return /^-?(bash|sh|zsh|ash):/i.test(line)
+    || /\b(command not found|no such file or directory|permission denied|not found)\b/i.test(line)
+    || /^\w[\w.-]*:\s+/.test(line);
+}
+
+function looksLikeRunnableCommandLine(line) {
+  if (!line || line.startsWith("#")) return false;
+  if (/^[-–—]/.test(line)) return false;
+  if (looksLikeTerminalOutput(line)) return false;
+  return /^(sudo\s+)?[a-zA-Z0-9_./-]+(\s|$)/.test(line);
 }
 
 function appendAiMessage(role, content, { pending = false, skipStore = false } = {}) {
@@ -2168,7 +2427,7 @@ function appendAiMessage(role, content, { pending = false, skipStore = false } =
   node.append(label, body);
   aiChatLog.appendChild(node);
   setAiMessageContent(node, content);
-  aiChatLog.scrollTop = aiChatLog.scrollHeight;
+  scrollAiPanelToBottom({ force: true });
   if (!skipStore) storeAiConversationForActivePane();
   return node;
 }
@@ -2187,6 +2446,7 @@ async function ensureAiStreamListener() {
     const state = window.__ztAiStreams?.get?.(payload.requestId);
     if (!state) return;
     if (payload.error) {
+      if (state.timeoutId) window.clearTimeout(state.timeoutId);
       state.node.classList.remove("pending");
       state.node.className = "ai-message ai-message-error";
       setAiMessageContent(state.node, payload.error);
@@ -2200,7 +2460,14 @@ async function ensureAiStreamListener() {
       setAiMessageContent(state.node, state.content);
     }
     if (payload.done) {
+      if (state.timeoutId) window.clearTimeout(state.timeoutId);
       state.node.classList.remove("pending");
+      if (!state.content.trim()) {
+        state.node.className = "ai-message ai-message-error";
+        setAiMessageContent(state.node, "AI 没有返回内容，请重试。");
+        window.__ztAiStreams.delete(payload.requestId);
+        return;
+      }
       aiMessages.push({ role: "assistant", content: state.content });
       storeAiConversationForActivePane();
       window.__ztAiStreams.delete(payload.requestId);
@@ -2213,12 +2480,11 @@ async function loadAiConfig() {
   try {
     const cfg = await invoke("get_ai_config");
     settingsAiProvider.value = cfg.provider || "openai-compatible";
-    if (settingsAiModel) settingsAiModel.value = cfg.model || "";
+    setAiModelOptions([], cfg.model || "");
+    if (settingsAiModelCustom && !settingsAiModel?.value) settingsAiModelCustom.value = cfg.model || "";
+    syncAiModelPill(cfg.model || "");
     if (settingsAiBaseUrl) settingsAiBaseUrl.value = cfg.baseUrl || "";
     if (settingsAiApiKey) settingsAiApiKey.value = "";
-    if (settingsAiSafeMode) settingsAiSafeMode.checked = cfg.safeMode !== false;
-    if (settingsAiAutoRead) settingsAiAutoRead.checked = cfg.autoRead !== false;
-    if (settingsAiShowCommands) settingsAiShowCommands.checked = !!cfg.showCommands;
     if (settingsAiStatus) {
       settingsAiStatus.textContent = cfg.hasApiKey
         ? t("settings.ai.status.ready")
@@ -2233,12 +2499,12 @@ async function loadAiConfig() {
 async function saveAiConfigFromForm() {
   const input = {
     provider: settingsAiProvider?.value || "openai-compatible",
-    model: settingsAiModel?.value || "",
+    model: getAiModelValue(),
     baseUrl: settingsAiBaseUrl?.value || "",
     apiKey: settingsAiApiKey?.value || "",
-    safeMode: settingsAiSafeMode?.checked !== false,
-    autoRead: settingsAiAutoRead?.checked !== false,
-    showCommands: !!settingsAiShowCommands?.checked,
+    safeMode: true,
+    autoRead: false,
+    showCommands: false,
   };
   const cfg = await invoke("save_ai_config", { input });
   if (settingsAiApiKey) settingsAiApiKey.value = "";
@@ -2247,7 +2513,37 @@ async function saveAiConfigFromForm() {
       ? t("settings.ai.status.ready")
       : t("settings.ai.status.no_key");
   }
+  syncAiModelPill(cfg.model || input.model);
   return cfg;
+}
+
+async function refreshAiModels() {
+  const input = {
+    provider: settingsAiProvider?.value || "openai-compatible",
+    model: getAiModelValue(),
+    baseUrl: settingsAiBaseUrl?.value || "",
+    apiKey: settingsAiApiKey?.value || "",
+    safeMode: true,
+    autoRead: false,
+    showCommands: false,
+  };
+  const result = await invoke("list_ai_models", { input });
+  setAiModelOptions(result?.models || [], input.model);
+  if (settingsAiStatus) settingsAiStatus.textContent = `已获取 ${result?.models?.length || 0} 个模型。`;
+}
+
+async function maybeAutoRefreshAiModels() {
+  if (!settingsAiBaseUrl?.value) return;
+  const keyReady = !!settingsAiApiKey?.value || !/no_key|尚未保存/.test(settingsAiStatus?.textContent || "");
+  if (!keyReady) return;
+  const key = `${settingsAiProvider?.value || ""}|${settingsAiBaseUrl.value}`;
+  if (key === lastAutoAiModelsKey) return;
+  lastAutoAiModelsKey = key;
+  try {
+    await refreshAiModels();
+  } catch (e) {
+    lastAutoAiModelsKey = "";
+  }
 }
 
 async function sendAiMessage(text) {
@@ -2259,23 +2555,15 @@ async function sendAiMessage(text) {
   const submitButton = aiComposeForm?.querySelector("button[type='submit']");
   if (submitButton) submitButton.disabled = true;
   try {
-    const system = "你是 ZeroTerm 的 AI 助手。用户是普通用户，不一定懂命令。请先用人话解释和规划，不要假装已经执行命令。需要用户执行命令时，请把每组命令放进独立的 fenced code block，例如 ```bash，不要只写成行内代码；这样界面可以显示执行按钮。";
-    const terminalContext = buildAiTerminalContext();
     aiMessages.push({ role: "user", content: text });
     storeAiConversationForActivePane();
     appendAiMessage("user", text);
-    const pendingNode = appendAiMessage("assistant", "正在思考...", { pending: true });
-    const requestId = `ai-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    window.__ztAiStreams.set(requestId, { node: pendingNode, content: "" });
+    const system = "你是 ZeroTerm 的 AI 助手。用户是普通用户，不一定懂命令。请先用人话解释和规划，不要假装已经执行命令。需要用户执行命令时，一次只建议下一条最有用的命令；每个 bash/shell fenced code block 只能包含一条命令。引用终端输出、报错或日志时必须使用 ```terminal 代码块，不要使用 bash。";
+    const terminalContext = shouldAttachTerminalContext(text) ? buildAiTerminalContext() : "";
     const messages = [{ role: "system", content: system }];
     if (terminalContext) messages.push({ role: "system", content: terminalContext });
     messages.push(...redactAiMessagesForRequest(aiMessages.slice(-10)));
-    await invoke("ai_chat_stream", {
-      input: {
-        requestId,
-        messages,
-      },
-    });
+    await streamAiMessages(messages);
   } catch (e) {
     appendAiMessage("error", String(e));
   } finally {
@@ -2830,12 +3118,32 @@ function syncTerminalThemeCardsActive() {
   }
 }
 
+function setTerminalTheme(themeId) {
+  const themes = allTerminalThemes();
+  const next = themes[themeId] ? themeId : "termark-dark";
+  terminalEditingThemeId = next;
+  localStorage.setItem(SETTINGS_KEY_TERMINAL_THEME, next);
+  if (settingsTerminalTheme) {
+    settingsTerminalTheme.value = next;
+    syncCustomSelect("settings-terminal-theme");
+  }
+  applyTerminalThemeToAllPanes();
+  syncTerminalThemeCardsActive();
+  syncTerminalThemeEditor();
+}
+
 function makeThemePreviewBlock(themeName, themeConfig) {
+  const themeGroup = resolveTerminalThemeGroup(themeName);
   const p = document.createElement("pre");
-  p.className = "terminal-theme-preview " + (TERMINAL_THEME_META[themeName]?.group === "light" ? "light" : "dark");
+  p.className = "terminal-theme-preview " + themeGroup;
   p.textContent = "root@termark$ ls\ndrwxr-xr-x 1 root  boot\ndrwxr-xr-x 1 root  data";
   if (themeConfig) {
-    p.style.background = toOpaqueHex(themeConfig.background);
+    if (isFullyTransparentColor(themeConfig.background)) {
+      // Keep CSS fallback preview background for transparent terminal themes.
+      p.style.background = "";
+    } else {
+      p.style.background = toOpaqueHex(themeConfig.background);
+    }
     p.style.color = toOpaqueHex(themeConfig.foreground);
   }
   return p;
@@ -2858,15 +3166,7 @@ function renderTerminalThemeCards() {
     name.textContent = label;
     card.append(name, makeThemePreviewBlock(id, themes[id]));
     card.addEventListener("click", () => {
-      localStorage.setItem(SETTINGS_KEY_TERMINAL_THEME, id);
-      terminalEditingThemeId = id;
-      if (settingsTerminalTheme) {
-        settingsTerminalTheme.value = id;
-        syncCustomSelect("settings-terminal-theme");
-      }
-      applyTerminalThemeToAllPanes();
-      syncTerminalThemeCardsActive();
-      syncTerminalThemeEditor();
+      setTerminalTheme(id);
     });
     card.addEventListener("contextmenu", (ev) => {
       ev.preventDefault();
@@ -2891,6 +3191,23 @@ function toOpaqueHex(color) {
   return "#000000";
 }
 
+function isFullyTransparentColor(color) {
+  if (!color) return true;
+  const normalized = String(color).trim().toLowerCase();
+  const hexMatch = normalized.match(/^#([0-9a-f]{8})$/);
+  if (hexMatch) return hexMatch[1].slice(6, 8) === "00";
+  const rgbaMatch = normalized.match(
+    /^rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*(-?\d*\.?\d+)\s*\)$/,
+  );
+  if (rgbaMatch) return Number(rgbaMatch[1]) === 0;
+  return false;
+}
+
+function resolveTerminalThemeGroup(themeName) {
+  const customTheme = terminalCustomThemes.find((t) => t.id === themeName);
+  return customTheme?.group || TERMINAL_THEME_META[themeName]?.group || "dark";
+}
+
 function syncTerminalThemeEditor() {
   const currentId = terminalEditingThemeId || getTerminalThemeName();
   const isCustom = terminalCustomThemes.some((t) => t.id === currentId);
@@ -2911,7 +3228,13 @@ function updateThemeEditPreview(theme) {
   if (!themeEditPreview) return;
   const pre = themeEditPreview.querySelector("pre");
   if (!pre) return;
-  pre.style.background = toOpaqueHex(theme.background);
+  const themeName = terminalEditingThemeId || getTerminalThemeName();
+  const themeGroup = resolveTerminalThemeGroup(themeName);
+  if (isFullyTransparentColor(theme.background)) {
+    pre.style.background = themeGroup === "light" ? "#eff1f5" : "#0a1020";
+  } else {
+    pre.style.background = toOpaqueHex(theme.background);
+  }
   pre.style.color = toOpaqueHex(theme.foreground);
 }
 
@@ -3352,6 +3675,9 @@ function setSettingsSection(section) {
   if (settingsSyncPanel) settingsSyncPanel.hidden = settingsSection !== "sync";
   if (settingsDataPanel) settingsDataPanel.hidden = settingsSection !== "data";
   if (settingsAboutPanel) settingsAboutPanel.hidden = settingsSection !== "about";
+  if (settingsSection === "ai") {
+    maybeAutoRefreshAiModels().catch(() => {});
+  }
   if (settingsGeneralTitle) {
     settingsGeneralTitle.textContent = settingsSection === "terminal"
       ? t("settings.nav.terminal")
@@ -4721,6 +5047,7 @@ function buildCustomSelect(selectEl) {
 function syncCustomSelect(selectId) {
   const el = document.getElementById(selectId);
   if (!el) return;
+  buildCustomSelect(el);
   if (typeof el._ztSync === "function") el._ztSync();
 }
 
@@ -4909,21 +5236,17 @@ function applyI18n() {
   setText("settings-terminal-line-height-label", "settings.terminal_font.line_height");
   setText("settings-ai-provider-title", "settings.ai.provider.title");
   setText("settings-ai-provider-desc", "settings.ai.provider.desc");
-  setText("settings-ai-safe-badge", "settings.ai.safe_badge");
+  syncAiModelPill();
   setText("settings-ai-provider-label", "settings.ai.provider.label");
   setText("settings-ai-model-label", "settings.ai.model.label");
+  setText("settings-ai-model-custom-label", "settings.ai.model.custom_label");
+  setText("settings-ai-refresh-models", "settings.ai.model.refresh");
   setText("settings-ai-base-url-label", "settings.ai.base_url.label");
   setText("settings-ai-api-key-label", "settings.ai.api_key.label");
-  setText("settings-ai-permissions-title", "settings.ai.permissions.title");
-  setText("settings-ai-safe-mode-label", "settings.ai.safe_mode.label");
-  setText("settings-ai-safe-mode-hint", "settings.ai.safe_mode.hint");
-  setText("settings-ai-auto-read-label", "settings.ai.auto_read.label");
-  setText("settings-ai-auto-read-hint", "settings.ai.auto_read.hint");
-  setText("settings-ai-show-commands-label", "settings.ai.show_commands.label");
-  setText("settings-ai-show-commands-hint", "settings.ai.show_commands.hint");
   setText("settings-ai-status", "settings.ai.status.unsaved");
   setText("settings-ai-save", "settings.ai.button.save");
   setPlaceholder("settings-ai-model", "settings.ai.model.placeholder");
+  setPlaceholder("settings-ai-model-custom", "settings.ai.model.placeholder");
   setPlaceholder("settings-ai-base-url", "settings.ai.base_url.placeholder");
   setPlaceholder("settings-ai-api-key", "settings.ai.api_key.placeholder");
   setOptionText("settings-ai-provider", "openai-compatible", "settings.ai.provider.openai_compatible");
@@ -4931,6 +5254,7 @@ function applyI18n() {
   setOptionText("settings-ai-provider", "anthropic", "settings.ai.provider.anthropic");
   setOptionText("settings-ai-provider", "gemini", "settings.ai.provider.gemini");
   setOptionText("settings-ai-provider", "ollama", "settings.ai.provider.ollama");
+  syncCustomSelect("settings-ai-model");
   syncCustomSelect("settings-ai-provider");
   setText("settings-sftp-title", "settings.sftp.title");
   setText("settings-sftp-auto-label", "settings.sftp.auto.label");
@@ -5057,11 +5381,13 @@ buildCustomSelect(document.getElementById("hf-group"));
 buildCustomSelect(document.getElementById("hf-jump"));
 buildCustomSelect(document.getElementById("settings-language-select"));
 buildCustomSelect(document.getElementById("settings-ai-provider"));
+buildCustomSelect(document.getElementById("settings-ai-model"));
 buildCustomSelect(document.getElementById("settings-terminal-theme"));
 buildCustomSelect(document.getElementById("settings-terminal-font-family"));
 buildCustomSelect(document.getElementById("settings-sync-profile"));
 buildCustomSelect(document.getElementById("settings-sync-backend"));
 installAiPanelResize();
+syncAiContextToggle();
 syncCustomSelect("settings-sync-backend");
 buildCustomSelect(document.getElementById("sftp-left-host"));
 buildCustomSelect(document.getElementById("sftp-right-host"));
@@ -5397,6 +5723,20 @@ settingsAiSave?.addEventListener("click", async () => {
     }
   });
 });
+settingsAiRefreshModels?.addEventListener("click", async () => {
+  await runSyncButtonAction(settingsAiRefreshModels, "刷新中...", async () => {
+    try {
+      await refreshAiModels();
+      showToast("模型列表已刷新。", "success");
+    } catch (e) {
+      const msg = String(e);
+      if (settingsAiStatus) settingsAiStatus.textContent = msg;
+      showToast(msg, "error", 4200);
+    }
+  });
+});
+settingsAiModel?.addEventListener("change", () => syncAiModelPill());
+settingsAiModelCustom?.addEventListener("input", () => syncAiModelPill());
 settingsDataClearVault?.addEventListener("click", async () => {
   const ok = confirm(t("settings.data.confirm.clear_vault"));
   if (!ok) return;
@@ -5835,12 +6175,7 @@ settingsSftpLocalDirBrowse?.addEventListener("click", async () => {
   }
 });
 settingsTerminalTheme?.addEventListener("change", () => {
-  const value = settingsTerminalTheme.value;
-  terminalEditingThemeId = value;
-  localStorage.setItem(SETTINGS_KEY_TERMINAL_THEME, allTerminalThemes()[value] ? value : "termark-dark");
-  applyTerminalThemeToAllPanes();
-  syncTerminalThemeCardsActive();
-  syncTerminalThemeEditor();
+  setTerminalTheme(settingsTerminalTheme.value);
 });
 settingsTerminalFontFamily?.addEventListener("change", () => {
   localStorage.setItem(SETTINGS_KEY_TERMINAL_FONT_FAMILY, settingsTerminalFontFamily.value);
@@ -6892,6 +7227,12 @@ function ensurePaneTerminal(pane) {
   }
   try {
     pane.term.open(pane.bodyEl);
+    pane.bodyEl.addEventListener("wheel", (ev) => {
+      if (!pane.term) return;
+      const lines = Math.max(1, Math.round(Math.abs(ev.deltaY) / 24));
+      pane.term.scrollLines(ev.deltaY > 0 ? lines : -lines);
+      ev.preventDefault();
+    }, { passive: false });
     applyTerminalThemeToAllPanes();
     requestPaneFit(pane, { immediate: true });
     pane.term.focus();
@@ -10212,6 +10553,8 @@ aiComposeInput?.addEventListener("keydown", (ev) => {
   ev.preventDefault();
   aiComposeForm?.requestSubmit();
 });
+
+aiContextToggle?.addEventListener("click", cycleAiContextMode);
 
 aiComposeForm?.addEventListener("submit", (ev) => {
   ev.preventDefault();

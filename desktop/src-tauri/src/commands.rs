@@ -97,6 +97,12 @@ pub struct AiChatResponse {
     pub content: String,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiModelListResponse {
+    pub models: Vec<String>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AiChatStreamInput {
@@ -126,6 +132,16 @@ struct OpenAiChoice {
 #[derive(Debug, Deserialize)]
 struct OpenAiMessage {
     content: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiModelsResponse {
+    data: Vec<OpenAiModelItem>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiModelItem {
+    id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -250,9 +266,13 @@ fn emit_ai_stream_error(app: &AppHandle, request_id: &str, error: String) {
 
 fn parse_sse_frames(buffer: &mut String) -> Vec<String> {
     let mut frames = Vec::new();
-    while let Some(idx) = buffer.find("\n\n") {
-        let frame = buffer[..idx].to_string();
-        buffer.drain(..idx + 2);
+    while let Some((idx, len)) = buffer
+        .find("\r\n\r\n")
+        .map(|i| (i, 4))
+        .or_else(|| buffer.find("\n\n").map(|i| (i, 2)))
+    {
+        let frame = buffer[..idx].replace("\r\n", "\n");
+        buffer.drain(..idx + len);
         frames.push(frame);
     }
     frames
@@ -305,6 +325,64 @@ pub async fn save_ai_config(input: SaveAiConfigInput) -> Result<AiConfig, String
 
     write_ai_config_to_disk(&cfg)?;
     Ok(cfg)
+}
+
+#[tauri::command]
+pub async fn list_ai_models(input: SaveAiConfigInput) -> Result<AiModelListResponse, String> {
+    let cfg = normalize_ai_config(AiConfig {
+        provider: input.provider,
+        base_url: input.base_url,
+        model: input.model,
+        safe_mode: input.safe_mode,
+        auto_read: input.auto_read,
+        show_commands: input.show_commands,
+        has_api_key: false,
+    });
+    if cfg.provider != "openai-compatible" && cfg.provider != "openai" {
+        return Err("This preview only supports OpenAI-compatible APIs for now.".into());
+    }
+    if cfg.base_url.trim().is_empty() {
+        return Err("AI Base URL is not configured.".into());
+    }
+
+    let api_key = if input.api_key.trim().is_empty() {
+        zeroterm_app::keychain::get_ai_api_key(AI_KEYCHAIN_PROFILE)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "AI API Key is not configured.".to_string())?
+    } else {
+        input.api_key.trim().to_string()
+    };
+
+    let endpoint = format!("{}/models", cfg.base_url.trim_end_matches('/'));
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let response = client
+        .get(endpoint)
+        .bearer_auth(api_key)
+        .send()
+        .await
+        .map_err(|e| format!("AI model request failed: {e}"))?;
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .map_err(|e| format!("reading AI model response failed: {e}"))?;
+    if !status.is_success() {
+        return Err(format!("AI model request failed ({status}): {body}"));
+    }
+    let parsed: OpenAiModelsResponse = serde_json::from_str(&body)
+        .map_err(|e| format!("parsing AI model response failed: {e}"))?;
+    let mut models: Vec<String> = parsed
+        .data
+        .into_iter()
+        .map(|m| m.id)
+        .filter(|id| !id.trim().is_empty())
+        .collect();
+    models.sort();
+    models.dedup();
+    Ok(AiModelListResponse { models })
 }
 
 #[tauri::command]
