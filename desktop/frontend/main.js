@@ -2488,36 +2488,132 @@ const TERMINAL_THEMES = {
     foreground: "#e7ecff",
     cursor: "#9cc3ff",
     selectionBackground: "#2d4a7a",
+    black: "#1e222a",
+    red: "#ea5555",
+    green: "#3fc070",
+    yellow: "#ebae34",
+    blue: "#4b8cff",
+    magenta: "#c678dd",
+    cyan: "#46b3e6",
+    white: "#e7ecff",
+    brightBlack: "#5c6370",
+    brightRed: "#ff6b6b",
+    brightGreen: "#50e3c2",
+    brightYellow: "#f8d153",
+    brightBlue: "#70a5ff",
+    brightMagenta: "#d28fe7",
+    brightCyan: "#67d5fa",
+    brightWhite: "#ffffff",
   },
   "kanagawa-wave": {
     background: "#00000000",
     foreground: "#dcd7ba",
     cursor: "#7e9cd8",
     selectionBackground: "#2a2a37",
+    black: "#16161d",
+    red: "#c3404b",
+    green: "#76946a",
+    yellow: "#c0a36e",
+    blue: "#7e9cd8",
+    magenta: "#957fb8",
+    cyan: "#6a9589",
+    white: "#dcd7ba",
+    brightBlack: "#54546d",
+    brightRed: "#e82424",
+    brightGreen: "#8a9a86",
+    brightYellow: "#e6c384",
+    brightBlue: "#7fb4ca",
+    brightMagenta: "#938aa9",
+    brightCyan: "#7aa89f",
+    brightWhite: "#c8c093",
   },
   "catppuccin-mocha": {
     background: "#00000000",
     foreground: "#cdd6f4",
     cursor: "#89b4fa",
     selectionBackground: "#313244",
+    black: "#1e1e2e",
+    red: "#f38ba8",
+    green: "#a6e3a1",
+    yellow: "#f9e2af",
+    blue: "#89b4fa",
+    magenta: "#f5c2e7",
+    cyan: "#94e2d5",
+    white: "#a6adc8",
+    brightBlack: "#585b70",
+    brightRed: "#f38ba8",
+    brightGreen: "#a6e3a1",
+    brightYellow: "#f9e2af",
+    brightBlue: "#89b4fa",
+    brightMagenta: "#f5c2e7",
+    brightCyan: "#94e2d5",
+    brightWhite: "#a6adc8",
   },
   nord: {
     background: "#00000000",
     foreground: "#d8dee9",
     cursor: "#88c0d0",
     selectionBackground: "#3b4252",
+    black: "#2e3440",
+    red: "#bf616a",
+    green: "#a3be8c",
+    yellow: "#ebcb8b",
+    blue: "#81a1c1",
+    magenta: "#b48ead",
+    cyan: "#88c0d0",
+    white: "#e5e9f0",
+    brightBlack: "#4c566a",
+    brightRed: "#bf616a",
+    brightGreen: "#a3be8c",
+    brightYellow: "#ebcb8b",
+    brightBlue: "#81a1c1",
+    brightMagenta: "#b48ead",
+    brightCyan: "#8fbcbb",
+    brightWhite: "#eceff4",
   },
   "tokyo-day": {
     background: "#00000000",
     foreground: "#343b58",
     cursor: "#343b58",
     selectionBackground: "rgba(52, 59, 88, 0.2)",
+    black: "#343b58",
+    red: "#f52a65",
+    green: "#485e30",
+    yellow: "#8c6c3e",
+    blue: "#34548a",
+    magenta: "#5a4a78",
+    cyan: "#0f4b6e",
+    white: "#343b58",
+    brightBlack: "#9699a3",
+    brightRed: "#f52a65",
+    brightGreen: "#485e30",
+    brightYellow: "#8c6c3e",
+    brightBlue: "#34548a",
+    brightMagenta: "#5a4a78",
+    brightCyan: "#0f4b6e",
+    brightWhite: "#16161d",
   },
   "catppuccin-latte": {
     background: "#00000000",
     foreground: "#4c4f69",
     cursor: "#4c4f69",
     selectionBackground: "rgba(76, 79, 105, 0.2)",
+    black: "#4c4f69",
+    red: "#d20f39",
+    green: "#40a02b",
+    yellow: "#df8e1d",
+    blue: "#1e66f5",
+    magenta: "#ea76cb",
+    cyan: "#179299",
+    white: "#4c4f69",
+    brightBlack: "#bcc0cc",
+    brightRed: "#d20f39",
+    brightGreen: "#40a02b",
+    brightYellow: "#df8e1d",
+    brightBlue: "#1e66f5",
+    brightMagenta: "#ea76cb",
+    brightCyan: "#179299",
+    brightWhite: "#202030",
   },
 };
 
@@ -2663,7 +2759,14 @@ function getTerminalLineHeight() {
 
 function applyTerminalThemeToAllPanes() {
   if (typeof termState === "undefined" || !termState || !termState.tabs) return;
+  const themeName = getTerminalThemeName();
   const theme = getTerminalThemeConfig();
+  const resolvedAppTheme = getResolvedAppTheme();
+  
+  const customTheme = terminalCustomThemes.find((t) => t.id === themeName);
+  const themeGroup = customTheme ? customTheme.group : (TERMINAL_THEME_META[themeName]?.group || "dark");
+  const isDarkTerminal = themeGroup !== "light";
+
   for (const tab of termState.tabs) {
     for (const pane of tab.panes) {
       if (!pane.term) continue;
@@ -2671,6 +2774,41 @@ function applyTerminalThemeToAllPanes() {
       pane.term.setOption("fontFamily", getTerminalFontFamily());
       pane.term.setOption("fontSize", getTerminalFontSize());
       pane.term.setOption("lineHeight", getTerminalLineHeight());
+      
+      if (pane.rootEl) {
+        if (resolvedAppTheme === "light" && isDarkTerminal) {
+          pane.rootEl.style.background = "#0f1424";
+          const header = pane.rootEl.querySelector(".pane-header");
+          if (header) {
+            header.style.background = "rgba(13, 20, 38, 0.95)";
+            header.style.borderBottom = "1px solid rgba(255, 255, 255, 0.08)";
+            header.style.color = "rgba(221, 233, 255, 0.85)";
+            const title = header.querySelector(".pane-title");
+            if (title) title.style.color = "rgba(221, 233, 255, 0.85)";
+          }
+        } else if (resolvedAppTheme === "dark" && !isDarkTerminal) {
+          pane.rootEl.style.background = "#eff1f5";
+          const header = pane.rootEl.querySelector(".pane-header");
+          if (header) {
+            header.style.background = "rgba(240, 242, 247, 0.95)";
+            header.style.borderBottom = "1px solid rgba(0, 0, 0, 0.08)";
+            header.style.color = "#1e2030";
+            const title = header.querySelector(".pane-title");
+            if (title) title.style.color = "#1e2030";
+          }
+        } else {
+          pane.rootEl.style.background = "";
+          const header = pane.rootEl.querySelector(".pane-header");
+          if (header) {
+            header.style.background = "";
+            header.style.borderBottom = "";
+            header.style.color = "";
+            const title = header.querySelector(".pane-title");
+            if (title) title.style.color = "";
+          }
+        }
+      }
+      
       requestPaneFit(pane, { immediate: true });
     }
   }
@@ -6571,7 +6709,7 @@ function ensurePaneElements(pane, tab) {
   aiToggle.type = "button";
   aiToggle.className = "pane-ai-toggle active";
   aiToggle.title = "收起 AI 助手";
-  aiToggle.innerHTML = `<svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"></rect><path d="M9 2v3"></path><path d="M15 2v3"></path><path d="M9 19v3"></path><path d="M15 19v3"></path><path d="M2 9h3"></path><path d="M2 15h3"></path><path d="M19 9h3"></path><path d="M19 15h3"></path></svg>`;
+  aiToggle.innerHTML = `<svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path><path d="m5 3 1 2.5L8.5 6 6 7 5 9.5 4 7 1.5 6 4 5.5z"></path><path d="m19 17 1 2.5 2.5.5-2.5 1-1 2.5-1-2.5-2.5-1 2.5-1z"></path></svg>`;
   aiToggle.addEventListener("click", (ev) => {
     ev.stopPropagation();
     toggleAiPanel();
@@ -6754,6 +6892,7 @@ function ensurePaneTerminal(pane) {
   }
   try {
     pane.term.open(pane.bodyEl);
+    applyTerminalThemeToAllPanes();
     requestPaneFit(pane, { immediate: true });
     pane.term.focus();
   } catch (e) {
