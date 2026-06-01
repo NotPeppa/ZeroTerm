@@ -882,7 +882,18 @@ pub async fn install_update(app_handle: AppHandle) -> Result<String, String> {
             || {},
         )
         .await
-        .map_err(|e| format!("install update failed: {e}"))?;
+        .map_err(|e| {
+            // Common case: the release manifest on the server has a
+            // placeholder / malformed `signature` field, which the
+            // updater fails to base64-decode. Surface a friendly
+            // message instead of the raw "Invalid symbol …" string.
+            let msg = e.to_string();
+            if msg.contains("Invalid symbol") || msg.to_lowercase().contains("base64") {
+                "update_signature_invalid".to_string()
+            } else {
+                format!("install update failed: {msg}")
+            }
+        })?;
 
     app_handle.restart();
 }

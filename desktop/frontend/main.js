@@ -758,6 +758,7 @@ const I18N = {
     "settings.update.install": "Install & Restart",
     "settings.update.title": "System Update",
     "settings.update.checking": "Checking for updates or already up to date...",
+    "settings.update.signature_invalid": "Update unavailable: the release server's signature isn't ready yet. Try again later.",
     "settings.update.latest": "You are on the latest version ({version}).",
     "settings.update.available": "Update available: {current} -> {latest}",
     "settings.update.failed": "Update failed: {error}",
@@ -1336,6 +1337,7 @@ const I18N = {
     "settings.update.install": "安装并重启",
     "settings.update.title": "系统升级",
     "settings.update.checking": "正在检查更新或已经是最新版本...",
+    "settings.update.signature_invalid": "暂时无法更新：发布服务器还没准备好签名，请稍后再试。",
     "settings.update.latest": "当前已是最新版本（{version}）。",
     "settings.update.available": "发现新版本：{current} -> {latest}",
     "settings.update.failed": "更新失败：{error}",
@@ -6121,9 +6123,15 @@ settingsUpdateInstall?.addEventListener("click", async () => {
       if (settingsUpdateStatus) settingsUpdateStatus.textContent = t("settings.update.status.installing");
       await invoke("install_update");
     } catch (e) {
-      const msg = t("settings.update.failed", { error: String(e) });
-      if (settingsUpdateStatus) settingsUpdateStatus.textContent = msg;
-      showToast(msg, "error", 4200);
+      // The Rust side maps the common "release manifest signature is a
+      // placeholder" base64 decode error to this sentinel — translate it
+      // into a friendly localized message instead of the raw error.
+      const raw = String(e);
+      const friendly = raw.includes("update_signature_invalid")
+        ? t("settings.update.signature_invalid")
+        : t("settings.update.failed", { error: raw });
+      if (settingsUpdateStatus) settingsUpdateStatus.textContent = friendly;
+      showToast(friendly, "error", 4200);
     }
   });
 });
