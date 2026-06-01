@@ -50,6 +50,11 @@ pub async fn run(
     let mut latency_enabled = false;
     let mut latency_tick = time::interval(Duration::from_secs(3));
     latency_tick.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+    // Some SSH servers refuse a second concurrent session channel (e.g.
+    // `MaxSessions 1`). We give up the RTT probe after a few consecutive
+    // failures so the log doesn't keep filling with `ConnectFailed`.
+    let mut latency_failures: u32 = 0;
+    const LATENCY_FAILURE_LIMIT: u32 = 3;
 
     loop {
         tokio::select! {
@@ -93,13 +98,23 @@ pub async fn run(
                 let _ = probe_tick;
                 match session.probe_rtt_ms().await {
                     Ok(rtt_ms) => {
+                        latency_failures = 0;
                         let _ = app_handle.emit(
                             "session:latency",
                             LatencyEvent { session_id, rtt_ms },
                         );
                     }
                     Err(e) => {
+                        latency_failures += 1;
                         debug!(session_id, error = %e, "latency probe failed");
+                        if latency_failures >= LATENCY_FAILURE_LIMIT {
+                            warn!(
+                                session_id,
+                                "disabling latency probe after {} consecutive failures (server likely refuses extra sessions)",
+                                latency_failures
+                            );
+                            latency_enabled = false;
+                        }
                     }
                 }
             },

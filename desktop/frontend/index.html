@@ -9,6 +9,8 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
+    <div id="app-bg-layer" aria-hidden="true"></div>
+    <div id="app-bg-scrim" aria-hidden="true"></div>
     <main id="root">
       <section id="view-unlock" class="view">
         <div class="unlock-card">
@@ -208,7 +210,7 @@
                     <div id="terminal-session-layout" class="terminal-session-layout" hidden>
                       <div id="terminal-workspace" class="terminal-workspace"></div>
                       <div id="ai-panel-splitter" class="ai-panel-splitter" role="separator" aria-orientation="vertical" aria-label="调整 AI 面板宽度"></div>
-                      <aside class="ai-assistant-panel" aria-label="AI 助手">
+                      <aside class="ai-assistant-panel" aria-label="AI Assistant">
                         <header class="ai-assistant-header">
                           <div class="ai-assistant-title">
                             <span class="ai-assistant-mark" aria-hidden="true">
@@ -219,8 +221,8 @@
                               </svg>
                             </span>
                             <div>
-                              <strong>AI 助手</strong>
-                              <span>当前 SSH 会话</span>
+                              <strong id="ai-assistant-title">AI 助手</strong>
+                              <span id="ai-assistant-subtitle">当前 SSH 会话</span>
                             </div>
                           </div>
                           <div id="ai-model-pill" class="ai-safe-pill" title="当前 AI 模型">
@@ -233,9 +235,9 @@
                           <div id="ai-chat-log" class="ai-chat-log" hidden></div>
                           <div id="ai-empty-state" class="ai-empty-state">
                           <section class="ai-hero-card">
-                            <p class="ai-kicker">自然语言操作</p>
-                            <h3>告诉 AI 你的目标，不需要会命令。</h3>
-                            <p>
+                            <p id="ai-hero-kicker" class="ai-kicker">自然语言操作</p>
+                            <h3 id="ai-hero-title">告诉 AI 你的目标，不需要会命令。</h3>
+                            <p id="ai-hero-desc">
                               AI 会理解当前服务器环境，先说明计划，确认后再操作。命令和日志默认折叠，需要时可以展开查看。
                             </p>
                           </section>
@@ -244,32 +246,32 @@
                             <div class="ai-process-step">
                               <span>1</span>
                               <div>
-                                <strong>理解目标</strong>
-                                <p>把你的描述拆成可执行任务。</p>
+                                <strong id="ai-step-1-title">理解目标</strong>
+                                <p id="ai-step-1-desc">把你的描述拆成可执行任务。</p>
                               </div>
                             </div>
                             <div class="ai-process-step">
                               <span>2</span>
                               <div>
-                                <strong>制定计划</strong>
-                                <p>先做只读检查，再说明需要的操作。</p>
+                                <strong id="ai-step-2-title">制定计划</strong>
+                                <p id="ai-step-2-desc">先做只读检查，再说明需要的操作。</p>
                               </div>
                             </div>
                             <div class="ai-process-step">
                               <span>3</span>
                               <div>
-                                <strong>确认后执行</strong>
-                                <p>删除、覆盖、重启等风险动作会单独确认。</p>
+                                <strong id="ai-step-3-title">确认后执行</strong>
+                                <p id="ai-step-3-desc">删除、覆盖、重启等风险动作会单独确认。</p>
                               </div>
                             </div>
                           </section>
 
                           <section class="ai-examples" aria-label="示例目标">
-                            <div class="ai-section-title">试着这样说</div>
-                            <button type="button" data-ai-example="帮我把当前项目运行起来">帮我把当前项目运行起来</button>
-                            <button type="button" data-ai-example="检查这台服务器是否正常">检查这台服务器是否正常</button>
-                            <button type="button" data-ai-example="解释刚才终端里的错误">解释刚才终端里的错误</button>
-                            <button type="button" data-ai-example="把这个目录打包备份一下">把这个目录打包备份一下</button>
+                            <div id="ai-examples-title" class="ai-section-title">试着这样说</div>
+                            <button id="ai-example-1" type="button" data-ai-example-key="ai.example.1">帮我把当前项目运行起来</button>
+                            <button id="ai-example-2" type="button" data-ai-example-key="ai.example.2">检查这台服务器是否正常</button>
+                            <button id="ai-example-3" type="button" data-ai-example-key="ai.example.3">解释刚才终端里的错误</button>
+                            <button id="ai-example-4" type="button" data-ai-example-key="ai.example.4">把这个目录打包备份一下</button>
                           </section>
                           </div>
                         </div>
@@ -283,7 +285,7 @@
                           ></textarea>
                           <div class="ai-compose-footer">
                             <button id="ai-context-toggle" type="button" class="ai-context-toggle" title="切换是否附带当前终端内容">智能判断终端内容</button>
-                            <span>Enter 发送，Shift+Enter 换行</span>
+                            <span id="ai-compose-hint">Enter 发送，Shift+Enter 换行</span>
                             <button type="submit" class="ai-send-button" aria-label="发送给 AI">
                               <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
                                 <path d="M12 19V5"></path>
@@ -333,6 +335,30 @@
                             <p id="settings-language-hint" class="muted tiny">
                               Changes apply immediately and are saved locally.
                             </p>
+                            </section>
+                            <section class="settings-section">
+                              <h4 id="settings-bg-label">Background Image</h4>
+                              <p id="settings-bg-hint" class="muted tiny">Use a custom image as the app background.</p>
+                              <div class="settings-bg-row">
+                                <div id="settings-bg-preview" class="settings-bg-preview" data-empty="true">
+                                  <span id="settings-bg-preview-empty" class="muted tiny">No image</span>
+                                </div>
+                                <div class="settings-bg-actions">
+                                  <button id="settings-bg-choose" type="button" class="primary">Choose Image</button>
+                                  <button id="settings-bg-clear" type="button" hidden>Remove</button>
+                                </div>
+                              </div>
+                              <div id="settings-bg-options" hidden>
+                                <label class="settings-field settings-bg-slider">
+                                  <span id="settings-bg-opacity-label">Opacity</span>
+                                  <input id="settings-bg-opacity" type="range" min="5" max="100" step="5" value="40" />
+                                </label>
+                                <label class="settings-field settings-bg-slider">
+                                  <span id="settings-bg-blur-label">Blur</span>
+                                  <input id="settings-bg-blur" type="range" min="0" max="30" step="1" value="0" />
+                                </label>
+                              </div>
+                              <p id="settings-bg-status" class="muted tiny"></p>
                             </section>
                             </div>
 
@@ -694,7 +720,7 @@ $ npm run build && npm run start</pre>
                                   <div class="logo-glow"></div>
                                 </div>
                                 <h2 class="settings-about-appname">ZeroTerm</h2>
-                                <p class="settings-about-tagline">下一代极速、现代的跨平台 SSH 终端工具</p>
+                                <p id="settings-about-tagline" class="settings-about-tagline">下一代极速、现代的跨平台 SSH 终端工具</p>
                               </div>
 
                               <div class="settings-about-grid">
@@ -751,7 +777,7 @@ $ npm run build && npm run start</pre>
                                     <div class="update-pulse-dot"></div>
                                   </div>
                                   <div class="update-status-info">
-                                    <div class="update-status-title">系统升级</div>
+                                    <div id="settings-update-title" class="update-status-title">系统升级</div>
                                     <p id="settings-update-status" class="update-status-text">正在检查更新或已经是最新版本...</p>
                                   </div>
                                 </div>

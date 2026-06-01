@@ -527,6 +527,44 @@ const I18N = {
     "settings.nav.about": "About",
     "settings.general.subtab.basic": "Basic",
     "settings.general.subtab.sftp": "SFTP",
+    "settings.bg.label": "Background Image",
+    "settings.bg.hint": "Use a custom image as the app background.",
+    "settings.bg.empty": "No image",
+    "settings.bg.choose": "Choose Image",
+    "settings.bg.remove": "Remove",
+    "settings.bg.opacity": "Opacity",
+    "settings.bg.blur": "Blur",
+    "settings.bg.status.applied": "Background applied",
+    "settings.bg.status.cleared": "Background removed",
+    "settings.bg.status.failed": "Could not load image: {error}",
+    "settings.bg.status.too_large": "Image is too large (max 16 MB).",
+    "ai.assistant.title": "AI Assistant",
+    "ai.assistant.subtitle": "Current SSH session",
+    "ai.model.unconfigured": "No model configured",
+    "ai.model.current": "Current AI model: {label}",
+    "ai.model.pill_title": "Current AI model",
+    "ai.hero.kicker": "Natural language operation",
+    "ai.hero.title": "Tell the AI your goal — no commands needed.",
+    "ai.hero.desc": "The AI inspects the server, lays out a plan, then asks before acting. Commands and logs are folded by default; expand them when you want detail.",
+    "ai.step.1.title": "Understand the goal",
+    "ai.step.1.desc": "Break your request down into runnable tasks.",
+    "ai.step.2.title": "Plan",
+    "ai.step.2.desc": "Run read-only checks first, then explain what changes are needed.",
+    "ai.step.3.title": "Confirm before running",
+    "ai.step.3.desc": "Risky actions like delete, overwrite, and restart prompt for confirmation.",
+    "ai.examples.title": "Try saying",
+    "ai.example.1": "Get this project up and running",
+    "ai.example.2": "Check whether this server is healthy",
+    "ai.example.3": "Explain the error in the terminal just now",
+    "ai.example.4": "Make a tarball backup of this directory",
+    "ai.compose.placeholder": "Describe your goal, e.g. Get this project running",
+    "ai.compose.hint": "Enter to send, Shift+Enter for newline",
+    "ai.compose.send": "Send to AI",
+    "ai.context.toggle.title": "Toggle attaching current terminal output",
+    "ai.context.toggle.label": "Auto-include terminal context",
+    "ai.panel.aria": "AI Assistant",
+    "ai.workflow.aria": "AI workflow",
+    "ai.examples.aria": "Example goals",
     "settings.sync.desc": "Manage your sync repo for ZeroTerm.",
     "settings.sync.status.loaded": "Loaded {count} profile(s)",
     "settings.sync.status.none": "No sync profile",
@@ -707,13 +745,19 @@ const I18N = {
     "settings.ai.status.ready": "AI config is ready.",
     "settings.ai.status.no_key": "AI config loaded. Add an API Key before chatting.",
     "settings.ai.button.save": "Save AI Config",
+    "settings.ai.button.busy.refresh": "Refreshing…",
+    "settings.ai.status.models_fetched": "Fetched {count} model(s).",
+    "settings.ai.toast.models_refreshed": "Model list refreshed.",
     "settings.language.label": "Language",
     "settings.language.hint": "Changes apply immediately and are saved locally.",
     "settings.version.label": "Version",
     "settings.about.title": "About",
     "settings.about.author": "Author",
     "settings.about.repo": "GitHub Repository",
+    "settings.about.tagline": "Next-gen, blazing-fast, modern cross-platform SSH terminal.",
     "settings.update.install": "Install & Restart",
+    "settings.update.title": "System Update",
+    "settings.update.checking": "Checking for updates or already up to date...",
     "settings.update.latest": "You are on the latest version ({version}).",
     "settings.update.available": "Update available: {current} -> {latest}",
     "settings.update.failed": "Update failed: {error}",
@@ -1061,6 +1105,44 @@ const I18N = {
     "settings.nav.about": "关于",
     "settings.general.subtab.basic": "基础",
     "settings.general.subtab.sftp": "SFTP",
+    "settings.bg.label": "背景图片",
+    "settings.bg.hint": "使用自定义图片作为软件背景。",
+    "settings.bg.empty": "暂无图片",
+    "settings.bg.choose": "选择图片",
+    "settings.bg.remove": "移除",
+    "settings.bg.opacity": "不透明度",
+    "settings.bg.blur": "模糊",
+    "settings.bg.status.applied": "背景已应用",
+    "settings.bg.status.cleared": "背景已移除",
+    "settings.bg.status.failed": "无法加载图片：{error}",
+    "settings.bg.status.too_large": "图片过大（上限 16 MB）。",
+    "ai.assistant.title": "AI 助手",
+    "ai.assistant.subtitle": "当前 SSH 会话",
+    "ai.model.unconfigured": "未配置模型",
+    "ai.model.current": "当前 AI 模型：{label}",
+    "ai.model.pill_title": "当前 AI 模型",
+    "ai.hero.kicker": "自然语言操作",
+    "ai.hero.title": "告诉 AI 你的目标，不需要会命令。",
+    "ai.hero.desc": "AI 会理解当前服务器环境，先说明计划，确认后再操作。命令和日志默认折叠，需要时可以展开查看。",
+    "ai.step.1.title": "理解目标",
+    "ai.step.1.desc": "把你的描述拆成可执行任务。",
+    "ai.step.2.title": "制定计划",
+    "ai.step.2.desc": "先做只读检查，再说明需要的操作。",
+    "ai.step.3.title": "确认后执行",
+    "ai.step.3.desc": "删除、覆盖、重启等风险动作会单独确认。",
+    "ai.examples.title": "试着这样说",
+    "ai.example.1": "帮我把当前项目运行起来",
+    "ai.example.2": "检查这台服务器是否正常",
+    "ai.example.3": "解释刚才终端里的错误",
+    "ai.example.4": "把这个目录打包备份一下",
+    "ai.compose.placeholder": "描述你的目标，例如：帮我把这个项目运行起来",
+    "ai.compose.hint": "Enter 发送，Shift+Enter 换行",
+    "ai.compose.send": "发送给 AI",
+    "ai.context.toggle.title": "切换是否附带当前终端内容",
+    "ai.context.toggle.label": "智能判断终端内容",
+    "ai.panel.aria": "AI 助手",
+    "ai.workflow.aria": "AI 工作流程",
+    "ai.examples.aria": "示例目标",
     "settings.sync.desc": "管理 ZeroTerm 同步仓库。",
     "settings.sync.status.loaded": "已加载 {count} 个配置",
     "settings.sync.status.none": "暂无同步配置",
@@ -1241,13 +1323,19 @@ const I18N = {
     "settings.ai.status.ready": "AI 配置已就绪。",
     "settings.ai.status.no_key": "AI 配置已加载，请先填写 API Key 再开始聊天。",
     "settings.ai.button.save": "保存 AI 配置",
+    "settings.ai.button.busy.refresh": "刷新中…",
+    "settings.ai.status.models_fetched": "已获取 {count} 个模型。",
+    "settings.ai.toast.models_refreshed": "模型列表已刷新。",
     "settings.language.label": "语言",
     "settings.language.hint": "修改立即生效，并会保存在本地。",
     "settings.version.label": "版本",
     "settings.about.title": "关于",
     "settings.about.author": "作者",
     "settings.about.repo": "GitHub 仓库",
+    "settings.about.tagline": "下一代极速、现代的跨平台 SSH 终端工具",
     "settings.update.install": "安装并重启",
+    "settings.update.title": "系统升级",
+    "settings.update.checking": "正在检查更新或已经是最新版本...",
     "settings.update.latest": "当前已是最新版本（{version}）。",
     "settings.update.available": "发现新版本：{current} -> {latest}",
     "settings.update.failed": "更新失败：{error}",
@@ -1772,6 +1860,11 @@ let aiContextMode = localStorage.getItem("zt.ai.contextMode") || "smart";
 if (!AI_CONTEXT_MODES.includes(aiContextMode)) aiContextMode = "smart";
 let lastAutoAiModelsKey = "";
 let currentAiModelLabel = "";
+/// True only when the backend has an API key on file *and* a non-empty
+/// model is configured. The header pill switches to the "未配置" label
+/// whenever either is missing, instead of showing the default `gpt-4.1`
+/// stub from `default_ai_config()`.
+let aiConfigured = false;
 let pendingAiCommandCounter = 0;
 
 function syncAiContextToggle() {
@@ -1793,12 +1886,18 @@ function syncAiModelPill(model) {
   if (!aiModelPill) return;
   const value = String(model || getAiModelValue() || currentAiModelLabel || "").trim();
   if (value) currentAiModelLabel = value;
-  const label = value || "未配置模型";
+  // Only show the model name when AI is fully configured (model + API key).
+  // Otherwise show the "未配置 / Not configured" label so the header
+  // doesn't claim a model is in use when nothing actually works.
+  const label = aiConfigured && value ? value : t("ai.model.unconfigured");
   aiModelPill.replaceChildren();
   const dot = document.createElement("span");
   dot.setAttribute("aria-hidden", "true");
   aiModelPill.append(dot, document.createTextNode(label));
-  aiModelPill.title = `当前 AI 模型：${label}`;
+  aiModelPill.title = aiConfigured && value
+    ? t("ai.model.current", { label: value })
+    : t("ai.model.unconfigured");
+  aiModelPill.classList.toggle("ai-pill-unconfigured", !aiConfigured || !value);
 }
 
 function setAiModelOptions(models, selected) {
@@ -1807,7 +1906,7 @@ function setAiModelOptions(models, selected) {
   settingsAiModel.textContent = "";
   const custom = document.createElement("option");
   custom.value = "";
-  custom.textContent = "自定义模型";
+  custom.textContent = t("settings.ai.model.custom_label");
   settingsAiModel.appendChild(custom);
   for (const model of models || []) {
     const option = document.createElement("option");
@@ -2482,6 +2581,7 @@ async function loadAiConfig() {
     settingsAiProvider.value = cfg.provider || "openai-compatible";
     setAiModelOptions([], cfg.model || "");
     if (settingsAiModelCustom && !settingsAiModel?.value) settingsAiModelCustom.value = cfg.model || "";
+    aiConfigured = Boolean(cfg.hasApiKey) && Boolean((cfg.model || "").trim());
     syncAiModelPill(cfg.model || "");
     if (settingsAiBaseUrl) settingsAiBaseUrl.value = cfg.baseUrl || "";
     if (settingsAiApiKey) settingsAiApiKey.value = "";
@@ -2513,6 +2613,7 @@ async function saveAiConfigFromForm() {
       ? t("settings.ai.status.ready")
       : t("settings.ai.status.no_key");
   }
+  aiConfigured = Boolean(cfg.hasApiKey) && Boolean((cfg.model || input.model || "").trim());
   syncAiModelPill(cfg.model || input.model);
   return cfg;
 }
@@ -2529,7 +2630,11 @@ async function refreshAiModels() {
   };
   const result = await invoke("list_ai_models", { input });
   setAiModelOptions(result?.models || [], input.model);
-  if (settingsAiStatus) settingsAiStatus.textContent = `已获取 ${result?.models?.length || 0} 个模型。`;
+  if (settingsAiStatus) {
+    settingsAiStatus.textContent = t("settings.ai.status.models_fetched", {
+      count: result?.models?.length || 0,
+    });
+  }
 }
 
 async function maybeAutoRefreshAiModels() {
@@ -2642,6 +2747,13 @@ const settingsGeneralSftpSection = document.getElementById("settings-general-sft
 const settingsGeneralTitle = document.getElementById("settings-general-title");
 const settingsGeneralDesc = document.getElementById("settings-general-desc");
 const settingsLanguageSelect = document.getElementById("settings-language-select");
+const settingsBgPreview = document.getElementById("settings-bg-preview");
+const settingsBgChoose = document.getElementById("settings-bg-choose");
+const settingsBgClear = document.getElementById("settings-bg-clear");
+const settingsBgOptions = document.getElementById("settings-bg-options");
+const settingsBgOpacity = document.getElementById("settings-bg-opacity");
+const settingsBgBlur = document.getElementById("settings-bg-blur");
+const settingsBgStatus = document.getElementById("settings-bg-status");
 const settingsAboutTitle = document.getElementById("settings-about-title");
 const settingsAboutVersionLabel = document.getElementById("settings-about-version-label");
 const settingsAboutVersionValue = document.getElementById("settings-about-version-value");
@@ -2755,6 +2867,9 @@ const SETTINGS_KEY_TERMINAL_CUSTOM_THEMES = "zeroterm.settings.terminal.custom_t
 const SETTINGS_KEY_TERMINAL_FONT_FAMILY = "zeroterm.settings.terminal.font_family";
 const SETTINGS_KEY_TERMINAL_FONT_SIZE = "zeroterm.settings.terminal.font_size";
 const SETTINGS_KEY_TERMINAL_LINE_HEIGHT = "zeroterm.settings.terminal.line_height";
+const SETTINGS_KEY_APP_BG_OPACITY = "zeroterm.settings.app_background.opacity";
+const SETTINGS_KEY_APP_BG_BLUR = "zeroterm.settings.app_background.blur";
+const SETTINGS_KEY_APP_BG_ENABLED = "zeroterm.settings.app_background.enabled";
 let settingsSection = "general";
 let settingsTerminalSubtab = "theme";
 let settingsGeneralSubtab = "basic";
@@ -2998,6 +3113,125 @@ function setAppThemeMode(mode) {
   applyAppTheme();
 }
 
+// --- Custom background image ----------------------------------------------
+//
+// The image itself lives on disk (managed by the Rust backend) and is read
+// back as a base64 data URL — too large for localStorage, so only the
+// opacity/blur/enabled preferences are persisted in localStorage. The data
+// URL is held in memory for the session.
+
+let appBackgroundDataUrl = null;
+
+function getAppBgOpacity() {
+  const n = Number(localStorage.getItem(SETTINGS_KEY_APP_BG_OPACITY));
+  return Number.isFinite(n) && n >= 5 && n <= 100 ? n : 40;
+}
+
+function getAppBgBlur() {
+  const n = Number(localStorage.getItem(SETTINGS_KEY_APP_BG_BLUR));
+  return Number.isFinite(n) && n >= 0 && n <= 30 ? n : 0;
+}
+
+function appBgEnabled() {
+  return localStorage.getItem(SETTINGS_KEY_APP_BG_ENABLED) === "true";
+}
+
+/// Push the current background image + opacity/blur to the DOM layer.
+function applyAppBackground() {
+  const layer = document.getElementById("app-bg-layer");
+  if (!layer) return;
+  const active = appBgEnabled() && !!appBackgroundDataUrl;
+  if (active) {
+    // Set styles directly (not via a CSS custom property) — data: URLs
+    // inside var() substitution are unreliable in WebView2.
+    layer.style.backgroundImage = `url("${appBackgroundDataUrl}")`;
+    layer.style.opacity = String(getAppBgOpacity() / 100);
+    layer.style.filter = `blur(${getAppBgBlur()}px)`;
+    document.body.classList.add("has-app-bg");
+  } else {
+    layer.style.backgroundImage = "none";
+    layer.style.opacity = "0";
+    layer.style.filter = "none";
+    document.body.classList.remove("has-app-bg");
+  }
+}
+
+/// Load the saved image from the backend once on startup.
+async function initAppBackground() {
+  try {
+    const dataUrl = await invoke("get_background_image");
+    appBackgroundDataUrl = dataUrl || null;
+  } catch (e) {
+    console.warn("load background image failed", e);
+    appBackgroundDataUrl = null;
+  }
+  applyAppBackground();
+}
+
+/// Reflect the current background state into the settings panel controls.
+function syncBackgroundSettingsUI() {
+  const hasImage = !!appBackgroundDataUrl;
+  if (settingsBgPreview) {
+    settingsBgPreview.dataset.empty = hasImage ? "false" : "true";
+    settingsBgPreview.style.backgroundImage = hasImage
+      ? `url("${appBackgroundDataUrl}")`
+      : "";
+  }
+  if (settingsBgClear) settingsBgClear.hidden = !hasImage;
+  if (settingsBgOptions) settingsBgOptions.hidden = !hasImage;
+  if (settingsBgOpacity) settingsBgOpacity.value = String(getAppBgOpacity());
+  if (settingsBgBlur) settingsBgBlur.value = String(getAppBgBlur());
+}
+
+async function chooseBackgroundImage() {
+  let chosen;
+  try {
+    chosen = await invoke("plugin:dialog|open", {
+      options: {
+        multiple: false,
+        directory: false,
+        filters: [
+          { name: "Image", extensions: ["png", "jpg", "jpeg", "webp", "gif"] },
+        ],
+      },
+    });
+  } catch (e) {
+    if (settingsBgStatus) {
+      settingsBgStatus.textContent = t("settings.bg.status.failed", { error: String(e) });
+    }
+    return;
+  }
+  if (!chosen) return;
+
+  try {
+    const dataUrl = await invoke("set_background_image", { path: String(chosen) });
+    appBackgroundDataUrl = dataUrl;
+    localStorage.setItem(SETTINGS_KEY_APP_BG_ENABLED, "true");
+    applyAppBackground();
+    syncBackgroundSettingsUI();
+    if (settingsBgStatus) settingsBgStatus.textContent = t("settings.bg.status.applied");
+  } catch (e) {
+    if (settingsBgStatus) {
+      settingsBgStatus.textContent = t("settings.bg.status.failed", { error: String(e) });
+    }
+  }
+}
+
+async function clearBackgroundImage() {
+  try {
+    await invoke("clear_background_image");
+  } catch (e) {
+    console.warn("clear background image failed", e);
+  }
+  appBackgroundDataUrl = null;
+  localStorage.setItem(SETTINGS_KEY_APP_BG_ENABLED, "false");
+  applyAppBackground();
+  syncBackgroundSettingsUI();
+  if (settingsBgStatus) settingsBgStatus.textContent = t("settings.bg.status.cleared");
+}
+
+
+
 function hideThemeModeMenu() {
   if (themeModeMenu) themeModeMenu.hidden = true;
 }
@@ -3027,6 +3261,11 @@ try {
   console.warn("theme init failed", e);
 }
 
+// Load any saved background image and apply it (async; the layer stays
+// empty until the image comes back).
+initAppBackground();
+
+
 function getTerminalThemeConfig() {
   return allTerminalThemes()[getTerminalThemeName()] || TERMINAL_THEMES["termark-dark"];
 }
@@ -3054,6 +3293,7 @@ function applyTerminalThemeToAllPanes() {
   const customTheme = terminalCustomThemes.find((t) => t.id === themeName);
   const themeGroup = customTheme ? customTheme.group : (TERMINAL_THEME_META[themeName]?.group || "dark");
   const isDarkTerminal = themeGroup !== "light";
+  const hasAppBg = document.body.classList.contains("has-app-bg");
 
   for (const tab of termState.tabs) {
     for (const pane of tab.panes) {
@@ -3064,35 +3304,79 @@ function applyTerminalThemeToAllPanes() {
       pane.term.setOption("lineHeight", getTerminalLineHeight());
       
       if (pane.rootEl) {
-        if (resolvedAppTheme === "light" && isDarkTerminal) {
-          pane.rootEl.style.background = "#0f1424";
-          const header = pane.rootEl.querySelector(".pane-header");
-          if (header) {
-            header.style.background = "rgba(13, 20, 38, 0.95)";
-            header.style.borderBottom = "1px solid rgba(255, 255, 255, 0.08)";
-            header.style.color = "rgba(221, 233, 255, 0.85)";
-            const title = header.querySelector(".pane-title");
-            if (title) title.style.color = "rgba(221, 233, 255, 0.85)";
-          }
-        } else if (resolvedAppTheme === "dark" && !isDarkTerminal) {
-          pane.rootEl.style.background = "#eff1f5";
-          const header = pane.rootEl.querySelector(".pane-header");
-          if (header) {
-            header.style.background = "rgba(240, 242, 247, 0.95)";
-            header.style.borderBottom = "1px solid rgba(0, 0, 0, 0.08)";
-            header.style.color = "#1e2030";
-            const title = header.querySelector(".pane-title");
-            if (title) title.style.color = "#1e2030";
+        const header = pane.rootEl.querySelector(".pane-header");
+        
+        if (hasAppBg) {
+          // Glassmorphic mode with custom background image
+          // Apply a continuous frosted glass card backdrop to the entire pane (including header)
+          pane.rootEl.style.backdropFilter = "blur(25px)";
+          pane.rootEl.style.webkitBackdropFilter = "blur(25px)";
+          pane.rootEl.style.border = "none";
+          
+          pane.bodyEl.style.background = "transparent";
+          pane.bodyEl.style.backdropFilter = "none";
+          pane.bodyEl.style.webkitBackdropFilter = "none";
+          pane.bodyEl.style.border = "none";
+          
+          if (isDarkTerminal) {
+            pane.rootEl.style.background = "rgba(8, 11, 20, 0.45)";
+            
+            if (header) {
+              header.style.background = "transparent";
+              header.style.borderBottom = "1px solid rgba(255, 255, 255, 0.12)";
+              header.style.color = "rgba(221, 233, 255, 0.85)";
+              const title = header.querySelector(".pane-title");
+              if (title) title.style.color = "rgba(221, 233, 255, 0.85)";
+            }
+          } else {
+            pane.rootEl.style.background = "rgba(255, 255, 255, 0.30)";
+            
+            if (header) {
+              header.style.background = "transparent";
+              header.style.borderBottom = "1px solid rgba(0, 0, 0, 0.12)";
+              header.style.color = "#1e2030";
+              const title = header.querySelector(".pane-title");
+              if (title) title.style.color = "#1e2030";
+            }
           }
         } else {
-          pane.rootEl.style.background = "";
-          const header = pane.rootEl.querySelector(".pane-header");
-          if (header) {
-            header.style.background = "";
-            header.style.borderBottom = "";
-            header.style.color = "";
-            const title = header.querySelector(".pane-title");
-            if (title) title.style.color = "";
+          // Standard solid theme background
+          pane.bodyEl.style.background = "";
+          pane.bodyEl.style.backdropFilter = "";
+          pane.bodyEl.style.webkitBackdropFilter = "";
+          pane.bodyEl.style.border = "";
+          
+          pane.rootEl.style.backdropFilter = "";
+          pane.rootEl.style.webkitBackdropFilter = "";
+          pane.rootEl.style.border = "";
+          
+          if (resolvedAppTheme === "light" && isDarkTerminal) {
+            pane.rootEl.style.background = "#0f1424";
+            if (header) {
+              header.style.background = "rgba(13, 20, 38, 0.95)";
+              header.style.borderBottom = "1px solid rgba(255, 255, 255, 0.08)";
+              header.style.color = "rgba(221, 233, 255, 0.85)";
+              const title = header.querySelector(".pane-title");
+              if (title) title.style.color = "rgba(221, 233, 255, 0.85)";
+            }
+          } else if (resolvedAppTheme === "dark" && !isDarkTerminal) {
+            pane.rootEl.style.background = "#eff1f5";
+            if (header) {
+              header.style.background = "rgba(240, 242, 247, 0.95)";
+              header.style.borderBottom = "1px solid rgba(0, 0, 0, 0.08)";
+              header.style.color = "#1e2030";
+              const title = header.querySelector(".pane-title");
+              if (title) title.style.color = "#1e2030";
+            }
+          } else {
+            pane.rootEl.style.background = "";
+            if (header) {
+              header.style.background = "";
+              header.style.borderBottom = "";
+              header.style.color = "";
+              const title = header.querySelector(".pane-title");
+              if (title) title.style.color = "";
+            }
           }
         }
       }
@@ -4784,6 +5068,9 @@ function setSettingsGeneralSubtab(subtab) {
   settingsGeneralSubtabSftp?.classList.toggle("active", settingsGeneralSubtab === "sftp");
   if (settingsGeneralBasicSection) settingsGeneralBasicSection.hidden = settingsGeneralSubtab !== "basic";
   if (settingsGeneralSftpSection) settingsGeneralSftpSection.hidden = settingsGeneralSubtab !== "sftp";
+  if (settingsGeneralSubtab === "basic" && typeof syncBackgroundSettingsUI === "function") {
+    syncBackgroundSettingsUI();
+  }
 }
 
 function setSettingsTerminalSubtab(subtab) {
@@ -4961,16 +5248,32 @@ function buildCustomSelect(selectEl) {
     if (customSelectState.openId === selectEl.id) {
       customSelectState.openId = null;
     }
+    stackingAncestor?.classList.remove("zt-select-open");
   };
+
+  let suppressLabelRestore = false;
+
+  // The nearest card-like ancestor that creates a stacking context (it has
+  // backdrop-filter), which would otherwise clip the dropdown menu inside
+  // its own bounds. We toggle a class on it so the open card sits above
+  // sibling cards and the menu can extend across them.
+  const stackingAncestor = wrap.closest(".settings-section");
 
   const open = () => {
     if (customSelectState.openId && customSelectState.openId !== selectEl.id) {
       const current = document.querySelector(`select#${customSelectState.openId}`);
       current?.dispatchEvent(new CustomEvent("zt-select-close"));
     }
+    // Unhide first so sync() doesn't restore selectedLabel into the input,
+    // then clear the search query so all options are visible.
     menu.hidden = false;
     trigger.setAttribute("aria-expanded", "true");
     customSelectState.openId = selectEl.id;
+    triggerInput.value = "";
+    suppressLabelRestore = true;
+    sync();
+    suppressLabelRestore = false;
+    stackingAncestor?.classList.add("zt-select-open");
   };
 
   const sync = () => {
@@ -4981,7 +5284,9 @@ function buildCustomSelect(selectEl) {
       selectedLabel = selectEl.dataset.emptyDisplay;
     }
     if (document.activeElement !== triggerInput || menu.hidden) {
-      triggerInput.value = selectedLabel;
+      if (!suppressLabelRestore) {
+        triggerInput.value = selectedLabel;
+      }
     }
     empty.textContent = t("select.search.empty");
     optionsBox.innerHTML = "";
@@ -5212,6 +5517,48 @@ function applyI18n() {
   setText("settings-nav-about", "settings.nav.about");
   setText("settings-general-subtab-basic", "settings.general.subtab.basic");
   setText("settings-general-subtab-sftp", "settings.general.subtab.sftp");
+  setText("settings-bg-label", "settings.bg.label");
+  setText("settings-bg-hint", "settings.bg.hint");
+  setText("settings-bg-preview-empty", "settings.bg.empty");
+  setText("settings-bg-choose", "settings.bg.choose");
+  setText("settings-bg-clear", "settings.bg.remove");
+  setText("settings-bg-opacity-label", "settings.bg.opacity");
+  setText("settings-bg-blur-label", "settings.bg.blur");
+
+  // --- AI Assistant panel -------------------------------------------------
+  setText("ai-assistant-title", "ai.assistant.title");
+  setText("ai-assistant-subtitle", "ai.assistant.subtitle");
+  setText("ai-hero-kicker", "ai.hero.kicker");
+  setText("ai-hero-title", "ai.hero.title");
+  setText("ai-hero-desc", "ai.hero.desc");
+  setText("ai-step-1-title", "ai.step.1.title");
+  setText("ai-step-1-desc", "ai.step.1.desc");
+  setText("ai-step-2-title", "ai.step.2.title");
+  setText("ai-step-2-desc", "ai.step.2.desc");
+  setText("ai-step-3-title", "ai.step.3.title");
+  setText("ai-step-3-desc", "ai.step.3.desc");
+  setText("ai-examples-title", "ai.examples.title");
+  setText("ai-example-1", "ai.example.1");
+  setText("ai-example-2", "ai.example.2");
+  setText("ai-example-3", "ai.example.3");
+  setText("ai-example-4", "ai.example.4");
+  setText("ai-context-toggle", "ai.context.toggle.label");
+  setText("ai-compose-hint", "ai.compose.hint");
+  setPlaceholder("ai-compose-input", "ai.compose.placeholder");
+  setAttr("ai-context-toggle", "title", "ai.context.toggle.title");
+  setAttr("ai-model-pill", "title", "ai.model.pill_title");
+  // The aria-labels on the panel sections / send button.
+  const aiPanel = document.querySelector(".ai-assistant-panel");
+  if (aiPanel) aiPanel.setAttribute("aria-label", t("ai.panel.aria"));
+  const aiWorkflow = document.querySelector(".ai-process-card");
+  if (aiWorkflow) aiWorkflow.setAttribute("aria-label", t("ai.workflow.aria"));
+  const aiExamples = document.querySelector(".ai-examples");
+  if (aiExamples) aiExamples.setAttribute("aria-label", t("ai.examples.aria"));
+  const aiSendBtn = document.querySelector(".ai-send-button");
+  if (aiSendBtn) aiSendBtn.setAttribute("aria-label", t("ai.compose.send"));
+  // Refresh the model pill so its "未配置模型" / "No model configured"
+  // fallback follows the current language.
+  if (typeof syncAiModelPill === "function") syncAiModelPill();
   setText("settings-terminal-subtab-theme", "settings.terminal.subtab.theme");
   setText("settings-terminal-subtab-font", "settings.terminal.subtab.font");
   setText("settings-nav-sftp", "settings.nav.sftp");
@@ -5222,7 +5569,12 @@ function applyI18n() {
   setText("settings-about-version-label", "settings.version.label");
   setText("settings-about-author-label", "settings.about.author");
   setText("settings-about-repo-label", "settings.about.repo");
+  setText("settings-about-tagline", "settings.about.tagline");
+  setText("settings-update-title", "settings.update.title");
   setText("settings-update-install", "settings.update.install");
+  // Note: settings-update-status is owned by refreshUpdateStatus() which
+  // re-applies the localized message whenever the About section opens; we
+  // don't reset it here to avoid stomping on a real "Update available" line.
   setText("settings-terminal-theme-title", "settings.terminal_theme.title");
   setText("terminal-theme-light-title", "settings.terminal_theme.light_title");
   setText("terminal-theme-dark-title", "settings.terminal_theme.dark_title");
@@ -5254,6 +5606,15 @@ function applyI18n() {
   setOptionText("settings-ai-provider", "anthropic", "settings.ai.provider.anthropic");
   setOptionText("settings-ai-provider", "gemini", "settings.ai.provider.gemini");
   setOptionText("settings-ai-provider", "ollama", "settings.ai.provider.ollama");
+  // Re-render the model dropdown so the "Custom model" placeholder option
+  // picks up the new language (the dropdown is built dynamically and would
+  // otherwise keep its previous-language label).
+  if (typeof setAiModelOptions === "function" && settingsAiModel) {
+    const existingModels = Array.from(settingsAiModel.options)
+      .filter((o) => o.value)
+      .map((o) => o.value);
+    setAiModelOptions(existingModels, getAiModelValue());
+  }
   syncCustomSelect("settings-ai-model");
   syncCustomSelect("settings-ai-provider");
   setText("settings-sftp-title", "settings.sftp.title");
@@ -5724,10 +6085,10 @@ settingsAiSave?.addEventListener("click", async () => {
   });
 });
 settingsAiRefreshModels?.addEventListener("click", async () => {
-  await runSyncButtonAction(settingsAiRefreshModels, "刷新中...", async () => {
+  await runSyncButtonAction(settingsAiRefreshModels, t("settings.ai.button.busy.refresh"), async () => {
     try {
       await refreshAiModels();
-      showToast("模型列表已刷新。", "success");
+      showToast(t("settings.ai.toast.models_refreshed"), "success");
     } catch (e) {
       const msg = String(e);
       if (settingsAiStatus) settingsAiStatus.textContent = msg;
@@ -5770,6 +6131,21 @@ settingsGeneralSubtabBasic?.addEventListener("click", () => setSettingsGeneralSu
 settingsGeneralSubtabSftp?.addEventListener("click", () => setSettingsGeneralSubtab("sftp"));
 settingsTerminalSubtabTheme?.addEventListener("click", () => setSettingsTerminalSubtab("theme"));
 settingsTerminalSubtabFont?.addEventListener("click", () => setSettingsTerminalSubtab("font"));
+
+settingsBgChoose?.addEventListener("click", () => {
+  chooseBackgroundImage().catch((e) => console.warn("choose background failed", e));
+});
+settingsBgClear?.addEventListener("click", () => {
+  clearBackgroundImage().catch((e) => console.warn("clear background failed", e));
+});
+settingsBgOpacity?.addEventListener("input", () => {
+  localStorage.setItem(SETTINGS_KEY_APP_BG_OPACITY, String(settingsBgOpacity.value));
+  applyAppBackground();
+});
+settingsBgBlur?.addEventListener("input", () => {
+  localStorage.setItem(SETTINGS_KEY_APP_BG_BLUR, String(settingsBgBlur.value));
+  applyAppBackground();
+});
 vaultBottomSettingsRow?.addEventListener("click", (ev) => {
   if (ev.target?.closest?.("#vault-bottom-settings") || ev.target?.closest?.("#theme-mode-button")) return;
   openSettingsPage();
@@ -6090,9 +6466,8 @@ quickConnectKeyPick?.addEventListener("click", () => {
     if (quickConnectKeyStatus) quickConnectKeyStatus.textContent = String(e);
   });
 });
-quickConnectOverlay?.addEventListener("click", (ev) => {
-  if (ev.target === quickConnectOverlay) closeQuickConnectOverlay();
-});
+// Backdrop click intentionally doesn't close — too easy to lose typed
+// credentials. Use the Cancel button or Esc instead.
 quickConnectForm?.addEventListener("submit", async (ev) => {
   ev.preventDefault();
   if (quickConnectError) {
@@ -10540,10 +10915,11 @@ filesMenuClose.addEventListener("click", async () => {
   renderSftpPane(pane);
 });
 
-document.querySelectorAll("[data-ai-example]").forEach((button) => {
+document.querySelectorAll("[data-ai-example-key]").forEach((button) => {
   button.addEventListener("click", () => {
     if (!aiComposeInput) return;
-    aiComposeInput.value = button.getAttribute("data-ai-example") || "";
+    const key = button.getAttribute("data-ai-example-key");
+    aiComposeInput.value = key ? t(key) : button.textContent || "";
     aiComposeInput.focus();
   });
 });
@@ -10568,9 +10944,9 @@ aiComposeForm?.addEventListener("submit", (ev) => {
 
 fileEditorCancelButton.addEventListener("click", () => closeRemoteEditor());
 fileEditorSaveButton.addEventListener("click", () => saveRemoteEditor());
-fileEditorOverlay.addEventListener("click", (ev) => {
-  if (ev.target === fileEditorOverlay) closeRemoteEditor();
-});
+// NOTE: clicking the backdrop intentionally does NOT close the editor —
+// it's far too easy to nuke unsaved edits with a stray click. Use the
+// Close button or Esc instead.
 fileEditorFindPrevButton.addEventListener("click", () => searchInEditor({ backwards: true }));
 fileEditorFindNextButton.addEventListener("click", () => searchInEditor());
 fileEditorReplaceOneButton.addEventListener("click", () => replaceInEditor());

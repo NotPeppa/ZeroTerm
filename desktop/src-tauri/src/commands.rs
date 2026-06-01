@@ -214,6 +214,118 @@ fn write_ai_config_to_disk(cfg: &AiConfig) -> Result<(), String> {
     fs::write(&path, text).map_err(|e| format!("writing {}: {e}", path.display()))
 }
 
+// --------------------------------------------------------------------------
+// background image
+// --------------------------------------------------------------------------
+//
+// The user-picked image is copied into `config_dir/ZeroTerm/` under a
+// fixed stem so there's only ever one. We hand the frontend a base64
+// data URL (rather than an asset:// path) to dodge per-path fs scope
+// permissions and CSP `img-src`/`background` restrictions — the webview
+// can always render a `data:` URL the app itself produced.
+
+const BACKGROUND_IMAGE_STEM: &str = "background";
+/// Reject absurdly large images so we don't blow up the webview with a
+/// giant base64 string. 16 MiB is plenty for a desktop backdrop.
+const BACKGROUND_IMAGE_MAX_BYTES: u64 = 16 * 1024 * 1024;
+
+fn background_dir() -> Result<PathBuf, String> {
+    dirs::config_dir()
+        .ok_or_else(|| "no config directory on this OS".to_string())
+        .map(|d| d.join("ZeroTerm"))
+}
+
+/// Locate an existing background image regardless of which extension it
+/// was saved with.
+fn find_background_image() -> Result<Option<PathBuf>, String> {
+    let dir = background_dir()?;
+    for ext in ["png", "jpg", "jpeg", "webp", "gif"] {
+        let candidate = dir.join(format!("{BACKGROUND_IMAGE_STEM}.{ext}"));
+        if candidate.exists() {
+            return Ok(Some(candidate));
+        }
+    }
+    Ok(None)
+}
+
+fn mime_for_ext(ext: &str) -> &'static str {
+    match ext.to_ascii_lowercase().as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        _ => "application/octet-stream",
+    }
+}
+
+fn encode_data_url(bytes: &[u8], ext: &str) -> String {
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+    format!("data:{};base64,{}", mime_for_ext(ext), b64)
+}
+
+/// Copy the picked image into the app config dir and return it as a
+/// base64 `data:` URL for immediate display. Any previously saved
+/// background (with a different extension) is removed first.
+#[tauri::command]
+pub async fn set_background_image(path: String) -> Result<String, String> {
+    let src = PathBuf::from(&path);
+    let ext = src
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .filter(|e| matches!(e.as_str(), "png" | "jpg" | "jpeg" | "webp" | "gif"))
+        .ok_or_else(|| "unsupported image type (use PNG, JPG, WEBP or GIF)".to_string())?;
+
+    let metadata =
+        fs::metadata(&src).map_err(|e| format!("reading {}: {e}", src.display()))?;
+    if metadata.len() > BACKGROUND_IMAGE_MAX_BYTES {
+        return Err(format!(
+            "image is {:.1} MB, above the {} MB limit",
+            metadata.len() as f64 / (1024.0 * 1024.0),
+            BACKGROUND_IMAGE_MAX_BYTES / (1024 * 1024)
+        ));
+    }
+
+    let bytes = fs::read(&src).map_err(|e| format!("reading {}: {e}", src.display()))?;
+
+    let dir = background_dir()?;
+    fs::create_dir_all(&dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
+    // Drop any previously saved background under a different extension.
+    if let Some(existing) = find_background_image()? {
+        let _ = fs::remove_file(existing);
+    }
+    let dest = dir.join(format!("{BACKGROUND_IMAGE_STEM}.{ext}"));
+    fs::write(&dest, &bytes).map_err(|e| format!("writing {}: {e}", dest.display()))?;
+
+    Ok(encode_data_url(&bytes, &ext))
+}
+
+/// Read the saved background image back as a base64 `data:` URL, or
+/// `None` if the user hasn't set one.
+#[tauri::command]
+pub async fn get_background_image() -> Result<Option<String>, String> {
+    let Some(path) = find_background_image()? else {
+        return Ok(None);
+    };
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("png")
+        .to_string();
+    let bytes = fs::read(&path).map_err(|e| format!("reading {}: {e}", path.display()))?;
+    Ok(Some(encode_data_url(&bytes, &ext)))
+}
+
+/// Remove any saved background image.
+#[tauri::command]
+pub async fn clear_background_image() -> Result<(), String> {
+    if let Some(path) = find_background_image()? {
+        fs::remove_file(&path).map_err(|e| format!("removing {}: {e}", path.display()))?;
+    }
+    Ok(())
+}
+
 fn prepare_ai_request(messages: Vec<AiChatMessage>) -> Result<(AiConfig, String, Vec<serde_json::Value>), String> {
     let cfg = read_ai_config_from_disk()?;
     if cfg.provider != "openai-compatible" && cfg.provider != "openai" {

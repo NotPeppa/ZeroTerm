@@ -231,10 +231,17 @@ impl Session {
     }
 
     /// Lightweight RTT probe against the SSH transport.
+    ///
+    /// Opens a session channel, then immediately closes it so the server
+    /// frees the slot. Without the explicit `close()` the server keeps
+    /// the channel open from its side (we only drop the local handle), so
+    /// repeated probes pile up against `MaxSessions` until new opens fail.
     pub async fn probe_rtt_ms(&self) -> Result<u32, SshError> {
         let start = Instant::now();
         let channel = self.handle.channel_open_session().await?;
-        drop(channel);
+        // Best-effort close — failure here just means the server side will
+        // clean up later, which is still better than leaking the slot.
+        let _ = channel.close().await;
         Ok(start.elapsed().as_millis().min(u32::MAX as u128) as u32)
     }
 }
