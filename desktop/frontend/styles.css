@@ -160,6 +160,7 @@ body.has-app-bg[data-app-theme="light"] .vault-right-topbar {
    The frosted glass overlays start exactly below the headers via absolute pseudo-elements. */
 body.has-app-bg .vault-sidebar,
 body.has-app-bg .settings-sidebar,
+body.has-app-bg .terminal-side-panel,
 body.has-app-bg .ai-assistant-panel {
   background: transparent !important;
   border: none !important;
@@ -167,7 +168,8 @@ body.has-app-bg .ai-assistant-panel {
 }
 
 body.has-app-bg .vault-sidebar::after,
-body.has-app-bg .settings-sidebar::after {
+body.has-app-bg .settings-sidebar::after,
+body.has-app-bg .terminal-side-panel::after {
   content: "" !important;
   position: absolute !important;
   left: 0 !important;
@@ -180,23 +182,8 @@ body.has-app-bg .settings-sidebar::after {
   -webkit-backdrop-filter: blur(25px) !important;
 }
 body.has-app-bg[data-app-theme="light"] .vault-sidebar::after,
-body.has-app-bg[data-app-theme="light"] .settings-sidebar::after {
-  background: rgba(255, 255, 255, 0.30) !important;
-}
-
-body.has-app-bg .ai-assistant-panel::after {
-  content: "" !important;
-  position: absolute !important;
-  left: 0 !important;
-  right: 0 !important;
-  top: 0 !important; /* Start from the very top to cover the header area! */
-  bottom: 0 !important;
-  z-index: -1 !important;
-  background: rgba(8, 11, 20, 0.30) !important;
-  backdrop-filter: blur(25px) !important;
-  -webkit-backdrop-filter: blur(25px) !important;
-}
-body.has-app-bg[data-app-theme="light"] .ai-assistant-panel::after {
+body.has-app-bg[data-app-theme="light"] .settings-sidebar::after,
+body.has-app-bg[data-app-theme="light"] .terminal-side-panel::after {
   background: rgba(255, 255, 255, 0.30) !important;
 }
 
@@ -829,39 +816,63 @@ body[data-app-theme="light"]:not(.has-app-bg) .settings-page-head {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   padding: 14px 8px;
-  border-left: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(12, 16, 28, 0.82);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  border-left: 1px solid rgba(255, 255, 255, 0.04);
+  background: rgba(10, 14, 23, 0.45);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  z-index: 100;
 }
 
 .terminal-side-btn {
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  color: rgba(214, 225, 245, 0.82);
-  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: rgba(148, 163, 184, 0.65);
+  position: relative;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .terminal-side-btn:hover {
-  transform: translateY(-1px);
-  border-color: rgba(104, 168, 255, 0.4);
-  background: rgba(104, 168, 255, 0.12);
-  color: #eef3ff;
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
 }
 
 .terminal-side-btn.active {
-  border-color: rgba(72, 220, 165, 0.26);
-  background: rgba(72, 220, 165, 0.12);
-  color: #9df0cf;
+  background: rgba(59, 130, 246, 0.12) !important;
+  color: #60a5fa !important;
+  border-color: rgba(59, 130, 246, 0.25) !important;
+}
+
+.terminal-side-btn.active::before {
+  content: "" !important;
+  position: absolute;
+  left: -8px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  background: #3b82f6;
+  border-radius: 4px;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+}
+
+/* Glassmorphism overrides for rail */
+body.has-app-bg .terminal-sidebar-rail {
+  background: rgba(8, 11, 20, 0.20) !important;
+  border-left-color: rgba(255, 255, 255, 0.06) !important;
+  backdrop-filter: blur(25px) !important;
+  -webkit-backdrop-filter: blur(25px) !important;
+}
+body.has-app-bg[data-app-theme="light"] .terminal-sidebar-rail {
+  background: rgba(255, 255, 255, 0.20) !important;
+  border-left-color: rgba(0, 0, 0, 0.06) !important;
 }
 
 .terminal-side-btn .zt-icon {
@@ -918,8 +929,13 @@ body[data-app-theme="light"]:not(.has-app-bg) .settings-page-head {
 }
 
 .terminal-side-mark .zt-icon {
+  position: absolute;
+  left: 50%;
+  top: 50%;
   width: 15px;
   height: 15px;
+  transform: translate(-50%, -50%);
+  flex: 0 0 auto;
 }
 
 .terminal-side-add-btn {
@@ -1234,26 +1250,30 @@ body[data-app-theme="light"] .ai-assistant-body::-webkit-scrollbar-thumb:hover {
 }
 
 body[data-app-theme="light"] .terminal-sidebar-rail {
-  border-left-color: rgba(148, 163, 184, 0.25);
-  background: rgba(248, 250, 252, 0.88);
+  border-left-color: rgba(148, 163, 184, 0.15);
+  background: rgba(248, 250, 252, 0.50);
 }
 
 body[data-app-theme="light"] .terminal-side-btn {
-  border-color: rgba(148, 163, 184, 0.24);
-  background: rgba(255, 255, 255, 0.76);
-  color: rgba(30, 41, 59, 0.82);
+  border-color: transparent;
+  background: transparent;
+  color: rgba(71, 85, 105, 0.7);
 }
 
 body[data-app-theme="light"] .terminal-side-btn:hover {
-  border-color: rgba(37, 99, 235, 0.35);
-  background: rgba(37, 99, 235, 0.08);
+  background: rgba(15, 23, 42, 0.05);
   color: #0f172a;
 }
 
 body[data-app-theme="light"] .terminal-side-btn.active {
-  border-color: rgba(16, 185, 129, 0.26);
-  background: rgba(16, 185, 129, 0.1);
-  color: #047857;
+  background: rgba(37, 99, 235, 0.08) !important;
+  color: #2563eb !important;
+  border-color: rgba(37, 99, 235, 0.15) !important;
+}
+
+body[data-app-theme="light"] .terminal-side-btn.active::before {
+  background: #2563eb;
+  box-shadow: 0 0 8px rgba(37, 99, 235, 0.4);
 }
 
 .ai-chat-log {
@@ -1726,7 +1746,8 @@ body[data-app-theme="light"] .terminal-side-btn.active {
   color: #091325;
 }
 
-body[data-app-theme="light"] .ai-assistant-panel {
+body[data-app-theme="light"]:not(.has-app-bg) .terminal-side-panel,
+body[data-app-theme="light"]:not(.has-app-bg) .ai-assistant-panel {
   background:
     radial-gradient(circle at 18% 0%, rgba(37, 99, 235, 0.1), transparent 34%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(241, 245, 249, 0.98));
