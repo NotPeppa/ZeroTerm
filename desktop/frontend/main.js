@@ -1779,6 +1779,7 @@ const terminalSidePanels = document.getElementById("terminal-side-panels");
 const terminalSnippetsPanel = document.getElementById("terminal-snippets-panel");
 const terminalAiPanel = document.getElementById("terminal-ai-panel");
 const terminalSnippetsAdd = document.getElementById("terminal-snippets-add");
+const terminalSnippetsSearch = document.getElementById("terminal-snippets-search");
 const terminalSnippetsEmpty = document.getElementById("terminal-snippets-empty");
 const terminalSnippetsList = document.getElementById("terminal-snippets-list");
 const aiPanelSplitter = document.getElementById("terminal-side-panel-splitter");
@@ -1894,7 +1895,11 @@ let aiActivePaneKey = null;
 let aiPanelCollapsed = true;
 let terminalActiveSidePanel = null;
 let terminalCommandSnippets = [];
+let terminalSnippetSearchQuery = "";
+let snippetGroupMenuTarget = "";
 const TERMINAL_COMMAND_SNIPPETS_KEY = "zt.terminal.commandSnippets";
+const TERMINAL_SNIPPET_GROUP_STATE_KEY = "zt.terminal.commandSnippetGroups";
+let terminalSnippetGroupExpanded = {};
 const AI_CONTEXT_MODES = ["smart", "always", "off"];
 let aiContextMode = localStorage.getItem("zt.ai.contextMode") || "smart";
 if (!AI_CONTEXT_MODES.includes(aiContextMode)) aiContextMode = "smart";
@@ -1930,6 +1935,20 @@ function loadTerminalCommandSnippets() {
 
 function saveTerminalCommandSnippets() {
   localStorage.setItem(TERMINAL_COMMAND_SNIPPETS_KEY, JSON.stringify(terminalCommandSnippets));
+}
+
+function loadTerminalSnippetGroupState() {
+  try {
+    const raw = localStorage.getItem(TERMINAL_SNIPPET_GROUP_STATE_KEY);
+    const parsed = JSON.parse(raw || "{}");
+    terminalSnippetGroupExpanded = parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    terminalSnippetGroupExpanded = {};
+  }
+}
+
+function saveTerminalSnippetGroupState() {
+  localStorage.setItem(TERMINAL_SNIPPET_GROUP_STATE_KEY, JSON.stringify(terminalSnippetGroupExpanded));
 }
 
 function closeSnippetEditDialog(result) {
@@ -1984,14 +2003,56 @@ function setTerminalSidePanel(panel) {
   terminalSidebarSnippetsToggle?.classList.toggle("active", terminalActiveSidePanel === "snippets");
 }
 
+function hideSnippetGroupContextMenu() {
+  if (!snippetGroupContextMenu) return;
+  snippetGroupContextMenu.hidden = true;
+}
+
+function showSnippetGroupContextMenu(group, x, y) {
+  if (!snippetGroupContextMenu) return;
+  snippetGroupMenuTarget = group || "";
+  snippetGroupContextMenu.style.left = "0px";
+  snippetGroupContextMenu.style.top = "0px";
+  snippetGroupContextMenu.hidden = false;
+
+  const pad = 8;
+  const rect = snippetGroupContextMenu.getBoundingClientRect();
+  let left = x;
+  let top = y;
+  if (left + rect.width + pad > window.innerWidth) {
+    left = Math.max(pad, window.innerWidth - rect.width - pad);
+  }
+  if (top + rect.height + pad > window.innerHeight) {
+    top = Math.max(pad, window.innerHeight - rect.height - pad);
+  }
+  snippetGroupContextMenu.style.left = `${left}px`;
+  snippetGroupContextMenu.style.top = `${top}px`;
+}
+
+function fuzzyMatchText(query, text) {
+  const q = String(query || "").trim().toLowerCase();
+  if (!q) return true;
+  const source = String(text || "").toLowerCase();
+  let qi = 0;
+  for (let i = 0; i < source.length && qi < q.length; i += 1) {
+    if (source[i] === q[qi]) qi += 1;
+  }
+  return qi === q.length;
+}
+
 function renderTerminalCommandSnippets() {
   if (!terminalSnippetsList || !terminalSnippetsEmpty) return;
   terminalSnippetsList.innerHTML = "";
-  const hasSnippets = terminalCommandSnippets.length > 0;
+  const hasSearch = Boolean(String(terminalSnippetSearchQuery || "").trim());
+  const filteredSnippets = terminalCommandSnippets.filter((snippet) => fuzzyMatchText(
+    terminalSnippetSearchQuery,
+    `${snippet.title}\n${snippet.command}`,
+  ));
+  const hasSnippets = filteredSnippets.length > 0;
   terminalSnippetsEmpty.hidden = hasSnippets;
   terminalSnippetsList.hidden = !hasSnippets;
   const grouped = new Map();
-  for (const snippet of terminalCommandSnippets) {
+  for (const snippet of filteredSnippets) {
     const group = snippet.group || "未分组";
     if (!grouped.has(group)) grouped.set(group, []);
     grouped.get(group).push(snippet);
@@ -1999,10 +2060,26 @@ function renderTerminalCommandSnippets() {
   for (const [group, items] of grouped) {
     const section = document.createElement("section");
     section.className = "terminal-snippet-group";
-    const heading = document.createElement("h3");
+    const expanded = hasSearch ? true : terminalSnippetGroupExpanded[group] === true;
+    const heading = document.createElement("button");
+    heading.type = "button";
     heading.className = "terminal-snippet-group-title";
-    heading.textContent = group;
+    heading.setAttribute("aria-expanded", expanded ? "true" : "false");
+    heading.innerHTML = `<span class="terminal-snippet-group-label">${group}</span><span class="terminal-snippet-group-meta"><span class="terminal-snippet-group-count">${items.length}</span><span class="terminal-snippet-group-chevron">${expanded ? "▾" : "▸"}</span></span>`;
+    heading.addEventListener("click", () => {
+      terminalSnippetGroupExpanded[group] = !expanded;
+      saveTerminalSnippetGroupState();
+      renderTerminalCommandSnippets();
+    });
+    heading.addEventListener("contextmenu", (ev) => {
+      ev.preventDefault();
+      showSnippetGroupContextMenu(group, ev.clientX, ev.clientY);
+    });
     section.appendChild(heading);
+    if (!expanded) {
+      terminalSnippetsList.appendChild(section);
+      continue;
+    }
     for (const snippet of items) {
     const card = document.createElement("article");
     card.className = "terminal-snippet-card";
@@ -3248,6 +3325,10 @@ const themeCardMenu = document.getElementById("theme-card-menu");
 const themeMenuEdit = document.getElementById("theme-menu-edit");
 const themeMenuDuplicate = document.getElementById("theme-menu-duplicate");
 const themeMenuDelete = document.getElementById("theme-menu-delete");
+const snippetGroupContextMenu = document.getElementById("snippet-group-context-menu");
+const snippetGroupMenuAdd = document.getElementById("snippet-group-menu-add");
+const snippetGroupMenuEdit = document.getElementById("snippet-group-menu-edit");
+const snippetGroupMenuDelete = document.getElementById("snippet-group-menu-delete");
 const themeEditOverlay = document.getElementById("theme-edit-overlay");
 const themeEditTitle = document.getElementById("theme-edit-title");
 const themeEditForm = document.getElementById("theme-edit-form");
@@ -7222,6 +7303,7 @@ setTimeout(() => {
   refreshUpdateStatus().catch(() => {});
 }, 10000);
 loadTerminalCommandSnippets();
+loadTerminalSnippetGroupState();
 loadCustomThemes();
 rebuildTerminalThemeSelectOptions();
 renderTerminalThemeCards();
@@ -8082,10 +8164,67 @@ terminalSnippetsAdd?.addEventListener("click", async () => {
   setTerminalSidePanel("snippets");
 });
 
-snippetEditCancel?.addEventListener("click", () => closeSnippetEditDialog(null));
-snippetEditOverlay?.addEventListener("click", (ev) => {
-  if (ev.target === snippetEditOverlay) closeSnippetEditDialog(null);
+terminalSnippetsSearch?.addEventListener("input", () => {
+  terminalSnippetSearchQuery = terminalSnippetsSearch.value || "";
+  renderTerminalCommandSnippets();
 });
+
+snippetGroupMenuAdd?.addEventListener("click", async () => {
+  const group = snippetGroupMenuTarget || "未分组";
+  hideSnippetGroupContextMenu();
+  const next = await openSnippetEditDialog({
+    title: "新增命令片段",
+    group,
+  });
+  if (!next) return;
+  terminalCommandSnippets.unshift({
+    id: `snippet-${Date.now()}`,
+    group: next.group,
+    title: next.name,
+    command: next.command,
+  });
+  saveTerminalCommandSnippets();
+  renderTerminalCommandSnippets();
+  setTerminalSidePanel("snippets");
+});
+
+snippetGroupMenuEdit?.addEventListener("click", async () => {
+  const current = snippetGroupMenuTarget || "";
+  hideSnippetGroupContextMenu();
+  if (!current) return;
+  const next = await openTextInputDialog({
+    title: "编辑分组",
+    message: "请输入新的分组名称",
+    defaultValue: current,
+    placeholder: "例如：Docker",
+  });
+  if (!next) return;
+  const nextName = next.trim();
+  if (!nextName || nextName === current) return;
+  terminalCommandSnippets.forEach((snippet) => {
+    if ((snippet.group || "未分组") === current) snippet.group = nextName;
+  });
+  if (terminalSnippetGroupExpanded[current] !== undefined) {
+    terminalSnippetGroupExpanded[nextName] = terminalSnippetGroupExpanded[current];
+    delete terminalSnippetGroupExpanded[current];
+    saveTerminalSnippetGroupState();
+  }
+  saveTerminalCommandSnippets();
+  renderTerminalCommandSnippets();
+});
+
+snippetGroupMenuDelete?.addEventListener("click", () => {
+  const current = snippetGroupMenuTarget || "";
+  hideSnippetGroupContextMenu();
+  if (!current) return;
+  terminalCommandSnippets = terminalCommandSnippets.filter((snippet) => (snippet.group || "未分组") !== current);
+  delete terminalSnippetGroupExpanded[current];
+  saveTerminalSnippetGroupState();
+  saveTerminalCommandSnippets();
+  renderTerminalCommandSnippets();
+});
+
+snippetEditCancel?.addEventListener("click", () => closeSnippetEditDialog(null));
 snippetEditForm?.addEventListener("submit", (ev) => {
   ev.preventDefault();
   const name = String(snippetEditName?.value || "").trim();
@@ -8100,6 +8239,12 @@ snippetEditForm?.addEventListener("submit", (ev) => {
     return;
   }
   closeSnippetEditDialog({ name, group, command });
+});
+
+document.addEventListener("click", (ev) => {
+  if (snippetGroupContextMenu && !snippetGroupContextMenu.hidden && !snippetGroupContextMenu.contains(ev.target)) {
+    hideSnippetGroupContextMenu();
+  }
 });
 
 function renderTabStrip() {

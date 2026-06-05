@@ -229,6 +229,7 @@
                             <button id="terminal-snippets-add" type="button" class="terminal-side-add-btn">新增</button>
                           </header>
                           <div class="terminal-side-body snippets-body">
+                            <input id="terminal-snippets-search" class="terminal-snippets-search" type="text" autocomplete="off" placeholder="搜索名称或命令" />
                             <div id="terminal-snippets-empty" class="terminal-side-empty">
                               <strong id="terminal-snippets-empty-title">还没有命令片段</strong>
                               <p id="terminal-snippets-empty-desc">把常用命令保存在这里，后面可以一键复制。</p>
@@ -1217,6 +1218,12 @@ $ npm run build && npm run start</pre>
         <button id="theme-mode-system" type="button">跟随系统</button>
         <button id="theme-mode-dark" type="button">深色</button>
         <button id="theme-mode-light" type="button">浅色</button>
+      </div>
+
+      <div id="snippet-group-context-menu" class="hosts-context-menu" hidden>
+        <button id="snippet-group-menu-add" type="button">新增片段</button>
+        <button id="snippet-group-menu-edit" type="button">编辑分组</button>
+        <button id="snippet-group-menu-delete" type="button" class="danger">删除分组</button>
       </div>
 
       <div id="theme-edit-overlay" class="overlay" hidden>
