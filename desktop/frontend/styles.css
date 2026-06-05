@@ -1029,6 +1029,8 @@ body[data-app-theme="light"] .ai-assistant-body::-webkit-scrollbar-thumb:hover {
 
 .ai-message-body p:last-child,
 .ai-message-body ul:last-child,
+.ai-message-body .ai-table-wrap:last-child,
+.ai-message-body .ai-md-divider:last-child,
 .ai-code-block:last-child {
   margin-bottom: 0;
 }
@@ -1041,6 +1043,69 @@ body[data-app-theme="light"] .ai-assistant-body::-webkit-scrollbar-thumb:hover {
 
 .ai-message-body li {
   margin: 4px 0;
+}
+
+.ai-table-wrap {
+  margin: 12px 0;
+  overflow-x: auto;
+}
+
+.ai-md-table {
+  width: 100%;
+  min-width: 320px;
+  border-collapse: collapse;
+  border-spacing: 0;
+  overflow: hidden;
+  border: 1px solid rgba(104, 168, 255, 0.16);
+  border-radius: 12px;
+  background: rgba(8, 14, 28, 0.34);
+}
+
+.ai-md-table th,
+.ai-md-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(104, 168, 255, 0.12);
+  text-align: left;
+  vertical-align: top;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ai-md-table th {
+  color: #f4f7ff;
+  font-weight: 750;
+  background: rgba(104, 168, 255, 0.12);
+}
+
+.ai-md-table td {
+  color: rgba(238, 242, 255, 0.92);
+}
+
+.ai-md-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.ai-md-table tbody tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.ai-md-table .is-ok {
+  color: #8ef0c5;
+}
+
+.ai-md-table .is-warn {
+  color: #ffd98c;
+}
+
+.ai-md-table .is-danger {
+  color: #ff9baa;
+}
+
+.ai-md-divider {
+  height: 1px;
+  margin: 14px 0;
+  border: 0;
+  background: linear-gradient(90deg, rgba(104, 168, 255, 0), rgba(104, 168, 255, 0.34), rgba(104, 168, 255, 0));
 }
 
 .ai-message-body strong {
@@ -1136,6 +1201,43 @@ body[data-app-theme="light"] .ai-assistant-body::-webkit-scrollbar-thumb:hover {
 .ai-code-tools button:hover {
   border-color: rgba(104, 168, 255, 0.64);
   background: rgba(104, 168, 255, 0.24);
+}
+
+.ai-message-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(104, 168, 255, 0.12);
+}
+
+.ai-message-action-hint {
+  color: rgba(204, 215, 242, 0.72);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ai-continue-analysis {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 6px 12px;
+  border-radius: 9px;
+  border: 1px solid rgba(72, 220, 165, 0.32);
+  background: rgba(72, 220, 165, 0.12);
+  color: #d9fff1;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.ai-continue-analysis:hover:not(:disabled) {
+  border-color: rgba(72, 220, 165, 0.6);
+  background: rgba(72, 220, 165, 0.2);
+}
+
+.ai-continue-analysis:disabled {
+  opacity: 0.7;
 }
 
 .ai-message-user .ai-message-body {
@@ -1421,6 +1523,45 @@ body[data-app-theme="light"] .ai-message-body strong {
   color: #0f172a;
 }
 
+body[data-app-theme="light"] .ai-md-table {
+  border-color: rgba(37, 99, 235, 0.14);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+body[data-app-theme="light"] .ai-md-table th,
+body[data-app-theme="light"] .ai-md-table td {
+  border-bottom-color: rgba(37, 99, 235, 0.12);
+}
+
+body[data-app-theme="light"] .ai-md-table th {
+  color: #0f172a;
+  background: rgba(37, 99, 235, 0.08);
+}
+
+body[data-app-theme="light"] .ai-md-table td {
+  color: #1e293b;
+}
+
+body[data-app-theme="light"] .ai-md-table tbody tr:nth-child(even) td {
+  background: rgba(148, 163, 184, 0.08);
+}
+
+body[data-app-theme="light"] .ai-md-table .is-ok {
+  color: #047857;
+}
+
+body[data-app-theme="light"] .ai-md-table .is-warn {
+  color: #b45309;
+}
+
+body[data-app-theme="light"] .ai-md-table .is-danger {
+  color: #b91c1c;
+}
+
+body[data-app-theme="light"] .ai-md-divider {
+  background: linear-gradient(90deg, rgba(37, 99, 235, 0), rgba(37, 99, 235, 0.28), rgba(37, 99, 235, 0));
+}
+
 body[data-app-theme="light"] .ai-message-body code:not(.ai-code-block code) {
   border-color: rgba(37, 99, 235, 0.16);
   background: rgba(37, 99, 235, 0.08);
@@ -1454,6 +1595,20 @@ body[data-app-theme="light"] .ai-code-tools button {
   border-color: rgba(37, 99, 235, 0.22);
   background: rgba(37, 99, 235, 0.08);
   color: #1d4ed8;
+}
+
+body[data-app-theme="light"] .ai-message-actions {
+  border-top-color: rgba(37, 99, 235, 0.12);
+}
+
+body[data-app-theme="light"] .ai-message-action-hint {
+  color: #475569;
+}
+
+body[data-app-theme="light"] .ai-continue-analysis {
+  border-color: rgba(16, 185, 129, 0.26);
+  background: rgba(16, 185, 129, 0.1);
+  color: #047857;
 }
 
 body[data-app-theme="light"] .ai-message-error .ai-message-body {

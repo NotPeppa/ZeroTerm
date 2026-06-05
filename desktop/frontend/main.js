@@ -1868,6 +1868,7 @@ let currentAiModelLabel = "";
 /// stub from `default_ai_config()`.
 let aiConfigured = false;
 let pendingAiCommandCounter = 0;
+const aiMultiCommandState = new WeakMap();
 
 function syncAiContextToggle() {
   if (!aiContextToggle) return;
@@ -1996,6 +1997,7 @@ function renderAiMarkdown(text) {
   const lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
   let paragraph = [];
   let list = null;
+  let tableLines = null;
   let codeLines = null;
   let codeLang = "";
 
@@ -2046,6 +2048,51 @@ function renderAiMarkdown(text) {
     fragment.appendChild(list);
     list = null;
   };
+  const flushTable = () => {
+    if (!tableLines?.length || tableLines.length < 2) {
+      tableLines = null;
+      return;
+    }
+    const rows = tableLines.map(splitMarkdownTableCells).filter((cells) => cells.length);
+    if (rows.length < 2) {
+      tableLines = null;
+      return;
+    }
+    const wrap = document.createElement("div");
+    wrap.className = "ai-table-wrap";
+    const table = document.createElement("table");
+    table.className = "ai-md-table";
+    const thead = document.createElement("thead");
+    const headerRow = document.createElement("tr");
+    rows[0].forEach((cell) => {
+      const th = document.createElement("th");
+      const status = markdownTableCellStatus(cell);
+      if (status) th.classList.add(`is-${status}`);
+      th.appendChild(renderInline(cell));
+      headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+    if (rows.length > 2) {
+      const tbody = document.createElement("tbody");
+      rows.slice(2).forEach((cells) => {
+        const tr = document.createElement("tr");
+        rows[0].forEach((_cell, index) => {
+          const td = document.createElement("td");
+          const cell = cells[index] || "";
+          const status = markdownTableCellStatus(cell);
+          if (status) td.classList.add(`is-${status}`);
+          td.appendChild(renderInline(cell));
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+    }
+    wrap.appendChild(table);
+    fragment.appendChild(wrap);
+    tableLines = null;
+  };
   const flushCode = () => {
     if (!codeLines) return;
     const block = document.createElement("div");
@@ -2065,7 +2112,8 @@ function renderAiMarkdown(text) {
     codeLang = "";
   };
 
-  for (const rawLine of lines) {
+  for (let i = 0; i < lines.length; i += 1) {
+    const rawLine = lines[i];
     const fence = rawLine.match(/^\s*```\s*([\w-]+)?\s*$/);
     if (fence) {
       if (codeLines) {
@@ -2073,6 +2121,7 @@ function renderAiMarkdown(text) {
       } else {
         flushParagraph();
         flushList();
+        flushTable();
         codeLines = [];
         codeLang = fence[1] || "";
       }
@@ -2083,15 +2132,24 @@ function renderAiMarkdown(text) {
       continue;
     }
     const line = rawLine.trim();
+    if (tableLines) {
+      if (isMarkdownTableRow(line)) {
+        tableLines.push(line);
+        continue;
+      }
+      flushTable();
+    }
     if (!line) {
       flushParagraph();
       flushList();
+      flushTable();
       continue;
     }
     const heading = line.match(/^(#{1,4})\s+(.+)$/);
     if (heading) {
       flushParagraph();
       flushList();
+      flushTable();
       const level = Math.min(heading[1].length + 1, 5);
       const h = document.createElement(`h${level}`);
       h.className = "ai-md-heading";
@@ -2099,10 +2157,28 @@ function renderAiMarkdown(text) {
       fragment.appendChild(h);
       continue;
     }
+    if (/^([-*_])(?:\s*\1){2,}$/.test(line)) {
+      flushParagraph();
+      flushList();
+      flushTable();
+      const hr = document.createElement("hr");
+      hr.className = "ai-md-divider";
+      fragment.appendChild(hr);
+      continue;
+    }
+    const nextLine = String(lines[i + 1] || "").trim();
+    if (isMarkdownTableRow(line) && isMarkdownTableDivider(nextLine)) {
+      flushParagraph();
+      flushList();
+      tableLines = [line, nextLine];
+      i += 1;
+      continue;
+    }
     const bullet = line.match(/^[-*]\s+(.+)$/);
     const numbered = line.match(/^\d+\.\s+(.+)$/);
     if (bullet || numbered) {
       flushParagraph();
+      flushTable();
       if (!list) list = document.createElement(numbered ? "ol" : "ul");
       const li = document.createElement("li");
       li.appendChild(renderInline((bullet || numbered)[1]));
@@ -2115,7 +2191,34 @@ function renderAiMarkdown(text) {
   flushCode();
   flushParagraph();
   flushList();
+  flushTable();
   return fragment;
+}
+
+function isMarkdownTableRow(line) {
+  const text = String(line || "").trim();
+  return text.includes("|") && /^\|?.+\|.+\|?$/.test(text);
+}
+
+function isMarkdownTableDivider(line) {
+  const cells = splitMarkdownTableCells(line);
+  return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
+}
+
+function splitMarkdownTableCells(line) {
+  const text = String(line || "").trim();
+  if (!text) return [];
+  const normalized = text.replace(/^\|/, "").replace(/\|$/, "");
+  return normalized.split("|").map((cell) => cell.trim());
+}
+
+function markdownTableCellStatus(cell) {
+  const text = String(cell || "").trim();
+  if (!text) return "";
+  if (/^(?:✅|✔️|✓)\b/.test(text)) return "ok";
+  if (/^(?:⚠️|⚠|!+)\b/.test(text)) return "warn";
+  if (/^(?:❌|✖|✗|x)\b/i.test(text)) return "danger";
+  return "";
 }
 
 function looksRunnableInlineCommand(value) {
@@ -2123,6 +2226,8 @@ function looksRunnableInlineCommand(value) {
   if (!text || text.length > 140 || text.includes("\n")) return false;
   if (/^https?:\/\//i.test(text)) return false;
   if (/^[\w.-]+\.[a-z]{2,}(\/.*)?$/i.test(text)) return false;
+  if (looksLikeHeredocStart(text)) return false;
+  if (/^(if|then|elif|else|fi|for|while|until|do|done|case|esac|select|function)\b/.test(text)) return false;
   return /^(sudo\s+)?[a-z][\w.-]*(\s+|$)/i.test(text);
 }
 
@@ -2199,14 +2304,10 @@ async function runCommandInActiveTerminal(command) {
 function requestAiCommandApproval(command) {
   const text = normalizeAiCommandBlock(command);
   if (!text) return;
-  if (text.split("\n").filter(Boolean).length > 1) {
-    showToast("一次只能批准执行一条命令。", "error", 3200);
-    return;
-  }
   return executeAiCommand(text);
 }
 
-async function executeAiCommand(command) {
+async function executeAiCommand(command, { autoContinue = true } = {}) {
   const pane = getActivePane();
   if (!pane?.sessionId) {
     showToast("当前没有可执行命令的终端会话。", "error", 3600);
@@ -2221,7 +2322,9 @@ async function executeAiCommand(command) {
     await waitForTerminalOutputSettle(before, { maxMs: commandWaitMaxMs(command) });
     const after = getActiveTerminalSnapshot(260);
     const output = after.startsWith(before) ? after.slice(before.length).trim() : after;
-    await continueAiAfterCommand(command, output || after);
+    const finalOutput = output || after;
+    if (autoContinue) await continueAiAfterCommand(command, finalOutput);
+    return finalOutput;
   } catch (e) {
     showToast(String(e), "error", 4200);
     throw e;
@@ -2293,6 +2396,48 @@ async function continueAiAfterCommand(command, output) {
   ], "正在分析执行结果...");
 }
 
+async function continueAiAfterCommands(results, { totalCommands = 0 } = {}) {
+  const executed = Array.isArray(results) ? results.filter((item) => item?.command) : [];
+  if (!executed.length) return;
+  const userGoal = [...aiMessages].reverse().find((m) => m.role === "user")?.content || "";
+  const blocks = [];
+  executed.forEach((item, index) => {
+    blocks.push(`命令 ${index + 1}：`);
+    blocks.push("```bash");
+    blocks.push(item.command);
+    blocks.push("```");
+    blocks.push("输出：");
+    blocks.push("```terminal");
+    blocks.push(redactSensitiveText(item.output || "(无输出)"));
+    blocks.push("```");
+  });
+  await streamAiMessages([
+    {
+      role: "system",
+      content: [
+        "你是 ZeroTerm 的 AI 助手。用户刚在同一条 AI 回复里批准执行了多条命令。",
+        "你的任务是综合这些已执行命令的结果继续推进用户目标，但不要假装未执行的命令已经执行。",
+        "如果证据已经足够，必须停止继续排查，直接给出：结论、依据、影响、建议下一步。",
+        "如果当前结果已经能回答问题，不要再重复建议同类检查命令。",
+        "只有在缺少一个关键事实时，才给下一条最有用的命令。",
+        "每次最多建议一条命令，且每个 fenced code block 只能包含一条命令。",
+        "引用终端输出、报错或日志时必须使用 ```terminal 代码块；只有真正需要用户批准执行的命令才使用 ```bash。",
+        "不要假装执行未执行的命令。",
+      ].join("\n"),
+    },
+    ...redactAiMessagesForRequest(aiMessages.slice(-6)),
+    { role: "user", content: userGoal },
+    {
+      role: "system",
+      content: [
+        `同一条 AI 回复中共有 ${totalCommands || executed.length} 条可执行命令，用户本次已执行 ${executed.length} 条。`,
+        "仅基于下面这些已执行命令和输出继续分析：",
+        ...blocks,
+      ].join("\n"),
+    },
+  ], "正在分析已执行命令...");
+}
+
 async function streamAiMessages(messages, pendingText = "正在思考...") {
   await ensureAiStreamListener();
   if (!window.__ztAiStreams) window.__ztAiStreams = new Map();
@@ -2353,6 +2498,107 @@ function normalizeAiCommandBlock(command) {
     .map((line) => line.replace(/\s+#\s+.*$/, "").trim())
     .filter(Boolean)
     .join("\n");
+}
+
+function splitAiCommandBlockForApproval(command) {
+  const text = normalizeAiCommandBlock(command);
+  if (!text) return [];
+  const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
+  if (lines.length <= 1) return lines;
+  if (shouldApproveAiCommandBlockAsScript(lines)) return [text];
+  return lines;
+}
+
+function ensureAiMultiCommandControls(messageNode, totalCommands) {
+  if (!messageNode || totalCommands <= 1) return null;
+  let state = aiMultiCommandState.get(messageNode);
+  if (!state) {
+    state = {
+      totalCommands,
+      executedCount: 0,
+      lastContinuedCount: 0,
+      results: [],
+      continuing: false,
+      controls: null,
+      hint: null,
+      button: null,
+    };
+    aiMultiCommandState.set(messageNode, state);
+  } else {
+    state.totalCommands = Math.max(state.totalCommands || 0, totalCommands);
+  }
+  if (!state.controls || !state.controls.isConnected) {
+    const body = messageNode.querySelector(".ai-message-body");
+    if (!body) return state;
+    const controls = document.createElement("div");
+    controls.className = "ai-message-actions";
+    const hint = document.createElement("div");
+    hint.className = "ai-message-action-hint";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ai-continue-analysis";
+    button.addEventListener("click", async () => {
+      const current = aiMultiCommandState.get(messageNode);
+      if (!current || current.continuing) return;
+      if (!current.results.length) {
+        showToast("请先执行至少一条命令，再继续分析。", "error", 3200);
+        return;
+      }
+      current.continuing = true;
+      updateAiMultiCommandControls(messageNode);
+      try {
+        await continueAiAfterCommands(current.results, { totalCommands: current.totalCommands });
+        current.lastContinuedCount = current.executedCount;
+      } finally {
+        current.continuing = false;
+        updateAiMultiCommandControls(messageNode);
+      }
+    });
+    controls.append(hint, button);
+    body.appendChild(controls);
+    state.controls = controls;
+    state.hint = hint;
+    state.button = button;
+  }
+  updateAiMultiCommandControls(messageNode);
+  return state;
+}
+
+function updateAiMultiCommandControls(messageNode) {
+  const state = aiMultiCommandState.get(messageNode);
+  if (!state?.controls || !state.hint || !state.button) return;
+  const executed = state.executedCount || 0;
+  const total = state.totalCommands || 0;
+  const pending = Math.max(0, total - executed);
+  state.hint.textContent = executed
+    ? `这条回复里有 ${total} 条可执行命令，已执行 ${executed} 条${pending ? `，剩余 ${pending} 条` : ""}。`
+    : `这条回复里有 ${total} 条可执行命令；你可以全部执行后，再手动继续分析。`;
+  if (state.continuing) {
+    state.button.disabled = true;
+    state.button.textContent = "分析中...";
+    return;
+  }
+  if (!executed) {
+    state.button.disabled = true;
+    state.button.textContent = "继续分析";
+    return;
+  }
+  const dirty = executed > (state.lastContinuedCount || 0);
+  state.button.disabled = !dirty;
+  state.button.textContent = dirty ? "继续分析" : "已分析";
+}
+
+function looksLikeHeredocStart(line) {
+  return /<<-?\s*(?:['"][^'"\s]+['"]|[^\s<]+)$/.test(String(line || "").trim());
+}
+
+function shouldApproveAiCommandBlockAsScript(lines) {
+  if (!Array.isArray(lines) || lines.length <= 1) return false;
+  if (lines.some((line) => looksLikeHeredocStart(line))) return true;
+  if (lines.some((line) => /[\\|&]$/.test(line))) return true;
+  if (lines.some((line) => /^(if|then|elif|else|fi|for|while|until|do|done|case|esac|select|function)\b/.test(line))) return true;
+  if (lines.some((line) => /^(\{|\})$/.test(line))) return true;
+  return !lines.every((line) => looksLikeRunnableCommandLine(line));
 }
 
 function getActiveTerminalSnapshot(maxLines = 160) {
@@ -2457,14 +2703,25 @@ function redactAiMessagesForRequest(messages) {
 }
 
 function enhanceAiCodeBlocks(root) {
-  root.querySelectorAll?.(".ai-code-block:not([data-enhanced])").forEach((block) => {
+  const blocks = Array.from(root.querySelectorAll?.(".ai-code-block:not([data-enhanced])") || []);
+  if (!blocks.length) return;
+  const executable = [];
+  blocks.forEach((block) => {
     block.dataset.enhanced = "1";
     const pre = block.querySelector("pre");
     const command = normalizeAiCommandBlock(pre?.textContent || "");
     if (!isExecutableCodeBlock(block, command)) return;
+    const commands = splitAiCommandBlockForApproval(command);
+    if (!commands.length) return;
+    executable.push({ block, commands });
+  });
+  if (!executable.length) return;
+  const messageNode = root.closest?.(".ai-message-assistant");
+  const totalCommands = executable.reduce((sum, item) => sum + item.commands.length, 0);
+  const batchState = totalCommands > 1 ? ensureAiMultiCommandControls(messageNode, totalCommands) : null;
+  executable.forEach(({ block, commands }) => {
     const tools = document.createElement("div");
     tools.className = "ai-code-tools";
-    const commands = command.split("\n").map((line) => line.trim()).filter(Boolean);
     commands.slice(0, 4).forEach((singleCommand, index) => {
       const run = document.createElement("button");
       run.type = "button";
@@ -2475,9 +2732,17 @@ function enhanceAiCodeBlocks(root) {
         run.textContent = "运行中";
         block.classList.add("approved");
         try {
-          await requestAiCommandApproval(singleCommand);
+          if (batchState) {
+            const output = await executeAiCommand(singleCommand, { autoContinue: false });
+            batchState.results.push({ command: singleCommand, output: output || "" });
+            batchState.executedCount += 1;
+            updateAiMultiCommandControls(messageNode);
+          } else {
+            await requestAiCommandApproval(singleCommand);
+          }
           run.textContent = "已执行";
         } catch {
+          if (batchState) updateAiMultiCommandControls(messageNode);
           run.textContent = "失败";
         }
       });
@@ -7610,10 +7875,18 @@ function ensurePaneTerminal(pane) {
   }
   try {
     pane.term.open(pane.bodyEl);
-    pane.bodyEl.addEventListener("wheel", (ev) => {
+    const viewport = pane.bodyEl.querySelector(".xterm-viewport");
+    const wheelTarget = viewport || pane.bodyEl;
+    wheelTarget.addEventListener("wheel", (ev) => {
       if (!pane.term) return;
-      const lines = Math.max(1, Math.round(Math.abs(ev.deltaY) / 24));
-      pane.term.scrollLines(ev.deltaY > 0 ? lines : -lines);
+      const currentViewport = pane.bodyEl?.querySelector?.(".xterm-viewport");
+      if (currentViewport) {
+        currentViewport.scrollTop += ev.deltaY;
+      } else {
+        const cellHeight = pane.term?._core?._renderService?.dimensions?.css?.cell?.height || 18;
+        const lines = Math.max(1, Math.round(Math.abs(ev.deltaY) / Math.max(1, cellHeight)));
+        pane.term.scrollLines(ev.deltaY > 0 ? lines : -lines);
+      }
       ev.preventDefault();
     }, { passive: false });
     applyTerminalThemeToAllPanes();
