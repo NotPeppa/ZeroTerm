@@ -116,6 +116,7 @@ pub fn run() {
             commands::sftp_mkdir,
             commands::sftp_copy_entry_between_panes,
             commands::sftp_cancel_transfer,
+            commands::list_system_fonts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

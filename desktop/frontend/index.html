@@ -209,91 +209,142 @@
                     </div>
                     <div id="terminal-session-layout" class="terminal-session-layout" hidden>
                       <div id="terminal-workspace" class="terminal-workspace"></div>
-                      <div id="ai-panel-splitter" class="ai-panel-splitter" role="separator" aria-orientation="vertical" aria-label="调整 AI 面板宽度"></div>
-                      <aside class="ai-assistant-panel" aria-label="AI Assistant">
-                        <header class="ai-assistant-header">
-                          <div class="ai-assistant-title">
-                            <span class="ai-assistant-mark" aria-hidden="true">
-                              <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
-                                <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path>
-                                <path d="m5 3 1 2.5L8.5 6 6 7 5 9.5 4 7 1.5 6 4 5.5z"></path>
-                                <path d="m19 17 1 2.5 2.5.5-2.5 1-1 2.5-1-2.5-2.5-1 2.5-1z"></path>
-                              </svg>
-                            </span>
-                            <div>
-                              <strong id="ai-assistant-title">AI 助手</strong>
-                              <span id="ai-assistant-subtitle">当前 SSH 会话</span>
-                            </div>
-                          </div>
-                          <div id="ai-model-pill" class="ai-safe-pill" title="当前 AI 模型">
-                            <span aria-hidden="true"></span>
-                            未配置模型
-                          </div>
-                        </header>
-
-                        <div class="ai-assistant-body">
-                          <div id="ai-chat-log" class="ai-chat-log" hidden></div>
-                          <div id="ai-empty-state" class="ai-empty-state">
-                          <section class="ai-hero-card">
-                            <p id="ai-hero-kicker" class="ai-kicker">自然语言操作</p>
-                            <h3 id="ai-hero-title">告诉 AI 你的目标，不需要会命令。</h3>
-                            <p id="ai-hero-desc">
-                              AI 会理解当前服务器环境，先说明计划，确认后再操作。命令和日志默认折叠，需要时可以展开查看。
-                            </p>
-                          </section>
-
-                          <section class="ai-process-card" aria-label="AI 工作流程">
-                            <div class="ai-process-step">
-                              <span>1</span>
+                      <div id="terminal-side-panel-splitter" class="ai-panel-splitter" role="separator" aria-orientation="vertical" aria-label="调整右侧面板宽度"></div>
+                      <aside id="terminal-side-panels" class="terminal-side-panels" aria-label="终端侧边面板">
+                        <section id="terminal-snippets-panel" class="terminal-side-panel" hidden>
+                          <header class="terminal-side-header">
+                            <div class="terminal-side-title-wrap">
+                              <span class="terminal-side-mark" aria-hidden="true">
+                                <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                  <path d="M8 6h12"></path>
+                                  <path d="M8 12h12"></path>
+                                  <path d="M8 18h12"></path>
+                                  <path d="M3 6h.01"></path>
+                                  <path d="M3 12h.01"></path>
+                                  <path d="M3 18h.01"></path>
+                                </svg>
+                              </span>
                               <div>
-                                <strong id="ai-step-1-title">理解目标</strong>
-                                <p id="ai-step-1-desc">把你的描述拆成可执行任务。</p>
+                                <strong id="terminal-snippets-title">命令片段</strong>
+                                <span id="terminal-snippets-subtitle">保存常用命令，快速复制</span>
                               </div>
                             </div>
-                            <div class="ai-process-step">
-                              <span>2</span>
-                              <div>
-                                <strong id="ai-step-2-title">制定计划</strong>
-                                <p id="ai-step-2-desc">先做只读检查，再说明需要的操作。</p>
+                            <button id="terminal-snippets-add" type="button" class="terminal-side-add-btn">新增</button>
+                          </header>
+                          <div class="terminal-side-body snippets-body">
+                            <div id="terminal-snippets-empty" class="terminal-side-empty">
+                              <strong id="terminal-snippets-empty-title">还没有命令片段</strong>
+                              <p id="terminal-snippets-empty-desc">把常用命令保存在这里，后面可以一键复制。</p>
+                            </div>
+                            <div id="terminal-snippets-list" class="terminal-snippets-list" hidden></div>
+                          </div>
+                        </section>
+                        <section id="terminal-ai-panel" class="terminal-side-panel">
+                          <aside class="ai-assistant-panel" aria-label="AI Assistant">
+                            <header class="ai-assistant-header">
+                              <div class="ai-assistant-title">
+                                <span class="ai-assistant-mark" aria-hidden="true">
+                                  <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path>
+                                    <path d="m5 3 1 2.5L8.5 6 6 7 5 9.5 4 7 1.5 6 4 5.5z"></path>
+                                    <path d="m19 17 1 2.5 2.5.5-2.5 1-1 2.5-1-2.5-2.5-1 2.5-1z"></path>
+                                  </svg>
+                                </span>
+                                <div>
+                                  <strong id="ai-assistant-title">AI 助手</strong>
+                                  <span id="ai-assistant-subtitle">当前 SSH 会话</span>
+                                </div>
+                              </div>
+                              <div id="ai-model-pill" class="ai-safe-pill" title="当前 AI 模型">
+                                <span aria-hidden="true"></span>
+                                未配置模型
+                              </div>
+                            </header>
+
+                            <div class="ai-assistant-body">
+                              <div id="ai-chat-log" class="ai-chat-log" hidden></div>
+                              <div id="ai-empty-state" class="ai-empty-state">
+                              <section class="ai-hero-card">
+                                <p id="ai-hero-kicker" class="ai-kicker">自然语言操作</p>
+                                <h3 id="ai-hero-title">告诉 AI 你的目标，不需要会命令。</h3>
+                                <p id="ai-hero-desc">
+                                  AI 会理解当前服务器环境，先说明计划，确认后再操作。命令和日志默认折叠，需要时可以展开查看。
+                                </p>
+                              </section>
+
+                              <section class="ai-process-card" aria-label="AI 工作流程">
+                                <div class="ai-process-step">
+                                  <span>1</span>
+                                  <div>
+                                    <strong id="ai-step-1-title">理解目标</strong>
+                                    <p id="ai-step-1-desc">把你的描述拆成可执行任务。</p>
+                                  </div>
+                                </div>
+                                <div class="ai-process-step">
+                                  <span>2</span>
+                                  <div>
+                                    <strong id="ai-step-2-title">制定计划</strong>
+                                    <p id="ai-step-2-desc">先做只读检查，再说明需要的操作。</p>
+                                  </div>
+                                </div>
+                                <div class="ai-process-step">
+                                  <span>3</span>
+                                  <div>
+                                    <strong id="ai-step-3-title">确认后执行</strong>
+                                    <p id="ai-step-3-desc">删除、覆盖、重启等风险动作会单独确认。</p>
+                                  </div>
+                                </div>
+                              </section>
+
+                              <section class="ai-examples" aria-label="示例目标">
+                                <div id="ai-examples-title" class="ai-section-title">试着这样说</div>
+                                <button id="ai-example-1" type="button" data-ai-example-key="ai.example.1">帮我把当前项目运行起来</button>
+                                <button id="ai-example-2" type="button" data-ai-example-key="ai.example.2">检查这台服务器是否正常</button>
+                                <button id="ai-example-3" type="button" data-ai-example-key="ai.example.3">解释刚才终端里的错误</button>
+                                <button id="ai-example-4" type="button" data-ai-example-key="ai.example.4">把这个目录打包备份一下</button>
+                              </section>
                               </div>
                             </div>
-                            <div class="ai-process-step">
-                              <span>3</span>
-                              <div>
-                                <strong id="ai-step-3-title">确认后执行</strong>
-                                <p id="ai-step-3-desc">删除、覆盖、重启等风险动作会单独确认。</p>
+
+                            <form class="ai-compose" id="ai-compose-form">
+                              <textarea
+                                id="ai-compose-input"
+                                rows="3"
+                                placeholder="描述你的目标，例如：帮我把这个项目运行起来"
+                                autocomplete="off"
+                              ></textarea>
+                              <div class="ai-compose-footer">
+                                <button id="ai-context-toggle" type="button" class="ai-context-toggle" title="切换是否附带当前终端内容">智能判断终端内容</button>
+                                <span id="ai-compose-hint">Enter 发送，Shift+Enter 换行</span>
+                                <button type="submit" class="ai-send-button" aria-label="发送给 AI">
+                                  <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M12 19V5"></path>
+                                    <path d="m5 12 7-7 7 7"></path>
+                                  </svg>
+                                </button>
                               </div>
-                            </div>
-                          </section>
-
-                          <section class="ai-examples" aria-label="示例目标">
-                            <div id="ai-examples-title" class="ai-section-title">试着这样说</div>
-                            <button id="ai-example-1" type="button" data-ai-example-key="ai.example.1">帮我把当前项目运行起来</button>
-                            <button id="ai-example-2" type="button" data-ai-example-key="ai.example.2">检查这台服务器是否正常</button>
-                            <button id="ai-example-3" type="button" data-ai-example-key="ai.example.3">解释刚才终端里的错误</button>
-                            <button id="ai-example-4" type="button" data-ai-example-key="ai.example.4">把这个目录打包备份一下</button>
-                          </section>
-                          </div>
-                        </div>
-
-                        <form class="ai-compose" id="ai-compose-form">
-                          <textarea
-                            id="ai-compose-input"
-                            rows="3"
-                            placeholder="描述你的目标，例如：帮我把这个项目运行起来"
-                            autocomplete="off"
-                          ></textarea>
-                          <div class="ai-compose-footer">
-                            <button id="ai-context-toggle" type="button" class="ai-context-toggle" title="切换是否附带当前终端内容">智能判断终端内容</button>
-                            <span id="ai-compose-hint">Enter 发送，Shift+Enter 换行</span>
-                            <button type="submit" class="ai-send-button" aria-label="发送给 AI">
-                              <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
-                                <path d="M12 19V5"></path>
-                                <path d="m5 12 7-7 7 7"></path>
-                              </svg>
-                            </button>
-                          </div>
-                        </form>
+                            </form>
+                          </aside>
+                        </section>
+                      </aside>
+                      <aside id="terminal-sidebar-rail" class="terminal-sidebar-rail" hidden aria-label="终端侧边栏">
+                        <button id="terminal-sidebar-snippets-toggle" type="button" class="terminal-side-btn" title="命令片段" aria-label="命令片段">
+                          <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M8 6h12"></path>
+                            <path d="M8 12h12"></path>
+                            <path d="M8 18h12"></path>
+                            <path d="M3 6h.01"></path>
+                            <path d="M3 12h.01"></path>
+                            <path d="M3 18h.01"></path>
+                          </svg>
+                        </button>
+                        <button id="terminal-sidebar-ai-toggle" type="button" class="terminal-side-btn" title="AI 助手" aria-label="AI 助手">
+                          <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path>
+                            <path d="m5 3 1 2.5L8.5 6 6 7 5 9.5 4 7 1.5 6 4 5.5z"></path>
+                            <path d="m19 17 1 2.5 2.5.5-2.5 1-1 2.5-1-2.5-2.5-1 2.5-1z"></path>
+                          </svg>
+                        </button>
                       </aside>
                     </div>
                     <div id="settings-page" class="settings-page" hidden>
@@ -459,12 +510,7 @@ drwxr-xr-x 1 root  data</pre>
                               <div class="settings-row settings-font-row">
                                 <label class="settings-field">
                                   <span id="settings-terminal-font-family-label">字体</span>
-                                  <select id="settings-terminal-font-family">
-                                    <option value='"ZeroTerm Meslo NF", monospace'>Meslo NF</option>
-                                    <option value='Menlo, Consolas, monospace'>Menlo</option>
-                                    <option value='"JetBrains Mono", Consolas, monospace'>JetBrains Mono</option>
-                                    <option value='Consolas, monospace'>Consolas</option>
-                                  </select>
+                                  <select id="settings-terminal-font-family"></select>
                                 </label>
                                 <label class="settings-field settings-font-small">
                                   <span id="settings-terminal-font-size-label">字号</span>
@@ -1183,6 +1229,10 @@ $ npm run build && npm run start</pre>
         <div class="dialog">
           <h3 id="theme-edit-title">编辑主题</h3>
           <form id="theme-edit-form">
+            <label class="theme-edit-name-field">
+              <span id="theme-edit-name-label">主题名称</span>
+              <input id="theme-edit-name" type="text" placeholder="例如：My Theme" maxlength="60" />
+            </label>
             <div class="theme-edit-preview" id="theme-edit-preview">
               <div class="theme-edit-preview-title">root@termark$ ls</div>
               <pre>drwxr-xr-x 1 root  boot
@@ -1198,6 +1248,30 @@ drwxr-xr-x 1 root  data</pre>
               <button id="theme-edit-reset" type="button">重置</button>
               <button id="theme-edit-cancel" type="button">取消</button>
               <button id="theme-edit-save" type="submit" class="primary">保存</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div id="snippet-edit-overlay" class="overlay" hidden>
+        <div class="dialog snippet-edit-dialog">
+          <h3 id="snippet-edit-title">命令片段</h3>
+          <form id="snippet-edit-form">
+            <label>
+              <span id="snippet-edit-name-label">名称</span>
+              <input id="snippet-edit-name" type="text" autocomplete="off" maxlength="80" placeholder="例如：查看 Docker 日志" />
+            </label>
+            <label>
+              <span id="snippet-edit-group-label">分组</span>
+              <input id="snippet-edit-group" type="text" autocomplete="off" maxlength="80" placeholder="例如：Docker" />
+            </label>
+            <label>
+              <span id="snippet-edit-command-label">命令</span>
+              <textarea id="snippet-edit-command" rows="8" placeholder="例如：docker logs -f app"></textarea>
+            </label>
+            <div class="dialog-actions">
+              <button id="snippet-edit-cancel" type="button">取消</button>
+              <button id="snippet-edit-save" type="submit" class="primary">保存</button>
             </div>
           </form>
         </div>

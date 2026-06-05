@@ -40,6 +40,7 @@ portable-pty = "0.8"
 chacha20poly1305 = { version = "0.10", features = ["std"] }
 base64 = "0.22"
 sha2 = "0.10"
+fontdb = "0.16"
 
 [features]
 default = ["custom-protocol"]

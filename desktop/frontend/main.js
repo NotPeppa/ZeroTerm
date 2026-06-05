@@ -711,7 +711,9 @@ const I18N = {
     "theme.menu.edit": "Edit theme",
     "theme.menu.duplicate": "Duplicate as custom",
     "theme.menu.delete": "Delete theme",
+    "theme.create.title": "Create theme",
     "theme.edit.title": "Edit theme",
+    "theme.edit.name": "Theme name",
     "theme.edit.reset": "Reset",
     "theme.edit.cancel": "Cancel",
     "theme.edit.save": "Save",
@@ -1290,7 +1292,9 @@ const I18N = {
     "theme.menu.edit": "编辑主题",
     "theme.menu.duplicate": "复制为自定义",
     "theme.menu.delete": "删除主题",
+    "theme.create.title": "新建主题",
     "theme.edit.title": "编辑主题",
+    "theme.edit.name": "主题名称",
     "theme.edit.reset": "重置",
     "theme.edit.cancel": "取消",
     "theme.edit.save": "保存",
@@ -1552,6 +1556,21 @@ const TERMINAL_FONT_STACK = [
   '"ZeroTerm Meslo NF"',
   "monospace",
 ].join(", ");
+const TERMINAL_FONT_CANDIDATES = [
+  { label: "ZeroTerm Meslo NF", family: "ZeroTerm Meslo NF", value: '"ZeroTerm Meslo NF", monospace' },
+  { label: "SF Mono", family: "SF Mono", value: '"SF Mono", monospace' },
+  { label: "Menlo", family: "Menlo", value: 'Menlo, monospace' },
+  { label: "Monaco", family: "Monaco", value: 'Monaco, monospace' },
+  { label: "JetBrains Mono", family: "JetBrains Mono", value: '"JetBrains Mono", monospace' },
+  { label: "Cascadia Mono", family: "Cascadia Mono", value: '"Cascadia Mono", monospace' },
+  { label: "Consolas", family: "Consolas", value: 'Consolas, monospace' },
+  { label: "Courier New", family: "Courier New", value: '"Courier New", monospace' },
+  { label: "Ubuntu Mono", family: "Ubuntu Mono", value: '"Ubuntu Mono", monospace' },
+  { label: "DejaVu Sans Mono", family: "DejaVu Sans Mono", value: '"DejaVu Sans Mono", monospace' },
+  { label: "Liberation Mono", family: "Liberation Mono", value: '"Liberation Mono", monospace' },
+  { label: "Noto Sans Mono", family: "Noto Sans Mono", value: '"Noto Sans Mono", monospace' },
+];
+let systemTerminalFontFamilies = null;
 const TERMINAL_RESIZE_DEBOUNCE_MS = 56;
 
 const MODE_BY_EXTENSION = {
@@ -1753,7 +1772,23 @@ const panelSftp = document.getElementById("panel-sftp");
 const settingsPage = document.getElementById("settings-page");
 const vaultWelcome = document.getElementById("vault-welcome");
 const terminalSessionLayout = document.getElementById("terminal-session-layout");
-const aiPanelSplitter = document.getElementById("ai-panel-splitter");
+const terminalSidebarRail = document.getElementById("terminal-sidebar-rail");
+const terminalSidebarSnippetsToggle = document.getElementById("terminal-sidebar-snippets-toggle");
+const terminalSidebarAiToggle = document.getElementById("terminal-sidebar-ai-toggle");
+const terminalSidePanels = document.getElementById("terminal-side-panels");
+const terminalSnippetsPanel = document.getElementById("terminal-snippets-panel");
+const terminalAiPanel = document.getElementById("terminal-ai-panel");
+const terminalSnippetsAdd = document.getElementById("terminal-snippets-add");
+const terminalSnippetsEmpty = document.getElementById("terminal-snippets-empty");
+const terminalSnippetsList = document.getElementById("terminal-snippets-list");
+const aiPanelSplitter = document.getElementById("terminal-side-panel-splitter");
+const snippetEditOverlay = document.getElementById("snippet-edit-overlay");
+const snippetEditTitle = document.getElementById("snippet-edit-title");
+const snippetEditForm = document.getElementById("snippet-edit-form");
+const snippetEditCancel = document.getElementById("snippet-edit-cancel");
+const snippetEditName = document.getElementById("snippet-edit-name");
+const snippetEditGroup = document.getElementById("snippet-edit-group");
+const snippetEditCommand = document.getElementById("snippet-edit-command");
 const aiComposeForm = document.getElementById("ai-compose-form");
 const aiComposeInput = document.getElementById("ai-compose-input");
 const aiChatLog = document.getElementById("ai-chat-log");
@@ -1857,6 +1892,9 @@ let aiStreamUnlistenPromise = null;
 const aiConversationByPane = new Map();
 let aiActivePaneKey = null;
 let aiPanelCollapsed = true;
+let terminalActiveSidePanel = null;
+let terminalCommandSnippets = [];
+const TERMINAL_COMMAND_SNIPPETS_KEY = "zt.terminal.commandSnippets";
 const AI_CONTEXT_MODES = ["smart", "always", "off"];
 let aiContextMode = localStorage.getItem("zt.ai.contextMode") || "smart";
 if (!AI_CONTEXT_MODES.includes(aiContextMode)) aiContextMode = "smart";
@@ -1869,6 +1907,174 @@ let currentAiModelLabel = "";
 let aiConfigured = false;
 let pendingAiCommandCounter = 0;
 const aiMultiCommandState = new WeakMap();
+let snippetEditResolver = null;
+
+function loadTerminalCommandSnippets() {
+  try {
+    const raw = localStorage.getItem(TERMINAL_COMMAND_SNIPPETS_KEY);
+    const parsed = JSON.parse(raw || "[]");
+    terminalCommandSnippets = Array.isArray(parsed)
+      ? parsed
+        .map((item) => ({
+          id: String(item?.id || "").trim(),
+          group: String(item?.group || "").trim(),
+          title: String(item?.title || "").trim(),
+          command: String(item?.command || "").trim(),
+        }))
+        .filter((item) => item.id && item.title && item.command)
+      : [];
+  } catch {
+    terminalCommandSnippets = [];
+  }
+}
+
+function saveTerminalCommandSnippets() {
+  localStorage.setItem(TERMINAL_COMMAND_SNIPPETS_KEY, JSON.stringify(terminalCommandSnippets));
+}
+
+function closeSnippetEditDialog(result) {
+  if (!snippetEditResolver) return;
+  const resolve = snippetEditResolver;
+  snippetEditResolver = null;
+  if (snippetEditOverlay) snippetEditOverlay.hidden = true;
+  if (snippetEditForm) snippetEditForm.reset();
+  resolve(result);
+}
+
+function openSnippetEditDialog({
+  title = "命令片段",
+  name = "",
+  group = "未分组",
+  command = "",
+} = {}) {
+  if (snippetEditResolver) closeSnippetEditDialog(null);
+  return new Promise((resolve) => {
+    snippetEditResolver = resolve;
+    if (snippetEditTitle) snippetEditTitle.textContent = title;
+    if (snippetEditName) snippetEditName.value = name;
+    if (snippetEditGroup) snippetEditGroup.value = group;
+    if (snippetEditCommand) snippetEditCommand.value = command;
+    if (snippetEditOverlay) snippetEditOverlay.hidden = false;
+    requestAnimationFrame(() => {
+      snippetEditName?.focus();
+      snippetEditName?.select();
+    });
+  });
+}
+
+async function sendSnippetToActiveTerminal(command) {
+  const pane = getActivePane();
+  if (!pane || pane.sessionId === null) {
+    alert("当前没有可写入的终端会话");
+    return;
+  }
+  const bytes = Array.from(new TextEncoder().encode(String(command || "")));
+  await invoke("send_input", { sessionId: pane.sessionId, data: bytes });
+  pane.term?.focus?.();
+}
+
+function setTerminalSidePanel(panel) {
+  terminalActiveSidePanel = panel || null;
+  aiPanelCollapsed = !terminalActiveSidePanel;
+  terminalSessionLayout?.classList.toggle("ai-collapsed", !terminalActiveSidePanel);
+  if (terminalSidePanels) terminalSidePanels.hidden = !terminalActiveSidePanel;
+  if (terminalAiPanel) terminalAiPanel.hidden = terminalActiveSidePanel !== "ai";
+  if (terminalSnippetsPanel) terminalSnippetsPanel.hidden = terminalActiveSidePanel !== "snippets";
+  terminalSidebarAiToggle?.classList.toggle("active", terminalActiveSidePanel === "ai");
+  terminalSidebarSnippetsToggle?.classList.toggle("active", terminalActiveSidePanel === "snippets");
+}
+
+function renderTerminalCommandSnippets() {
+  if (!terminalSnippetsList || !terminalSnippetsEmpty) return;
+  terminalSnippetsList.innerHTML = "";
+  const hasSnippets = terminalCommandSnippets.length > 0;
+  terminalSnippetsEmpty.hidden = hasSnippets;
+  terminalSnippetsList.hidden = !hasSnippets;
+  const grouped = new Map();
+  for (const snippet of terminalCommandSnippets) {
+    const group = snippet.group || "未分组";
+    if (!grouped.has(group)) grouped.set(group, []);
+    grouped.get(group).push(snippet);
+  }
+  for (const [group, items] of grouped) {
+    const section = document.createElement("section");
+    section.className = "terminal-snippet-group";
+    const heading = document.createElement("h3");
+    heading.className = "terminal-snippet-group-title";
+    heading.textContent = group;
+    section.appendChild(heading);
+    for (const snippet of items) {
+    const card = document.createElement("article");
+    card.className = "terminal-snippet-card";
+
+    const title = document.createElement("h4");
+    title.textContent = snippet.title;
+
+    const pre = document.createElement("pre");
+    pre.textContent = snippet.command;
+
+    const actions = document.createElement("div");
+    actions.className = "terminal-snippet-actions";
+
+    const copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.textContent = "复制";
+    copyBtn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(snippet.command);
+        showToast("已复制命令片段", "success", 1800);
+      } catch (e) {
+        alert(`复制失败: ${e}`);
+      }
+    });
+
+    const insertBtn = document.createElement("button");
+    insertBtn.type = "button";
+    insertBtn.textContent = "填入终端";
+    insertBtn.addEventListener("click", async () => {
+      try {
+        await sendSnippetToActiveTerminal(snippet.command);
+        showToast("已填入当前终端", "success", 1800);
+      } catch (e) {
+        alert(`填入终端失败: ${e}`);
+      }
+    });
+
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.textContent = "编辑";
+    editBtn.addEventListener("click", async () => {
+      const next = await openSnippetEditDialog({
+        title: "编辑命令片段",
+        name: snippet.title,
+        group: snippet.group || "未分组",
+        command: snippet.command,
+      });
+      if (!next) return;
+      snippet.title = next.name;
+      snippet.group = next.group;
+      snippet.command = next.command;
+      saveTerminalCommandSnippets();
+      renderTerminalCommandSnippets();
+    });
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "danger";
+    deleteBtn.textContent = "删除";
+    deleteBtn.addEventListener("click", () => {
+      terminalCommandSnippets = terminalCommandSnippets.filter((item) => item.id !== snippet.id);
+      saveTerminalCommandSnippets();
+      renderTerminalCommandSnippets();
+    });
+
+    actions.append(insertBtn, copyBtn, editBtn, deleteBtn);
+    card.append(title, pre, actions);
+    section.appendChild(card);
+    }
+    terminalSnippetsList.appendChild(section);
+  }
+}
 
 function syncAiContextToggle() {
   if (!aiContextToggle) return;
@@ -1949,16 +2155,15 @@ function scrollAiPanelToBottom({ force = false } = {}) {
 }
 
 function setAiPanelCollapsed(collapsed) {
-  aiPanelCollapsed = !!collapsed;
-  terminalSessionLayout?.classList.toggle("ai-collapsed", aiPanelCollapsed);
-  document.querySelectorAll(".pane-ai-toggle").forEach((button) => {
-    button.classList.toggle("active", !aiPanelCollapsed);
-    button.title = aiPanelCollapsed ? "展开 AI 助手" : "收起 AI 助手";
-  });
+  setTerminalSidePanel(collapsed ? null : "ai");
+  if (terminalSidebarAiToggle) {
+    terminalSidebarAiToggle.title = aiPanelCollapsed ? "展开 AI 助手" : "收起 AI 助手";
+    terminalSidebarAiToggle.setAttribute("aria-label", aiPanelCollapsed ? "展开 AI 助手" : "收起 AI 助手");
+  }
 }
 
 function toggleAiPanel() {
-  setAiPanelCollapsed(!aiPanelCollapsed);
+  setTerminalSidePanel(terminalActiveSidePanel === "ai" ? null : "ai");
 }
 
 function getAiPaneKey() {
@@ -3044,10 +3249,12 @@ const themeMenuEdit = document.getElementById("theme-menu-edit");
 const themeMenuDuplicate = document.getElementById("theme-menu-duplicate");
 const themeMenuDelete = document.getElementById("theme-menu-delete");
 const themeEditOverlay = document.getElementById("theme-edit-overlay");
+const themeEditTitle = document.getElementById("theme-edit-title");
 const themeEditForm = document.getElementById("theme-edit-form");
 const themeEditCancel = document.getElementById("theme-edit-cancel");
 const themeEditReset = document.getElementById("theme-edit-reset");
 const themeEditPreview = document.getElementById("theme-edit-preview");
+const themeEditName = document.getElementById("theme-edit-name");
 const themeColorBg = document.getElementById("theme-color-bg");
 const themeColorFg = document.getElementById("theme-color-fg");
 const themeColorCursor = document.getElementById("theme-color-cursor");
@@ -3301,6 +3508,8 @@ let terminalCustomThemes = [];
 let terminalEditingThemeId = null;
 let themeMenuTargetId = null;
 let themeEditOriginal = null;
+let themeEditOriginalLabel = "";
+let themeEditIsNew = false;
 let systemThemeMedia = null;
 
 function loadCustomThemes() {
@@ -3541,6 +3750,139 @@ function getTerminalFontFamily() {
   return localStorage.getItem(SETTINGS_KEY_TERMINAL_FONT_FAMILY) || TERMINAL_FONT_STACK;
 }
 
+function normalizeTerminalFontFamily(savedValue, candidates = TERMINAL_FONT_CANDIDATES) {
+  const value = String(savedValue || "").trim();
+  if (!value) return TERMINAL_FONT_STACK;
+  if (candidates.some((candidate) => candidate.value === value)) return value;
+
+  if (value === '"SF Mono", Menlo, Monaco, Consolas, monospace') {
+    const alias = ["SF Mono", "Menlo", "Monaco", "Consolas"];
+    const matched = candidates.find((candidate) => alias.includes(candidate.family));
+    return matched?.value || TERMINAL_FONT_STACK;
+  }
+
+  return value;
+}
+
+function isFontFamilyAvailable(fontFamily) {
+  const family = String(fontFamily || "").trim();
+  if (!family) return false;
+
+  if (family === "ZeroTerm Meslo NF") return true;
+
+  const sample = "mmmmmmmmmwwwwwiiiillll@@@#%&0123456789";
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  if (!context) return false;
+
+  const quotedFamily = JSON.stringify(family);
+  const measure = (font) => {
+    context.font = `16px ${font}`;
+    return context.measureText(sample).width;
+  };
+
+  const monospaceWidth = measure("monospace");
+  const serifWidth = measure("serif");
+  const sansWidth = measure("sans-serif");
+  const targetMonoWidth = measure(`${quotedFamily}, monospace`);
+  const targetSerifWidth = measure(`${quotedFamily}, serif`);
+  const targetSansWidth = measure(`${quotedFamily}, sans-serif`);
+
+  return targetMonoWidth !== monospaceWidth || targetSerifWidth !== serifWidth || targetSansWidth !== sansWidth;
+}
+
+function quoteFontFamily(fontFamily) {
+  return JSON.stringify(String(fontFamily || "").trim());
+}
+
+function buildTerminalFontOptions(families) {
+  const seen = new Set();
+  const normalizedFamilies = [];
+  for (const family of families) {
+    const normalized = String(family || "").trim();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    normalizedFamilies.push(normalized);
+  }
+
+  const prioritized = normalizedFamilies.filter((family) => family === "ZeroTerm Meslo NF");
+  const sorted = normalizedFamilies
+    .filter((family) => family !== "ZeroTerm Meslo NF")
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true }));
+
+  return [...prioritized, ...sorted].map((family) => ({
+    label: family,
+    family,
+    value: `${quoteFontFamily(family)}, monospace`,
+  }));
+}
+
+async function loadSystemTerminalFonts() {
+  if (Array.isArray(systemTerminalFontFamilies)) return systemTerminalFontFamilies;
+  const fonts = await invoke("list_system_fonts");
+  systemTerminalFontFamilies = Array.isArray(fonts)
+    ? fonts.map((font) => String(font?.family || "").trim()).filter(Boolean)
+    : [];
+  return systemTerminalFontFamilies;
+}
+
+function populateTerminalFontFamilyOptions(candidates = TERMINAL_FONT_CANDIDATES, { validateAvailability = true } = {}) {
+  if (!settingsTerminalFontFamily) return;
+  try {
+    const availableFonts = validateAvailability
+      ? candidates.filter((candidate) => isFontFamilyAvailable(candidate.family))
+      : candidates;
+    const savedValue = normalizeTerminalFontFamily(getTerminalFontFamily(), availableFonts);
+    const currentValue = normalizeTerminalFontFamily(settingsTerminalFontFamily.value, availableFonts);
+    const nextValue = availableFonts.some((candidate) => candidate.value === savedValue)
+      ? savedValue
+      : availableFonts.some((candidate) => candidate.value === currentValue)
+        ? currentValue
+        : TERMINAL_FONT_STACK;
+
+    settingsTerminalFontFamily.innerHTML = "";
+    for (const candidate of availableFonts) {
+      const option = document.createElement("option");
+      option.value = candidate.value;
+      option.textContent = candidate.label;
+      settingsTerminalFontFamily.appendChild(option);
+    }
+
+    if (!availableFonts.some((candidate) => candidate.value === nextValue)) {
+      const fallback = document.createElement("option");
+      fallback.value = TERMINAL_FONT_STACK;
+      fallback.textContent = "ZeroTerm Meslo NF";
+      settingsTerminalFontFamily.appendChild(fallback);
+    }
+
+    settingsTerminalFontFamily.value = nextValue;
+    localStorage.setItem(SETTINGS_KEY_TERMINAL_FONT_FAMILY, nextValue);
+    syncCustomSelect("settings-terminal-font-family");
+    syncTerminalFontPreview();
+    applyTerminalThemeToAllPanes();
+  } catch (e) {
+    console.warn("populateTerminalFontFamilyOptions failed", e);
+    settingsTerminalFontFamily.innerHTML = '<option value="\"ZeroTerm Meslo NF\", monospace">ZeroTerm Meslo NF</option>';
+    settingsTerminalFontFamily.value = TERMINAL_FONT_STACK;
+    syncCustomSelect("settings-terminal-font-family");
+  }
+}
+
+async function populateTerminalFontFamilyOptionsAsync() {
+  try {
+    const systemFamilies = await loadSystemTerminalFonts();
+    const systemOptions = buildTerminalFontOptions(["ZeroTerm Meslo NF", ...systemFamilies]);
+    if (systemOptions.length > 0) {
+      populateTerminalFontFamilyOptions(systemOptions, { validateAvailability: false });
+      return;
+    }
+  } catch (e) {
+    console.warn("loadSystemTerminalFonts failed", e);
+  }
+
+  populateTerminalFontFamilyOptions();
+}
+
 function getTerminalFontSize() {
   const n = Number(localStorage.getItem(SETTINGS_KEY_TERMINAL_FONT_SIZE) || 13);
   return Number.isFinite(n) ? Math.min(24, Math.max(10, n)) : 13;
@@ -3722,10 +4064,7 @@ function renderTerminalThemeCards() {
     card.addEventListener("contextmenu", (ev) => {
       ev.preventDefault();
       themeMenuTargetId = id;
-      if (!themeCardMenu) return;
-      themeCardMenu.hidden = false;
-      themeCardMenu.style.left = `${ev.clientX}px`;
-      themeCardMenu.style.top = `${ev.clientY}px`;
+      showThemeCardMenu(ev.clientX, ev.clientY);
     });
     (group === "light" ? terminalThemeListLight : terminalThemeListDark).appendChild(card);
   };
@@ -3733,6 +4072,37 @@ function renderTerminalThemeCards() {
   Object.entries(TERMINAL_THEME_META).forEach(([id, meta]) => addCard(id, meta.label, meta.group));
   terminalCustomThemes.forEach((t) => addCard(t.id, t.label, t.group));
   syncTerminalThemeCardsActive();
+}
+
+function generateCustomThemeId() {
+  let id = `custom-${Date.now()}`;
+  while (terminalCustomThemes.some((t) => t.id === id)) {
+    id = `custom-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  }
+  return id;
+}
+
+function showThemeCardMenu(x, y) {
+  if (!themeCardMenu) return;
+  if (themeMenuDelete) {
+    themeMenuDelete.disabled = !terminalCustomThemes.some((t) => t.id === themeMenuTargetId);
+  }
+  themeCardMenu.style.left = "0px";
+  themeCardMenu.style.top = "0px";
+  themeCardMenu.hidden = false;
+
+  const pad = 8;
+  const rect = themeCardMenu.getBoundingClientRect();
+  let left = x;
+  let top = y;
+  if (left + rect.width + pad > window.innerWidth) {
+    left = Math.max(pad, window.innerWidth - rect.width - pad);
+  }
+  if (top + rect.height + pad > window.innerHeight) {
+    top = Math.max(pad, window.innerHeight - rect.height - pad);
+  }
+  themeCardMenu.style.left = `${left}px`;
+  themeCardMenu.style.top = `${top}px`;
 }
 
 function toOpaqueHex(color) {
@@ -3762,7 +4132,12 @@ function resolveTerminalThemeGroup(themeName) {
 function syncTerminalThemeEditor() {
   const currentId = terminalEditingThemeId || getTerminalThemeName();
   const isCustom = terminalCustomThemes.some((t) => t.id === currentId);
+  const customTheme = terminalCustomThemes.find((t) => t.id === currentId);
   const theme = allTerminalThemes()[currentId] || getTerminalThemeConfig();
+  if (themeEditTitle) {
+    themeEditTitle.textContent = t(themeEditIsNew ? "theme.create.title" : "theme.edit.title");
+  }
+  if (themeEditName) themeEditName.value = customTheme?.label || "";
   if (themeColorBg) themeColorBg.value = toOpaqueHex(theme.background);
   if (themeColorFg) themeColorFg.value = toOpaqueHex(theme.foreground);
   if (themeColorCursor) themeColorCursor.value = toOpaqueHex(theme.cursor);
@@ -3795,10 +4170,35 @@ function updateCustomThemeColor(key, value) {
   if (idx < 0) return;
   terminalCustomThemes[idx].theme[key] = value;
   updateThemeEditPreview(terminalCustomThemes[idx].theme);
-  saveCustomThemes();
+  if (!themeEditIsNew) saveCustomThemes();
   applyTerminalThemeToAllPanes();
   renderTerminalThemeCards();
   syncTerminalThemeCardsActive();
+}
+
+function updateCustomThemeLabel(label) {
+  const currentId = terminalEditingThemeId || getTerminalThemeName();
+  const idx = terminalCustomThemes.findIndex((t) => t.id === currentId);
+  if (idx < 0) return;
+  terminalCustomThemes[idx].label = label;
+  renderTerminalThemeCards();
+  syncTerminalThemeCardsActive();
+}
+
+function openThemeCreateDialog(group) {
+  const baseTheme = { ...getTerminalThemeConfig() };
+  const id = generateCustomThemeId();
+  terminalCustomThemes.push({ id, label: "", group, theme: baseTheme });
+  terminalEditingThemeId = id;
+  themeEditOriginal = JSON.parse(JSON.stringify(baseTheme));
+  themeEditOriginalLabel = "";
+  themeEditIsNew = true;
+  syncTerminalThemeEditor();
+  if (themeEditOverlay) themeEditOverlay.hidden = false;
+  requestAnimationFrame(() => {
+    themeEditName?.focus();
+    themeEditName?.select();
+  });
 }
 
 function openThemeEditDialog(themeId) {
@@ -3806,6 +4206,8 @@ function openThemeEditDialog(themeId) {
   if (idx < 0) return;
   terminalEditingThemeId = themeId;
   themeEditOriginal = JSON.parse(JSON.stringify(terminalCustomThemes[idx].theme));
+  themeEditOriginalLabel = terminalCustomThemes[idx].label || "";
+  themeEditIsNew = false;
   syncTerminalThemeEditor();
   if (themeEditOverlay) themeEditOverlay.hidden = false;
 }
@@ -4192,8 +4594,9 @@ function setWorkspaceMode(mode) {
       syncCustomSelect("settings-terminal-theme");
     }
     if (settingsTerminalFontFamily) {
-      settingsTerminalFontFamily.value = getTerminalFontFamily();
-      syncCustomSelect("settings-terminal-font-family");
+      populateTerminalFontFamilyOptionsAsync().catch((e) => {
+        console.warn("populateTerminalFontFamilyOptionsAsync failed", e);
+      });
     }
     if (settingsTerminalFontSize) settingsTerminalFontSize.value = String(getTerminalFontSize());
     if (settingsTerminalLineHeight) settingsTerminalLineHeight.value = String(getTerminalLineHeight());
@@ -5767,6 +6170,7 @@ function applyI18n() {
   setText("theme-mode-dark", "theme.mode.dark");
   setText("theme-mode-light", "theme.mode.light");
   setText("theme-edit-title", "theme.edit.title");
+  setText("theme-edit-name-label", "theme.edit.name");
   setText("theme-edit-reset", "theme.edit.reset");
   setText("theme-edit-cancel", "theme.edit.cancel");
   setText("theme-edit-save", "theme.edit.save");
@@ -6029,35 +6433,8 @@ workspaceSidebarToggle?.addEventListener("click", () => {
 workspaceSidebarToggleRight?.addEventListener("click", () => {
   setWorkspaceSidebarCollapsed(!workspaceSidebarCollapsed);
 });
-terminalThemeAddLight?.addEventListener("click", async () => {
-  const label = await openTextInputDialog({
-    title: "新建主题",
-    message: "请输入主题名称",
-    placeholder: "例如：My Light",
-  });
-  if (!label) return;
-  const baseId = getTerminalThemeName();
-  const baseTheme = { ...getTerminalThemeConfig() };
-  const id = `custom-${Date.now()}`;
-  terminalCustomThemes.push({ id, label, group: "light", theme: baseTheme });
-  saveCustomThemes();
-  rebuildTerminalThemeSelectOptions();
-  renderTerminalThemeCards();
-});
-terminalThemeAddDark?.addEventListener("click", async () => {
-  const label = await openTextInputDialog({
-    title: "新建主题",
-    message: "请输入主题名称",
-    placeholder: "例如：My Dark",
-  });
-  if (!label) return;
-  const baseTheme = { ...getTerminalThemeConfig() };
-  const id = `custom-${Date.now()}`;
-  terminalCustomThemes.push({ id, label, group: "dark", theme: baseTheme });
-  saveCustomThemes();
-  rebuildTerminalThemeSelectOptions();
-  renderTerminalThemeCards();
-});
+terminalThemeAddLight?.addEventListener("click", () => openThemeCreateDialog("light"));
+terminalThemeAddDark?.addEventListener("click", () => openThemeCreateDialog("dark"));
 document.getElementById("add-group-button")?.addEventListener("click", async () => {
   const name = await openTextInputDialog({
     title: t("groups.prompt.add.title"),
@@ -6829,6 +7206,7 @@ settingsTerminalFontFamily?.addEventListener("change", () => {
   localStorage.setItem(SETTINGS_KEY_TERMINAL_FONT_FAMILY, settingsTerminalFontFamily.value);
   applyTerminalThemeToAllPanes();
   syncTerminalFontPreview();
+  syncCustomSelect("settings-terminal-font-family");
 });
 settingsTerminalFontSize?.addEventListener("change", () => {
   localStorage.setItem(SETTINGS_KEY_TERMINAL_FONT_SIZE, String(settingsTerminalFontSize.value || "13"));
@@ -6843,6 +7221,7 @@ settingsTerminalLineHeight?.addEventListener("change", () => {
 setTimeout(() => {
   refreshUpdateStatus().catch(() => {});
 }, 10000);
+loadTerminalCommandSnippets();
 loadCustomThemes();
 rebuildTerminalThemeSelectOptions();
 renderTerminalThemeCards();
@@ -6966,11 +7345,25 @@ themeEditCancel?.addEventListener("click", () => {
   const id = terminalEditingThemeId;
   const idx = terminalCustomThemes.findIndex((t) => t.id === id);
   if (idx >= 0 && themeEditOriginal) {
-    terminalCustomThemes[idx].theme = JSON.parse(JSON.stringify(themeEditOriginal));
-    saveCustomThemes();
-    applyTerminalThemeToAllPanes();
-    syncTerminalThemeEditor();
+    if (themeEditIsNew) {
+      terminalCustomThemes.splice(idx, 1);
+      rebuildTerminalThemeSelectOptions();
+      renderTerminalThemeCards();
+      syncTerminalThemeCardsActive();
+    } else {
+      terminalCustomThemes[idx].theme = JSON.parse(JSON.stringify(themeEditOriginal));
+      terminalCustomThemes[idx].label = themeEditOriginalLabel;
+      saveCustomThemes();
+      applyTerminalThemeToAllPanes();
+      rebuildTerminalThemeSelectOptions();
+      renderTerminalThemeCards();
+      syncTerminalThemeEditor();
+    }
   }
+  themeEditIsNew = false;
+  themeEditOriginal = null;
+  themeEditOriginalLabel = "";
+  terminalEditingThemeId = null;
   if (themeEditOverlay) themeEditOverlay.hidden = true;
 });
 
@@ -6980,13 +7373,40 @@ themeEditReset?.addEventListener("click", () => {
   const idx = terminalCustomThemes.findIndex((t) => t.id === id);
   if (idx < 0) return;
   terminalCustomThemes[idx].theme = JSON.parse(JSON.stringify(themeEditOriginal));
-  saveCustomThemes();
+  terminalCustomThemes[idx].label = themeEditOriginalLabel;
+  if (!themeEditIsNew) saveCustomThemes();
   applyTerminalThemeToAllPanes();
   syncTerminalThemeEditor();
+  rebuildTerminalThemeSelectOptions();
+  renderTerminalThemeCards();
+});
+
+themeEditName?.addEventListener("input", () => {
+  updateCustomThemeLabel(themeEditName.value);
 });
 
 themeEditForm?.addEventListener("submit", (ev) => {
   ev.preventDefault();
+  const id = terminalEditingThemeId;
+  const idx = terminalCustomThemes.findIndex((t) => t.id === id);
+  if (idx < 0) return;
+  const label = String(themeEditName?.value || "").trim();
+  if (!label) {
+    alert("请输入主题名称");
+    themeEditName?.focus();
+    return;
+  }
+  terminalCustomThemes[idx].label = label;
+  saveCustomThemes();
+  rebuildTerminalThemeSelectOptions();
+  renderTerminalThemeCards();
+  syncTerminalThemeCardsActive();
+  themeEditIsNew = false;
+  themeEditOriginal = JSON.parse(JSON.stringify(terminalCustomThemes[idx].theme));
+  themeEditOriginalLabel = label;
+  terminalEditingThemeId = null;
+  themeEditOriginal = null;
+  themeEditOriginalLabel = "";
   if (themeEditOverlay) themeEditOverlay.hidden = true;
 });
 
@@ -7558,9 +7978,14 @@ function renderTerminalWorkspace() {
   sanitizeTerminalTabs();
   renderTabStrip();
   syncAiConversationToActivePane();
+  renderTerminalCommandSnippets();
 
   terminalWorkspace.innerHTML = "";
   const tab = getActiveTab();
+  const hasTerminalTab = !!tab;
+  terminalSessionLayout?.classList.toggle("no-terminal-sidebar", !hasTerminalTab);
+  if (terminalSidebarRail) terminalSidebarRail.hidden = !hasTerminalTab;
+  if (!hasTerminalTab) setTerminalSidePanel(null);
   if (!tab) {
     terminalWorkspace.className = "terminal-workspace layout-single";
     const empty = document.createElement("div");
@@ -7582,7 +8007,6 @@ function renderTerminalWorkspace() {
       ensurePaneElements(pane, tab);
       if (!pane.rootEl) continue;
       if (pane.reconnectBtn) pane.reconnectBtn.textContent = t("terminal.button.reconnect");
-      pane.rootEl.querySelector(".pane-ai-toggle")?.classList.toggle("active", !aiPanelCollapsed);
       pane.rootEl.classList.toggle("active", pane.id === tab.activePaneId);
       terminalWorkspace.appendChild(pane.rootEl);
       ensurePaneTerminal(pane);
@@ -7632,6 +8056,51 @@ function installAiPanelResize() {
     window.addEventListener("pointerup", onUp, { once: true });
   });
 }
+
+terminalSidebarAiToggle?.addEventListener("click", () => {
+  toggleAiPanel();
+});
+
+terminalSidebarSnippetsToggle?.addEventListener("click", () => {
+  setTerminalSidePanel(terminalActiveSidePanel === "snippets" ? null : "snippets");
+});
+
+terminalSnippetsAdd?.addEventListener("click", async () => {
+  const next = await openSnippetEditDialog({
+    title: "新增命令片段",
+    group: "未分组",
+  });
+  if (!next) return;
+  terminalCommandSnippets.unshift({
+    id: `snippet-${Date.now()}`,
+    group: next.group,
+    title: next.name,
+    command: next.command,
+  });
+  saveTerminalCommandSnippets();
+  renderTerminalCommandSnippets();
+  setTerminalSidePanel("snippets");
+});
+
+snippetEditCancel?.addEventListener("click", () => closeSnippetEditDialog(null));
+snippetEditOverlay?.addEventListener("click", (ev) => {
+  if (ev.target === snippetEditOverlay) closeSnippetEditDialog(null);
+});
+snippetEditForm?.addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  const name = String(snippetEditName?.value || "").trim();
+  const group = String(snippetEditGroup?.value || "").trim() || "未分组";
+  const command = String(snippetEditCommand?.value || "").trim();
+  if (!name) {
+    snippetEditName?.focus();
+    return;
+  }
+  if (!command) {
+    snippetEditCommand?.focus();
+    return;
+  }
+  closeSnippetEditDialog({ name, group, command });
+});
 
 function renderTabStrip() {
   termTabStrip.innerHTML = "";
@@ -7688,16 +8157,6 @@ function ensurePaneElements(pane, tab) {
   status.className = "pane-status";
   status.textContent = t("terminal.status.connecting");
 
-  const aiToggle = document.createElement("button");
-  aiToggle.type = "button";
-  aiToggle.className = "pane-ai-toggle active";
-  aiToggle.title = "收起 AI 助手";
-  aiToggle.innerHTML = `<svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path><path d="m5 3 1 2.5L8.5 6 6 7 5 9.5 4 7 1.5 6 4 5.5z"></path><path d="m19 17 1 2.5 2.5.5-2.5 1-1 2.5-1-2.5-2.5-1 2.5-1z"></path></svg>`;
-  aiToggle.addEventListener("click", (ev) => {
-    ev.stopPropagation();
-    toggleAiPanel();
-  });
-
   const latency = document.createElement("span");
   latency.className = "pane-latency";
   latency.hidden = true;
@@ -7717,7 +8176,7 @@ function ensurePaneElements(pane, tab) {
 
   const meta = document.createElement("div");
   meta.className = "pane-meta";
-  meta.append(latency, status, aiToggle, reconnectBtn);
+  meta.append(latency, status, reconnectBtn);
 
   const body = document.createElement("div");
   body.className = "pane-body";

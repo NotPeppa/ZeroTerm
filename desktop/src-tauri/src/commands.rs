@@ -7,6 +7,7 @@
 //!     the lock is dropped.
 
 use std::sync::atomic::Ordering;
+use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Duration;
 #[cfg(target_os = "windows")]
@@ -53,6 +54,12 @@ pub struct VaultStatus {
 #[serde(rename_all = "camelCase")]
 pub struct FilePermissionModeDto {
     pub mode: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemFontDto {
+    pub family: String,
 }
 
 const AI_CONFIG_FILE: &str = "ai-config.json";
@@ -4017,4 +4024,24 @@ pub async fn sftp_mkdir(
 ) -> Result<(), String> {
     let sftp = lookup_sftp(&state, sftp_id)?;
     sftp.create_dir(&path).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn list_system_fonts() -> Result<Vec<SystemFontDto>, String> {
+    let mut db = fontdb::Database::new();
+    db.load_system_fonts();
+
+    let mut families = BTreeSet::new();
+    for face in db.faces() {
+        if face.monospaced {
+            for (family, _) in &face.families {
+                families.insert(family.clone());
+            }
+        }
+    }
+
+    Ok(families
+        .into_iter()
+        .map(|family| SystemFontDto { family })
+        .collect())
 }
