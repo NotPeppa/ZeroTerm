@@ -2729,7 +2729,9 @@ body[data-app-theme="light"] .settings-nav-item:hover .zt-icon {
 }
 
 body[data-app-theme="light"] .overlay {
-  background: rgba(15, 23, 42, 0.12);
+  background: rgba(15, 23, 42, 0.15) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
 }
 
 body[data-app-theme="light"] .muted,
@@ -4286,24 +4288,38 @@ body[data-app-theme="light"] .pane-ai-toggle.active {
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(5, 8, 18, 0.6);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(6, 10, 20, 0.45);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 100;
+  transition: all 0.25s ease;
 }
 
 .dialog {
   width: min(500px, calc(100vw - 24px));
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 20px;
-  background: linear-gradient(135deg, rgba(28, 38, 64, 0.85) 0%, rgba(16, 22, 38, 0.9) 100%);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  background: linear-gradient(135deg, rgba(20, 26, 42, 0.82) 0%, rgba(11, 16, 28, 0.90) 100%);
+  backdrop-filter: blur(25px);
+  -webkit-backdrop-filter: blur(25px);
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.50), inset 0 1px 0 rgba(255, 255, 255, 0.06);
   padding: 24px;
+}
+
+/* Glassmorphism / Custom Wallpaper dialog background overrides */
+body.has-app-bg .dialog {
+  background: linear-gradient(135deg, rgba(13, 19, 35, 0.55) 0%, rgba(8, 12, 22, 0.65) 100%) !important;
+  border-color: rgba(255, 255, 255, 0.06) !important;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.50), inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .dialog {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(248, 250, 252, 0.88) 100%) !important;
+  border-color: rgba(203, 213, 225, 0.5) !important;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
 }
 
 .dialog.wide {
@@ -7452,6 +7468,19 @@ body[data-app-theme="light"] fieldset.advanced legend {
 
 body[data-app-theme="light"] .forwards-label {
   color: var(--muted) !important;
+}
+
+body[data-app-theme="light"] .forwards-label button.small {
+  background: rgba(37, 99, 235, 0.08) !important;
+  border: 1px solid rgba(37, 99, 235, 0.20) !important;
+  color: #2563eb !important;
+  box-shadow: none !important;
+}
+
+body[data-app-theme="light"] .forwards-label button.small:hover {
+  background: rgba(37, 99, 235, 0.15) !important;
+  border-color: rgba(37, 99, 235, 0.35) !important;
+  color: #1d4ed8 !important;
 }
 
 /* 11. Custom Select Dropdowns Light Theme Overrides */
