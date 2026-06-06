@@ -761,7 +761,7 @@ body[data-app-theme="light"]:not(.has-app-bg) .settings-page-head {
   min-height: 0;
   position: relative;
   box-sizing: border-box;
-  padding-right: 52px;
+  padding-right: 42px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 1px minmax(300px, var(--ai-panel-width));
   background: transparent;
@@ -812,12 +812,12 @@ body[data-app-theme="light"]:not(.has-app-bg) .settings-page-head {
   top: 0;
   right: 0;
   bottom: 0;
-  width: 52px;
+  width: 42px;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  padding: 14px 8px;
+  padding: 14px 6px;
   border-left: 1px solid rgba(255, 255, 255, 0.04);
   background: rgba(10, 14, 23, 0.45);
   backdrop-filter: blur(20px);
@@ -826,8 +826,8 @@ body[data-app-theme="light"]:not(.has-app-bg) .settings-page-head {
 }
 
 .terminal-side-btn {
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -854,9 +854,9 @@ body[data-app-theme="light"]:not(.has-app-bg) .settings-page-head {
 .terminal-side-btn.active::before {
   content: "" !important;
   position: absolute;
-  left: -8px;
-  top: 8px;
-  bottom: 8px;
+  left: -6px;
+  top: 6px;
+  bottom: 6px;
   width: 3px;
   background: #3b82f6;
   border-radius: 4px;
