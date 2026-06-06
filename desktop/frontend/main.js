@@ -5539,6 +5539,11 @@ async function runAutoSync(reason) {
         if (hostsView && !hostsView.hidden && typeof renderHosts === "function") {
           renderHosts();
         }
+        // Snippets are vault records too — refresh them after a pull so
+        // remote adds/edits/deletes show up without an app restart.
+        if (typeof refreshSnippetsAndRender === "function") {
+          await refreshSnippetsAndRender();
+        }
       } catch (e) {
         console.warn("post-sync refresh failed", e);
       }
@@ -7249,6 +7254,9 @@ settingsSyncNow?.addEventListener("click", async () => {
         pulled: outcome.eventsPulled ?? 0,
       });
       await refreshHostsCacheFromVault({ silent: true });
+      if (typeof refreshSnippetsAndRender === "function") {
+        await refreshSnippetsAndRender();
+      }
       await warnIfMalformedSyncedHosts();
       await refreshSyncStatusLine();
       await refreshSyncConflicts();
