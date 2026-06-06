@@ -6096,11 +6096,12 @@ function buildCustomSelect(selectEl) {
   wrap.appendChild(selectEl);
 
   let selectedLabel = "";
+  let customValue = "";
 
   const close = () => {
     menu.hidden = true;
     trigger.setAttribute("aria-expanded", "false");
-    triggerInput.value = selectedLabel;
+    triggerInput.value = customValue || selectedLabel;
     if (customSelectState.openId === selectEl.id) {
       customSelectState.openId = null;
     }
@@ -6115,7 +6116,7 @@ function buildCustomSelect(selectEl) {
   // sibling cards and the menu can extend across them.
   const stackingAncestor = wrap.closest(".settings-section");
 
-  const open = () => {
+  const open = ({ preserveQuery = false } = {}) => {
     if (customSelectState.openId && customSelectState.openId !== selectEl.id) {
       const current = document.querySelector(`select#${customSelectState.openId}`);
       current?.dispatchEvent(new CustomEvent("zt-select-close"));
@@ -6125,7 +6126,7 @@ function buildCustomSelect(selectEl) {
     menu.hidden = false;
     trigger.setAttribute("aria-expanded", "true");
     customSelectState.openId = selectEl.id;
-    triggerInput.value = "";
+    if (!preserveQuery) triggerInput.value = "";
     suppressLabelRestore = true;
     sync();
     suppressLabelRestore = false;
@@ -6136,12 +6137,13 @@ function buildCustomSelect(selectEl) {
     const opts = Array.from(selectEl.options);
     const current = opts.find((o) => o.value === selectEl.value) || opts[0];
     selectedLabel = current ? current.textContent || "" : "";
+    customValue = selectEl.dataset.customValue || "";
     if (current?.value === "" && selectEl.dataset.emptyDisplay !== undefined) {
       selectedLabel = selectEl.dataset.emptyDisplay;
     }
     if (document.activeElement !== triggerInput || menu.hidden) {
       if (!suppressLabelRestore) {
-        triggerInput.value = selectedLabel;
+        triggerInput.value = customValue || selectedLabel;
       }
     }
     empty.textContent = t("select.search.empty");
@@ -6158,6 +6160,7 @@ function buildCustomSelect(selectEl) {
         ev.preventDefault();
         ev.stopPropagation();
         selectEl.value = opt.value;
+        selectEl.dataset.customValue = "";
         selectEl.dispatchEvent(new Event("change", { bubbles: true }));
         sync();
         close();
@@ -6184,7 +6187,10 @@ function buildCustomSelect(selectEl) {
     open();
   });
   triggerInput.addEventListener("input", () => {
-    open();
+    if (selectEl.dataset.allowCustom === "1") {
+      selectEl.dataset.customValue = triggerInput.value.trim();
+    }
+    open({ preserveQuery: true });
     sync();
   });
   triggerInput.addEventListener("keydown", (ev) => {
@@ -6196,7 +6202,12 @@ function buildCustomSelect(selectEl) {
     if (ev.key === "Enter") {
       ev.preventDefault();
       const first = optionsBox.querySelector(".zt-select-option");
-      first?.click();
+      if (first) {
+        first.click();
+      } else if (selectEl.dataset.allowCustom === "1") {
+        selectEl.dataset.customValue = triggerInput.value.trim();
+        close();
+      }
     }
   });
 
@@ -8356,7 +8367,7 @@ snippetEditCancel?.addEventListener("click", () => closeSnippetEditDialog(null))
 snippetEditForm?.addEventListener("submit", (ev) => {
   ev.preventDefault();
   const name = String(snippetEditName?.value || "").trim();
-  const group = String(snippetEditGroup?.value || "").trim() || "未分组";
+  const group = String(snippetEditGroup?.dataset.customValue || snippetEditGroup?.value || "").trim() || "未分组";
   const command = String(snippetEditCommand?.value || "").trim();
   if (!name) {
     snippetEditName?.focus();
@@ -9704,6 +9715,21 @@ async function saveHostForm(ev) {
     }
   }
 
+  let resolvedGroupId = hfGroup?.value || null;
+  const customGroupName = String(hfGroup?.dataset.customValue || "").trim();
+  if (customGroupName) {
+    const existing = hostGroups.find((group) => String(group.name || "").trim() === customGroupName);
+    if (existing) {
+      resolvedGroupId = existing.id;
+    } else {
+      resolvedGroupId = await invoke("create_host_group", {
+        input: { name: customGroupName, parentId: null, sortOrder: 0 },
+      });
+      await reloadHostGroupsFromVault();
+      populateHostGroupOptions(resolvedGroupId || "");
+    }
+  }
+
   const input = {
     name: hfName.value.trim(),
     host: hfHost.value.trim(),
@@ -9712,7 +9738,7 @@ async function saveHostForm(ev) {
     auth,
     forwards,
     proxyJumpHostId: hfJump.value || null,
-    groupId: hfGroup?.value || null,
+    groupId: resolvedGroupId || null,
   };
 
   if (!input.name || !input.host || !input.user) {
