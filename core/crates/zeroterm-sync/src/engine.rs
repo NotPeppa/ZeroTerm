@@ -423,8 +423,15 @@ impl SyncEngine {
             }
 
             if !is_syncable_kind(&ev.kind) {
+                // Forward-compat: do NOT mark an unsupported-kind event
+                // applied. A later build that learns to sync this kind
+                // must be able to pick the event up on a future pass —
+                // marking it applied here is exactly what stranded early
+                // `snippet` events on devices that first saw them under a
+                // build whose `is_syncable_kind` predated snippet support.
+                // The Lamport clock was already observed above, so causal
+                // history stays correct; we just re-evaluate it next pass.
                 tally.skipped += 1;
-                applied.insert(ev.event_id);
                 continue;
             }
 

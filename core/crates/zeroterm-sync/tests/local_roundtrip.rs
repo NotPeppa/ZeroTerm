@@ -293,6 +293,56 @@ async fn snippets_sync_across_devices_and_non_whitelisted_kinds_are_skipped() {
     assert_eq!(live_value(&store_b, "snip-1").as_deref(), Some(&snip_v2[..]));
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn unsupported_kind_event_is_not_marked_applied() {
+    // Regression guard for the snippet-sync rollout bug: when a build
+    // pulls an event whose `kind` it doesn't sync yet, it must NOT record
+    // the event as applied — otherwise a later build that *does* support
+    // the kind can never pick it up (it stays permanently "already seen").
+    let d = tempdir().unwrap();
+    let (store, engine) = make_engine(d.path(), "dev-A");
+    engine.create_repo("pw", "vlt", fast_kdf()).await.unwrap();
+
+    // Hand-write an event of a kind this build doesn't sync, with a
+    // *matching* vault id so it reaches the kind gate (not the vault
+    // filter). The store is empty, so no seed events muddy the counts.
+    let ev = zeroterm_sync::event::new_delete(
+        "evt-future-kind",
+        "dev-future",
+        5,
+        1_700_000_000_000,
+        "vlt",
+        "rec-future",
+        "terminal_log",
+        "rev-x",
+        None,
+    );
+    let path = d
+        .path()
+        .join("zeroterm-sync/events/2024-03/ev-0000000005-dev-future-x.ztlog");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, ev.to_bytes().unwrap()).unwrap();
+
+    // First pass skips it (unsupported kind).
+    let r1 = engine.sync_once().await.unwrap();
+    assert!(r1.skipped >= 1, "unsupported kind should be skipped, got {r1:?}");
+
+    // Second pass must skip it AGAIN rather than collapse it into
+    // already_seen — proving it wasn't marked applied. This is what lets
+    // a future build that learns the kind pick it up later.
+    let r2 = engine.sync_once().await.unwrap();
+    assert!(
+        r2.skipped >= 1,
+        "unsupported-kind event must stay re-evaluable, got {r2:?}"
+    );
+    assert_eq!(
+        r2.already_seen, 0,
+        "unsupported-kind event must not be recorded as applied, got {r2:?}"
+    );
+    // And it never landed in the local store.
+    assert!(live_value(&store, "rec-future").is_none());
+}
+
 fn walkdir(root: &std::path::Path) -> Vec<std::path::PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];
