@@ -343,6 +343,36 @@ async fn unsupported_kind_event_is_not_marked_applied() {
     assert!(live_value(&store, "rec-future").is_none());
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn compact_snapshots_local_live_records_even_if_their_events_were_pruned() {
+    // Regression guard: compact used to rebuild the snapshot purely from
+    // the repo's event log + last snapshot. A record that was live locally
+    // but whose events had already been trashed by a retention sweep (and
+    // wasn't in the last snapshot) got silently dropped — the snippet /
+    // host-group loss reported in the field. compact must fold in the local
+    // vault's live state so a joining device gets a complete snapshot.
+    let d = tempdir().unwrap();
+    let (store_a, engine_a) = make_engine(d.path(), "dev-A");
+    engine_a.create_repo("pw", "vlt", fast_kdf()).await.unwrap();
+
+    // Live + clean locally, but with no event in the repo (its event was
+    // "pruned"). apply_upsert marks it clean and writes nothing to events/.
+    store_a
+        .apply_upsert("rec-orphan", "snippet", b"docker ps -a", "srv-1")
+        .unwrap();
+
+    engine_a.compact().await.unwrap();
+
+    // A fresh device bootstraps from the snapshot — it must receive it.
+    let (store_b, engine_b) = make_engine(d.path(), "dev-B");
+    engine_b.join_repo("pw").await.unwrap();
+    assert_eq!(
+        live_value(&store_b, "rec-orphan").as_deref(),
+        Some(&b"docker ps -a"[..]),
+        "compact must snapshot local live records even when their events are gone"
+    );
+}
+
 fn walkdir(root: &std::path::Path) -> Vec<std::path::PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];

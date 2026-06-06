@@ -4279,20 +4279,38 @@ function renderTerminalThemeCards() {
     name.className = "terminal-theme-name";
     name.textContent = label;
     card.append(name, makeThemePreviewBlock(id, themes[id]));
-    card.addEventListener("click", () => {
-      setTerminalTheme(id);
-    });
-    card.addEventListener("contextmenu", (ev) => {
-      ev.preventDefault();
-      themeMenuTargetId = id;
-      showThemeCardMenu(ev.clientX, ev.clientY);
-    });
+    // Click / context-menu are handled by delegation on the stable list
+    // containers (bound once below), so a card responds even if it's the
+    // static HTML fallback that renderTerminalThemeCards hasn't replaced.
     (group === "light" ? terminalThemeListLight : terminalThemeListDark).appendChild(card);
   };
 
   Object.entries(TERMINAL_THEME_META).forEach(([id, meta]) => addCard(id, meta.label, meta.group));
   terminalCustomThemes.forEach((t) => addCard(t.id, t.label, t.group));
   syncTerminalThemeCardsActive();
+}
+
+// Delegate theme-card clicks on the stable list containers. Binding here
+// once (instead of per-card inside renderTerminalThemeCards) means a card
+// responds even if the per-card render hasn't run — e.g. the static HTML
+// cards on first paint, or an init that got interrupted. This fixes the
+// intermittent "clicking a theme card does nothing until restart".
+for (const themeListContainer of [terminalThemeListLight, terminalThemeListDark]) {
+  if (!themeListContainer) continue;
+  themeListContainer.addEventListener("click", (ev) => {
+    const card = ev.target.closest?.(".terminal-theme-card");
+    if (card && themeListContainer.contains(card) && card.dataset.theme) {
+      setTerminalTheme(card.dataset.theme);
+    }
+  });
+  themeListContainer.addEventListener("contextmenu", (ev) => {
+    const card = ev.target.closest?.(".terminal-theme-card");
+    if (card && themeListContainer.contains(card) && card.dataset.theme) {
+      ev.preventDefault();
+      themeMenuTargetId = card.dataset.theme;
+      showThemeCardMenu(ev.clientX, ev.clientY);
+    }
+  });
 }
 
 function generateCustomThemeId() {
@@ -4752,6 +4770,29 @@ async function refreshHostsCacheFromVault({ silent = false } = {}) {
       return;
     }
     throw e;
+  }
+}
+
+// Re-pull every vault-backed view after a sync/join. Hosts, host groups
+// and snippets all live in the vault, so any pull can touch all three —
+// refresh them together so the UI never needs a manual page reload.
+async function refreshAllSyncedViewsFromVault() {
+  try {
+    await refreshHostsCacheFromVault({ silent: true });
+  } catch (e) {
+    console.warn("post-sync hosts refresh failed", e);
+  }
+  try {
+    if (typeof reloadHostGroupsFromVault === "function") await reloadHostGroupsFromVault();
+  } catch (e) {
+    console.warn("post-sync host-groups refresh failed", e);
+  }
+  const hostsView = document.getElementById("view-hosts");
+  if (hostsView && !hostsView.hidden && typeof renderHosts === "function") renderHosts();
+  try {
+    if (typeof refreshSnippetsAndRender === "function") await refreshSnippetsAndRender();
+  } catch (e) {
+    console.warn("post-sync snippets refresh failed", e);
   }
 }
 
@@ -5565,23 +5606,7 @@ async function runAutoSync(reason) {
     };
     markSyncLast(reason, pushed, { pulled, ok: true, conflicts });
     if (pulled > 0) {
-      try {
-        await refreshHostsCacheFromVault({ silent: true });
-        if (typeof reloadHostGroupsFromVault === "function") {
-          await reloadHostGroupsFromVault();
-        }
-        const hostsView = document.getElementById("view-hosts");
-        if (hostsView && !hostsView.hidden && typeof renderHosts === "function") {
-          renderHosts();
-        }
-        // Snippets are vault records too — refresh them after a pull so
-        // remote adds/edits/deletes show up without an app restart.
-        if (typeof refreshSnippetsAndRender === "function") {
-          await refreshSnippetsAndRender();
-        }
-      } catch (e) {
-        console.warn("post-sync refresh failed", e);
-      }
+      await refreshAllSyncedViewsFromVault();
     }
     if (conflicts > 0) {
       openConflictModal(conflicts, profileId);
@@ -7188,7 +7213,7 @@ settingsSyncJoinRepo?.addEventListener("click", async () => {
         });
       }
       await refreshSyncStatusLine();
-      await refreshHostsCacheFromVault({ silent: true });
+      await refreshAllSyncedViewsFromVault();
       await warnIfMalformedSyncedHosts();
       await refreshSyncConflicts();
       await refreshSyncRepoStats();
@@ -7288,10 +7313,7 @@ settingsSyncNow?.addEventListener("click", async () => {
       markSyncLast("sync_now", outcome.eventsPushed ?? 0, {
         pulled: outcome.eventsPulled ?? 0,
       });
-      await refreshHostsCacheFromVault({ silent: true });
-      if (typeof refreshSnippetsAndRender === "function") {
-        await refreshSnippetsAndRender();
-      }
+      await refreshAllSyncedViewsFromVault();
       await warnIfMalformedSyncedHosts();
       await refreshSyncStatusLine();
       await refreshSyncConflicts();

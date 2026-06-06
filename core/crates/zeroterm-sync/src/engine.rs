@@ -842,6 +842,48 @@ impl SyncEngine {
             }
         }
 
+        // Safety net (RFC-002 §4: the local vault is the authoritative
+        // current state). The working set above was rebuilt purely from
+        // the repo's last snapshot + surviving events — so any record that
+        // is live locally but whose creating events were already trashed by
+        // a prior retention sweep, and that never made it into the last
+        // snapshot, would be silently dropped from the new snapshot. That
+        // is exactly how a compact can strand snippets / host groups. Fold
+        // in every *clean* local live record the working set is still
+        // missing, re-sealing its plaintext under the same per-record AAD
+        // (vault||id||kind||revision) so joiners decrypt it identically.
+        // Dirty rows are skipped — they haven't been pushed yet and will
+        // sync through `push_local_events`.
+        let root_key = self.clone_root_key().await?;
+        for rec in self.store.list_all_live()? {
+            if rec.deleted || rec.dirty || working.contains_key(&rec.id) {
+                continue;
+            }
+            let revision = if rec.local_rev.is_empty() {
+                uuid::Uuid::now_v7().to_string()
+            } else {
+                rec.local_rev.clone()
+            };
+            let (nonce, ct) = crypto::seal_record(
+                &root_key,
+                &vault_id,
+                &rec.id,
+                &rec.kind,
+                &revision,
+                &rec.plaintext,
+            )?;
+            working.insert(
+                rec.id.clone(),
+                SnapshotSlot {
+                    kind: rec.kind,
+                    nonce: nonce.to_vec(),
+                    ct,
+                    revision,
+                    last_clock: max_clock,
+                },
+            );
+        }
+
         let snap_id = uuid::Uuid::now_v7().to_string();
         let mut snap = Snapshot::new(&snap_id, &vault_id, max_clock, now_ms());
         for (id, slot) in &working {
