@@ -3957,6 +3957,25 @@ function isFontFamilyAvailable(fontFamily) {
   return targetMonoWidth !== monospaceWidth || targetSerifWidth !== serifWidth || targetSansWidth !== sansWidth;
 }
 
+function isLikelyMonospaceFont(fontFamily) {
+  const family = String(fontFamily || "").trim();
+  if (!family) return false;
+  if (family === "ZeroTerm Meslo NF") return true;
+
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  if (!context) return false;
+
+  const quotedFamily = JSON.stringify(family);
+  const chars = ["i", "W", ".", "0", "中"];
+  const widths = chars.map((char) => {
+    context.font = `16px ${quotedFamily}, monospace`;
+    return context.measureText(char).width;
+  });
+  const first = widths[0];
+  return widths.every((width) => Math.abs(width - first) < 0.01);
+}
+
 function quoteFontFamily(fontFamily) {
   return JSON.stringify(String(fontFamily || "").trim());
 }
@@ -4037,7 +4056,8 @@ function populateTerminalFontFamilyOptions(candidates = TERMINAL_FONT_CANDIDATES
 async function populateTerminalFontFamilyOptionsAsync() {
   try {
     const systemFamilies = await loadSystemTerminalFonts();
-    const systemOptions = buildTerminalFontOptions(["ZeroTerm Meslo NF", ...systemFamilies]);
+    const monospaceFamilies = systemFamilies.filter((family) => isLikelyMonospaceFont(family));
+    const systemOptions = buildTerminalFontOptions(["ZeroTerm Meslo NF", ...monospaceFamilies]);
     if (systemOptions.length > 0) {
       populateTerminalFontFamilyOptions(systemOptions, { validateAvailability: false });
       return;

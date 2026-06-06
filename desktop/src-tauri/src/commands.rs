@@ -4148,10 +4148,8 @@ pub async fn list_system_fonts() -> Result<Vec<SystemFontDto>, String> {
 
     let mut families = BTreeSet::new();
     for face in db.faces() {
-        if face.monospaced {
-            for (family, _) in &face.families {
-                families.insert(family.clone());
-            }
+        for (family, _) in &face.families {
+            families.insert(family.clone());
         }
     }
 
