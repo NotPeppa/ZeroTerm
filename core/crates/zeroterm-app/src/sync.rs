@@ -793,7 +793,7 @@ fn conflict_preview(kind: &str, payload: &[u8]) -> serde_json::Value {
     if payload.is_empty() {
         return serde_json::json!({ "tombstone": true });
     }
-    if kind == "host_group" {
+    if kind == "host_group" || kind == "snippet" {
         return match serde_json::from_slice::<serde_json::Value>(payload) {
             Ok(v) => v,
             Err(_) => serde_json::json!({ "redacted": true, "bytes": payload.len() }),

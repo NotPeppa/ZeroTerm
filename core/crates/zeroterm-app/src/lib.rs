@@ -8,6 +8,7 @@ mod app;
 mod error;
 mod host;
 mod host_group;
+mod snippet;
 mod sync;
 pub mod keychain;
 
@@ -15,6 +16,7 @@ pub use app::{App, HostDiagnostics};
 pub use error::AppError;
 pub use host::{ForwardSpec, Host, HostAuth};
 pub use host_group::HostGroup;
+pub use snippet::Snippet;
 pub use sync::{
     local_device_id, ConflictResolution, ConflictView, SyncBackend, SyncManager, SyncOutcome,
     SyncJoinOutcome, SyncProfile, SyncStatus,

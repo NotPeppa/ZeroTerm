@@ -99,7 +99,7 @@ impl WebDavPaths {
     /// Server-relative path prefix that PROPFIND `href` values start
     /// with. Used to strip the prefix when converting `href` → key.
     /// Example: if base_url is `https://dav.example.com/dav/alice`,
-    /// servers usually return `href="/dav/alice/zeroterm/.zeroterm-sync/manifest.json"`.
+    /// servers usually return `href="/dav/alice/zeroterm/zeroterm-sync/manifest.json"`.
     pub(crate) fn server_path_prefix(&self) -> String {
         // base_url's path portion. We strip the scheme + authority by
         // finding the third `/` after `://`.

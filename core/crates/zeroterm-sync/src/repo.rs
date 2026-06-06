@@ -23,6 +23,11 @@
 use std::path::PathBuf;
 
 /// The directory name inside the user-chosen sync root.
+///
+/// No leading dot: a hidden directory like `.zeroterm-sync` hits adapter
+/// quirks on some sync backends (iCloud Drive / Dropbox / WebDAV), so we
+/// use a visible name. Don't reintroduce the dot — a batch of path tests
+/// once hard-coded the dotted form and broke against this.
 pub const REPO_DIR: &str = "zeroterm-sync";
 
 /// Schema version of the *repo layout* itself. Distinct from the
@@ -202,7 +207,7 @@ mod tests {
     fn join_resolves_under_repo_dir() {
         let root = std::path::Path::new("/tmp/sync-root");
         let p = join(root, "events/2024-03/foo.json");
-        assert!(p.starts_with("/tmp/sync-root/.zeroterm-sync"));
+        assert!(p.starts_with("/tmp/sync-root/zeroterm-sync"));
         assert!(p.ends_with("foo.json"));
     }
 }

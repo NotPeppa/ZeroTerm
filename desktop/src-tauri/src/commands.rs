@@ -1874,6 +1874,121 @@ pub async fn set_host_group(
     Ok(())
 }
 
+// ---- snippet CRUD --------------------------------------------------------
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnippetDto {
+    pub id: String,
+    pub title: String,
+    pub command: String,
+    pub group: String,
+    pub sort_order: i32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnippetInput {
+    pub title: String,
+    pub command: String,
+    #[serde(default)]
+    pub group: String,
+    #[serde(default)]
+    pub sort_order: Option<i32>,
+}
+
+fn snippet_to_dto(s: zeroterm_app::Snippet) -> SnippetDto {
+    SnippetDto {
+        id: s.id,
+        title: s.title,
+        command: s.command,
+        group: s.group,
+        sort_order: s.sort_order,
+    }
+}
+
+#[tauri::command]
+pub async fn list_snippets(state: State<'_, AppState>) -> Result<Vec<SnippetDto>, String> {
+    let app_lock = state.app.lock().unwrap();
+    let app = app_lock.as_ref().ok_or("vault is locked")?;
+    let snippets = app.list_snippets().map_err(|e| e.to_string())?;
+    Ok(snippets.into_iter().map(snippet_to_dto).collect())
+}
+
+#[tauri::command]
+pub async fn create_snippet(
+    state: State<'_, AppState>,
+    input: SnippetInput,
+) -> Result<String, String> {
+    let (app, manager) = clone_app_and_sync(&state)?;
+    let s = zeroterm_app::Snippet {
+        id: String::new(),
+        title: input.title,
+        command: input.command,
+        group: input.group,
+        sort_order: input.sort_order.unwrap_or(0),
+    };
+    let id = app.save_snippet(&s).map_err(|e| e.to_string())?;
+    manager.schedule_debounced_sync_for_all(app);
+    Ok(id)
+}
+
+#[tauri::command]
+pub async fn update_snippet(
+    state: State<'_, AppState>,
+    id: String,
+    input: SnippetInput,
+) -> Result<(), String> {
+    let (app, manager) = clone_app_and_sync(&state)?;
+    let s = zeroterm_app::Snippet {
+        id,
+        title: input.title,
+        command: input.command,
+        group: input.group,
+        sort_order: input.sort_order.unwrap_or(0),
+    };
+    app.update_snippet(&s).map_err(|e| e.to_string())?;
+    manager.schedule_debounced_sync_for_all(app);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn delete_snippet(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let (app, manager) = clone_app_and_sync(&state)?;
+    app.delete_snippet(&id).map_err(|e| e.to_string())?;
+    manager.schedule_debounced_sync_for_all(app);
+    Ok(())
+}
+
+/// Rename a group across all its snippets. Snippet groups are just a
+/// string field, so this is a batch field rewrite under the hood (see
+/// `App::rename_snippet_group`). Returns how many snippets were touched.
+#[tauri::command]
+pub async fn rename_snippet_group(
+    state: State<'_, AppState>,
+    old_name: String,
+    new_name: String,
+) -> Result<usize, String> {
+    let (app, manager) = clone_app_and_sync(&state)?;
+    let touched = app
+        .rename_snippet_group(&old_name, &new_name)
+        .map_err(|e| e.to_string())?;
+    manager.schedule_debounced_sync_for_all(app);
+    Ok(touched)
+}
+
+/// Delete every snippet in a group. Returns how many were removed.
+#[tauri::command]
+pub async fn delete_snippet_group(
+    state: State<'_, AppState>,
+    name: String,
+) -> Result<usize, String> {
+    let (app, manager) = clone_app_and_sync(&state)?;
+    let deleted = app.delete_snippet_group(&name).map_err(|e| e.to_string())?;
+    manager.schedule_debounced_sync_for_all(app);
+    Ok(deleted)
+}
+
 /// Read a local text file (key material picked by the host editor).
 /// We don't whitelist arbitrary FS access via the `tauri-plugin-fs`
 /// permission machinery; this command takes a single path the user

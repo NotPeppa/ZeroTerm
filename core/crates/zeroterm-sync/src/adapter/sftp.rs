@@ -425,40 +425,40 @@ mod tests {
         let p = SftpPaths::new("/home/me/zeroterm");
         assert_eq!(
             p.full("events/2024-03/ev-foo.json"),
-            "/home/me/zeroterm/.zeroterm-sync/events/2024-03/ev-foo.json"
+            "/home/me/zeroterm/zeroterm-sync/events/2024-03/ev-foo.json"
         );
     }
 
     #[test]
     fn full_strips_trailing_slashes_from_base_dir() {
         let p = SftpPaths::new("/home/me/zeroterm///");
-        assert_eq!(p.full("manifest.json"), "/home/me/zeroterm/.zeroterm-sync/manifest.json");
+        assert_eq!(p.full("manifest.json"), "/home/me/zeroterm/zeroterm-sync/manifest.json");
     }
 
     #[test]
     fn full_handles_root_base_dir() {
         let p = SftpPaths::new("/");
-        assert_eq!(p.full("manifest.json"), "/.zeroterm-sync/manifest.json");
+        assert_eq!(p.full("manifest.json"), "/zeroterm-sync/manifest.json");
     }
 
     #[test]
     fn full_strips_leading_slash_from_key() {
         let p = SftpPaths::new("/var/lib");
-        assert_eq!(p.full("/manifest.json"), "/var/lib/.zeroterm-sync/manifest.json");
+        assert_eq!(p.full("/manifest.json"), "/var/lib/zeroterm-sync/manifest.json");
     }
 
     #[test]
     fn dir_never_emits_trailing_slash() {
         let p = SftpPaths::new("/var/lib");
-        assert_eq!(p.dir("events/2024-03/"), "/var/lib/.zeroterm-sync/events/2024-03");
-        assert_eq!(p.dir("events/2024-03"), "/var/lib/.zeroterm-sync/events/2024-03");
+        assert_eq!(p.dir("events/2024-03/"), "/var/lib/zeroterm-sync/events/2024-03");
+        assert_eq!(p.dir("events/2024-03"), "/var/lib/zeroterm-sync/events/2024-03");
     }
 
     #[test]
     fn repo_root_matches_full_with_empty_key() {
         let p = SftpPaths::new("/home/me");
-        assert_eq!(p.repo_root(), "/home/me/.zeroterm-sync");
+        assert_eq!(p.repo_root(), "/home/me/zeroterm-sync");
         let root = SftpPaths::new("/");
-        assert_eq!(root.repo_root(), "/.zeroterm-sync");
+        assert_eq!(root.repo_root(), "/zeroterm-sync");
     }
 }

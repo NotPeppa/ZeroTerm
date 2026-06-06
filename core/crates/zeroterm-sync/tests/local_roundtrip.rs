@@ -204,7 +204,7 @@ async fn new_writes_are_ztlog_and_old_json_still_decodes() {
     );
     let legacy_path = d
         .path()
-        .join(".zeroterm-sync/events/2024-03/ev-000000000007-dev-OLD-legacy.json");
+        .join("zeroterm-sync/events/2024-03/ev-000000000007-dev-OLD-legacy.json");
     std::fs::create_dir_all(legacy_path.parent().unwrap()).unwrap();
     std::fs::write(&legacy_path, legacy_event.to_json().unwrap()).unwrap();
 
@@ -224,7 +224,7 @@ async fn new_writes_are_ztlog_and_old_json_still_decodes() {
     let mut max_json_bytes = 0usize;
     for entry in walkdir(d.path()) {
         let name = entry.to_string_lossy().replace('\\', "/");
-        if !name.contains(".zeroterm-sync") {
+        if !name.contains("zeroterm-sync") {
             continue;
         }
         if name.ends_with(".ztlog") {
@@ -253,6 +253,44 @@ async fn new_writes_are_ztlog_and_old_json_still_decodes() {
         min_ztlog_bytes <= max_json_bytes,
         "ztlog size ({min_ztlog_bytes} B) should not exceed json ({max_json_bytes} B)"
     );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn snippets_sync_across_devices_and_non_whitelisted_kinds_are_skipped() {
+    let d = tempdir().unwrap();
+    let (store_a, engine_a) = make_engine(d.path(), "dev-A");
+    let (store_b, engine_b) = make_engine(d.path(), "dev-B");
+
+    engine_a
+        .create_repo("pw", "vlt-snip", fast_kdf())
+        .await
+        .unwrap();
+
+    // A real snippet record (the JSON shape the app layer stores) plus a
+    // non-syncable kind that must never leave the device.
+    let snip_v1 =
+        br#"{"title":"docker ps","command":"docker ps -a","group":"docker","sort_order":0}"#;
+    store_a.put_local("snip-1", "snippet", snip_v1.to_vec());
+    store_a.put_local("log-1", "terminal_log", b"secret scrollback".to_vec());
+    engine_a.sync_once().await.unwrap();
+
+    engine_b.join_repo("pw").await.unwrap();
+
+    // Snippet crossed the wire intact...
+    assert_eq!(live_value(&store_b, "snip-1").as_deref(), Some(&snip_v1[..]));
+    // ...the non-whitelisted kind did not.
+    assert!(
+        live_value(&store_b, "log-1").is_none(),
+        "terminal_log must not sync"
+    );
+
+    // Edits propagate too: rename the group field on A, B converges.
+    let snip_v2 =
+        br#"{"title":"docker ps","command":"docker ps -a","group":"ops","sort_order":0}"#;
+    store_a.put_local("snip-1", "snippet", snip_v2.to_vec());
+    engine_a.sync_once().await.unwrap();
+    engine_b.sync_once().await.unwrap();
+    assert_eq!(live_value(&store_b, "snip-1").as_deref(), Some(&snip_v2[..]));
 }
 
 fn walkdir(root: &std::path::Path) -> Vec<std::path::PathBuf> {

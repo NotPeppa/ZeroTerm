@@ -1466,6 +1466,15 @@ body.resizing-ai-panel .ai-panel-splitter {
   scrollbar-color: rgba(104, 168, 255, 0.2) transparent;
 }
 
+.terminal-side-body {
+  display: block;
+}
+
+.ai-assistant-body {
+  display: flex;
+  flex-direction: column;
+}
+
 body[data-app-theme="light"] .ai-assistant-body,
 body[data-app-theme="light"] .terminal-side-body {
   scrollbar-color: rgba(37, 99, 235, 0.2) transparent;

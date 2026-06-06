@@ -17,6 +17,12 @@ pub enum AppError {
     #[error("invalid host group: {0}")]
     BadHostGroup(String),
 
+    #[error("vault record was not valid snippet JSON: {0}")]
+    BadSnippetRecord(serde_json::Error),
+
+    #[error("invalid snippet: {0}")]
+    BadSnippet(String),
+
     #[error("vault record was not valid sync profile JSON: {0}")]
     BadSyncProfile(serde_json::Error),
 

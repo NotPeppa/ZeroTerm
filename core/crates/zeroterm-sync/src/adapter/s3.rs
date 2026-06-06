@@ -94,7 +94,7 @@ impl S3Paths {
         let prefix = prefix.trim_matches('/');
         if prefix.is_empty() {
             // Listing the repo root: include trailing slash so we don't
-            // match sibling buckets sharing the .zeroterm-sync name.
+            // match sibling buckets sharing the zeroterm-sync name.
             self.repo_prefix()
         } else {
             // Caller-supplied subdir prefix.
@@ -457,7 +457,7 @@ mod tests {
         let p = S3Paths::new("zeroterm");
         assert_eq!(
             p.object_key("manifest.json"),
-            "zeroterm/.zeroterm-sync/manifest.json"
+            "zeroterm/zeroterm-sync/manifest.json"
         );
     }
 
@@ -466,7 +466,7 @@ mod tests {
         let p = S3Paths::new("");
         assert_eq!(
             p.object_key("events/2024-03/ev-foo.json"),
-            ".zeroterm-sync/events/2024-03/ev-foo.json"
+            "zeroterm-sync/events/2024-03/ev-foo.json"
         );
     }
 
@@ -475,20 +475,20 @@ mod tests {
         let p = S3Paths::new("/zeroterm/sub/");
         assert_eq!(
             p.object_key("manifest.json"),
-            "zeroterm/sub/.zeroterm-sync/manifest.json"
+            "zeroterm/sub/zeroterm-sync/manifest.json"
         );
     }
 
     #[test]
     fn object_key_strips_leading_key_slash() {
         let p = S3Paths::new("z");
-        assert_eq!(p.object_key("/manifest.json"), "z/.zeroterm-sync/manifest.json");
+        assert_eq!(p.object_key("/manifest.json"), "z/zeroterm-sync/manifest.json");
     }
 
     #[test]
     fn list_prefix_empty_yields_repo_root() {
         let p = S3Paths::new("zeroterm");
-        assert_eq!(p.list_prefix(""), "zeroterm/.zeroterm-sync/");
+        assert_eq!(p.list_prefix(""), "zeroterm/zeroterm-sync/");
     }
 
     #[test]
@@ -496,25 +496,25 @@ mod tests {
         let p = S3Paths::new("zeroterm");
         assert_eq!(
             p.list_prefix("events/2024-03"),
-            "zeroterm/.zeroterm-sync/events/2024-03/"
+            "zeroterm/zeroterm-sync/events/2024-03/"
         );
     }
 
     #[test]
     fn list_prefix_works_without_user_prefix() {
         let p = S3Paths::new("");
-        assert_eq!(p.list_prefix("snapshots"), ".zeroterm-sync/snapshots/");
+        assert_eq!(p.list_prefix("snapshots"), "zeroterm-sync/snapshots/");
     }
 
     #[test]
     fn key_to_rel_strips_repo_prefix() {
         let p = S3Paths::new("zeroterm");
         assert_eq!(
-            p.key_to_rel("zeroterm/.zeroterm-sync/manifest.json").as_deref(),
+            p.key_to_rel("zeroterm/zeroterm-sync/manifest.json").as_deref(),
             Some("manifest.json")
         );
         assert_eq!(
-            p.key_to_rel("zeroterm/.zeroterm-sync/events/2024-03/ev-1.json")
+            p.key_to_rel("zeroterm/zeroterm-sync/events/2024-03/ev-1.json")
                 .as_deref(),
             Some("events/2024-03/ev-1.json")
         );
@@ -525,14 +525,14 @@ mod tests {
         let p = S3Paths::new("zeroterm");
         assert_eq!(p.key_to_rel("other-bucket-prefix/foo.json"), None);
         // Empty result after stripping is treated as "no real key".
-        assert_eq!(p.key_to_rel("zeroterm/.zeroterm-sync/"), None);
+        assert_eq!(p.key_to_rel("zeroterm/zeroterm-sync/"), None);
     }
 
     #[test]
     fn url_encode_path_keeps_slashes_but_escapes_specials() {
         assert_eq!(
-            url_encode_path("zeroterm/.zeroterm-sync/events/foo bar.json"),
-            "zeroterm/.zeroterm-sync/events/foo%20bar.json"
+            url_encode_path("zeroterm/zeroterm-sync/events/foo bar.json"),
+            "zeroterm/zeroterm-sync/events/foo%20bar.json"
         );
         assert_eq!(
             url_encode_path("a/b/c+d&e.txt"),

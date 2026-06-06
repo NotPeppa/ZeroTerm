@@ -14,9 +14,11 @@ use zeroterm_vault::Vault;
 use crate::error::AppError;
 use crate::host::Host;
 use crate::host_group::HostGroup;
+use crate::snippet::Snippet;
 
 const HOST_KIND: &str = "host";
 const HOST_GROUP_KIND: &str = "host_group";
+const SNIPPET_KIND: &str = "snippet";
 
 #[derive(Debug, Clone)]
 pub struct HostDiagnostics {
@@ -251,6 +253,108 @@ impl App {
         Ok(())
     }
 
+    // -- snippet CRUD -------------------------------------------------------
+
+    pub fn list_snippets(&self) -> Result<Vec<Snippet>, AppError> {
+        let records = self.vault.list(SNIPPET_KIND)?;
+        let mut snippets = Vec::with_capacity(records.len());
+        for (id, plaintext) in records {
+            match serde_json::from_slice::<Snippet>(&plaintext) {
+                Ok(mut s) => {
+                    s.id = id;
+                    snippets.push(s);
+                }
+                Err(e) => {
+                    tracing::warn!(record_id = %id, error = %e, "skipping malformed snippet record");
+                }
+            }
+        }
+        // Stable display order: group, then explicit sort_order, then title.
+        snippets.sort_by(|a, b| {
+            a.group
+                .cmp(&b.group)
+                .then_with(|| a.sort_order.cmp(&b.sort_order))
+                .then_with(|| a.title.cmp(&b.title))
+        });
+        Ok(snippets)
+    }
+
+    pub fn find_snippet_by_id(&self, id: &str) -> Result<Option<Snippet>, AppError> {
+        match self.vault.get(id) {
+            Ok(plaintext) => {
+                let mut s: Snippet =
+                    serde_json::from_slice(&plaintext).map_err(AppError::BadSnippetRecord)?;
+                s.id = id.to_string();
+                Ok(Some(s))
+            }
+            Err(zeroterm_vault::VaultError::NotFound(_)) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Save a new snippet. Caller assigns no id; the vault returns one.
+    pub fn save_snippet(&self, snippet: &Snippet) -> Result<String, AppError> {
+        if snippet.title.trim().is_empty() {
+            return Err(AppError::BadSnippet("title cannot be empty".into()));
+        }
+        if snippet.command.trim().is_empty() {
+            return Err(AppError::BadSnippet("command cannot be empty".into()));
+        }
+        let json = serde_json::to_vec(snippet).map_err(AppError::BadSnippetRecord)?;
+        Ok(self.vault.insert(SNIPPET_KIND, &json)?)
+    }
+
+    /// Replace an existing snippet by id.
+    pub fn update_snippet(&self, snippet: &Snippet) -> Result<(), AppError> {
+        if snippet.id.is_empty() {
+            return Err(AppError::BadSnippet("id is required for update".into()));
+        }
+        if snippet.title.trim().is_empty() {
+            return Err(AppError::BadSnippet("title cannot be empty".into()));
+        }
+        if snippet.command.trim().is_empty() {
+            return Err(AppError::BadSnippet("command cannot be empty".into()));
+        }
+        let json = serde_json::to_vec(snippet).map_err(AppError::BadSnippetRecord)?;
+        self.vault.update(&snippet.id, &json)?;
+        Ok(())
+    }
+
+    pub fn delete_snippet(&self, id: &str) -> Result<(), AppError> {
+        self.vault.delete(id)?;
+        Ok(())
+    }
+
+    /// Rename a group across every snippet currently in it. A snippet's
+    /// group is just a string field, so "renaming a group" means
+    /// rewriting that field on each member — one vault update per
+    /// snippet. Returns the number of snippets touched.
+    pub fn rename_snippet_group(&self, old: &str, new: &str) -> Result<usize, AppError> {
+        let mut touched = 0usize;
+        for mut s in self.list_snippets()? {
+            if s.group == old {
+                s.group = new.to_string();
+                self.update_snippet(&s)?;
+                touched += 1;
+            }
+        }
+        Ok(touched)
+    }
+
+    /// Delete every snippet in a group, mirroring the original frontend
+    /// behaviour where removing a group dropped its members. Returns the
+    /// number of snippets deleted.
+    pub fn delete_snippet_group(&self, group: &str) -> Result<usize, AppError> {
+        let mut deleted = 0usize;
+        for s in self.list_snippets()? {
+            if s.group == group {
+                self.delete_snippet(&s.id)?;
+                deleted += 1;
+            }
+        }
+        Ok(deleted)
+    }
+
     // -- ssh connect helper -------------------------------------------------
 
     /// Build the SSH-layer config for a saved host. The caller decides
@@ -378,5 +482,86 @@ mod tests {
         assert_eq!(cfg.port, 22);
         assert_eq!(cfg.username, "deploy");
         assert_eq!(cfg.auth_methods.len(), 1);
+    }
+
+    // -- snippet tests ------------------------------------------------------
+
+    fn sample_snippet(title: &str, group: &str) -> Snippet {
+        Snippet {
+            id: String::new(),
+            title: title.into(),
+            command: format!("echo {title}"),
+            group: group.into(),
+            sort_order: 0,
+        }
+    }
+
+    #[test]
+    fn snippet_save_list_update_delete() {
+        let dir = tempdir().unwrap();
+        let app = fresh_app(dir.path());
+
+        let id = app.save_snippet(&sample_snippet("ps", "docker")).unwrap();
+        app.save_snippet(&sample_snippet("ls", "")).unwrap();
+
+        let all = app.list_snippets().unwrap();
+        assert_eq!(all.len(), 2);
+        assert!(all.iter().all(|s| !s.id.is_empty()));
+
+        let mut first = app.find_snippet_by_id(&id).unwrap().unwrap();
+        assert_eq!(first.title, "ps");
+        first.command = "docker ps -a".into();
+        app.update_snippet(&first).unwrap();
+        assert_eq!(
+            app.find_snippet_by_id(&id).unwrap().unwrap().command,
+            "docker ps -a"
+        );
+
+        app.delete_snippet(&id).unwrap();
+        let rest = app.list_snippets().unwrap();
+        assert_eq!(rest.len(), 1);
+        assert_eq!(rest[0].title, "ls");
+    }
+
+    #[test]
+    fn snippet_rejects_empty_title_or_command() {
+        let dir = tempdir().unwrap();
+        let app = fresh_app(dir.path());
+        assert!(app.save_snippet(&sample_snippet("", "g")).is_err());
+        let mut blank_cmd = sample_snippet("t", "g");
+        blank_cmd.command = "   ".into();
+        assert!(app.save_snippet(&blank_cmd).is_err());
+    }
+
+    #[test]
+    fn rename_snippet_group_rewrites_only_matching_members() {
+        let dir = tempdir().unwrap();
+        let app = fresh_app(dir.path());
+        app.save_snippet(&sample_snippet("a", "old")).unwrap();
+        app.save_snippet(&sample_snippet("b", "old")).unwrap();
+        app.save_snippet(&sample_snippet("c", "keep")).unwrap();
+
+        let touched = app.rename_snippet_group("old", "new").unwrap();
+        assert_eq!(touched, 2);
+
+        let all = app.list_snippets().unwrap();
+        assert_eq!(all.iter().filter(|s| s.group == "new").count(), 2);
+        assert_eq!(all.iter().filter(|s| s.group == "keep").count(), 1);
+        assert_eq!(all.iter().filter(|s| s.group == "old").count(), 0);
+    }
+
+    #[test]
+    fn delete_snippet_group_removes_all_members() {
+        let dir = tempdir().unwrap();
+        let app = fresh_app(dir.path());
+        app.save_snippet(&sample_snippet("a", "trash")).unwrap();
+        app.save_snippet(&sample_snippet("b", "trash")).unwrap();
+        app.save_snippet(&sample_snippet("c", "keep")).unwrap();
+
+        let deleted = app.delete_snippet_group("trash").unwrap();
+        assert_eq!(deleted, 2);
+        let all = app.list_snippets().unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].group, "keep");
     }
 }

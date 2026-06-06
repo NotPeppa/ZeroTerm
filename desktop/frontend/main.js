@@ -1898,6 +1898,7 @@ let terminalCommandSnippets = [];
 let terminalSnippetSearchQuery = "";
 let snippetGroupMenuTarget = "";
 const TERMINAL_COMMAND_SNIPPETS_KEY = "zt.terminal.commandSnippets";
+const TERMINAL_SNIPPETS_MIGRATED_KEY = "zt.terminal.snippetsMigrated";
 const TERMINAL_SNIPPET_GROUP_STATE_KEY = "zt.terminal.commandSnippetGroups";
 let terminalSnippetGroupExpanded = {};
 const AI_CONTEXT_MODES = ["smart", "always", "off"];
@@ -1914,27 +1915,67 @@ let pendingAiCommandCounter = 0;
 const aiMultiCommandState = new WeakMap();
 let snippetEditResolver = null;
 
-function loadTerminalCommandSnippets() {
+async function loadTerminalCommandSnippets() {
+  // Snippets now live in the encrypted vault (kind "snippet") so they
+  // sync across devices. While the vault is locked `list_snippets`
+  // errors — treat that as "nothing to show" rather than surfacing an
+  // error, mirroring how the hosts list behaves before unlock.
   try {
-    const raw = localStorage.getItem(TERMINAL_COMMAND_SNIPPETS_KEY);
-    const parsed = JSON.parse(raw || "[]");
-    terminalCommandSnippets = Array.isArray(parsed)
-      ? parsed
-        .map((item) => ({
-          id: String(item?.id || "").trim(),
-          group: String(item?.group || "").trim(),
-          title: String(item?.title || "").trim(),
-          command: String(item?.command || "").trim(),
-        }))
-        .filter((item) => item.id && item.title && item.command)
+    const list = await invoke("list_snippets");
+    terminalCommandSnippets = Array.isArray(list)
+      ? list.map((item) => ({
+        id: String(item?.id || ""),
+        group: String(item?.group || "").trim(),
+        title: String(item?.title || ""),
+        command: String(item?.command || ""),
+        sortOrder: Number(item?.sortOrder || 0),
+      }))
       : [];
-  } catch {
+  } catch (e) {
+    console.warn("load snippets failed", e);
     terminalCommandSnippets = [];
   }
 }
 
-function saveTerminalCommandSnippets() {
-  localStorage.setItem(TERMINAL_COMMAND_SNIPPETS_KEY, JSON.stringify(terminalCommandSnippets));
+async function refreshSnippetsAndRender() {
+  await loadTerminalCommandSnippets();
+  renderTerminalCommandSnippets();
+}
+
+/// One-time migration of pre-sync snippets from localStorage into the
+/// vault. Runs once after unlock: imports each legacy entry via
+/// `create_snippet`, stashes the old array under a `.bak` key, then sets
+/// a migrated flag so we never re-import (which would resurrect snippets
+/// the user has since deleted on this or another device).
+async function migrateLocalSnippetsToVault() {
+  if (localStorage.getItem(TERMINAL_SNIPPETS_MIGRATED_KEY) === "1") return;
+  let legacy = [];
+  try {
+    legacy = JSON.parse(localStorage.getItem(TERMINAL_COMMAND_SNIPPETS_KEY) || "[]");
+  } catch {
+    legacy = [];
+  }
+  if (Array.isArray(legacy) && legacy.length) {
+    let imported = 0;
+    for (const item of legacy) {
+      const title = String(item?.title || "").trim();
+      const command = String(item?.command || "").trim();
+      if (!title || !command) continue;
+      try {
+        await invoke("create_snippet", {
+          input: { title, command, group: normalizeSnippetGroup(item?.group), sortOrder: 0 },
+        });
+        imported += 1;
+      } catch (e) {
+        console.warn("snippet migration: skipped one entry", e);
+      }
+    }
+    // Keep a backup of the pre-migration array just in case.
+    localStorage.setItem(`${TERMINAL_COMMAND_SNIPPETS_KEY}.bak`, JSON.stringify(legacy));
+    if (imported) showToast(`已迁移 ${imported} 条命令片段到同步库`, "success", 2600);
+  }
+  localStorage.removeItem(TERMINAL_COMMAND_SNIPPETS_KEY);
+  localStorage.setItem(TERMINAL_SNIPPETS_MIGRATED_KEY, "1");
 }
 
 function loadTerminalSnippetGroupState() {
@@ -1949,6 +1990,14 @@ function loadTerminalSnippetGroupState() {
 
 function saveTerminalSnippetGroupState() {
   localStorage.setItem(TERMINAL_SNIPPET_GROUP_STATE_KEY, JSON.stringify(terminalSnippetGroupExpanded));
+}
+
+// The default "未分组" bucket is stored as an empty group string in the
+// vault, so every write path normalizes before sending and the renderer
+// maps empty back to "未分组".
+function normalizeSnippetGroup(group) {
+  const s = String(group || "").trim();
+  return s === "未分组" ? "" : s;
 }
 
 function getTerminalSnippetGroups() {
@@ -2152,21 +2201,37 @@ function renderTerminalCommandSnippets() {
         command: snippet.command,
       });
       if (!next) return;
-      snippet.title = next.name;
-      snippet.group = next.group;
-      snippet.command = next.command;
-      saveTerminalCommandSnippets();
-      renderTerminalCommandSnippets();
+      try {
+        await invoke("update_snippet", {
+          id: snippet.id,
+          input: {
+            title: next.name,
+            command: next.command,
+            group: normalizeSnippetGroup(next.group),
+            sortOrder: snippet.sortOrder || 0,
+          },
+        });
+      } catch (e) {
+        alert(`保存命令片段失败: ${e}`);
+        return;
+      }
+      await refreshSnippetsAndRender();
+      autoSyncAfterDataChange();
     });
 
     const deleteBtn = document.createElement("button");
     deleteBtn.type = "button";
     deleteBtn.className = "danger";
     deleteBtn.textContent = "删除";
-    deleteBtn.addEventListener("click", () => {
-      terminalCommandSnippets = terminalCommandSnippets.filter((item) => item.id !== snippet.id);
-      saveTerminalCommandSnippets();
-      renderTerminalCommandSnippets();
+    deleteBtn.addEventListener("click", async () => {
+      try {
+        await invoke("delete_snippet", { id: snippet.id });
+      } catch (e) {
+        alert(`删除命令片段失败: ${e}`);
+        return;
+      }
+      await refreshSnippetsAndRender();
+      autoSyncAfterDataChange();
     });
 
     actions.append(insertBtn, copyBtn, editBtn, deleteBtn);
@@ -2610,7 +2675,7 @@ async function runCommandInActiveTerminal(command) {
 function requestAiCommandApproval(command) {
   const text = normalizeAiCommandBlock(command);
   if (!text) return;
-  return executeAiCommand(text);
+  return executeAiCommand(text, { autoContinue: false });
 }
 
 async function executeAiCommand(command, { autoContinue = true } = {}) {
@@ -3024,7 +3089,7 @@ function enhanceAiCodeBlocks(root) {
   if (!executable.length) return;
   const messageNode = root.closest?.(".ai-message-assistant");
   const totalCommands = executable.reduce((sum, item) => sum + item.commands.length, 0);
-  const batchState = totalCommands > 1 ? ensureAiMultiCommandControls(messageNode, totalCommands) : null;
+  const commandState = ensureAiMultiCommandControls(messageNode, totalCommands);
   executable.forEach(({ block, commands }) => {
     const tools = document.createElement("div");
     tools.className = "ai-code-tools";
@@ -3038,17 +3103,13 @@ function enhanceAiCodeBlocks(root) {
         run.textContent = "运行中";
         block.classList.add("approved");
         try {
-          if (batchState) {
-            const output = await executeAiCommand(singleCommand, { autoContinue: false });
-            batchState.results.push({ command: singleCommand, output: output || "" });
-            batchState.executedCount += 1;
-            updateAiMultiCommandControls(messageNode);
-          } else {
-            await requestAiCommandApproval(singleCommand);
-          }
+          const output = await executeAiCommand(singleCommand, { autoContinue: false });
+          commandState.results.push({ command: singleCommand, output: output || "" });
+          commandState.executedCount += 1;
+          updateAiMultiCommandControls(messageNode);
           run.textContent = "已执行";
         } catch {
-          if (batchState) updateAiMultiCommandControls(messageNode);
+          updateAiMultiCommandControls(messageNode);
           run.textContent = "失败";
         }
       });
@@ -7327,7 +7388,9 @@ settingsTerminalLineHeight?.addEventListener("change", () => {
 setTimeout(() => {
   refreshUpdateStatus().catch(() => {});
 }, 10000);
-loadTerminalCommandSnippets();
+// Command snippets now live in the encrypted vault — load them after
+// unlock in enterHosts(), not here. The group expand/collapse state is
+// device-local UI and stays in localStorage.
 loadTerminalSnippetGroupState();
 loadCustomThemes();
 rebuildTerminalThemeSelectOptions();
@@ -7591,6 +7654,11 @@ async function enterHosts() {
     groupStateInitialized = true;
   }
   await reloadHostGroupsFromVault();
+  // Snippets live in the vault now — migrate any legacy localStorage
+  // entries once, then load the synced set for display.
+  await migrateLocalSnippetsToVault();
+  await loadTerminalCommandSnippets();
+  renderTerminalCommandSnippets();
   startAutoSync();
   updateSyncIndicator();
 
@@ -8178,14 +8246,16 @@ terminalSnippetsAdd?.addEventListener("click", async () => {
     group: "未分组",
   });
   if (!next) return;
-  terminalCommandSnippets.unshift({
-    id: `snippet-${Date.now()}`,
-    group: next.group,
-    title: next.name,
-    command: next.command,
-  });
-  saveTerminalCommandSnippets();
-  renderTerminalCommandSnippets();
+  try {
+    await invoke("create_snippet", {
+      input: { title: next.name, command: next.command, group: normalizeSnippetGroup(next.group), sortOrder: 0 },
+    });
+  } catch (e) {
+    alert(`新增命令片段失败: ${e}`);
+    return;
+  }
+  await refreshSnippetsAndRender();
+  autoSyncAfterDataChange();
   setTerminalSidePanel("snippets");
 });
 
@@ -8202,14 +8272,16 @@ snippetGroupMenuAdd?.addEventListener("click", async () => {
     group,
   });
   if (!next) return;
-  terminalCommandSnippets.unshift({
-    id: `snippet-${Date.now()}`,
-    group: next.group,
-    title: next.name,
-    command: next.command,
-  });
-  saveTerminalCommandSnippets();
-  renderTerminalCommandSnippets();
+  try {
+    await invoke("create_snippet", {
+      input: { title: next.name, command: next.command, group: normalizeSnippetGroup(next.group), sortOrder: 0 },
+    });
+  } catch (e) {
+    alert(`新增命令片段失败: ${e}`);
+    return;
+  }
+  await refreshSnippetsAndRender();
+  autoSyncAfterDataChange();
   setTerminalSidePanel("snippets");
 });
 
@@ -8226,27 +8298,38 @@ snippetGroupMenuEdit?.addEventListener("click", async () => {
   if (!next) return;
   const nextName = next.trim();
   if (!nextName || nextName === current) return;
-  terminalCommandSnippets.forEach((snippet) => {
-    if ((snippet.group || "未分组") === current) snippet.group = nextName;
-  });
+  try {
+    await invoke("rename_snippet_group", {
+      oldName: normalizeSnippetGroup(current),
+      newName: normalizeSnippetGroup(nextName),
+    });
+  } catch (e) {
+    alert(`重命名分组失败: ${e}`);
+    return;
+  }
   if (terminalSnippetGroupExpanded[current] !== undefined) {
     terminalSnippetGroupExpanded[nextName] = terminalSnippetGroupExpanded[current];
     delete terminalSnippetGroupExpanded[current];
     saveTerminalSnippetGroupState();
   }
-  saveTerminalCommandSnippets();
-  renderTerminalCommandSnippets();
+  await refreshSnippetsAndRender();
+  autoSyncAfterDataChange();
 });
 
-snippetGroupMenuDelete?.addEventListener("click", () => {
+snippetGroupMenuDelete?.addEventListener("click", async () => {
   const current = snippetGroupMenuTarget || "";
   hideSnippetGroupContextMenu();
   if (!current) return;
-  terminalCommandSnippets = terminalCommandSnippets.filter((snippet) => (snippet.group || "未分组") !== current);
+  try {
+    await invoke("delete_snippet_group", { name: normalizeSnippetGroup(current) });
+  } catch (e) {
+    alert(`删除分组失败: ${e}`);
+    return;
+  }
   delete terminalSnippetGroupExpanded[current];
   saveTerminalSnippetGroupState();
-  saveTerminalCommandSnippets();
-  renderTerminalCommandSnippets();
+  await refreshSnippetsAndRender();
+  autoSyncAfterDataChange();
 });
 
 snippetEditCancel?.addEventListener("click", () => closeSnippetEditDialog(null));
