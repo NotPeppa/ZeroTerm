@@ -1790,6 +1790,9 @@ const snippetEditCancel = document.getElementById("snippet-edit-cancel");
 const snippetEditName = document.getElementById("snippet-edit-name");
 const snippetEditGroup = document.getElementById("snippet-edit-group");
 const snippetEditCommand = document.getElementById("snippet-edit-command");
+const snippetItemContextMenu = document.getElementById("snippet-item-context-menu");
+const snippetItemMenuEdit = document.getElementById("snippet-item-menu-edit");
+const snippetItemMenuDelete = document.getElementById("snippet-item-menu-delete");
 const aiComposeForm = document.getElementById("ai-compose-form");
 const aiComposeInput = document.getElementById("ai-compose-input");
 const aiChatLog = document.getElementById("ai-chat-log");
@@ -1897,6 +1900,7 @@ let terminalActiveSidePanel = null;
 let terminalCommandSnippets = [];
 let terminalSnippetSearchQuery = "";
 let snippetGroupMenuTarget = "";
+let snippetItemMenuTargetId = "";
 const TERMINAL_COMMAND_SNIPPETS_KEY = "zt.terminal.commandSnippets";
 const TERMINAL_SNIPPETS_MIGRATED_KEY = "zt.terminal.snippetsMigrated";
 const TERMINAL_SNIPPET_GROUP_STATE_KEY = "zt.terminal.commandSnippetGroups";
@@ -2013,6 +2017,7 @@ function syncSnippetGroupSelectOptions(currentValue = "未分组") {
   const value = String(currentValue || "").trim() || "未分组";
   const groups = getTerminalSnippetGroups();
   if (!groups.includes(value)) groups.push(value);
+  snippetEditGroup.dataset.customValue = "";
   snippetEditGroup.innerHTML = "";
   for (const group of groups) {
     const option = document.createElement("option");
@@ -2030,6 +2035,10 @@ function closeSnippetEditDialog(result) {
   snippetEditResolver = null;
   if (snippetEditOverlay) snippetEditOverlay.hidden = true;
   if (snippetEditForm) snippetEditForm.reset();
+  if (snippetEditGroup) {
+    snippetEditGroup.dataset.customValue = "";
+    syncSnippetGroupSelectOptions("未分组");
+  }
   resolve(result);
 }
 
@@ -2102,6 +2111,72 @@ function showSnippetGroupContextMenu(group, x, y) {
   snippetGroupContextMenu.style.top = `${top}px`;
 }
 
+function hideSnippetItemContextMenu() {
+  if (!snippetItemContextMenu) return;
+  snippetItemContextMenu.hidden = true;
+}
+
+function showSnippetItemContextMenu(snippetId, x, y) {
+  if (!snippetItemContextMenu) return;
+  snippetItemMenuTargetId = snippetId || "";
+  snippetItemContextMenu.style.left = "0px";
+  snippetItemContextMenu.style.top = "0px";
+  snippetItemContextMenu.hidden = false;
+
+  const pad = 8;
+  const rect = snippetItemContextMenu.getBoundingClientRect();
+  let left = x;
+  let top = y;
+  if (left + rect.width + pad > window.innerWidth) {
+    left = Math.max(pad, window.innerWidth - rect.width - pad);
+  }
+  if (top + rect.height + pad > window.innerHeight) {
+    top = Math.max(pad, window.innerHeight - rect.height - pad);
+  }
+  snippetItemContextMenu.style.left = `${left}px`;
+  snippetItemContextMenu.style.top = `${top}px`;
+}
+
+async function editSnippetById(snippetId) {
+  const snippet = terminalCommandSnippets.find((item) => item.id === snippetId);
+  if (!snippet) return;
+  const next = await openSnippetEditDialog({
+    title: "编辑命令片段",
+    name: snippet.title,
+    group: snippet.group || "未分组",
+    command: snippet.command,
+  });
+  if (!next) return;
+  try {
+    await invoke("update_snippet", {
+      id: snippet.id,
+      input: {
+        title: next.name,
+        command: next.command,
+        group: normalizeSnippetGroup(next.group),
+        sortOrder: snippet.sortOrder || 0,
+      },
+    });
+  } catch (e) {
+    alert(`保存命令片段失败: ${e}`);
+    return;
+  }
+  await refreshSnippetsAndRender();
+  autoSyncAfterDataChange();
+}
+
+async function deleteSnippetById(snippetId) {
+  if (!snippetId) return;
+  try {
+    await invoke("delete_snippet", { id: snippetId });
+  } catch (e) {
+    alert(`删除命令片段失败: ${e}`);
+    return;
+  }
+  await refreshSnippetsAndRender();
+  autoSyncAfterDataChange();
+}
+
 function fuzzyMatchText(query, text) {
   const q = String(query || "").trim().toLowerCase();
   if (!q) return true;
@@ -2156,6 +2231,10 @@ function renderTerminalCommandSnippets() {
     for (const snippet of items) {
     const card = document.createElement("article");
     card.className = "terminal-snippet-card";
+    card.addEventListener("contextmenu", (ev) => {
+      ev.preventDefault();
+      showSnippetItemContextMenu(snippet.id, ev.clientX, ev.clientY);
+    });
 
     const title = document.createElement("h4");
     title.textContent = snippet.title;
@@ -2166,15 +2245,15 @@ function renderTerminalCommandSnippets() {
     const actions = document.createElement("div");
     actions.className = "terminal-snippet-actions";
 
-    const copyBtn = document.createElement("button");
-    copyBtn.type = "button";
-    copyBtn.textContent = "复制";
-    copyBtn.addEventListener("click", async () => {
+    const runBtn = document.createElement("button");
+    runBtn.type = "button";
+    runBtn.textContent = "执行";
+    runBtn.addEventListener("click", async () => {
       try {
-        await navigator.clipboard.writeText(snippet.command);
-        showToast("已复制命令片段", "success", 1800);
+        await executeAiCommand(snippet.command, { autoContinue: false });
+        showToast("已执行命令片段", "success", 1800);
       } catch (e) {
-        alert(`复制失败: ${e}`);
+        alert(`执行命令片段失败: ${e}`);
       }
     });
 
@@ -2190,51 +2269,7 @@ function renderTerminalCommandSnippets() {
       }
     });
 
-    const editBtn = document.createElement("button");
-    editBtn.type = "button";
-    editBtn.textContent = "编辑";
-    editBtn.addEventListener("click", async () => {
-      const next = await openSnippetEditDialog({
-        title: "编辑命令片段",
-        name: snippet.title,
-        group: snippet.group || "未分组",
-        command: snippet.command,
-      });
-      if (!next) return;
-      try {
-        await invoke("update_snippet", {
-          id: snippet.id,
-          input: {
-            title: next.name,
-            command: next.command,
-            group: normalizeSnippetGroup(next.group),
-            sortOrder: snippet.sortOrder || 0,
-          },
-        });
-      } catch (e) {
-        alert(`保存命令片段失败: ${e}`);
-        return;
-      }
-      await refreshSnippetsAndRender();
-      autoSyncAfterDataChange();
-    });
-
-    const deleteBtn = document.createElement("button");
-    deleteBtn.type = "button";
-    deleteBtn.className = "danger";
-    deleteBtn.textContent = "删除";
-    deleteBtn.addEventListener("click", async () => {
-      try {
-        await invoke("delete_snippet", { id: snippet.id });
-      } catch (e) {
-        alert(`删除命令片段失败: ${e}`);
-        return;
-      }
-      await refreshSnippetsAndRender();
-      autoSyncAfterDataChange();
-    });
-
-    actions.append(insertBtn, copyBtn, editBtn, deleteBtn);
+    actions.append(runBtn, insertBtn);
     card.append(title, pre, actions);
     section.appendChild(card);
     }
@@ -8371,6 +8406,18 @@ snippetGroupMenuDelete?.addEventListener("click", async () => {
   autoSyncAfterDataChange();
 });
 
+snippetItemMenuEdit?.addEventListener("click", async () => {
+  const snippetId = snippetItemMenuTargetId || "";
+  hideSnippetItemContextMenu();
+  await editSnippetById(snippetId);
+});
+
+snippetItemMenuDelete?.addEventListener("click", async () => {
+  const snippetId = snippetItemMenuTargetId || "";
+  hideSnippetItemContextMenu();
+  await deleteSnippetById(snippetId);
+});
+
 snippetEditCancel?.addEventListener("click", () => closeSnippetEditDialog(null));
 snippetEditForm?.addEventListener("submit", (ev) => {
   ev.preventDefault();
@@ -8391,6 +8438,9 @@ snippetEditForm?.addEventListener("submit", (ev) => {
 document.addEventListener("click", (ev) => {
   if (snippetGroupContextMenu && !snippetGroupContextMenu.hidden && !snippetGroupContextMenu.contains(ev.target)) {
     hideSnippetGroupContextMenu();
+  }
+  if (snippetItemContextMenu && !snippetItemContextMenu.hidden && !snippetItemContextMenu.contains(ev.target)) {
+    hideSnippetItemContextMenu();
   }
 });
 
