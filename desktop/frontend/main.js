@@ -3967,13 +3967,13 @@ function isLikelyMonospaceFont(fontFamily) {
   if (!context) return false;
 
   const quotedFamily = JSON.stringify(family);
-  const chars = ["i", "W", ".", "0", "中"];
+  const chars = ["i", "W", ".", "0", "@", "M", "1", " "];
   const widths = chars.map((char) => {
     context.font = `16px ${quotedFamily}, monospace`;
     return context.measureText(char).width;
   });
   const first = widths[0];
-  return widths.every((width) => Math.abs(width - first) < 0.01);
+  return widths.every((width) => Math.abs(width - first) < 0.25);
 }
 
 function quoteFontFamily(fontFamily) {
