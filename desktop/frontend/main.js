@@ -1951,6 +1951,30 @@ function saveTerminalSnippetGroupState() {
   localStorage.setItem(TERMINAL_SNIPPET_GROUP_STATE_KEY, JSON.stringify(terminalSnippetGroupExpanded));
 }
 
+function getTerminalSnippetGroups() {
+  const groups = new Set(["未分组"]);
+  for (const snippet of terminalCommandSnippets) {
+    groups.add(String(snippet.group || "未分组").trim() || "未分组");
+  }
+  return Array.from(groups).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true }));
+}
+
+function syncSnippetGroupSelectOptions(currentValue = "未分组") {
+  if (!snippetEditGroup) return;
+  const value = String(currentValue || "").trim() || "未分组";
+  const groups = getTerminalSnippetGroups();
+  if (!groups.includes(value)) groups.push(value);
+  snippetEditGroup.innerHTML = "";
+  for (const group of groups) {
+    const option = document.createElement("option");
+    option.value = group;
+    option.textContent = group;
+    snippetEditGroup.appendChild(option);
+  }
+  snippetEditGroup.value = value;
+  syncCustomSelect("snippet-edit-group");
+}
+
 function closeSnippetEditDialog(result) {
   if (!snippetEditResolver) return;
   const resolve = snippetEditResolver;
@@ -1971,7 +1995,7 @@ function openSnippetEditDialog({
     snippetEditResolver = resolve;
     if (snippetEditTitle) snippetEditTitle.textContent = title;
     if (snippetEditName) snippetEditName.value = name;
-    if (snippetEditGroup) snippetEditGroup.value = group;
+    syncSnippetGroupSelectOptions(group);
     if (snippetEditCommand) snippetEditCommand.value = command;
     if (snippetEditOverlay) snippetEditOverlay.hidden = false;
     requestAnimationFrame(() => {
@@ -6499,6 +6523,7 @@ buildCustomSelect(document.getElementById("settings-terminal-theme"));
 buildCustomSelect(document.getElementById("settings-terminal-font-family"));
 buildCustomSelect(document.getElementById("settings-sync-profile"));
 buildCustomSelect(document.getElementById("settings-sync-backend"));
+buildCustomSelect(document.getElementById("snippet-edit-group"));
 installAiPanelResize();
 syncAiContextToggle();
 syncCustomSelect("settings-sync-backend");
