@@ -3738,19 +3738,21 @@ function allTerminalThemes() {
 function getTerminalThemeName() {
   const saved = localStorage.getItem(SETTINGS_KEY_TERMINAL_THEME);
   const allThemes = allTerminalThemes();
-  const appTheme = getResolvedAppTheme();
-  
+
+  // Whatever the user explicitly picked wins, regardless of the app's
+  // light/dark mode. A terminal theme is a self-contained colour scheme,
+  // so a light terminal theme is allowed under a dark app and vice versa.
+  // (Custom themes were never constrained; built-in themes used to be
+  // force-reverted here when their group didn't match the app mode — that
+  // inconsistency is what this removes.) applyTerminalThemeToAllPanes()
+  // already adapts the pane backdrop when the terminal theme doesn't match
+  // the app mode, so text contrast stays fine.
   if (saved && allThemes[saved]) {
-    // If the saved theme matches the current app theme's group (light or dark), use it.
-    // Otherwise, if the app theme is light, and the saved theme is a dark theme, fall back to "tokyo-day"
-    // to guarantee high-contrast text visibility on transparent backdrops inside light panels.
-    const meta = TERMINAL_THEME_META[saved];
-    if (meta && meta.group !== appTheme) {
-      return appTheme === "light" ? "tokyo-day" : "termark-dark";
-    }
     return saved;
   }
-  
+
+  // No (valid) saved choice yet → default to one that matches the app mode.
+  const appTheme = getResolvedAppTheme();
   return appTheme === "light" ? "tokyo-day" : "termark-dark";
 }
 
@@ -4128,14 +4130,28 @@ function applyTerminalThemeToAllPanes() {
   for (const tab of termState.tabs) {
     for (const pane of tab.panes) {
       if (!pane.term) continue;
-      pane.term.setOption("theme", theme);
-      pane.term.setOption("fontFamily", getTerminalFontFamily());
-      pane.term.setOption("fontSize", getTerminalFontSize());
-      pane.term.setOption("lineHeight", getTerminalLineHeight());
+      // xterm 5.x removed setOption(); options are mutated directly and
+      // take effect on the next render. The old setOption(...) calls threw
+      // "is not a function" on the very first line here, which is why live
+      // theme/font switching never actually reached an open terminal (and
+      // aborted the rest of setTerminalTheme, including the card highlight).
+      pane.term.options.theme = theme;
+      pane.term.options.fontFamily = getTerminalFontFamily();
+      pane.term.options.fontSize = getTerminalFontSize();
+      pane.term.options.lineHeight = getTerminalLineHeight();
       
-      if (pane.rootEl) {
+      // Pane container chrome — the glass backdrop when a background image
+      // is set, or the solid theme-aware background otherwise — is owned by
+      // CSS (`.term-pane` / `.pane-body` / `.pane-header`, keyed off
+      // `body.has-app-bg` and `[data-app-theme]`). We must NOT set it inline
+      // here: inline wins over CSS and would, e.g., paint an rgba tint over
+      // the transparent `.term-pane`, which is exactly what broke the
+      // see-through background after switching themes (this block only began
+      // running once the setOption→options fix landed). Kept for reference
+      // but intentionally disabled so CSS stays in charge.
+      if (false && pane.rootEl && pane.bodyEl) {
         const header = pane.rootEl.querySelector(".pane-header");
-        
+
         if (hasAppBg) {
           // Glassmorphic mode with custom background image
           // Apply a continuous frosted glass card backdrop to the entire pane (including header)
@@ -4241,9 +4257,19 @@ function setTerminalTheme(themeId) {
     settingsTerminalTheme.value = next;
     syncCustomSelect("settings-terminal-theme");
   }
-  applyTerminalThemeToAllPanes();
+  // Reflect the choice in the UI (card highlight + editor) BEFORE touching
+  // live terminals, and isolate the pane apply in try/catch. Otherwise an
+  // error while applying to an open terminal aborts setTerminalTheme and
+  // leaves the selected-card highlight stuck on the previous theme — the
+  // choice still persisted, which is why it "fixed itself" on reopening
+  // settings.
   syncTerminalThemeCardsActive();
   syncTerminalThemeEditor();
+  try {
+    applyTerminalThemeToAllPanes();
+  } catch (e) {
+    console.warn("applyTerminalThemeToAllPanes failed", e);
+  }
 }
 
 function makeThemePreviewBlock(themeName, themeConfig) {
