@@ -7038,7 +7038,7 @@ settingsDataClearVault?.addEventListener("click", async () => {
     try {
       await invoke("clear_vault_data");
       if (settingsDataStatus) settingsDataStatus.textContent = t("settings.data.status.cleared");
-      await refreshHostsCacheFromVault({ silent: true });
+      await refreshAllSyncedViewsFromVault();
       await loadSyncProfiles().catch(() => {});
       showToast(t("settings.data.status.cleared"), "success");
     } catch (e) {
