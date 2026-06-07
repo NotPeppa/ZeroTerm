@@ -3504,9 +3504,16 @@ body[data-app-theme="light"] .pane-ai-toggle.active {
 
 .pane-body .xterm .xterm-viewport {
   overflow-y: auto !important;
-  background-color: transparent !important;
+  /* Background is driven by the xterm theme (term.options.theme.background)
+     so a theme's own background colour actually shows. In glass mode (a
+     background image is set) the viewport is forced transparent by the rule
+     below — and the theme background is zeroed in JS — to reveal the image. */
   scrollbar-width: thin;
   scrollbar-color: #4a679e #18253f;
+}
+
+body.has-app-bg .pane-body .xterm .xterm-viewport {
+  background-color: transparent !important;
 }
 
 .pane-body .xterm .xterm-viewport::-webkit-scrollbar {

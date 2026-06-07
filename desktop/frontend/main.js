@@ -3562,7 +3562,7 @@ const syncDraftByBackend = {
 
 const TERMINAL_THEMES = {
   "termark-dark": {
-    background: "#00000000",
+    background: "#0f1424",
     foreground: "#e7ecff",
     cursor: "#9cc3ff",
     selectionBackground: "#2d4a7a",
@@ -3584,7 +3584,7 @@ const TERMINAL_THEMES = {
     brightWhite: "#ffffff",
   },
   "kanagawa-wave": {
-    background: "#00000000",
+    background: "#1f1f28",
     foreground: "#dcd7ba",
     cursor: "#7e9cd8",
     selectionBackground: "#2a2a37",
@@ -3606,7 +3606,7 @@ const TERMINAL_THEMES = {
     brightWhite: "#c8c093",
   },
   "catppuccin-mocha": {
-    background: "#00000000",
+    background: "#1e1e2e",
     foreground: "#cdd6f4",
     cursor: "#89b4fa",
     selectionBackground: "#313244",
@@ -3628,7 +3628,7 @@ const TERMINAL_THEMES = {
     brightWhite: "#a6adc8",
   },
   nord: {
-    background: "#00000000",
+    background: "#2e3440",
     foreground: "#d8dee9",
     cursor: "#88c0d0",
     selectionBackground: "#3b4252",
@@ -3650,7 +3650,7 @@ const TERMINAL_THEMES = {
     brightWhite: "#eceff4",
   },
   "tokyo-day": {
-    background: "#00000000",
+    background: "#e1e2e7",
     foreground: "#343b58",
     cursor: "#343b58",
     selectionBackground: "rgba(52, 59, 88, 0.2)",
@@ -3672,7 +3672,7 @@ const TERMINAL_THEMES = {
     brightWhite: "#16161d",
   },
   "catppuccin-latte": {
-    background: "#00000000",
+    background: "#eff1f5",
     foreground: "#4c4f69",
     cursor: "#4c4f69",
     selectionBackground: "rgba(76, 79, 105, 0.2)",
@@ -4118,14 +4118,23 @@ function getTerminalLineHeight() {
 
 function applyTerminalThemeToAllPanes() {
   if (typeof termState === "undefined" || !termState || !termState.tabs) return;
-  const themeName = getTerminalThemeName();
-  const theme = getTerminalThemeConfig();
+  // While the theme editor is open, terminalEditingThemeId points at the
+  // theme being edited (which may differ from the saved/active theme), so we
+  // preview it live in the terminal. Outside the editor it tracks the active
+  // theme (setTerminalTheme keeps it in sync), so this is a no-op there.
+  const themeName = terminalEditingThemeId || getTerminalThemeName();
+  const theme = allTerminalThemes()[themeName] || getTerminalThemeConfig();
   const resolvedAppTheme = getResolvedAppTheme();
   
   const customTheme = terminalCustomThemes.find((t) => t.id === themeName);
   const themeGroup = customTheme ? customTheme.group : (TERMINAL_THEME_META[themeName]?.group || "dark");
   const isDarkTerminal = themeGroup !== "light";
   const hasAppBg = document.body.classList.contains("has-app-bg");
+  // With a background image set, force the terminal background transparent so
+  // the image shows through (glass mode). Without one, use the theme's own
+  // background colour so each theme paints its proper backdrop and text
+  // contrast holds even when the theme's light/dark doesn't match the app.
+  const xtermTheme = hasAppBg ? { ...theme, background: "#00000000" } : theme;
 
   for (const tab of termState.tabs) {
     for (const pane of tab.panes) {
@@ -4135,7 +4144,7 @@ function applyTerminalThemeToAllPanes() {
       // "is not a function" on the very first line here, which is why live
       // theme/font switching never actually reached an open terminal (and
       // aborted the rest of setTerminalTheme, including the card highlight).
-      pane.term.options.theme = theme;
+      pane.term.options.theme = xtermTheme;
       pane.term.options.fontFamily = getTerminalFontFamily();
       pane.term.options.fontSize = getTerminalFontSize();
       pane.term.options.lineHeight = getTerminalLineHeight();
@@ -7519,7 +7528,7 @@ rebuildTerminalThemeSelectOptions();
 renderTerminalThemeCards();
 syncTerminalThemeEditor();
 
-themeColorBg?.addEventListener("input", () => updateCustomThemeColor("background", `${themeColorBg.value}00`));
+themeColorBg?.addEventListener("input", () => updateCustomThemeColor("background", themeColorBg.value));
 themeColorFg?.addEventListener("input", () => updateCustomThemeColor("foreground", themeColorFg.value));
 themeColorCursor?.addEventListener("input", () => updateCustomThemeColor("cursor", themeColorCursor.value));
 themeColorSelection?.addEventListener("input", () => updateCustomThemeColor("selectionBackground", themeColorSelection.value));
@@ -7537,7 +7546,7 @@ function bindHexInput(hexEl, apply) {
 }
 bindHexInput(themeHexBg, (v) => {
   if (themeColorBg) themeColorBg.value = v;
-  updateCustomThemeColor("background", `${v}00`);
+  updateCustomThemeColor("background", v);
 });
 bindHexInput(themeHexFg, (v) => {
   if (themeColorFg) themeColorFg.value = v;
@@ -7656,6 +7665,8 @@ themeEditCancel?.addEventListener("click", () => {
   themeEditOriginal = null;
   themeEditOriginalLabel = "";
   terminalEditingThemeId = null;
+  // Editor closed → drop the live preview and restore the active theme.
+  applyTerminalThemeToAllPanes();
   if (themeEditOverlay) themeEditOverlay.hidden = true;
 });
 
@@ -7690,16 +7701,15 @@ themeEditForm?.addEventListener("submit", (ev) => {
   }
   terminalCustomThemes[idx].label = label;
   saveCustomThemes();
-  rebuildTerminalThemeSelectOptions();
-  renderTerminalThemeCards();
-  syncTerminalThemeCardsActive();
   themeEditIsNew = false;
-  themeEditOriginal = JSON.parse(JSON.stringify(terminalCustomThemes[idx].theme));
-  themeEditOriginalLabel = label;
-  terminalEditingThemeId = null;
   themeEditOriginal = null;
   themeEditOriginalLabel = "";
+  terminalEditingThemeId = null;
   if (themeEditOverlay) themeEditOverlay.hidden = true;
+  rebuildTerminalThemeSelectOptions();
+  renderTerminalThemeCards();
+  // Activate the just-saved theme so it takes effect immediately.
+  setTerminalTheme(id);
 });
 
 document.addEventListener("click", (ev) => {
