@@ -2069,8 +2069,7 @@ async function sendSnippetToActiveTerminal(command) {
     alert("当前没有可写入的终端会话");
     return;
   }
-  const bytes = Array.from(new TextEncoder().encode(String(command || "")));
-  await invoke("send_input", { sessionId: pane.sessionId, data: bytes });
+  await sendTextToPane(pane, String(command || ""), { submit: true });
   pane.term?.focus?.();
 }
 
@@ -2697,10 +2696,8 @@ async function runCommandInActiveTerminal(command) {
   if (!text) return;
   const ok = confirm(`将执行以下命令：\n\n${text}`);
   if (!ok) return;
-  const payload = text.endsWith("\n") ? text : `${text}\n`;
-  const bytes = Array.from(new TextEncoder().encode(payload));
   try {
-    await invoke("send_input", { sessionId: pane.sessionId, data: bytes });
+    await sendTextToPane(pane, text, { submit: true });
     pane.term?.focus?.();
   } catch (e) {
     showToast(String(e), "error", 4200);
@@ -2720,10 +2717,8 @@ async function executeAiCommand(command, { autoContinue = true } = {}) {
     return;
   }
   const before = getActiveTerminalSnapshot(240);
-  const payload = command.endsWith("\n") ? command : `${command}\n`;
-  const bytes = Array.from(new TextEncoder().encode(payload));
   try {
-    await invoke("send_input", { sessionId: pane.sessionId, data: bytes });
+    await sendTextToPane(pane, command, { submit: true });
     pane.term?.focus?.();
     await waitForTerminalOutputSettle(before, { maxMs: commandWaitMaxMs(command) });
     const after = getActiveTerminalSnapshot(260);
@@ -2739,6 +2734,24 @@ async function executeAiCommand(command, { autoContinue = true } = {}) {
 
 function wait(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+// Terminal input regression checklist:
+// 1. Windows local cmd.exe: AI click-to-run executes immediately.
+// 2. Windows local snippets: single-click snippet executes immediately.
+// 3. SSH/Linux shell: AI click-to-run still submits exactly once.
+// 4. Manual keyboard typing/paste: Enter and paste behavior remain unchanged.
+async function sendTextToPane(pane, text, { submit = false } = {}) {
+  if (!pane?.sessionId) throw new Error("pane session is not available");
+  const payload = submit ? buildApprovedCommandPayload(text, pane) : String(text || "");
+  const bytes = Array.from(new TextEncoder().encode(payload));
+  await invoke("send_input", { sessionId: pane.sessionId, data: bytes });
+}
+
+function buildApprovedCommandPayload(command, pane) {
+  const text = String(command || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const enter = isWindowsPlatform && pane?.isLocal ? "\r" : "\n";
+  return text.endsWith("\n") ? text.slice(0, -1) + enter : `${text}${enter}`;
 }
 
 async function waitForTerminalOutputSettle(before, { quietMs = 900, maxMs = 15000 } = {}) {
@@ -2916,7 +2929,7 @@ function splitAiCommandBlockForApproval(command) {
 }
 
 function ensureAiMultiCommandControls(messageNode, totalCommands) {
-  if (!messageNode || totalCommands <= 1) return null;
+  if (!messageNode || totalCommands < 1) return null;
   let state = aiMultiCommandState.get(messageNode);
   if (!state) {
     state = {
@@ -2978,7 +2991,7 @@ function updateAiMultiCommandControls(messageNode) {
   const pending = Math.max(0, total - executed);
   state.hint.textContent = executed
     ? `这条回复里有 ${total} 条可执行命令，已执行 ${executed} 条${pending ? `，剩余 ${pending} 条` : ""}。`
-    : `这条回复里有 ${total} 条可执行命令；你可以全部执行后，再手动继续分析。`;
+    : `这条回复里有 ${total} 条可执行命令；你可以执行后，再手动继续分析。`;
   if (state.continuing) {
     state.button.disabled = true;
     state.button.textContent = "分析中...";
@@ -3063,6 +3076,7 @@ function redactSensitiveText(text) {
   out = out.replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "[REDACTED_UUID]");
   out = out.replace(/\b(?:[A-Z0-9][A-Z0-9_-]{7,})(?:\b)/g, (match) => {
     if (/^[0-9]+$/.test(match)) return match;
+    if (/^\d{2,4}(?:[-_]\d{2,6})+$/.test(match)) return match;
     return match.length >= 12 ? "[REDACTED_ID]" : match;
   });
   out = out.replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, (ip) => isNonPublicIpv4(ip) ? ip : "[REDACTED_PUBLIC_IP]");
@@ -3139,12 +3153,14 @@ function enhanceAiCodeBlocks(root) {
         block.classList.add("approved");
         try {
           const output = await executeAiCommand(singleCommand, { autoContinue: false });
-          commandState.results.push({ command: singleCommand, output: output || "" });
-          commandState.executedCount += 1;
-          updateAiMultiCommandControls(messageNode);
+          if (commandState) {
+            commandState.results.push({ command: singleCommand, output: output || "" });
+            commandState.executedCount += 1;
+            updateAiMultiCommandControls(messageNode);
+          }
           run.textContent = "已执行";
         } catch {
-          updateAiMultiCommandControls(messageNode);
+          if (commandState) updateAiMultiCommandControls(messageNode);
           run.textContent = "失败";
         }
       });
@@ -3156,10 +3172,11 @@ function enhanceAiCodeBlocks(root) {
 
 function isExecutableCodeBlock(block, command) {
   const lang = (block?.dataset?.lang || "").toLowerCase();
-  if (["terminal", "output", "text", "log", "txt"].includes(lang)) return false;
   const lines = String(command || "").split("\n").map((line) => line.trim()).filter(Boolean);
   if (!lines.length) return false;
   if (lines.some((line) => looksLikeTerminalOutput(line))) return false;
+  if (["output", "text", "log", "txt"].includes(lang)) return false;
+  if (lang === "terminal") return lines.every((line) => looksLikeRunnableCommandLine(line));
   if (["bash", "sh", "shell", "zsh"].includes(lang)) return true;
   return false;
 }
@@ -8734,18 +8751,12 @@ function ensurePaneTerminal(pane) {
   }
   try {
     pane.term.open(pane.bodyEl);
-    const viewport = pane.bodyEl.querySelector(".xterm-viewport");
-    const wheelTarget = viewport || pane.bodyEl;
-    wheelTarget.addEventListener("wheel", (ev) => {
+    pane.bodyEl.addEventListener("wheel", (ev) => {
       if (!pane.term) return;
-      const currentViewport = pane.bodyEl?.querySelector?.(".xterm-viewport");
-      if (currentViewport) {
-        currentViewport.scrollTop += ev.deltaY;
-      } else {
-        const cellHeight = pane.term?._core?._renderService?.dimensions?.css?.cell?.height || 18;
-        const lines = Math.max(1, Math.round(Math.abs(ev.deltaY) / Math.max(1, cellHeight)));
-        pane.term.scrollLines(ev.deltaY > 0 ? lines : -lines);
-      }
+      const cellHeight = pane.term?._core?._renderService?.dimensions?.css?.cell?.height || 18;
+      const lines = Math.max(1, Math.round(Math.abs(ev.deltaY) / Math.max(1, cellHeight)));
+      pane.term.scrollLines(ev.deltaY > 0 ? lines : -lines);
+      syncPaneViewportScroll(pane);
       ev.preventDefault();
     }, { passive: false });
     applyTerminalThemeToAllPanes();
@@ -8757,10 +8768,13 @@ function ensurePaneTerminal(pane) {
 
   pane.term.onData((d) => {
     if (pane.sessionId === null) return;
-    const bytes = Array.from(new TextEncoder().encode(d));
-    invoke("send_input", { sessionId: pane.sessionId, data: bytes }).catch((e) => {
+    sendTextToPane(pane, d).catch((e) => {
       console.warn("send_input failed", e);
     });
+  });
+
+  pane.term.onScroll(() => {
+    syncPaneViewportScroll(pane);
   });
 
   pane.term.attachCustomKeyEventHandler((ev) => {
@@ -9049,11 +9063,13 @@ function requestPaneFit(pane, { immediate = false } = {}) {
 
 function fitPane(pane) {
   if (!pane.term || !pane.fitAddon) return;
+  clampPaneBodyHeight(pane);
   try {
     pane.fitAddon.fit();
   } catch {
     return;
   }
+  syncPaneViewportScroll(pane);
   if (pane.sessionId !== null) {
     const { cols, rows } = pane.term;
     if (cols === pane.lastSentCols && rows === pane.lastSentRows) return;
@@ -9065,6 +9081,25 @@ function fitPane(pane) {
       rows,
     }).catch(() => {});
   }
+}
+
+function clampPaneBodyHeight(pane) {
+  const body = pane?.bodyEl;
+  const root = pane?.rootEl;
+  if (!body || !root) return;
+  const headerHeight = root.querySelector?.(".pane-header")?.getBoundingClientRect?.().height || 0;
+  const availableHeight = Math.floor(root.getBoundingClientRect().height - headerHeight);
+  if (availableHeight > 0) body.style.height = `${availableHeight}px`;
+}
+
+function syncPaneViewportScroll(pane) {
+  const viewport = pane?.bodyEl?.querySelector?.(".xterm-viewport");
+  const buffer = pane?.term?.buffer?.active;
+  if (!viewport || !buffer) return;
+  const lineHeight = pane.term?._core?._renderService?.dimensions?.css?.cell?.height || 0;
+  if (lineHeight <= 0) return;
+  const expectedTop = Math.max(0, buffer.viewportY * lineHeight);
+  if (Math.abs(viewport.scrollTop - expectedTop) > 1) viewport.scrollTop = expectedTop;
 }
 
 function nextFrame() {

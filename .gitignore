@@ -11,6 +11,7 @@ target/
 .idea/
 .DS_Store
 Thumbs.db
+.claude/
 
 # Local env
 .env
@@ -23,3 +24,4 @@ test-known-hosts
 desktop/src-tauri/gen/
 desktop/node_modules/
 desktop/dist/
+

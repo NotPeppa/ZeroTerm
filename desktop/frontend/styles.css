@@ -1313,6 +1313,8 @@ body.resizing-ai-panel .ai-panel-splitter {
 }
 
 .ai-assistant-panel {
+  flex: 1 1 auto;
+  height: 100%;
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -1473,6 +1475,11 @@ body.resizing-ai-panel .ai-panel-splitter {
 .ai-assistant-body {
   display: flex;
   flex-direction: column;
+}
+
+.ai-empty-state {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 body[data-app-theme="light"] .ai-assistant-body,
@@ -1925,7 +1932,7 @@ body[data-app-theme="light"] .terminal-side-btn.active::before {
 
 .ai-compose {
   flex: 0 0 auto;
-  margin: 0 12px 12px;
+  margin: auto 12px 12px;
   padding: 10px;
   border: 1px solid rgba(104, 168, 255, 0.4);
   border-radius: 14px;
