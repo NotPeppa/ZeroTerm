@@ -80,7 +80,7 @@
                     </header>
                     <header class="surface-topbar">
                       <div class="vault-title-row">
-                        <div id="vault-local-title" class="vault-group-title">本地</div>
+                        <div id="vault-local-title" class="vault-group-title">ZeroTerm</div>
                         <div class="vault-title-actions">
                           <button id="add-host-button" type="button" class="workspace-icon-btn" aria-label="Add host">
                             <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -222,11 +222,11 @@
                                 </svg>
                               </span>
                               <div>
-                                <strong id="terminal-snippets-title">命令片段</strong>
-                                <span id="terminal-snippets-subtitle">保存常用命令，快速复制</span>
+                                <strong id="terminal-snippets-title">Command Snippets</strong>
+                                <span id="terminal-snippets-subtitle">Save frequent commands for quick reuse</span>
                               </div>
                             </div>
-                            <button id="terminal-snippets-add" type="button" class="terminal-side-add-btn" title="新增命令片段">
+                            <button id="terminal-snippets-add" type="button" class="terminal-side-add-btn" title="Add command snippet">
                               <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
                                 <path d="M12 5v14"></path>
                                 <path d="M5 12h14"></path>
@@ -234,10 +234,10 @@
                             </button>
                           </header>
                           <div class="terminal-side-body snippets-body">
-                            <input id="terminal-snippets-search" class="terminal-snippets-search" type="text" autocomplete="off" placeholder="搜索名称或命令" />
+                            <input id="terminal-snippets-search" class="terminal-snippets-search" type="text" autocomplete="off" placeholder="Search name or command" />
                             <div id="terminal-snippets-empty" class="terminal-side-empty">
-                              <strong id="terminal-snippets-empty-title">还没有命令片段</strong>
-                              <p id="terminal-snippets-empty-desc">把常用命令保存在这里，后面可以一键复制。</p>
+                              <strong id="terminal-snippets-empty-title">No command snippets yet</strong>
+                              <p id="terminal-snippets-empty-desc">Save frequently used commands here, then reuse them with one click.</p>
                             </div>
                             <div id="terminal-snippets-list" class="terminal-snippets-list" hidden></div>
                           </div>
@@ -258,9 +258,25 @@
                                   <span id="ai-assistant-subtitle">当前 SSH 会话</span>
                                 </div>
                               </div>
-                              <div id="ai-model-pill" class="ai-safe-pill" title="当前 AI 模型">
+                              <button id="ai-model-pill" type="button" class="ai-safe-pill" title="当前 AI 模型" aria-haspopup="menu" aria-expanded="false">
                                 <span aria-hidden="true"></span>
                                 未配置模型
+                              </button>
+                              <div id="ai-model-menu" class="ai-model-menu" role="menu" hidden></div>
+                              <div class="ai-session-actions">
+                                <button id="ai-new-chat" type="button" title="New session" aria-label="New session">
+                                  <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M12 5v14"></path>
+                                    <path d="M5 12h14"></path>
+                                  </svg>
+                                </button>
+                                <button id="ai-session-toggle" type="button" title="会话列表" aria-label="会话列表">
+                                  <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M3 12a9 9 0 1 0 3-6.7"></path>
+                                    <path d="M3 4v5h5"></path>
+                                    <path d="M12 7v5l3 2"></path>
+                                  </svg>
+                                </button>
                               </div>
                             </header>
 
@@ -331,7 +347,7 @@
                         </section>
                       </aside>
                       <aside id="terminal-sidebar-rail" class="terminal-sidebar-rail" hidden aria-label="终端侧边栏">
-                        <button id="terminal-sidebar-snippets-toggle" type="button" class="terminal-side-btn" title="命令片段" aria-label="命令片段">
+                        <button id="terminal-sidebar-snippets-toggle" type="button" class="terminal-side-btn" title="Command Snippets" aria-label="Command Snippets">
                           <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
                             <rect x="3" y="3" width="18" height="18" rx="3" ry="3"></rect>
                             <polyline points="8 10 10 12 8 14"></polyline>
@@ -693,18 +709,22 @@ $ npm run build && npm run start</pre>
                                     </svg>
                                   </button>
                                 </div>
-                                <label class="settings-switch settings-sync-auto">
-                                  <input id="settings-sync-remember-passphrase" type="checkbox" />
-                                  <span></span>
-                                  <em id="settings-sync-remember-passphrase-label">记住密码（系统钥匙串）</em>
-                                </label>
-                                <p id="settings-sync-enc-password-hint" class="muted tiny">已保存在系统钥匙串；留空表示不修改。</p>
+                                <div class="settings-sync-password-meta">
+                                  <label class="settings-switch settings-sync-auto">
+                                    <input id="settings-sync-remember-passphrase" type="checkbox" />
+                                    <span></span>
+                                    <em id="settings-sync-remember-passphrase-label">记住密码（系统钥匙串）</em>
+                                  </label>
+                                  <p id="settings-sync-enc-password-hint" class="muted tiny">已保存在系统钥匙串；留空表示不修改。</p>
+                                </div>
                               </div>
-                              <div class="settings-sync-actions">
-                                <button id="settings-sync-create-repo" type="button" class="primary">创建仓库</button>
-                                <button id="settings-sync-join-repo" type="button">加入仓库</button>
+                              <div class="settings-sync-bootstrap-row">
+                                <div class="settings-sync-actions">
+                                  <button id="settings-sync-create-repo" type="button" class="primary">创建仓库</button>
+                                  <button id="settings-sync-join-repo" type="button">加入仓库</button>
+                                </div>
+                                <p id="settings-sync-bootstrap-hint" class="muted tiny">首次使用：在第一台设备上"创建仓库"；其他设备用同样的密码"加入仓库"。</p>
                               </div>
-                              <p id="settings-sync-bootstrap-hint" class="muted tiny">首次使用：在第一台设备上"创建仓库"；其他设备用同样的密码"加入仓库"。</p>
                             </section>
 
                             <section class="settings-section settings-sync-card">
@@ -1214,34 +1234,34 @@ $ npm run build && npm run start</pre>
       </div>
 
       <div id="theme-card-menu" class="hosts-context-menu" hidden>
-        <button id="theme-menu-edit" type="button">编辑主题</button>
-        <button id="theme-menu-duplicate" type="button">复制为自定义</button>
-        <button id="theme-menu-delete" type="button" class="danger">删除主题</button>
+        <button id="theme-menu-edit" type="button">Edit theme</button>
+        <button id="theme-menu-duplicate" type="button">Duplicate as custom</button>
+        <button id="theme-menu-delete" type="button" class="danger">Delete theme</button>
       </div>
 
       <div id="theme-mode-menu" class="hosts-context-menu" hidden>
-        <button id="theme-mode-system" type="button">跟随系统</button>
-        <button id="theme-mode-dark" type="button">深色</button>
-        <button id="theme-mode-light" type="button">浅色</button>
+        <button id="theme-mode-system" type="button">System</button>
+        <button id="theme-mode-dark" type="button">Dark</button>
+        <button id="theme-mode-light" type="button">Light</button>
       </div>
 
       <div id="snippet-group-context-menu" class="hosts-context-menu" hidden>
-        <button id="snippet-group-menu-add" type="button">新增片段</button>
-        <button id="snippet-group-menu-edit" type="button">编辑分组</button>
-        <button id="snippet-group-menu-delete" type="button" class="danger">删除分组</button>
+        <button id="snippet-group-menu-add" type="button">Add snippet</button>
+        <button id="snippet-group-menu-edit" type="button">Edit group</button>
+        <button id="snippet-group-menu-delete" type="button" class="danger">Delete group</button>
       </div>
 
       <div id="snippet-item-context-menu" class="hosts-context-menu" hidden>
-        <button id="snippet-item-menu-edit" type="button">编辑</button>
-        <button id="snippet-item-menu-delete" type="button" class="danger">删除</button>
+        <button id="snippet-item-menu-edit" type="button">Edit</button>
+        <button id="snippet-item-menu-delete" type="button" class="danger">Delete</button>
       </div>
 
       <div id="theme-edit-overlay" class="overlay" hidden>
         <div class="dialog">
-          <h3 id="theme-edit-title">编辑主题</h3>
+          <h3 id="theme-edit-title">Edit theme</h3>
           <form id="theme-edit-form">
             <label class="theme-edit-name-field">
-              <span id="theme-edit-name-label">主题名称</span>
+              <span id="theme-edit-name-label">Theme name</span>
               <input id="theme-edit-name" type="text" placeholder="例如：My Theme" maxlength="60" />
             </label>
             <div class="theme-edit-preview" id="theme-edit-preview">
@@ -1250,15 +1270,15 @@ $ npm run build && npm run start</pre>
 drwxr-xr-x 1 root  data</pre>
             </div>
             <div class="theme-edit-grid">
-              <label><span>背景</span><div class="theme-edit-input-row"><input id="theme-color-bg" type="color" /><input id="theme-hex-bg" type="text" /></div></label>
-              <label><span>前景</span><div class="theme-edit-input-row"><input id="theme-color-fg" type="color" /><input id="theme-hex-fg" type="text" /></div></label>
-              <label><span>光标</span><div class="theme-edit-input-row"><input id="theme-color-cursor" type="color" /><input id="theme-hex-cursor" type="text" /></div></label>
-              <label><span>选区</span><div class="theme-edit-input-row"><input id="theme-color-selection" type="color" /><input id="theme-hex-selection" type="text" /></div></label>
+              <label><span id="theme-edit-bg-label">Background</span><div class="theme-edit-input-row"><input id="theme-color-bg" type="color" /><input id="theme-hex-bg" type="text" /></div></label>
+              <label><span id="theme-edit-fg-label">Foreground</span><div class="theme-edit-input-row"><input id="theme-color-fg" type="color" /><input id="theme-hex-fg" type="text" /></div></label>
+              <label><span id="theme-edit-cursor-label">Cursor</span><div class="theme-edit-input-row"><input id="theme-color-cursor" type="color" /><input id="theme-hex-cursor" type="text" /></div></label>
+              <label><span id="theme-edit-selection-label">Selection</span><div class="theme-edit-input-row"><input id="theme-color-selection" type="color" /><input id="theme-hex-selection" type="text" /></div></label>
             </div>
             <div class="dialog-actions">
-              <button id="theme-edit-reset" type="button">重置</button>
-              <button id="theme-edit-cancel" type="button">取消</button>
-              <button id="theme-edit-save" type="submit" class="primary">保存</button>
+              <button id="theme-edit-reset" type="button">Reset</button>
+              <button id="theme-edit-cancel" type="button">Cancel</button>
+              <button id="theme-edit-save" type="submit" class="primary">Save</button>
             </div>
           </form>
         </div>
@@ -1266,28 +1286,49 @@ drwxr-xr-x 1 root  data</pre>
 
       <div id="snippet-edit-overlay" class="overlay" hidden>
         <div class="dialog snippet-edit-dialog">
-          <h3 id="snippet-edit-title">命令片段</h3>
+          <h3 id="snippet-edit-title">Command snippet</h3>
           <form id="snippet-edit-form">
             <label>
-              <span id="snippet-edit-name-label">名称</span>
-              <input id="snippet-edit-name" type="text" autocomplete="off" maxlength="80" placeholder="例如：查看 Docker 日志" />
+              <span id="snippet-edit-name-label">Name</span>
+              <input id="snippet-edit-name" type="text" autocomplete="off" maxlength="80" placeholder="e.g. View Docker logs" />
             </label>
             <label>
-              <span id="snippet-edit-group-label">分组</span>
+              <span id="snippet-edit-group-label">Group</span>
               <select id="snippet-edit-group" data-allow-custom="1"></select>
             </label>
             <label>
-              <span id="snippet-edit-command-label">命令</span>
-              <textarea id="snippet-edit-command" rows="8" placeholder="例如：docker logs -f app"></textarea>
+              <span id="snippet-edit-command-label">Command</span>
+              <textarea id="snippet-edit-command" rows="8" placeholder="e.g. docker logs -f app"></textarea>
             </label>
             <div class="dialog-actions">
-              <button id="snippet-edit-cancel" type="button">取消</button>
-              <button id="snippet-edit-save" type="submit" class="primary">保存</button>
+              <button id="snippet-edit-cancel" type="button">Cancel</button>
+              <button id="snippet-edit-save" type="submit" class="primary">Save</button>
             </div>
           </form>
         </div>
       </div>
     </main>
+
+    <div id="ai-session-overlay" class="overlay" hidden>
+      <section class="dialog ai-session-dialog" role="dialog" aria-modal="true" aria-labelledby="ai-session-dialog-title">
+        <header class="ai-session-dialog-head">
+          <div>
+            <h3 id="ai-session-dialog-title">AI Sessions</h3>
+            <p id="ai-session-scope-label">Only showing AI sessions for the current host.</p>
+          </div>
+          <button id="ai-session-close" type="button">Close</button>
+        </header>
+        <div id="ai-session-filter" class="ai-session-filter" role="tablist" aria-label="AI session scope">
+          <button id="ai-session-current-filter" type="button" class="active">Current host</button>
+          <button id="ai-session-all-filter" type="button">All sessions</button>
+        </div>
+        <div id="ai-session-list" class="ai-session-list"></div>
+        <p id="ai-session-empty" class="ai-session-empty">No sessions</p>
+        <footer class="ai-session-dialog-foot">
+          <button id="ai-session-clear" type="button" class="danger">Clear all sessions</button>
+        </footer>
+      </section>
+    </div>
 
     <script src="./assets/xterm.min.js"></script>
     <script src="./assets/xterm-addon-fit.min.js"></script>

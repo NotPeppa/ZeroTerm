@@ -45,6 +45,7 @@ const KEY_LAST_SEEN_SNAPSHOT: &str = "last_seen_snapshot";
 pub struct SyncEngine {
     adapter: Arc<dyn SyncAdapter>,
     device_id: String,
+    device_name: String,
     store: Arc<dyn LocalRecordStore>,
     state: Mutex<EngineState>,
     /// Compaction retention knobs. Defaults follow RFC-002 §12.2; tests
@@ -141,6 +142,13 @@ pub struct RepoStats {
     pub event_count: usize,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeviceInfo {
+    pub device_id: String,
+    pub name: String,
+    pub last_seen_at: i64,
+}
+
 /// Internal helper used by [`SyncEngine::compact`] to track the working
 /// set across events without re-encrypting (event AAD matches the
 /// snapshot-record AAD, so the ciphertext is verbatim transferable).
@@ -158,13 +166,23 @@ impl SyncEngine {
         store: Arc<dyn LocalRecordStore>,
         device_id: impl Into<String>,
     ) -> Self {
+        let device_id = device_id.into();
         Self {
             adapter: Arc::new(adapter),
             store,
-            device_id: device_id.into(),
+            device_name: device_id.clone(),
+            device_id,
             state: Mutex::new(EngineState::default()),
             retention: RetentionPolicy::default(),
         }
+    }
+
+    pub fn with_device_name(mut self, device_name: impl Into<String>) -> Self {
+        let name = device_name.into();
+        if !name.trim().is_empty() {
+            self.device_name = name;
+        }
+        self
     }
 
     /// Override the retention thresholds. Mostly useful for tests; the
@@ -218,6 +236,7 @@ impl SyncEngine {
         self.adapter
             .write_atomic(RepoPaths::manifest(), &manifest.to_json()?)
             .await?;
+        self.touch_device().await?;
 
         {
             let mut st = self.state.lock().await;
@@ -296,6 +315,7 @@ impl SyncEngine {
             st.repo_id = Some(manifest.repo_id.clone());
             st.clock = LogicalClock::new(manifest.head_clock);
         }
+        self.touch_device().await?;
 
         // Restore Lamport clock + applied_events from sync_state so
         // re-joins are idempotent (we don't re-apply events that
@@ -378,6 +398,7 @@ impl SyncEngine {
         report.head_clock = our_clock;
 
         self.persist_logical_clock().await?;
+        self.touch_device().await?;
         Ok(report)
     }
 
@@ -1043,6 +1064,34 @@ impl SyncEngine {
         Ok(stats)
     }
 
+    pub async fn list_devices(&self) -> Result<Vec<DeviceInfo>, Error> {
+        let mut out = Vec::new();
+        for entry in self.adapter.list(RepoPaths::devices_dir(), true).await? {
+            if !entry.path.ends_with(".json") {
+                continue;
+            }
+            let Some(bytes) = self.adapter.read(&entry.path).await? else {
+                continue;
+            };
+            if let Ok(mut device) = serde_json::from_slice::<DeviceInfo>(&bytes) {
+                if device.device_id.is_empty() {
+                    device.device_id = entry.path
+                        .rsplit('/')
+                        .next()
+                        .unwrap_or_default()
+                        .trim_end_matches(".json")
+                        .to_string();
+                }
+                if self.device_id != "device-unknown" && device.device_id == "device-unknown" {
+                    continue;
+                }
+                out.push(device);
+            }
+        }
+        out.sort_by(|a, b| b.last_seen_at.cmp(&a.last_seen_at).then_with(|| a.device_id.cmp(&b.device_id)));
+        Ok(out)
+    }
+
     // --- internals ------------------------------------------------------
 
     async fn read_manifest_required(&self) -> Result<Manifest, Error> {
@@ -1052,6 +1101,27 @@ impl SyncEngine {
             .await?
             .ok_or(Error::NotInitialized)?;
         Manifest::from_json(&bytes)
+    }
+
+    async fn touch_device(&self) -> Result<(), Error> {
+        let info = DeviceInfo {
+            device_id: self.device_id.clone(),
+            name: self.device_name.clone(),
+            last_seen_at: now_ms(),
+        };
+        self.adapter
+            .write_atomic(
+                &RepoPaths::device_file(&self.device_id),
+                &serde_json::to_vec_pretty(&info)?,
+            )
+            .await?;
+        if self.device_id != "device-unknown" {
+            let legacy_path = RepoPaths::device_file("device-unknown");
+            if self.adapter.stat(&legacy_path).await?.is_some() {
+                let _ = self.adapter.delete(&legacy_path).await;
+            }
+        }
+        Ok(())
     }
 
     async fn clone_root_key(&self) -> Result<SyncRootKey, Error> {
@@ -1154,6 +1224,7 @@ fn now_ms() -> i64 {
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
 }
+
 
 fn is_syncable_kind(kind: &str) -> bool {
     matches!(kind, "host" | "host_group" | "snippet")

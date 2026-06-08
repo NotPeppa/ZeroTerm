@@ -63,7 +63,9 @@ pub struct SystemFontDto {
 }
 
 const AI_CONFIG_FILE: &str = "ai-config.json";
+const AI_SESSION_FILE: &str = "ai-sessions.json";
 const AI_KEYCHAIN_PROFILE: &str = "default";
+const AI_SESSION_MAX_ITEMS: usize = 80;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -91,11 +93,63 @@ pub struct SaveAiConfigInput {
     pub show_commands: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AiChatMessage {
     pub role: String,
     pub content: String,
+    #[serde(default)]
+    pub command_results: Vec<AiCommandResult>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiCommandResult {
+    pub command: String,
+    pub output: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiSessionItem {
+    pub id: String,
+    pub title: String,
+    pub created_at: u64,
+    pub updated_at: u64,
+    #[serde(default)]
+    pub pane_key: Option<String>,
+    #[serde(default)]
+    pub scope_type: String,
+    #[serde(default)]
+    pub scope_id: String,
+    #[serde(default)]
+    pub scope_label: String,
+    pub messages: Vec<AiChatMessage>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveAiSessionInput {
+    pub id: String,
+    pub title: String,
+    pub created_at: u64,
+    pub updated_at: u64,
+    #[serde(default)]
+    pub pane_key: Option<String>,
+    #[serde(default)]
+    pub scope_type: String,
+    #[serde(default)]
+    pub scope_id: String,
+    #[serde(default)]
+    pub scope_label: String,
+    pub messages: Vec<AiChatMessage>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClearAiSessionsForScopeInput {
+    pub scope_type: String,
+    pub scope_id: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -185,6 +239,13 @@ fn ai_config_path() -> Result<PathBuf, String> {
     Ok(base.join(AI_CONFIG_FILE))
 }
 
+fn ai_session_path() -> Result<PathBuf, String> {
+    let base = dirs::config_dir()
+        .ok_or_else(|| "no config directory on this OS".to_string())?
+        .join("ZeroTerm");
+    Ok(base.join(AI_SESSION_FILE))
+}
+
 fn normalize_ai_config(mut cfg: AiConfig) -> AiConfig {
     if cfg.provider.trim().is_empty() {
         cfg.provider = "openai-compatible".to_string();
@@ -218,6 +279,101 @@ fn write_ai_config_to_disk(cfg: &AiConfig) -> Result<(), String> {
         fs::create_dir_all(parent).map_err(|e| format!("creating {}: {e}", parent.display()))?;
     }
     let text = serde_json::to_string_pretty(cfg).map_err(|e| e.to_string())?;
+    fs::write(&path, text).map_err(|e| format!("writing {}: {e}", path.display()))
+}
+
+fn normalize_ai_session_item(mut item: AiSessionItem) -> Option<AiSessionItem> {
+    item.id = item.id.trim().to_string();
+    if item.id.is_empty() {
+        return None;
+    }
+    item.title = item.title.trim().to_string();
+    if item.title.is_empty() {
+        item.title = item
+            .messages
+            .iter()
+            .find(|m| m.role == "user" && !m.content.trim().is_empty())
+            .map(|m| m.content.trim().chars().take(48).collect())
+            .unwrap_or_else(|| "New chat".to_string());
+    }
+    item.scope_type = match item.scope_type.trim() {
+        "host" => "host".to_string(),
+        "local" => "local".to_string(),
+        _ => "global".to_string(),
+    };
+    item.scope_id = item.scope_id.trim().to_string();
+    if item.scope_id.is_empty() {
+        item.scope_id = item.scope_type.clone();
+    }
+    item.scope_label = item.scope_label.trim().to_string();
+    if item.scope_label.is_empty() {
+        item.scope_label = match item.scope_type.as_str() {
+            "host" => "SSH 主机".to_string(),
+            "local" => "本地终端".to_string(),
+            _ => "全局".to_string(),
+        };
+    }
+    item.messages = item
+        .messages
+        .into_iter()
+        .filter_map(|mut m| {
+            m.role = match m.role.trim() {
+                "assistant" => "assistant".to_string(),
+                "user" => "user".to_string(),
+                "error" => "error".to_string(),
+                _ => return None,
+            };
+            m.content = m.content.trim().to_string();
+            if m.content.is_empty() {
+                return None;
+            }
+            m.command_results = m
+                .command_results
+                .into_iter()
+                .filter_map(|mut result| {
+                    result.command = result.command.trim().to_string();
+                    result.output = result.output.trim().to_string();
+                    if result.command.is_empty() {
+                        return None;
+                    }
+                    Some(result)
+                })
+                .collect();
+            Some(m)
+        })
+        .collect();
+    if item.messages.is_empty() {
+        return None;
+    }
+    if item.created_at == 0 {
+        item.created_at = item.updated_at;
+    }
+    if item.updated_at == 0 {
+        item.updated_at = item.created_at;
+    }
+    Some(item)
+}
+
+fn read_ai_sessions_from_disk() -> Result<Vec<AiSessionItem>, String> {
+    let path = ai_session_path()?;
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let text = fs::read_to_string(&path).map_err(|e| format!("reading {}: {e}", path.display()))?;
+    let raw: Vec<AiSessionItem> = serde_json::from_str(&text)
+        .map_err(|e| format!("parsing {}: {e}", path.display()))?;
+    let mut items: Vec<_> = raw.into_iter().filter_map(normalize_ai_session_item).collect();
+    items.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    items.truncate(AI_SESSION_MAX_ITEMS);
+    Ok(items)
+}
+
+fn write_ai_sessions_to_disk(items: &[AiSessionItem]) -> Result<(), String> {
+    let path = ai_session_path()?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("creating {}: {e}", parent.display()))?;
+    }
+    let text = serde_json::to_string_pretty(items).map_err(|e| e.to_string())?;
     fs::write(&path, text).map_err(|e| format!("writing {}: {e}", path.display()))
 }
 
@@ -447,6 +603,71 @@ pub async fn save_ai_config(input: SaveAiConfigInput) -> Result<AiConfig, String
 }
 
 #[tauri::command]
+pub async fn list_ai_sessions() -> Result<Vec<AiSessionItem>, String> {
+    read_ai_sessions_from_disk()
+}
+
+#[tauri::command]
+pub async fn save_ai_session(input: SaveAiSessionInput) -> Result<AiSessionItem, String> {
+    let item = normalize_ai_session_item(AiSessionItem {
+        id: input.id,
+        title: input.title,
+        created_at: input.created_at,
+        updated_at: input.updated_at,
+        pane_key: input.pane_key,
+        scope_type: input.scope_type,
+        scope_id: input.scope_id,
+        scope_label: input.scope_label,
+        messages: input.messages,
+    })
+    .ok_or_else(|| "AI session is empty".to_string())?;
+
+    let mut items = read_ai_sessions_from_disk()?;
+    items.retain(|existing| existing.id != item.id);
+    items.insert(0, item.clone());
+    items.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    items.truncate(AI_SESSION_MAX_ITEMS);
+    write_ai_sessions_to_disk(&items)?;
+    Ok(item)
+}
+
+#[tauri::command]
+pub async fn delete_ai_session(id: String) -> Result<(), String> {
+    let id = id.trim();
+    if id.is_empty() {
+        return Ok(());
+    }
+    let mut items = read_ai_sessions_from_disk()?;
+    let before = items.len();
+    items.retain(|item| item.id != id);
+    if items.len() != before {
+        write_ai_sessions_to_disk(&items)?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn clear_ai_sessions() -> Result<(), String> {
+    write_ai_sessions_to_disk(&[])
+}
+
+#[tauri::command]
+pub async fn clear_ai_sessions_for_scope(input: ClearAiSessionsForScopeInput) -> Result<(), String> {
+    let scope_type = input.scope_type.trim();
+    let scope_id = input.scope_id.trim();
+    if scope_type.is_empty() || scope_id.is_empty() {
+        return Ok(());
+    }
+    let mut items = read_ai_sessions_from_disk()?;
+    let before = items.len();
+    items.retain(|item| item.scope_type != scope_type || item.scope_id != scope_id);
+    if items.len() != before {
+        write_ai_sessions_to_disk(&items)?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn list_ai_models(input: SaveAiConfigInput) -> Result<AiModelListResponse, String> {
     let cfg = normalize_ai_config(AiConfig {
         provider: input.provider,
@@ -666,7 +887,7 @@ pub async fn unlock_vault(
             tracing::warn!(error = %e, "could not cache master password in keychain");
         }
     }
-    bootstrap_sync_engines_from_keychain(app, state.sync.clone(), &path).await;
+    spawn_sync_engine_bootstrap(app, state.sync.clone(), path.clone());
     info!(remember, "vault unlocked");
     Ok(())
 }
@@ -748,7 +969,7 @@ pub async fn try_keychain_unlock(state: State<'_, AppState>) -> Result<bool, Str
         Ok(app) => {
             let app = Arc::new(app);
             *state.app.lock().unwrap() = Some(app.clone());
-            bootstrap_sync_engines_from_keychain(app, state.sync.clone(), &path).await;
+            spawn_sync_engine_bootstrap(app, state.sync.clone(), path.clone());
             info!("vault unlocked from keychain cache");
             Ok(true)
         }
@@ -758,6 +979,16 @@ pub async fn try_keychain_unlock(state: State<'_, AppState>) -> Result<bool, Str
         }
         Err(e) => Err(e.to_string()),
     }
+}
+
+fn spawn_sync_engine_bootstrap(
+    app: Arc<zeroterm_app::App>,
+    manager: Arc<zeroterm_app::SyncManager>,
+    vault_path: PathBuf,
+) {
+    tauri::async_runtime::spawn(async move {
+        bootstrap_sync_engines_from_keychain(app, manager, &vault_path).await;
+    });
 }
 
 async fn bootstrap_sync_engines_from_keychain(
@@ -1448,17 +1679,34 @@ pub async fn sync_has_remembered_passphrase(profile_id: String) -> Result<bool, 
 #[serde(rename_all = "camelCase")]
 pub struct SyncDeviceEntry {
     pub device_id: String,
+    pub name: String,
+    pub last_seen_at: i64,
+    pub is_current: bool,
 }
 
-/// Stub for M5 — returns whatever is in the keyring (one entry per
-/// device). Surfacing the per-device metadata file lands once M5 wires
-/// up the `devices/` directory.
 #[tauri::command]
 pub async fn sync_list_devices(
-    _state: State<'_, AppState>,
-    _profile_id: String,
+    state: State<'_, AppState>,
+    profile_id: String,
 ) -> Result<Vec<SyncDeviceEntry>, String> {
-    Ok(Vec::new())
+    let app = {
+        let guard = state.app.lock().unwrap();
+        guard.as_ref().ok_or("vault is locked")?.clone()
+    };
+    let devices = app
+        .sync_list_devices(&state.sync, &profile_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    let current_device_id = zeroterm_app::local_device_id();
+    Ok(devices
+        .into_iter()
+        .map(|device| SyncDeviceEntry {
+            is_current: device.device_id == current_device_id,
+            device_id: device.device_id,
+            name: device.name,
+            last_seen_at: device.last_seen_at,
+        })
+        .collect())
 }
 
 #[tauri::command]

@@ -10,6 +10,7 @@
 //!     then drains the vault's dirty rows back onto the wire.
 
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -18,7 +19,7 @@ use tokio::sync::Mutex;
 
 use zeroterm_ssh::{HostKeyPolicy, Session};
 use zeroterm_sync::adapter::{LocalAdapter, SftpAdapter};
-use zeroterm_sync::engine::{SyncEngine, SyncReport};
+use zeroterm_sync::engine::{DeviceInfo, SyncEngine, SyncReport};
 use zeroterm_sync::error::Error as SyncErrorKind;
 use zeroterm_sync::local_store::{LocalRecord, LocalRecordStore};
 
@@ -308,11 +309,31 @@ pub fn local_device_id() -> String {
     format!("device-{}", hostname_best_effort())
 }
 
+pub fn local_device_name() -> String {
+    hostname_display_name().unwrap_or_else(|| hostname_best_effort())
+}
+
+fn hostname_display_name() -> Option<String> {
+    std::env::var_os("COMPUTERNAME")
+        .and_then(|s| s.into_string().ok())
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| {
+            std::env::var_os("HOSTNAME")
+                .and_then(|s| s.into_string().ok())
+                .filter(|s| !s.trim().is_empty())
+        })
+        .or_else(|| {
+            Command::new("hostname")
+                .output()
+                .ok()
+                .and_then(|out| String::from_utf8(out.stdout).ok())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        })
+}
+
 fn hostname_best_effort() -> String {
-    if let Some(h) = std::env::var_os("COMPUTERNAME").and_then(|s| s.into_string().ok()) {
-        return sanitize_id(&h);
-    }
-    if let Some(h) = std::env::var_os("HOSTNAME").and_then(|s| s.into_string().ok()) {
+    if let Some(h) = hostname_display_name() {
         return sanitize_id(&h);
     }
     "unknown".to_string()
@@ -406,6 +427,7 @@ impl App {
         let store: Arc<dyn LocalRecordStore> =
             Arc::new(VaultBackedStore::new(self.clone()));
         let device_id = local_device_id();
+        let device_name = local_device_name();
         match &profile.backend {
             SyncBackend::LocalFolder { root } => {
                 let p = PathBuf::from(root);
@@ -415,7 +437,7 @@ impl App {
                     )));
                 }
                 let adapter = LocalAdapter::new(p);
-                Ok(Arc::new(SyncEngine::new(adapter, store, device_id)))
+                Ok(Arc::new(SyncEngine::new(adapter, store, device_id).with_device_name(device_name)))
             }
             SyncBackend::Sftp {
                 host_ref,
@@ -479,7 +501,7 @@ impl App {
                     .map_err(|e| AppError::SyncConfig(e.to_string()))?;
                 let adapter =
                     SftpAdapter::new(Arc::new(sftp), session, jump_session, remote_dir);
-                Ok(Arc::new(SyncEngine::new(adapter, store, device_id)))
+                Ok(Arc::new(SyncEngine::new(adapter, store, device_id).with_device_name(device_name)))
             }
             #[cfg(feature = "webdav-backend")]
             SyncBackend::WebDav {
@@ -515,7 +537,7 @@ impl App {
                     timeout: None,
                 })
                 .map_err(|e| AppError::SyncConfig(e.to_string()))?;
-                Ok(Arc::new(SyncEngine::new(adapter, store, device_id)))
+                Ok(Arc::new(SyncEngine::new(adapter, store, device_id).with_device_name(device_name)))
             }
             #[cfg(not(feature = "webdav-backend"))]
             SyncBackend::WebDav { .. } => Err(AppError::SyncConfig(
@@ -569,7 +591,7 @@ impl App {
                 })
                 .await
                 .map_err(|e| AppError::SyncConfig(e.to_string()))?;
-                Ok(Arc::new(SyncEngine::new(adapter, store, device_id)))
+                Ok(Arc::new(SyncEngine::new(adapter, store, device_id).with_device_name(device_name)))
             }
             #[cfg(not(feature = "s3-backend"))]
             SyncBackend::S3 { .. } => Err(AppError::SyncConfig(
@@ -708,6 +730,18 @@ impl App {
             .await
             .ok_or_else(|| AppError::SyncEngineMissing(profile_id.to_string()))?;
         Ok(engine.repo_stats().await?)
+    }
+
+    pub async fn sync_list_devices(
+        self: &Arc<Self>,
+        manager: &SyncManager,
+        profile_id: &str,
+    ) -> Result<Vec<DeviceInfo>, AppError> {
+        let engine = manager
+            .get(profile_id)
+            .await
+            .ok_or_else(|| AppError::SyncEngineMissing(profile_id.to_string()))?;
+        Ok(engine.list_devices().await?)
     }
 
     pub async fn sync_delete_remote_repo(

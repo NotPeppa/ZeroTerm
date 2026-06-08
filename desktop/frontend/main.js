@@ -305,6 +305,44 @@ const I18N = {
     "terminal.button.close_split": "Close Split",
     "terminal.button.new_window": "New Window",
     "terminal.button.back_hosts": "Hosts",
+    "snippets.title": "Command Snippets",
+    "snippets.subtitle": "Save frequent commands for quick reuse",
+    "snippets.add": "Add command snippet",
+    "snippets.empty.title": "No command snippets yet",
+    "snippets.empty.desc": "Save frequently used commands here, then reuse them with one click.",
+    "snippets.search.placeholder": "Search name or command",
+    "snippets.ungrouped": "Ungrouped",
+    "snippets.dialog.title": "Command snippet",
+    "snippets.dialog.add_title": "Add command snippet",
+    "snippets.dialog.edit_title": "Edit command snippet",
+    "snippets.dialog.name": "Name",
+    "snippets.dialog.name_placeholder": "e.g. View Docker logs",
+    "snippets.dialog.group": "Group",
+    "snippets.dialog.command": "Command",
+    "snippets.dialog.command_placeholder": "e.g. docker logs -f app",
+    "snippets.dialog.cancel": "Cancel",
+    "snippets.dialog.save": "Save",
+    "snippets.action.run": "Run",
+    "snippets.action.insert": "Insert into terminal",
+    "snippets.toast.ran": "Command snippet executed",
+    "snippets.toast.inserted": "Inserted into current terminal",
+    "snippets.toast.migrated": "Migrated {count} command snippets to the sync vault",
+    "snippets.error.no_terminal": "There is no writable terminal session.",
+    "snippets.error.create_failed": "Failed to add command snippet: {error}",
+    "snippets.error.save_failed": "Failed to save command snippet: {error}",
+    "snippets.error.delete_failed": "Failed to delete command snippet: {error}",
+    "snippets.error.run_failed": "Failed to run command snippet: {error}",
+    "snippets.error.insert_failed": "Failed to insert into terminal: {error}",
+    "snippets.menu.add": "Add snippet",
+    "snippets.menu.edit_group": "Edit group",
+    "snippets.menu.delete_group": "Delete group",
+    "snippets.menu.edit": "Edit",
+    "snippets.menu.delete": "Delete",
+    "snippets.group.edit_title": "Edit group",
+    "snippets.group.edit_message": "Enter a new group name",
+    "snippets.group.placeholder": "e.g. Docker",
+    "snippets.group.rename_failed": "Failed to rename group: {error}",
+    "snippets.group.delete_failed": "Failed to delete group: {error}",
     "terminal.empty": "No open terminal tabs. Open one from Hosts.",
     "terminal.new_tab_hint": "Select a host to open a new terminal tab.",
     "terminal.pane.empty": "Empty pane",
@@ -543,6 +581,8 @@ const I18N = {
     "ai.model.unconfigured": "No model configured",
     "ai.model.current": "Current AI model: {label}",
     "ai.model.pill_title": "Current AI model",
+    "ai.model.switch_title": "Switch AI model",
+    "ai.model.empty": "Refresh models in Settings first",
     "ai.hero.kicker": "Natural language operation",
     "ai.hero.title": "Tell the AI your goal — no commands needed.",
     "ai.hero.desc": "The AI inspects the server, lays out a plan, then asks before acting. Commands and logs are folded by default; expand them when you want detail.",
@@ -562,6 +602,32 @@ const I18N = {
     "ai.compose.send": "Send to AI",
     "ai.context.toggle.title": "Toggle attaching current terminal output",
     "ai.context.toggle.label": "Auto-include terminal context",
+    "ai.context.mode.smart": "Auto terminal context",
+    "ai.context.mode.always": "Always include terminal",
+    "ai.context.mode.off": "No terminal context",
+    "ai.session.title": "AI Sessions",
+    "ai.session.desc.current": "Only showing AI sessions for {scope}.",
+    "ai.session.desc.all": "Showing all AI sessions saved on this device.",
+    "ai.session.scope.global": "Global",
+    "ai.session.scope.local": "Local terminal",
+    "ai.session.scope.ssh": "SSH host",
+    "ai.session.new_title": "New session",
+    "ai.session.close": "Close",
+    "ai.session.filter.aria": "AI session scope",
+    "ai.session.filter.current": "Current host",
+    "ai.session.filter.all": "All sessions",
+    "ai.session.empty.current": "No sessions for current host",
+    "ai.session.empty.all": "No sessions",
+    "ai.session.clear.current": "Clear current host sessions",
+    "ai.session.clear.all": "Clear all sessions",
+    "ai.session.confirm.new": "Start a new session? The current session will remain in the session list.",
+    "ai.session.confirm.clear_current": "Clear AI sessions for {scope}?",
+    "ai.session.confirm.clear_all": "Clear all AI sessions?",
+    "ai.session.toast.need_scope": "Switch to the matching host before continuing this AI session.",
+    "ai.session.toast.cleared_current": "Current host AI sessions cleared",
+    "ai.session.toast.cleared_all": "AI sessions cleared",
+    "ai.session.toast.clear_failed": "Failed to clear AI sessions: {error}",
+    "ai.session.meta.messages": "{count} messages",
     "ai.panel.aria": "AI Assistant",
     "ai.workflow.aria": "AI workflow",
     "ai.examples.aria": "Example goals",
@@ -630,6 +696,10 @@ const I18N = {
     "settings.sync.confirm.vault_mismatch": "This repo was created from a different data source (id = {remote}). Syncing will be rejected every time. Proceed anyway?",
     "settings.sync.devices.title": "Joined Devices",
     "settings.sync.devices.empty": "Device list appears after you join a repo and run sync.",
+    "settings.sync.devices.no_profile": "Configure sync to view joined devices.",
+    "settings.sync.devices.this_device": "This device",
+    "settings.sync.devices.current_badge": "Current",
+    "settings.sync.devices.last_seen": "Last seen {when}",
     "settings.sync.conflicts.title": "Conflict Inbox",
     "settings.sync.conflicts.empty": "No conflicts pending.",
     "settings.sync.conflicts.no_profile": "Configure a sync profile to see conflicts.",
@@ -714,9 +784,17 @@ const I18N = {
     "theme.create.title": "Create theme",
     "theme.edit.title": "Edit theme",
     "theme.edit.name": "Theme name",
+    "theme.edit.background": "Background",
+    "theme.edit.foreground": "Foreground",
+    "theme.edit.cursor": "Cursor",
+    "theme.edit.selection": "Selection",
     "theme.edit.reset": "Reset",
     "theme.edit.cancel": "Cancel",
     "theme.edit.save": "Save",
+    "theme.prompt.duplicate.title": "Duplicate as custom",
+    "theme.prompt.duplicate.message": "Enter a new theme name",
+    "theme.confirm.delete": "Delete custom theme \"{name}\"?",
+    "theme.error.name_required": "Please enter a theme name",
     "theme.mode.button": "Theme mode",
     "theme.mode.system": "System",
     "theme.mode.dark": "Dark",
@@ -889,6 +967,44 @@ const I18N = {
     "terminal.button.close_split": "关闭分屏",
     "terminal.button.new_window": "新窗口",
     "terminal.button.back_hosts": "主机",
+    "snippets.title": "命令片段",
+    "snippets.subtitle": "保存常用命令，快速复制",
+    "snippets.add": "新增命令片段",
+    "snippets.empty.title": "还没有命令片段",
+    "snippets.empty.desc": "把常用命令保存在这里，后面可以一键复制。",
+    "snippets.search.placeholder": "搜索名称或命令",
+    "snippets.ungrouped": "未分组",
+    "snippets.dialog.title": "命令片段",
+    "snippets.dialog.add_title": "新增命令片段",
+    "snippets.dialog.edit_title": "编辑命令片段",
+    "snippets.dialog.name": "名称",
+    "snippets.dialog.name_placeholder": "例如：查看 Docker 日志",
+    "snippets.dialog.group": "分组",
+    "snippets.dialog.command": "命令",
+    "snippets.dialog.command_placeholder": "例如：docker logs -f app",
+    "snippets.dialog.cancel": "取消",
+    "snippets.dialog.save": "保存",
+    "snippets.action.run": "执行",
+    "snippets.action.insert": "填入终端",
+    "snippets.toast.ran": "已执行命令片段",
+    "snippets.toast.inserted": "已填入当前终端",
+    "snippets.toast.migrated": "已迁移 {count} 条命令片段到同步库",
+    "snippets.error.no_terminal": "当前没有可写入的终端会话",
+    "snippets.error.create_failed": "新增命令片段失败: {error}",
+    "snippets.error.save_failed": "保存命令片段失败: {error}",
+    "snippets.error.delete_failed": "删除命令片段失败: {error}",
+    "snippets.error.run_failed": "执行命令片段失败: {error}",
+    "snippets.error.insert_failed": "填入终端失败: {error}",
+    "snippets.menu.add": "新增片段",
+    "snippets.menu.edit_group": "编辑分组",
+    "snippets.menu.delete_group": "删除分组",
+    "snippets.menu.edit": "编辑",
+    "snippets.menu.delete": "删除",
+    "snippets.group.edit_title": "编辑分组",
+    "snippets.group.edit_message": "请输入新的分组名称",
+    "snippets.group.placeholder": "例如：Docker",
+    "snippets.group.rename_failed": "重命名分组失败: {error}",
+    "snippets.group.delete_failed": "删除分组失败: {error}",
     "terminal.empty": "当前没有打开的终端标签页，请从主机页打开。",
     "terminal.new_tab_hint": "请选择一个主机来打开新终端标签页。",
     "terminal.pane.empty": "空窗格",
@@ -1124,6 +1240,8 @@ const I18N = {
     "ai.model.unconfigured": "未配置模型",
     "ai.model.current": "当前 AI 模型：{label}",
     "ai.model.pill_title": "当前 AI 模型",
+    "ai.model.switch_title": "切换 AI 模型",
+    "ai.model.empty": "请先在设置里刷新模型列表",
     "ai.hero.kicker": "自然语言操作",
     "ai.hero.title": "告诉 AI 你的目标，不需要会命令。",
     "ai.hero.desc": "AI 会理解当前服务器环境，先说明计划，确认后再操作。命令和日志默认折叠，需要时可以展开查看。",
@@ -1143,6 +1261,32 @@ const I18N = {
     "ai.compose.send": "发送给 AI",
     "ai.context.toggle.title": "切换是否附带当前终端内容",
     "ai.context.toggle.label": "智能判断终端内容",
+    "ai.context.mode.smart": "智能判断终端内容",
+    "ai.context.mode.always": "总是附带终端内容",
+    "ai.context.mode.off": "不附带终端内容",
+    "ai.session.title": "AI 会话",
+    "ai.session.desc.current": "当前只显示 {scope} 的 AI 会话。",
+    "ai.session.desc.all": "当前显示本机保存的全部 AI 会话。",
+    "ai.session.scope.global": "全局",
+    "ai.session.scope.local": "本地终端",
+    "ai.session.scope.ssh": "SSH 主机",
+    "ai.session.new_title": "新会话",
+    "ai.session.close": "关闭",
+    "ai.session.filter.aria": "AI 会话范围",
+    "ai.session.filter.current": "当前机器",
+    "ai.session.filter.all": "全部会话",
+    "ai.session.empty.current": "当前机器暂无会话",
+    "ai.session.empty.all": "暂无会话",
+    "ai.session.clear.current": "清空当前机器会话",
+    "ai.session.clear.all": "清空全部会话",
+    "ai.session.confirm.new": "开始新会话？当前会话会保留在会话列表中。",
+    "ai.session.confirm.clear_current": "清空 {scope} 的 AI 会话？",
+    "ai.session.confirm.clear_all": "清空所有 AI 会话？",
+    "ai.session.toast.need_scope": "请切换到对应机器后再继续这个 AI 会话",
+    "ai.session.toast.cleared_current": "当前机器 AI 会话已清空",
+    "ai.session.toast.cleared_all": "AI 会话已清空",
+    "ai.session.toast.clear_failed": "清空 AI 会话失败：{error}",
+    "ai.session.meta.messages": "{count} 条消息",
     "ai.panel.aria": "AI 助手",
     "ai.workflow.aria": "AI 工作流程",
     "ai.examples.aria": "示例目标",
@@ -1211,6 +1355,10 @@ const I18N = {
     "settings.sync.confirm.vault_mismatch": "该仓库来自另一台设备的不同数据源（id = {remote}）。继续将导致每次同步被拒。仍要继续吗？",
     "settings.sync.devices.title": "已加入设备",
     "settings.sync.devices.empty": "设备列表会在加入仓库并完成同步后显示。",
+    "settings.sync.devices.no_profile": "请先配置同步以查看已加入设备。",
+    "settings.sync.devices.this_device": "本机",
+    "settings.sync.devices.current_badge": "当前设备",
+    "settings.sync.devices.last_seen": "最后在线 {when}",
     "settings.sync.conflicts.title": "冲突收件箱",
     "settings.sync.conflicts.empty": "暂无待解决冲突。",
     "settings.sync.conflicts.no_profile": "请先配置同步以查看冲突。",
@@ -1295,9 +1443,17 @@ const I18N = {
     "theme.create.title": "新建主题",
     "theme.edit.title": "编辑主题",
     "theme.edit.name": "主题名称",
+    "theme.edit.background": "背景",
+    "theme.edit.foreground": "前景",
+    "theme.edit.cursor": "光标",
+    "theme.edit.selection": "选区",
     "theme.edit.reset": "重置",
     "theme.edit.cancel": "取消",
     "theme.edit.save": "保存",
+    "theme.prompt.duplicate.title": "复制为自定义",
+    "theme.prompt.duplicate.message": "请输入新主题名称",
+    "theme.confirm.delete": "删除自定义主题 \"{name}\"?",
+    "theme.error.name_required": "请输入主题名称",
     "theme.mode.button": "主题模式",
     "theme.mode.system": "跟随系统",
     "theme.mode.dark": "深色",
@@ -1670,6 +1826,7 @@ async function refreshVaultStatus({ tryKeychain = true } = {}) {
     const status = await invoke("vault_status");
     vaultExists = status.exists;
     unlockPath.textContent = t("unlock.path", { path: status.path });
+    unlockPath.title = status.path || "";
 
     if (status.unlocked) {
       await enterHosts();
@@ -1797,9 +1954,20 @@ const aiComposeForm = document.getElementById("ai-compose-form");
 const aiComposeInput = document.getElementById("ai-compose-input");
 const aiChatLog = document.getElementById("ai-chat-log");
 const aiEmptyState = document.getElementById("ai-empty-state");
+const aiNewChatButton = document.getElementById("ai-new-chat");
+const aiSessionToggle = document.getElementById("ai-session-toggle");
+const aiSessionOverlay = document.getElementById("ai-session-overlay");
+const aiSessionClose = document.getElementById("ai-session-close");
+const aiSessionList = document.getElementById("ai-session-list");
+const aiSessionEmpty = document.getElementById("ai-session-empty");
+const aiSessionClear = document.getElementById("ai-session-clear");
+const aiSessionScopeLabel = document.getElementById("ai-session-scope-label");
+const aiSessionCurrentFilter = document.getElementById("ai-session-current-filter");
+const aiSessionAllFilter = document.getElementById("ai-session-all-filter");
 const aiContextToggle = document.getElementById("ai-context-toggle");
 const aiAssistantBody = document.querySelector(".ai-assistant-body");
 const aiModelPill = document.getElementById("ai-model-pill");
+const aiModelMenu = document.getElementById("ai-model-menu");
 const vaultsContent = document.getElementById("vaults-content");
 const vaultLayout = document.querySelector(".vault-layout");
 const vaultSplitter = document.getElementById("vault-splitter");
@@ -1894,6 +2062,12 @@ let aiMessages = [];
 let aiSending = false;
 let aiStreamUnlistenPromise = null;
 const aiConversationByPane = new Map();
+const aiSessionIdentityByPane = new Map();
+let aiCurrentSessionId = "";
+let aiCurrentSessionCreatedAt = 0;
+let aiSessionItems = [];
+let aiSessionOpen = false;
+let aiSessionFilter = "current";
 let aiActivePaneKey = null;
 let aiPanelCollapsed = true;
 let terminalActiveSidePanel = null;
@@ -1909,6 +2083,7 @@ const AI_CONTEXT_MODES = ["smart", "always", "off"];
 let aiContextMode = localStorage.getItem("zt.ai.contextMode") || "smart";
 if (!AI_CONTEXT_MODES.includes(aiContextMode)) aiContextMode = "smart";
 let lastAutoAiModelsKey = "";
+let aiModelsRefreshedOnFirstOpen = false;
 let currentAiModelLabel = "";
 /// True only when the backend has an API key on file *and* a non-empty
 /// model is configured. The header pill switches to the "未配置" label
@@ -1917,6 +2092,7 @@ let currentAiModelLabel = "";
 let aiConfigured = false;
 let pendingAiCommandCounter = 0;
 const aiMultiCommandState = new WeakMap();
+const aiMessageByNode = new WeakMap();
 let snippetEditResolver = null;
 
 async function loadTerminalCommandSnippets() {
@@ -1976,7 +2152,7 @@ async function migrateLocalSnippetsToVault() {
     }
     // Keep a backup of the pre-migration array just in case.
     localStorage.setItem(`${TERMINAL_COMMAND_SNIPPETS_KEY}.bak`, JSON.stringify(legacy));
-    if (imported) showToast(`已迁移 ${imported} 条命令片段到同步库`, "success", 2600);
+    if (imported) showToast(t("snippets.toast.migrated", { count: imported }), "success", 2600);
   }
   localStorage.removeItem(TERMINAL_COMMAND_SNIPPETS_KEY);
   localStorage.setItem(TERMINAL_SNIPPETS_MIGRATED_KEY, "1");
@@ -1996,25 +2172,35 @@ function saveTerminalSnippetGroupState() {
   localStorage.setItem(TERMINAL_SNIPPET_GROUP_STATE_KEY, JSON.stringify(terminalSnippetGroupExpanded));
 }
 
-// The default "未分组" bucket is stored as an empty group string in the
+function defaultSnippetGroupLabel() {
+  return t("snippets.ungrouped");
+}
+
+function isDefaultSnippetGroupLabel(group) {
+  const s = String(group || "").trim();
+  return !s || s === "未分组" || s === "Ungrouped" || s === defaultSnippetGroupLabel();
+}
+
+// The default group bucket is stored as an empty group string in the
 // vault, so every write path normalizes before sending and the renderer
-// maps empty back to "未分组".
+// maps empty back to the localized label.
 function normalizeSnippetGroup(group) {
   const s = String(group || "").trim();
-  return s === "未分组" ? "" : s;
+  return isDefaultSnippetGroupLabel(s) ? "" : s;
 }
 
 function getTerminalSnippetGroups() {
-  const groups = new Set(["未分组"]);
+  const defaultGroup = defaultSnippetGroupLabel();
+  const groups = new Set([defaultGroup]);
   for (const snippet of terminalCommandSnippets) {
-    groups.add(String(snippet.group || "未分组").trim() || "未分组");
+    groups.add(String(snippet.group || defaultGroup).trim() || defaultGroup);
   }
   return Array.from(groups).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true }));
 }
 
-function syncSnippetGroupSelectOptions(currentValue = "未分组") {
+function syncSnippetGroupSelectOptions(currentValue = defaultSnippetGroupLabel()) {
   if (!snippetEditGroup) return;
-  const value = String(currentValue || "").trim() || "未分组";
+  const value = isDefaultSnippetGroupLabel(currentValue) ? defaultSnippetGroupLabel() : String(currentValue || "").trim();
   const groups = getTerminalSnippetGroups();
   if (!groups.includes(value)) groups.push(value);
   snippetEditGroup.dataset.customValue = "";
@@ -2037,15 +2223,15 @@ function closeSnippetEditDialog(result) {
   if (snippetEditForm) snippetEditForm.reset();
   if (snippetEditGroup) {
     snippetEditGroup.dataset.customValue = "";
-    syncSnippetGroupSelectOptions("未分组");
+    syncSnippetGroupSelectOptions(defaultSnippetGroupLabel());
   }
   resolve(result);
 }
 
 function openSnippetEditDialog({
-  title = "命令片段",
+  title = t("snippets.dialog.title"),
   name = "",
-  group = "未分组",
+  group = defaultSnippetGroupLabel(),
   command = "",
 } = {}) {
   if (snippetEditResolver) closeSnippetEditDialog(null);
@@ -2066,7 +2252,7 @@ function openSnippetEditDialog({
 async function sendSnippetToActiveTerminal(command) {
   const pane = getActivePane();
   if (!pane || pane.sessionId === null) {
-    alert("当前没有可写入的终端会话");
+    alert(t("snippets.error.no_terminal"));
     return;
   }
   await sendTextToPane(pane, String(command || ""), { submit: true });
@@ -2082,6 +2268,7 @@ function setTerminalSidePanel(panel) {
   if (terminalSnippetsPanel) terminalSnippetsPanel.hidden = terminalActiveSidePanel !== "snippets";
   terminalSidebarAiToggle?.classList.toggle("active", terminalActiveSidePanel === "ai");
   terminalSidebarSnippetsToggle?.classList.toggle("active", terminalActiveSidePanel === "snippets");
+  if (terminalActiveSidePanel === "ai") refreshAiModelsOnFirstPanelOpen();
 }
 
 function hideSnippetGroupContextMenu() {
@@ -2140,9 +2327,9 @@ async function editSnippetById(snippetId) {
   const snippet = terminalCommandSnippets.find((item) => item.id === snippetId);
   if (!snippet) return;
   const next = await openSnippetEditDialog({
-    title: "编辑命令片段",
+    title: t("snippets.dialog.edit_title"),
     name: snippet.title,
-    group: snippet.group || "未分组",
+    group: snippet.group || defaultSnippetGroupLabel(),
     command: snippet.command,
   });
   if (!next) return;
@@ -2157,7 +2344,7 @@ async function editSnippetById(snippetId) {
       },
     });
   } catch (e) {
-    alert(`保存命令片段失败: ${e}`);
+    alert(t("snippets.error.save_failed", { error: e }));
     return;
   }
   await refreshSnippetsAndRender();
@@ -2169,7 +2356,7 @@ async function deleteSnippetById(snippetId) {
   try {
     await invoke("delete_snippet", { id: snippetId });
   } catch (e) {
-    alert(`删除命令片段失败: ${e}`);
+    alert(t("snippets.error.delete_failed", { error: e }));
     return;
   }
   await refreshSnippetsAndRender();
@@ -2200,7 +2387,7 @@ function renderTerminalCommandSnippets() {
   terminalSnippetsList.hidden = !hasSnippets;
   const grouped = new Map();
   for (const snippet of filteredSnippets) {
-    const group = snippet.group || "未分组";
+    const group = snippet.group || defaultSnippetGroupLabel();
     if (!grouped.has(group)) grouped.set(group, []);
     grouped.get(group).push(snippet);
   }
@@ -2246,25 +2433,25 @@ function renderTerminalCommandSnippets() {
 
     const runBtn = document.createElement("button");
     runBtn.type = "button";
-    runBtn.textContent = "执行";
+    runBtn.textContent = t("snippets.action.run");
     runBtn.addEventListener("click", async () => {
       try {
         await executeAiCommand(snippet.command, { autoContinue: false });
-        showToast("已执行命令片段", "success", 1800);
+        showToast(t("snippets.toast.ran"), "success", 1800);
       } catch (e) {
-        alert(`执行命令片段失败: ${e}`);
+        alert(t("snippets.error.run_failed", { error: e }));
       }
     });
 
     const insertBtn = document.createElement("button");
     insertBtn.type = "button";
-    insertBtn.textContent = "填入终端";
+    insertBtn.textContent = t("snippets.action.insert");
     insertBtn.addEventListener("click", async () => {
       try {
         await sendSnippetToActiveTerminal(snippet.command);
-        showToast("已填入当前终端", "success", 1800);
+        showToast(t("snippets.toast.inserted"), "success", 1800);
       } catch (e) {
-        alert(`填入终端失败: ${e}`);
+        alert(t("snippets.error.insert_failed", { error: e }));
       }
     });
 
@@ -2279,9 +2466,9 @@ function renderTerminalCommandSnippets() {
 function syncAiContextToggle() {
   if (!aiContextToggle) return;
   const labels = {
-    smart: "智能判断终端内容",
-    always: "总是附带终端内容",
-    off: "不附带终端内容",
+    smart: t("ai.context.mode.smart"),
+    always: t("ai.context.mode.always"),
+    off: t("ai.context.mode.off"),
   };
   aiContextToggle.textContent = labels[aiContextMode];
   aiContextToggle.dataset.mode = aiContextMode;
@@ -2304,9 +2491,110 @@ function syncAiModelPill(model) {
   dot.setAttribute("aria-hidden", "true");
   aiModelPill.append(dot, document.createTextNode(label));
   aiModelPill.title = aiConfigured && value
-    ? t("ai.model.current", { label: value })
+    ? `${t("ai.model.current", { label: value })} · ${t("ai.model.switch_title")}`
     : t("ai.model.unconfigured");
   aiModelPill.classList.toggle("ai-pill-unconfigured", !aiConfigured || !value);
+}
+
+function getAiModelMenuItems() {
+  const current = String(getAiModelValue() || currentAiModelLabel || "").trim();
+  const models = settingsAiModel
+    ? Array.from(settingsAiModel.options).map((option) => String(option.value || "").trim()).filter(Boolean)
+    : [];
+  const unique = [];
+  for (const model of [current, ...models]) {
+    if (model && !unique.includes(model)) unique.push(model);
+  }
+  return unique;
+}
+
+function setAiModelMenuOpen(open) {
+  if (!aiModelMenu || !aiModelPill) return;
+  aiModelPill.setAttribute("aria-expanded", open ? "true" : "false");
+  aiModelMenu.hidden = !open;
+  if (open) renderAiModelMenu();
+}
+
+function setSettingsAiModelValue(model) {
+  const value = String(model || "").trim();
+  if (!value || !settingsAiModel) return;
+  const hasOption = Array.from(settingsAiModel.options).some((option) => option.value === value);
+  settingsAiModel.value = hasOption ? value : "";
+  if (settingsAiModelCustom) settingsAiModelCustom.value = hasOption ? "" : value;
+  syncCustomSelect("settings-ai-model");
+  syncAiModelPill(value);
+}
+
+async function selectAiModelFromPill(model) {
+  const value = String(model || "").trim();
+  if (!value) return;
+  setSettingsAiModelValue(value);
+  setAiModelMenuOpen(false);
+  try {
+    await saveAiConfigFromForm();
+    showToast(t("settings.ai.status.saved"), "success", 1800);
+  } catch (e) {
+    const msg = String(e);
+    if (settingsAiStatus) settingsAiStatus.textContent = msg;
+    showToast(msg, "error", 4200);
+  }
+}
+
+function renderAiModelMenu() {
+  if (!aiModelMenu) return;
+  aiModelMenu.replaceChildren();
+  const current = String(getAiModelValue() || currentAiModelLabel || "").trim();
+  const models = getAiModelMenuItems();
+
+  if (models.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "ai-model-menu-empty";
+    empty.textContent = t("ai.model.empty");
+    aiModelMenu.appendChild(empty);
+  } else {
+    for (const model of models) {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "ai-model-menu-item" + (model === current ? " active" : "");
+      item.textContent = model;
+      item.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        selectAiModelFromPill(model);
+      });
+      aiModelMenu.appendChild(item);
+    }
+  }
+
+  const refresh = document.createElement("button");
+  refresh.type = "button";
+  refresh.className = "ai-model-menu-refresh";
+  refresh.textContent = t("settings.ai.model.refresh");
+  refresh.addEventListener("click", async (ev) => {
+    ev.stopPropagation();
+    try {
+      await refreshAiModels();
+      renderAiModelMenu();
+      showToast(t("settings.ai.toast.models_refreshed"), "success", 1800);
+    } catch (e) {
+      const msg = String(e);
+      if (settingsAiStatus) settingsAiStatus.textContent = msg;
+      showToast(msg, "error", 4200);
+    }
+  });
+  aiModelMenu.appendChild(refresh);
+}
+
+async function refreshAiModelsOnFirstPanelOpen() {
+  if (aiModelsRefreshedOnFirstOpen) return;
+  aiModelsRefreshedOnFirstOpen = true;
+  try {
+    await refreshAiModels();
+    if (aiModelMenu?.hidden === false) renderAiModelMenu();
+  } catch (e) {
+    const msg = String(e);
+    if (settingsAiStatus) settingsAiStatus.textContent = msg;
+    console.warn("refresh AI models on first panel open failed", e);
+  }
 }
 
 function setAiModelOptions(models, selected) {
@@ -2372,6 +2660,207 @@ function getAiPaneKey() {
   return pane.sessionId !== null ? `session:${pane.sessionId}` : `pane:${pane.id}`;
 }
 
+function getAiSessionScope() {
+  const pane = getActivePane();
+  if (!pane) {
+    return { scopeType: "global", scopeId: "global", scopeLabel: t("ai.session.scope.global") };
+  }
+  if (pane.isLocal) {
+    return { scopeType: "local", scopeId: "local", scopeLabel: t("ai.session.scope.local") };
+  }
+  const host = pane.host;
+  if (host?.id) {
+    const user = String(host.user || "").trim();
+    const hostname = String(host.host || "").trim();
+    const port = Number(host.port || 22);
+    const target = [user, hostname].filter(Boolean).join("@");
+    const label = host.name || (target ? `${target}${port && port !== 22 ? `:${port}` : ""}` : t("ai.session.scope.ssh"));
+    return { scopeType: "host", scopeId: String(host.id), scopeLabel: label };
+  }
+  return { scopeType: "global", scopeId: "global", scopeLabel: t("ai.session.scope.global") };
+}
+
+function isAiSessionInCurrentScope(item) {
+  const scope = getAiSessionScope();
+  return String(item?.scopeType || "global") === scope.scopeType
+    && String(item?.scopeId || item?.scopeType || "global") === scope.scopeId;
+}
+
+function aiSessionIdentityKey() {
+  const scope = getAiSessionScope();
+  return `${scope.scopeType}:${scope.scopeId}:${getAiPaneKey()}`;
+}
+
+function newAiSessionId() {
+  return `ai-session-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function aiSessionTitle(messages = aiMessages) {
+  const firstUser = (messages || []).find((m) => m.role === "user" && String(m.content || "").trim());
+  const raw = String(firstUser?.content || t("ai.session.new_title")).replace(/\s+/g, " ").trim();
+  return raw.length > 36 ? `${raw.slice(0, 36)}...` : raw;
+}
+
+function resetAiSessionIdentity() {
+  aiCurrentSessionId = "";
+  aiCurrentSessionCreatedAt = 0;
+  aiSessionIdentityByPane.delete(aiSessionIdentityKey());
+}
+
+function clearAiSessionIdentitiesForScope(scope = null) {
+  if (!scope) {
+    aiSessionIdentityByPane.clear();
+    resetAiSessionIdentity();
+    return;
+  }
+  const prefix = `${scope.scopeType}:${scope.scopeId}:`;
+  for (const key of Array.from(aiSessionIdentityByPane.keys())) {
+    if (key.startsWith(prefix)) aiSessionIdentityByPane.delete(key);
+  }
+  resetAiSessionIdentity();
+}
+
+function normalizeAiSessionMessages(messages) {
+  return (Array.isArray(messages) ? messages : [])
+    .map((message) => ({
+      role: String(message?.role || "user"),
+      content: String(message?.content || ""),
+      commandResults: Array.isArray(message?.commandResults)
+        ? message.commandResults.map((result) => ({
+          command: String(result?.command || ""),
+          output: String(result?.output || ""),
+        })).filter((result) => result.command.trim())
+        : [],
+    }))
+    .filter((message) => ["user", "assistant", "error"].includes(message.role) && message.content.trim());
+}
+
+async function persistCurrentAiSession() {
+  const messages = normalizeAiSessionMessages(aiMessages);
+  if (!messages.length) return;
+  const now = Date.now();
+  if (!aiCurrentSessionId) {
+    aiCurrentSessionId = newAiSessionId();
+    aiCurrentSessionCreatedAt = now;
+  }
+  const scope = getAiSessionScope();
+  const input = {
+    id: aiCurrentSessionId,
+    title: aiSessionTitle(messages),
+    createdAt: aiCurrentSessionCreatedAt || now,
+    updatedAt: now,
+    paneKey: getAiPaneKey(),
+    scopeType: scope.scopeType,
+    scopeId: scope.scopeId,
+    scopeLabel: scope.scopeLabel,
+    messages,
+  };
+  try {
+    const saved = await invoke("save_ai_session", { input });
+    aiCurrentSessionCreatedAt = saved?.createdAt || input.createdAt;
+    aiSessionIdentityByPane.set(aiSessionIdentityKey(), {
+      id: aiCurrentSessionId,
+      createdAt: aiCurrentSessionCreatedAt,
+    });
+    await loadAiSessions({ render: true });
+  } catch (e) {
+    console.warn("save AI session failed", e);
+  }
+}
+
+function formatAiSessionTime(ts) {
+  const n = Number(ts || 0);
+  if (!Number.isFinite(n) || n <= 0) return "";
+  return new Date(n).toLocaleString(undefined, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+function renderAiSessions() {
+  if (!aiSessionList || !aiSessionEmpty) return;
+  aiSessionList.textContent = "";
+  const scope = getAiSessionScope();
+  if (aiSessionScopeLabel) {
+    aiSessionScopeLabel.textContent = aiSessionFilter === "current"
+      ? t("ai.session.desc.current", { scope: scope.scopeLabel })
+      : t("ai.session.desc.all");
+  }
+  aiSessionCurrentFilter?.classList.toggle("active", aiSessionFilter === "current");
+  aiSessionAllFilter?.classList.toggle("active", aiSessionFilter === "all");
+  if (aiSessionClear) {
+    aiSessionClear.textContent = aiSessionFilter === "current" ? t("ai.session.clear.current") : t("ai.session.clear.all");
+  }
+  const allItems = Array.isArray(aiSessionItems) ? aiSessionItems : [];
+  const items = aiSessionFilter === "current" ? allItems.filter(isAiSessionInCurrentScope) : allItems;
+  aiSessionEmpty.hidden = items.length > 0;
+  aiSessionEmpty.textContent = aiSessionFilter === "current" ? t("ai.session.empty.current") : t("ai.session.empty.all");
+  for (const item of items) {
+    const row = document.createElement("div");
+    row.setAttribute("role", "button");
+    row.tabIndex = 0;
+    row.className = "ai-session-item";
+    row.classList.toggle("active", item.id === aiCurrentSessionId);
+    const inCurrentScope = isAiSessionInCurrentScope(item);
+    row.classList.toggle("out-of-scope", !inCurrentScope);
+    if (!inCurrentScope) row.title = t("ai.session.toast.need_scope");
+    const title = document.createElement("strong");
+    title.textContent = item.title || aiSessionTitle(item.messages);
+    const meta = document.createElement("span");
+    const scopeLabel = item.scopeLabel || t("ai.session.scope.global");
+    const messageCount = t("ai.session.meta.messages", { count: (item.messages || []).length });
+    meta.textContent = aiSessionFilter === "all"
+      ? `${scopeLabel} · ${formatAiSessionTime(item.updatedAt)} · ${messageCount}`
+      : `${formatAiSessionTime(item.updatedAt)} · ${messageCount}`;
+    row.append(title, meta);
+    row.addEventListener("click", () => restoreAiSessionItem(item));
+    row.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Enter" && ev.key !== " ") return;
+      ev.preventDefault();
+      restoreAiSessionItem(item);
+    });
+    aiSessionList.appendChild(row);
+  }
+}
+
+async function loadAiSessions({ render = false } = {}) {
+  try {
+    aiSessionItems = await invoke("list_ai_sessions");
+  } catch (e) {
+    console.warn("load AI sessions failed", e);
+    aiSessionItems = [];
+  }
+  if (render) renderAiSessions();
+}
+
+function setAiSessionOpen(open) {
+  aiSessionOpen = Boolean(open);
+  if (aiSessionOverlay) aiSessionOverlay.hidden = !aiSessionOpen;
+  aiSessionToggle?.classList.toggle("active", aiSessionOpen);
+  if (aiSessionOpen) {
+    loadAiSessions({ render: true });
+  }
+}
+
+function restoreAiSessionItem(item) {
+  if (!isAiSessionInCurrentScope(item)) {
+    showToast(t("ai.session.toast.need_scope"), "error", 3200);
+    return;
+  }
+  aiCurrentSessionId = String(item?.id || "");
+  aiCurrentSessionCreatedAt = Number(item?.createdAt || item?.updatedAt || Date.now());
+  aiMessages = normalizeAiSessionMessages(item?.messages || []);
+  storeAiConversationForActivePane({ persist: false });
+  renderAiConversation();
+  renderAiSessions();
+  setAiSessionOpen(false);
+}
+
+function startNewAiConversation() {
+  aiMessages = [];
+  resetAiSessionIdentity();
+  storeAiConversationForActivePane({ persist: false });
+  renderAiConversation();
+  renderAiSessions();
+}
+
 function renderAiConversation() {
   if (!aiChatLog) return;
   aiChatLog.textContent = "";
@@ -2379,7 +2868,7 @@ function renderAiConversation() {
   aiChatLog.hidden = messages.length === 0;
   if (aiEmptyState) aiEmptyState.hidden = messages.length > 0;
   for (const message of messages) {
-    appendAiMessage(message.role, message.content, { skipStore: true });
+    appendAiMessage(message.role, message.content, { skipStore: true, message });
   }
 }
 
@@ -2388,13 +2877,23 @@ function syncAiConversationToActivePane() {
   if (key === aiActivePaneKey) return;
   aiActivePaneKey = key;
   aiMessages = aiConversationByPane.get(key) || [];
+  const identity = aiSessionIdentityByPane.get(aiSessionIdentityKey()) || {};
+  aiCurrentSessionId = identity.id || "";
+  aiCurrentSessionCreatedAt = identity.createdAt || 0;
   renderAiConversation();
 }
 
-function storeAiConversationForActivePane() {
+function storeAiConversationForActivePane({ persist = true } = {}) {
   const key = getAiPaneKey();
   aiActivePaneKey = key;
   aiConversationByPane.set(key, aiMessages);
+  aiSessionIdentityByPane.set(aiSessionIdentityKey(), {
+    id: aiCurrentSessionId,
+    createdAt: aiCurrentSessionCreatedAt,
+  });
+  if (persist) {
+    persistCurrentAiSession();
+  }
 }
 
 function renderAiMarkdown(text) {
@@ -2639,6 +3138,7 @@ function looksRunnableInlineCommand(value) {
 function setAiMessageContent(node, content) {
   const body = node?.querySelector?.(".ai-message-body");
   if (!body) return;
+  const shouldStickToBottom = isAiPanelNearBottom();
   body.textContent = "";
   if (node.classList.contains("ai-message-assistant")) {
     body.appendChild(renderAiMarkdown(content));
@@ -2648,7 +3148,7 @@ function setAiMessageContent(node, content) {
   } else {
     body.textContent = content;
   }
-  scrollAiPanelToBottom();
+  scrollAiPanelToBottom({ force: shouldStickToBottom });
 }
 
 function parseAiErrorMessage(error) {
@@ -2721,6 +3221,7 @@ async function executeAiCommand(command, { autoContinue = true } = {}) {
     await sendTextToPane(pane, command, { submit: true });
     pane.term?.focus?.();
     await waitForTerminalOutputSettle(before, { maxMs: commandWaitMaxMs(command) });
+    keepPaneTerminalAtBottom(pane, { force: true });
     const after = getActiveTerminalSnapshot(260);
     const output = after.startsWith(before) ? after.slice(before.length).trim() : after;
     const finalOutput = output || after;
@@ -2758,16 +3259,29 @@ async function waitForTerminalOutputSettle(before, { quietMs = 900, maxMs = 1500
   const started = Date.now();
   let last = before || "";
   let lastChanged = Date.now();
+  let firstQuietAt = 0;
   while (Date.now() - started < maxMs) {
     await wait(250);
     const current = getActiveTerminalSnapshot(260);
     if (current !== last) {
       last = current;
       lastChanged = Date.now();
+      firstQuietAt = 0;
       continue;
     }
-    if (Date.now() - lastChanged >= quietMs) return;
+    if (Date.now() - lastChanged >= quietMs) {
+      if (looksLikeTerminalPromptReady(current)) return;
+      if (!firstQuietAt) firstQuietAt = Date.now();
+      if (Date.now() - firstQuietAt >= 900) return;
+    }
   }
+}
+
+function looksLikeTerminalPromptReady(snapshot) {
+  const lines = String(snapshot || "").split("\n").map((line) => line.trimEnd()).filter(Boolean);
+  const tail = lines.slice(-4);
+  return tail.some((line) => /(?:^|\s)(?:[\w.-]+@)?[\w.-]+(?::[^\n]*)?[#$>]\s*$/.test(line)
+    || /^[>$]\s*$/.test(line));
 }
 
 function commandWaitMaxMs(command) {
@@ -2890,7 +3404,9 @@ async function streamAiMessages(messages, pendingText = "正在思考...") {
         state.node.classList.remove("pending");
         state.node.className = "ai-message ai-message-assistant";
         setAiMessageContent(state.node, content);
-        aiMessages.push({ role: "assistant", content });
+        const assistantMessage = { role: "assistant", content, commandResults: [] };
+        aiMessages.push(assistantMessage);
+        aiMessageByNode.set(state.node, assistantMessage);
         storeAiConversationForActivePane();
       } else {
         state.node.classList.remove("pending");
@@ -2942,6 +3458,16 @@ function ensureAiMultiCommandControls(messageNode, totalCommands) {
       hint: null,
       button: null,
     };
+    const message = aiMessageByNode.get(messageNode);
+    const storedResults = Array.isArray(message?.commandResults) ? message.commandResults : [];
+    if (storedResults.length) {
+      state.results = storedResults.map((item) => ({
+        command: String(item?.command || ""),
+        output: String(item?.output || ""),
+      })).filter((item) => item.command.trim());
+      state.executedCount = state.results.length;
+      state.lastContinuedCount = 0;
+    }
     aiMultiCommandState.set(messageNode, state);
   } else {
     state.totalCommands = Math.max(state.totalCommands || 0, totalCommands);
@@ -3005,6 +3531,18 @@ function updateAiMultiCommandControls(messageNode) {
   const dirty = executed > (state.lastContinuedCount || 0);
   state.button.disabled = !dirty;
   state.button.textContent = dirty ? "继续分析" : "已分析";
+}
+
+function storeAiCommandResultForMessage(messageNode, result) {
+  const message = aiMessageByNode.get(messageNode);
+  if (!message || !result?.command) return;
+  if (!Array.isArray(message.commandResults)) message.commandResults = [];
+  message.commandResults = message.commandResults.filter((item) => item.command !== result.command);
+  message.commandResults.push({
+    command: result.command,
+    output: redactSensitiveText(result.output || ""),
+  });
+  storeAiConversationForActivePane();
 }
 
 function looksLikeHeredocStart(line) {
@@ -3143,9 +3681,11 @@ function enhanceAiCodeBlocks(root) {
     const tools = document.createElement("div");
     tools.className = "ai-code-tools";
     commands.slice(0, 4).forEach((singleCommand, index) => {
+      const restoredResult = commandState?.results?.find?.((item) => item.command === singleCommand);
       const run = document.createElement("button");
       run.type = "button";
-      run.textContent = commands.length > 1 ? `批准 ${index + 1}` : "批准执行";
+      run.textContent = restoredResult ? "已执行" : (commands.length > 1 ? `批准 ${index + 1}` : "批准执行");
+      run.disabled = Boolean(restoredResult);
       run.title = singleCommand;
       run.addEventListener("click", async () => {
         run.disabled = true;
@@ -3154,8 +3694,10 @@ function enhanceAiCodeBlocks(root) {
         try {
           const output = await executeAiCommand(singleCommand, { autoContinue: false });
           if (commandState) {
-            commandState.results.push({ command: singleCommand, output: output || "" });
+            const result = { command: singleCommand, output: output || "" };
+            commandState.results.push(result);
             commandState.executedCount += 1;
+            storeAiCommandResultForMessage(messageNode, result);
             updateAiMultiCommandControls(messageNode);
           }
           run.textContent = "已执行";
@@ -3175,8 +3717,7 @@ function isExecutableCodeBlock(block, command) {
   const lines = String(command || "").split("\n").map((line) => line.trim()).filter(Boolean);
   if (!lines.length) return false;
   if (lines.some((line) => looksLikeTerminalOutput(line))) return false;
-  if (["output", "text", "log", "txt"].includes(lang)) return false;
-  if (lang === "terminal") return lines.every((line) => looksLikeRunnableCommandLine(line));
+  if (["output", "terminal", "text", "log", "txt"].includes(lang)) return false;
   if (["bash", "sh", "shell", "zsh"].includes(lang)) return true;
   return false;
 }
@@ -3194,7 +3735,7 @@ function looksLikeRunnableCommandLine(line) {
   return /^(sudo\s+)?[a-zA-Z0-9_./-]+(\s|$)/.test(line);
 }
 
-function appendAiMessage(role, content, { pending = false, skipStore = false } = {}) {
+function appendAiMessage(role, content, { pending = false, skipStore = false, message = null } = {}) {
   if (!aiChatLog) return null;
   aiChatLog.hidden = false;
   if (aiEmptyState) aiEmptyState.hidden = true;
@@ -3211,6 +3752,7 @@ function appendAiMessage(role, content, { pending = false, skipStore = false } =
 
   node.append(label, body);
   aiChatLog.appendChild(node);
+  if (message) aiMessageByNode.set(node, message);
   setAiMessageContent(node, content);
   scrollAiPanelToBottom({ force: true });
   if (!skipStore) storeAiConversationForActivePane();
@@ -3253,7 +3795,9 @@ async function ensureAiStreamListener() {
         window.__ztAiStreams.delete(payload.requestId);
         return;
       }
-      aiMessages.push({ role: "assistant", content: state.content });
+      const assistantMessage = { role: "assistant", content: state.content, commandResults: [] };
+      aiMessages.push(assistantMessage);
+      aiMessageByNode.set(state.node, assistantMessage);
       storeAiConversationForActivePane();
       window.__ztAiStreams.delete(payload.requestId);
     }
@@ -3346,7 +3890,7 @@ async function sendAiMessage(text) {
   const submitButton = aiComposeForm?.querySelector("button[type='submit']");
   if (submitButton) submitButton.disabled = true;
   try {
-    aiMessages.push({ role: "user", content: text });
+    aiMessages.push({ role: "user", content: text, commandResults: [] });
     storeAiConversationForActivePane();
     appendAiMessage("user", text);
     const system = "你是 ZeroTerm 的 AI 助手。用户是普通用户，不一定懂命令。请先用人话解释和规划，不要假装已经执行命令。需要用户执行命令时，一次只建议下一条最有用的命令；每个 bash/shell fenced code block 只能包含一条命令。引用终端输出、报错或日志时必须使用 ```terminal 代码块，不要使用 bash。";
@@ -3579,147 +4123,169 @@ const syncDraftByBackend = {
 
 const TERMINAL_THEMES = {
   "termark-dark": {
-    background: "#0f1424",
-    foreground: "#e7ecff",
-    cursor: "#9cc3ff",
-    selectionBackground: "#2d4a7a",
-    black: "#1e222a",
-    red: "#ea5555",
-    green: "#3fc070",
-    yellow: "#ebae34",
-    blue: "#4b8cff",
-    magenta: "#c678dd",
-    cyan: "#46b3e6",
-    white: "#e7ecff",
-    brightBlack: "#5c6370",
-    brightRed: "#ff6b6b",
-    brightGreen: "#50e3c2",
-    brightYellow: "#f8d153",
-    brightBlue: "#70a5ff",
-    brightMagenta: "#d28fe7",
-    brightCyan: "#67d5fa",
+    background: "#0a0f1c",
+    foreground: "#dbe7ff",
+    cursor: "#67e8f9",
+    selectionBackground: "#1f3b64",
+    black: "#101624",
+    red: "#ff6b7a",
+    green: "#51d88a",
+    yellow: "#f5c96b",
+    blue: "#6aa5ff",
+    magenta: "#c792ea",
+    cyan: "#57d4ff",
+    white: "#dbe7ff",
+    brightBlack: "#60708c",
+    brightRed: "#ff8793",
+    brightGreen: "#7ee6a7",
+    brightYellow: "#f8d98a",
+    brightBlue: "#8dbbff",
+    brightMagenta: "#d7a7f4",
+    brightCyan: "#83e3ff",
     brightWhite: "#ffffff",
   },
   "kanagawa-wave": {
-    background: "#1f1f28",
-    foreground: "#dcd7ba",
-    cursor: "#7e9cd8",
-    selectionBackground: "#2a2a37",
-    black: "#16161d",
-    red: "#c3404b",
-    green: "#76946a",
-    yellow: "#c0a36e",
-    blue: "#7e9cd8",
-    magenta: "#957fb8",
-    cyan: "#6a9589",
-    white: "#dcd7ba",
-    brightBlack: "#54546d",
-    brightRed: "#e82424",
-    brightGreen: "#8a9a86",
-    brightYellow: "#e6c384",
-    brightBlue: "#7fb4ca",
-    brightMagenta: "#938aa9",
-    brightCyan: "#7aa89f",
-    brightWhite: "#c8c093",
+    background: "#171820",
+    foreground: "#e4d8b4",
+    cursor: "#d6b56d",
+    selectionBackground: "#36322d",
+    black: "#111219",
+    red: "#d8616b",
+    green: "#8fb573",
+    yellow: "#d6b56d",
+    blue: "#7aa2e3",
+    magenta: "#b18bd6",
+    cyan: "#78b6a5",
+    white: "#e4d8b4",
+    brightBlack: "#5d6070",
+    brightRed: "#ee7b84",
+    brightGreen: "#a8c985",
+    brightYellow: "#e8ca86",
+    brightBlue: "#93b8ee",
+    brightMagenta: "#c3a0e4",
+    brightCyan: "#91c9b8",
+    brightWhite: "#fff2c7",
   },
   "catppuccin-mocha": {
-    background: "#1e1e2e",
-    foreground: "#cdd6f4",
-    cursor: "#89b4fa",
-    selectionBackground: "#313244",
-    black: "#1e1e2e",
-    red: "#f38ba8",
+    background: "#201925",
+    foreground: "#f0dff1",
+    cursor: "#ffb4d8",
+    selectionBackground: "#46314d",
+    black: "#17131b",
+    red: "#ff7a93",
     green: "#a6e3a1",
-    yellow: "#f9e2af",
-    blue: "#89b4fa",
-    magenta: "#f5c2e7",
-    cyan: "#94e2d5",
-    white: "#a6adc8",
-    brightBlack: "#585b70",
-    brightRed: "#f38ba8",
-    brightGreen: "#a6e3a1",
-    brightYellow: "#f9e2af",
-    brightBlue: "#89b4fa",
-    brightMagenta: "#f5c2e7",
-    brightCyan: "#94e2d5",
-    brightWhite: "#a6adc8",
+    yellow: "#f6d67b",
+    blue: "#8aadff",
+    magenta: "#f0a9df",
+    cyan: "#91d7e3",
+    white: "#f0dff1",
+    brightBlack: "#66566e",
+    brightRed: "#ff99ab",
+    brightGreen: "#b9efb4",
+    brightYellow: "#f9e29d",
+    brightBlue: "#a7c1ff",
+    brightMagenta: "#f7c2ea",
+    brightCyan: "#a9e5ee",
+    brightWhite: "#fff7ff",
   },
   nord: {
-    background: "#2e3440",
-    foreground: "#d8dee9",
-    cursor: "#88c0d0",
-    selectionBackground: "#3b4252",
-    black: "#2e3440",
-    red: "#bf616a",
-    green: "#a3be8c",
-    yellow: "#ebcb8b",
-    blue: "#81a1c1",
-    magenta: "#b48ead",
-    cyan: "#88c0d0",
-    white: "#e5e9f0",
-    brightBlack: "#4c566a",
-    brightRed: "#bf616a",
-    brightGreen: "#a3be8c",
-    brightYellow: "#ebcb8b",
-    brightBlue: "#81a1c1",
-    brightMagenta: "#b48ead",
-    brightCyan: "#8fbcbb",
-    brightWhite: "#eceff4",
+    background: "#111827",
+    foreground: "#d6e4f0",
+    cursor: "#9ed8ff",
+    selectionBackground: "#263a52",
+    black: "#0b1220",
+    red: "#e97b83",
+    green: "#9ccf91",
+    yellow: "#e6c981",
+    blue: "#8ab6df",
+    magenta: "#c4a5d9",
+    cyan: "#8dd4d8",
+    white: "#d6e4f0",
+    brightBlack: "#607080",
+    brightRed: "#f0939a",
+    brightGreen: "#b1dda7",
+    brightYellow: "#efd79b",
+    brightBlue: "#a5c9ec",
+    brightMagenta: "#d5b9e5",
+    brightCyan: "#a4e1e4",
+    brightWhite: "#f8fbff",
   },
   "tokyo-day": {
-    background: "#e1e2e7",
-    foreground: "#343b58",
-    cursor: "#343b58",
-    selectionBackground: "rgba(52, 59, 88, 0.2)",
-    black: "#343b58",
-    red: "#f52a65",
-    green: "#485e30",
-    yellow: "#8c6c3e",
-    blue: "#34548a",
-    magenta: "#5a4a78",
-    cyan: "#0f4b6e",
-    white: "#343b58",
-    brightBlack: "#9699a3",
-    brightRed: "#f52a65",
-    brightGreen: "#485e30",
-    brightYellow: "#8c6c3e",
-    brightBlue: "#34548a",
-    brightMagenta: "#5a4a78",
-    brightCyan: "#0f4b6e",
-    brightWhite: "#16161d",
+    background: "#f6f1e7",
+    foreground: "#2f3a4a",
+    cursor: "#2f6f9f",
+    selectionBackground: "#d8e4f2",
+    black: "#2f3a4a",
+    red: "#c7444e",
+    green: "#4f7d45",
+    yellow: "#a56d24",
+    blue: "#2f6f9f",
+    magenta: "#8d5ca6",
+    cyan: "#287f7a",
+    white: "#f6f1e7",
+    brightBlack: "#7f8793",
+    brightRed: "#d85b64",
+    brightGreen: "#629657",
+    brightYellow: "#bd8438",
+    brightBlue: "#4484b6",
+    brightMagenta: "#a373ba",
+    brightCyan: "#3b9992",
+    brightWhite: "#fffaf1",
   },
   "catppuccin-latte": {
-    background: "#eff1f5",
-    foreground: "#4c4f69",
-    cursor: "#4c4f69",
-    selectionBackground: "rgba(76, 79, 105, 0.2)",
-    black: "#4c4f69",
-    red: "#d20f39",
-    green: "#40a02b",
-    yellow: "#df8e1d",
-    blue: "#1e66f5",
-    magenta: "#ea76cb",
-    cyan: "#179299",
-    white: "#4c4f69",
-    brightBlack: "#bcc0cc",
-    brightRed: "#d20f39",
-    brightGreen: "#40a02b",
-    brightYellow: "#df8e1d",
-    brightBlue: "#1e66f5",
-    brightMagenta: "#ea76cb",
-    brightCyan: "#179299",
-    brightWhite: "#202030",
+    background: "#f7f8fc",
+    foreground: "#3f4560",
+    cursor: "#6f79d8",
+    selectionBackground: "#dfe4f5",
+    black: "#3f4560",
+    red: "#c83e4d",
+    green: "#3f8f59",
+    yellow: "#b37718",
+    blue: "#3f73d8",
+    magenta: "#b45fc5",
+    cyan: "#1f8c96",
+    white: "#f7f8fc",
+    brightBlack: "#9298ad",
+    brightRed: "#d85a67",
+    brightGreen: "#55a86e",
+    brightYellow: "#ca8f2b",
+    brightBlue: "#5b8be5",
+    brightMagenta: "#c778d4",
+    brightCyan: "#37a3ac",
+    brightWhite: "#ffffff",
+  },
+  "sage-light": {
+    background: "#eef3ec",
+    foreground: "#2e3f38",
+    cursor: "#427d67",
+    selectionBackground: "#cfe0d6",
+    black: "#2e3f38",
+    red: "#b85d5b",
+    green: "#4b855f",
+    yellow: "#9a7a32",
+    blue: "#3f6f8f",
+    magenta: "#8a6695",
+    cyan: "#3d837b",
+    white: "#eef3ec",
+    brightBlack: "#7d8a83",
+    brightRed: "#c87573",
+    brightGreen: "#62a176",
+    brightYellow: "#b08f49",
+    brightBlue: "#5687a7",
+    brightMagenta: "#9f7daa",
+    brightCyan: "#569b93",
+    brightWhite: "#fbfff9",
   },
 };
 
 
 const TERMINAL_THEME_META = {
-  "tokyo-day": { label: "Tokyo Day", group: "light" },
-  "catppuccin-latte": { label: "Catppuccin Latte", group: "light" },
-  "termark-dark": { label: "Termark Dark", group: "dark" },
-  "kanagawa-wave": { label: "Kanagawa Wave", group: "dark" },
-  "catppuccin-mocha": { label: "Catppuccin Mocha", group: "dark" },
-  nord: { label: "Nord", group: "dark" },
+  "tokyo-day": { label: "Paper Koi", group: "light" },
+  "catppuccin-latte": { label: "Porcelain Latte", group: "light" },
+  "sage-light": { label: "Sage Mist", group: "light" },
+  "termark-dark": { label: "Obsidian Neon", group: "dark" },
+  "kanagawa-wave": { label: "Sumi Wave", group: "dark" },
+  "catppuccin-mocha": { label: "Rose Mocha", group: "dark" },
 };
 
 let terminalCustomThemes = [];
@@ -4669,7 +5235,7 @@ if (windowControls) {
   windowControls.hidden = !isWindowsPlatform;
 }
 
-if (isWindowsPlatform && appWindow) {
+if (appWindow) {
   if (workspaceTitlebar) {
     bindDblclickMaximizeOnBar(workspaceTitlebar);
   }
@@ -4678,6 +5244,9 @@ if (isWindowsPlatform && appWindow) {
   window.addEventListener("resize", () => {
     syncWindowMaximizeButtonState();
   });
+}
+
+if (isWindowsPlatform && appWindow) {
   if (windowMinimizeButton) {
     windowMinimizeButton.addEventListener("click", () => {
       appWindow.minimize().catch((e) => {
@@ -5013,6 +5582,7 @@ async function loadSyncProfiles() {
       : t("settings.sync.status.none");
   }
   await refreshSyncStatusLine();
+  await refreshSyncDevices();
   await refreshSyncConflicts();
   await refreshSyncRepoStats();
   await refreshRememberPassphraseFlag();
@@ -5299,6 +5869,63 @@ function syncStat(stats, camel, snake, fallback = 0) {
   const s = stats?.[snake];
   if (s !== undefined && s !== null) return s;
   return fallback;
+}
+
+async function refreshSyncDevices() {
+  if (!settingsSyncDevicesList) return;
+  const id = activeSyncProfileId();
+  settingsSyncDevicesList.innerHTML = "";
+  if (!id) {
+    const li = document.createElement("li");
+    li.className = "muted tiny";
+    li.textContent = t("settings.sync.devices.no_profile");
+    settingsSyncDevicesList.appendChild(li);
+    return;
+  }
+  try {
+    const devices = await invoke("sync_list_devices", { profileId: id });
+    const visibleDevices = Array.isArray(devices)
+      ? devices.filter((device) => (device.deviceId || device.device_id) !== "device-unknown")
+      : [];
+    if (visibleDevices.length === 0) {
+      const li = document.createElement("li");
+      li.className = "muted tiny";
+      li.textContent = t("settings.sync.devices.empty");
+      settingsSyncDevicesList.appendChild(li);
+      return;
+    }
+    for (const device of visibleDevices) {
+      const li = document.createElement("li");
+      li.className = "settings-sync-device-row";
+      const main = document.createElement("div");
+      main.className = "settings-sync-device-main";
+      const name = document.createElement("strong");
+      name.textContent = device.name || device.deviceId || device.device_id || t("settings.sync.devices.this_device");
+      if (device.isCurrent || device.is_current) {
+        const badge = document.createElement("em");
+        badge.className = "settings-sync-device-current";
+        badge.textContent = t("settings.sync.devices.current_badge");
+        name.appendChild(document.createTextNode(" "));
+        name.appendChild(badge);
+      }
+      const idText = document.createElement("span");
+      idText.textContent = device.deviceId || device.device_id || "";
+      main.append(name, idText);
+      const lastSeen = document.createElement("span");
+      lastSeen.className = "settings-sync-device-seen";
+      const at = Number(device.lastSeenAt ?? device.last_seen_at ?? 0);
+      lastSeen.textContent = at > 0
+        ? t("settings.sync.devices.last_seen", { when: formatRelativeTime(at) })
+        : "";
+      li.append(main, lastSeen);
+      settingsSyncDevicesList.appendChild(li);
+    }
+  } catch (e) {
+    const li = document.createElement("li");
+    li.className = "muted tiny";
+    li.textContent = userFriendlySyncError(e);
+    settingsSyncDevicesList.appendChild(li);
+  }
 }
 
 async function refreshSyncRepoStats() {
@@ -5664,14 +6291,21 @@ async function runAutoSync(reason) {
       openConflictModal(conflicts, profileId);
     }
   } else if (error) {
+    const errorText = String(error);
+    const syncStillBootstrapping = reason === "on_unlock" && errorText.includes("sync is not connected yet");
     autoSync.lastOutcome = {
       at: Date.now(),
-      ok: false,
+      ok: syncStillBootstrapping,
       action: reason,
-      error: String(error),
+      skipped: syncStillBootstrapping,
+      error: errorText,
     };
-    markSyncLast(reason, 0, { ok: false, error: String(error) });
-    if (reason !== "heartbeat") {
+    if (syncStillBootstrapping) {
+      autoSync.consecutiveFailures = 0;
+    } else {
+      markSyncLast(reason, 0, { ok: false, error: errorText });
+    }
+    if (reason !== "heartbeat" && !syncStillBootstrapping) {
       // Manual / on_unlock / visibility failures get a toast so the user
       // isn't left wondering. Heartbeat failures are silent — the
       // indicator carries the status.
@@ -5699,10 +6333,11 @@ function startAutoSync() {
   autoSync.lastOutcome = null;
   ensureSyncIndicator();
   ensureAutoSyncSettingsControls();
-  // Fire one immediate sync to catch anything that happened while we
-  // were locked / offline. The .catch keeps unhandled-promise errors
-  // out of the console; failure is reported via the indicator.
-  runAutoSync("on_unlock").catch(() => {});
+  // Give the backend's background sync bootstrap a moment to connect after
+  // unlock, then catch up on anything that happened while locked / offline.
+  window.setTimeout(() => {
+    runAutoSync("on_unlock").catch(() => {});
+  }, 3000);
 }
 
 function stopAutoSync() {
@@ -6066,7 +6701,7 @@ function bindDragOnBar(el) {
 }
 
 function bindDblclickMaximizeOnBar(el) {
-  if (!el || !isWindowsPlatform || !appWindow) return;
+  if (!el || !appWindow?.toggleMaximize) return;
   el.addEventListener("dblclick", (ev) => {
     if (ev.button !== 0) return;
     if (isTitlebarInteractiveTarget(ev.target)) return;
@@ -6359,7 +6994,8 @@ function applyI18n() {
 
   setText("workspace-tab-vaults", "workspace.tab.vaults");
   setText("workspace-tab-sftp", "workspace.tab.sftp");
-  setText("vault-local-title", "sftp.host.local");
+  const vaultLocalTitle = document.getElementById("vault-local-title");
+  if (vaultLocalTitle) vaultLocalTitle.textContent = "ZeroTerm";
   setText("vault-settings-text", "sidebar.settings");
   setAttr("workspace-nav-vaults", "title", "workspace.tab.vaults");
   setAttr("workspace-nav-sftp", "title", "workspace.tab.sftp");
@@ -6463,6 +7099,30 @@ function applyI18n() {
   setOptionText("hf-auth-type", "agent", "host_editor.auth.agent");
   syncCustomSelect("hf-auth-type");
 
+  setText("terminal-snippets-title", "snippets.title");
+  setText("terminal-snippets-subtitle", "snippets.subtitle");
+  setText("terminal-snippets-empty-title", "snippets.empty.title");
+  setText("terminal-snippets-empty-desc", "snippets.empty.desc");
+  setAttr("terminal-snippets-add", "title", "snippets.add");
+  setAttr("terminal-sidebar-snippets-toggle", "title", "snippets.title");
+  setAttr("terminal-sidebar-snippets-toggle", "aria-label", "snippets.title");
+  setPlaceholder("terminal-snippets-search", "snippets.search.placeholder");
+  setText("snippet-group-menu-add", "snippets.menu.add");
+  setText("snippet-group-menu-edit", "snippets.menu.edit_group");
+  setText("snippet-group-menu-delete", "snippets.menu.delete_group");
+  setText("snippet-item-menu-edit", "snippets.menu.edit");
+  setText("snippet-item-menu-delete", "snippets.menu.delete");
+  setText("snippet-edit-title", "snippets.dialog.title");
+  setText("snippet-edit-name-label", "snippets.dialog.name");
+  setText("snippet-edit-group-label", "snippets.dialog.group");
+  setText("snippet-edit-command-label", "snippets.dialog.command");
+  setText("snippet-edit-cancel", "snippets.dialog.cancel");
+  setText("snippet-edit-save", "snippets.dialog.save");
+  setPlaceholder("snippet-edit-name", "snippets.dialog.name_placeholder");
+  setPlaceholder("snippet-edit-command", "snippets.dialog.command_placeholder");
+  if (snippetEditGroup) syncSnippetGroupSelectOptions(snippetEditGroup.value || defaultSnippetGroupLabel());
+  renderTerminalCommandSnippets();
+
   setPlaceholder("file-editor-find", "editor.find.placeholder");
   setPlaceholder("file-editor-replace", "editor.replace.placeholder");
   setPlaceholder("file-editor-find-inline", "editor.find.placeholder");
@@ -6485,6 +7145,10 @@ function applyI18n() {
   setText("theme-mode-light", "theme.mode.light");
   setText("theme-edit-title", "theme.edit.title");
   setText("theme-edit-name-label", "theme.edit.name");
+  setText("theme-edit-bg-label", "theme.edit.background");
+  setText("theme-edit-fg-label", "theme.edit.foreground");
+  setText("theme-edit-cursor-label", "theme.edit.cursor");
+  setText("theme-edit-selection-label", "theme.edit.selection");
   setText("theme-edit-reset", "theme.edit.reset");
   setText("theme-edit-cancel", "theme.edit.cancel");
   setText("theme-edit-save", "theme.edit.save");
@@ -6527,10 +7191,18 @@ function applyI18n() {
   setText("ai-example-2", "ai.example.2");
   setText("ai-example-3", "ai.example.3");
   setText("ai-example-4", "ai.example.4");
-  setText("ai-context-toggle", "ai.context.toggle.label");
   setText("ai-compose-hint", "ai.compose.hint");
   setPlaceholder("ai-compose-input", "ai.compose.placeholder");
   setAttr("ai-context-toggle", "title", "ai.context.toggle.title");
+  setText("ai-session-dialog-title", "ai.session.title");
+  setText("ai-session-close", "ai.session.close");
+  setText("ai-session-current-filter", "ai.session.filter.current");
+  setText("ai-session-all-filter", "ai.session.filter.all");
+  setAttr("ai-session-filter", "aria-label", "ai.session.filter.aria");
+  setAttr("ai-new-chat", "title", "ai.session.new_title");
+  setAttr("ai-new-chat", "aria-label", "ai.session.new_title");
+  renderAiSessions();
+  syncAiContextToggle();
   setAttr("ai-model-pill", "title", "ai.model.pill_title");
   // The aria-labels on the panel sections / send button.
   const aiPanel = document.querySelector(".ai-assistant-panel");
@@ -7057,6 +7729,12 @@ settingsAiRefreshModels?.addEventListener("click", async () => {
 });
 settingsAiModel?.addEventListener("change", () => syncAiModelPill());
 settingsAiModelCustom?.addEventListener("input", () => syncAiModelPill());
+aiModelPill?.addEventListener("click", (ev) => {
+  ev.stopPropagation();
+  setAiModelMenuOpen(aiModelMenu?.hidden !== false);
+});
+aiModelMenu?.addEventListener("click", (ev) => ev.stopPropagation());
+document.addEventListener("click", () => setAiModelMenuOpen(false));
 settingsDataClearVault?.addEventListener("click", async () => {
   const ok = confirm(t("settings.data.confirm.clear_vault"));
   if (!ok) return;
@@ -7229,6 +7907,7 @@ settingsSyncCreateRepo?.addEventListener("click", async () => {
       }
       showToast(t("settings.sync.alert.repo_created"), "success");
       await refreshSyncStatusLine();
+      await refreshSyncDevices();
       await refreshSyncRepoStats();
     } catch (e) {
       const msg = userFriendlySyncError(e);
@@ -7267,6 +7946,7 @@ settingsSyncJoinRepo?.addEventListener("click", async () => {
       await refreshSyncStatusLine();
       await refreshAllSyncedViewsFromVault();
       await warnIfMalformedSyncedHosts();
+      await refreshSyncDevices();
       await refreshSyncConflicts();
       await refreshSyncRepoStats();
       showToast(settingsSyncStatus?.textContent || t("settings.sync.status.joined"), "success");
@@ -7342,6 +8022,7 @@ settingsSyncDeleteRemote?.addEventListener("click", async () => {
       if (settingsSyncStatus) settingsSyncStatus.textContent = t("settings.sync.status.remote_deleted");
       showToast(t("settings.sync.status.remote_deleted"), "success");
       await refreshSyncStatusLine();
+      await refreshSyncDevices();
       await refreshSyncRepoStats();
       await refreshSyncConflicts();
     } catch (e) {
@@ -7368,6 +8049,7 @@ settingsSyncNow?.addEventListener("click", async () => {
       await refreshAllSyncedViewsFromVault();
       await warnIfMalformedSyncedHosts();
       await refreshSyncStatusLine();
+      await refreshSyncDevices();
       await refreshSyncConflicts();
       await refreshSyncRepoStats();
       showToast(settingsSyncStatus?.textContent || t("settings.sync.button.now"), "success");
@@ -7621,8 +8303,8 @@ themeMenuDuplicate?.addEventListener("click", async () => {
   const baseTheme = allTerminalThemes()[id];
   if (!baseTheme) return;
   const label = await openTextInputDialog({
-    title: "复制为自定义",
-    message: "请输入新主题名称",
+    title: t("theme.prompt.duplicate.title"),
+    message: t("theme.prompt.duplicate.message"),
     placeholder: "例如：My Theme",
   });
   if (!label) return;
@@ -7647,7 +8329,7 @@ themeMenuDelete?.addEventListener("click", () => {
   themeCardMenu.hidden = true;
   const target = terminalCustomThemes.find((t) => t.id === id);
   if (!target) return;
-  if (!confirm(`删除自定义主题 \"${target.label}\"?`)) return;
+  if (!confirm(t("theme.confirm.delete", { name: target.label }))) return;
   terminalCustomThemes = terminalCustomThemes.filter((t) => t.id !== id);
   saveCustomThemes();
   const fallback = "termark-dark";
@@ -7712,7 +8394,7 @@ themeEditForm?.addEventListener("submit", (ev) => {
   if (idx < 0) return;
   const label = String(themeEditName?.value || "").trim();
   if (!label) {
-    alert("请输入主题名称");
+    alert(t("theme.error.name_required"));
     themeEditName?.focus();
     return;
   }
@@ -8391,8 +9073,8 @@ terminalSidebarSnippetsToggle?.addEventListener("click", () => {
 
 terminalSnippetsAdd?.addEventListener("click", async () => {
   const next = await openSnippetEditDialog({
-    title: "新增命令片段",
-    group: "未分组",
+    title: t("snippets.dialog.add_title"),
+    group: defaultSnippetGroupLabel(),
   });
   if (!next) return;
   try {
@@ -8400,7 +9082,7 @@ terminalSnippetsAdd?.addEventListener("click", async () => {
       input: { title: next.name, command: next.command, group: normalizeSnippetGroup(next.group), sortOrder: 0 },
     });
   } catch (e) {
-    alert(`新增命令片段失败: ${e}`);
+    alert(t("snippets.error.create_failed", { error: e }));
     return;
   }
   await refreshSnippetsAndRender();
@@ -8414,10 +9096,10 @@ terminalSnippetsSearch?.addEventListener("input", () => {
 });
 
 snippetGroupMenuAdd?.addEventListener("click", async () => {
-  const group = snippetGroupMenuTarget || "未分组";
+  const group = snippetGroupMenuTarget || defaultSnippetGroupLabel();
   hideSnippetGroupContextMenu();
   const next = await openSnippetEditDialog({
-    title: "新增命令片段",
+    title: t("snippets.dialog.add_title"),
     group,
   });
   if (!next) return;
@@ -8426,7 +9108,7 @@ snippetGroupMenuAdd?.addEventListener("click", async () => {
       input: { title: next.name, command: next.command, group: normalizeSnippetGroup(next.group), sortOrder: 0 },
     });
   } catch (e) {
-    alert(`新增命令片段失败: ${e}`);
+    alert(t("snippets.error.create_failed", { error: e }));
     return;
   }
   await refreshSnippetsAndRender();
@@ -8439,10 +9121,10 @@ snippetGroupMenuEdit?.addEventListener("click", async () => {
   hideSnippetGroupContextMenu();
   if (!current) return;
   const next = await openTextInputDialog({
-    title: "编辑分组",
-    message: "请输入新的分组名称",
+    title: t("snippets.group.edit_title"),
+    message: t("snippets.group.edit_message"),
     defaultValue: current,
-    placeholder: "例如：Docker",
+    placeholder: t("snippets.group.placeholder"),
   });
   if (!next) return;
   const nextName = next.trim();
@@ -8453,7 +9135,7 @@ snippetGroupMenuEdit?.addEventListener("click", async () => {
       newName: normalizeSnippetGroup(nextName),
     });
   } catch (e) {
-    alert(`重命名分组失败: ${e}`);
+    alert(t("snippets.group.rename_failed", { error: e }));
     return;
   }
   if (terminalSnippetGroupExpanded[current] !== undefined) {
@@ -8472,7 +9154,7 @@ snippetGroupMenuDelete?.addEventListener("click", async () => {
   try {
     await invoke("delete_snippet_group", { name: normalizeSnippetGroup(current) });
   } catch (e) {
-    alert(`删除分组失败: ${e}`);
+    alert(t("snippets.group.delete_failed", { error: e }));
     return;
   }
   delete terminalSnippetGroupExpanded[current];
@@ -8497,7 +9179,7 @@ snippetEditCancel?.addEventListener("click", () => closeSnippetEditDialog(null))
 snippetEditForm?.addEventListener("submit", (ev) => {
   ev.preventDefault();
   const name = String(snippetEditName?.value || "").trim();
-  const group = String(snippetEditGroup?.dataset.customValue || snippetEditGroup?.value || "").trim() || "未分组";
+  const group = String(snippetEditGroup?.dataset.customValue || snippetEditGroup?.value || "").trim() || defaultSnippetGroupLabel();
   const command = String(snippetEditCommand?.value || "").trim();
   if (!name) {
     snippetEditName?.focus();
@@ -9095,11 +9777,55 @@ function clampPaneBodyHeight(pane) {
 function syncPaneViewportScroll(pane) {
   const viewport = pane?.bodyEl?.querySelector?.(".xterm-viewport");
   const buffer = pane?.term?.buffer?.active;
-  if (!viewport || !buffer) return;
+  const term = pane?.term;
+  if (!viewport || !buffer || !term) return;
+  const bottomY = Math.max(0, buffer.baseY + buffer.cursorY);
+  const bufferAtBottom = Math.abs(buffer.viewportY + term.rows - 1 - bottomY) <= 1;
+  if (bufferAtBottom) {
+    const maxTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+    if (Math.abs(viewport.scrollTop - maxTop) > 1) viewport.scrollTop = maxTop;
+    return;
+  }
   const lineHeight = pane.term?._core?._renderService?.dimensions?.css?.cell?.height || 0;
   if (lineHeight <= 0) return;
   const expectedTop = Math.max(0, buffer.viewportY * lineHeight);
   if (Math.abs(viewport.scrollTop - expectedTop) > 1) viewport.scrollTop = expectedTop;
+}
+
+function isPaneTerminalNearBottom(pane) {
+  const buffer = pane?.term?.buffer?.active;
+  if (!buffer || !pane?.term) return true;
+  const bottomY = Math.max(0, buffer.baseY + buffer.cursorY);
+  return Math.abs(buffer.viewportY + pane.term.rows - 1 - bottomY) <= 1;
+}
+
+function keepPaneTerminalAtBottom(pane, { force = false } = {}) {
+  if (!pane?.term) return;
+  if (!force && !isPaneTerminalNearBottom(pane)) return;
+  requestAnimationFrame(() => {
+    if (!pane.term) return;
+    pane.term.scrollToBottom();
+    syncPaneViewportScroll(pane);
+  });
+}
+
+function refreshPaneTerminal(pane) {
+  if (!pane?.term) return;
+  try {
+    pane.term.refresh(0, Math.max(0, pane.term.rows - 1));
+  } catch {
+    // Older xterm builds may not expose refresh; writes still proceed normally.
+  }
+}
+
+function writePaneTerminalData(pane, data, { stickToBottom = false } = {}) {
+  if (!pane?.term) return;
+  pane.term.write(data, () => {
+    if (!pane.term) return;
+    if (stickToBottom) pane.term.scrollToBottom();
+    syncPaneViewportScroll(pane);
+    refreshPaneTerminal(pane);
+  });
 }
 
 function nextFrame() {
@@ -9200,7 +9926,7 @@ async function connectPaneSession(pane) {
     if (pane.latencyEl) pane.latencyEl.hidden = true;
     if (pane.reconnectBtn) pane.reconnectBtn.hidden = false;
     if (pane.term) {
-      pane.term.write(`\x1b[31m${t("terminal.error.connect_failed_term", { error: e })}\x1b[0m\r\n`);
+      writePaneTerminalData(pane, `\x1b[31m${t("terminal.error.connect_failed_term", { error: e })}\x1b[0m\r\n`, { stickToBottom: true });
     }
   }
 }
@@ -9222,7 +9948,8 @@ async function wirePaneSessionEvents(pane, sessionId) {
   pane.dataUnlisten = await listen("session:data", (ev) => {
     if (ev.payload.sessionId !== sessionId) return;
     if (!pane.term) return;
-    pane.term.write(new Uint8Array(ev.payload.data));
+    const stickToBottom = isPaneTerminalNearBottom(pane);
+    writePaneTerminalData(pane, new Uint8Array(ev.payload.data), { stickToBottom });
   });
 
   pane.latencyUnlisten = await listen("session:latency", (ev) => {
@@ -9246,7 +9973,7 @@ async function wirePaneSessionEvents(pane, sessionId) {
     if (pane.statusEl) pane.statusEl.textContent = t("terminal.status.disconnected");
     if (pane.latencyEl) pane.latencyEl.hidden = true;
     if (pane.reconnectBtn) pane.reconnectBtn.hidden = false;
-    if (pane.term) pane.term.write(tail);
+    if (pane.term) writePaneTerminalData(pane, tail, { stickToBottom: true });
   });
 
 }
@@ -12122,6 +12849,64 @@ aiComposeInput?.addEventListener("keydown", (ev) => {
 
 aiContextToggle?.addEventListener("click", cycleAiContextMode);
 
+aiNewChatButton?.addEventListener("click", () => {
+  if (aiMessages.length && !confirm(t("ai.session.confirm.new"))) return;
+  startNewAiConversation();
+  setAiSessionOpen(false);
+  aiComposeInput?.focus();
+});
+
+aiSessionToggle?.addEventListener("click", () => {
+  setAiSessionOpen(!aiSessionOpen);
+});
+
+aiSessionCurrentFilter?.addEventListener("click", () => {
+  aiSessionFilter = "current";
+  renderAiSessions();
+});
+
+aiSessionAllFilter?.addEventListener("click", () => {
+  aiSessionFilter = "all";
+  renderAiSessions();
+});
+
+aiSessionClose?.addEventListener("click", () => setAiSessionOpen(false));
+
+aiSessionOverlay?.addEventListener("click", (ev) => {
+  if (ev.target === aiSessionOverlay) setAiSessionOpen(false);
+});
+
+aiSessionClear?.addEventListener("click", async () => {
+  const currentOnly = aiSessionFilter === "current";
+  const scope = getAiSessionScope();
+  const confirmText = currentOnly
+    ? t("ai.session.confirm.clear_current", { scope: scope.scopeLabel })
+    : t("ai.session.confirm.clear_all");
+  if (!confirm(confirmText)) return;
+  try {
+    if (currentOnly) {
+      const deletedCurrentSession = aiSessionItems.some((item) => item.id === aiCurrentSessionId && isAiSessionInCurrentScope(item));
+      await invoke("clear_ai_sessions_for_scope", {
+        input: {
+          scopeType: scope.scopeType,
+          scopeId: scope.scopeId,
+        },
+      });
+      aiSessionItems = aiSessionItems.filter((item) => !isAiSessionInCurrentScope(item));
+      clearAiSessionIdentitiesForScope(scope);
+      if (!deletedCurrentSession && aiMessages.length) storeAiConversationForActivePane({ persist: false });
+    } else {
+      await invoke("clear_ai_sessions");
+      aiSessionItems = [];
+      clearAiSessionIdentitiesForScope();
+    }
+    renderAiSessions();
+    showToast(currentOnly ? t("ai.session.toast.cleared_current") : t("ai.session.toast.cleared_all"), "success", 1800);
+  } catch (e) {
+    showToast(t("ai.session.toast.clear_failed", { error: e }), "error", 3600);
+  }
+});
+
 aiComposeForm?.addEventListener("submit", (ev) => {
   ev.preventDefault();
   const text = aiComposeInput?.value.trim();
@@ -12190,6 +12975,10 @@ fileEditorReplaceInline?.addEventListener("keydown", (ev) => {
 });
 
 document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && aiSessionOpen) {
+    setAiSessionOpen(false);
+    return;
+  }
   if (fileEditorOverlay.hidden) return;
   const key = ev.key.toLowerCase();
   if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && key === "f") {
@@ -12230,6 +13019,7 @@ window.addEventListener("resize", () => {
 
 applyI18n();
 loadAiConfig().catch(() => {});
+loadAiSessions({ render: true }).catch(() => {});
 refreshVaultStatus();
 function openSettingsPage() {
   setWorkspaceMode("settings");
