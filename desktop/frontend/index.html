@@ -179,7 +179,11 @@
                           <path d="M12 14h5"></path>
                         </svg>
                       </button>
-                      <div id="term-tab-strip" class="tab-strip workspace-term-strip"></div>
+                      <div class="term-tab-scroll-wrap">
+                        <button id="term-tab-scroll-left" type="button" class="term-tab-scroll-btn" aria-label="Scroll tabs left" title="Scroll tabs left" hidden>‹</button>
+                        <div id="term-tab-strip" class="tab-strip workspace-term-strip"></div>
+                        <button id="term-tab-scroll-right" type="button" class="term-tab-scroll-btn" aria-label="Scroll tabs right" title="Scroll tabs right" hidden>›</button>
+                      </div>
                       <div class="workspace-actions topbar-hidden-actions" hidden>
                         <button id="new-window-button" type="button" class="workspace-icon-btn" aria-label="New window">
                           <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -200,7 +204,7 @@
                       </div>
                       <div id="window-controls" class="window-controls">
                         <button id="window-minimize" type="button" class="window-control-btn" title="Minimize">—</button>
-                        <button id="window-maximize" type="button" class="window-control-btn" title="Maximize">□</button>
+                        <button id="window-maximize" type="button" class="window-control-btn" title="Maximize"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1.2"></rect></svg></button>
                         <button id="window-close" type="button" class="window-control-btn danger" title="Close">✕</button>
                       </div>
                     </header>

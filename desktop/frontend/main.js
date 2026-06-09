@@ -4941,8 +4941,12 @@ function generateCustomThemeId() {
 
 function showThemeCardMenu(x, y) {
   if (!themeCardMenu) return;
+  const isCustomTheme = terminalCustomThemes.some((t) => t.id === themeMenuTargetId);
+  if (themeMenuEdit) {
+    themeMenuEdit.disabled = !isCustomTheme;
+  }
   if (themeMenuDelete) {
-    themeMenuDelete.disabled = !terminalCustomThemes.some((t) => t.id === themeMenuTargetId);
+    themeMenuDelete.disabled = !isCustomTheme;
   }
   themeCardMenu.style.left = "0px";
   themeCardMenu.style.top = "0px";
@@ -4984,6 +4988,11 @@ function isFullyTransparentColor(color) {
 function resolveTerminalThemeGroup(themeName) {
   const customTheme = terminalCustomThemes.find((t) => t.id === themeName);
   return customTheme?.group || TERMINAL_THEME_META[themeName]?.group || "dark";
+}
+
+function getDefaultTerminalThemeForGroup(group) {
+  const preferredGroup = group === "light" ? "light" : "dark";
+  return Object.entries(TERMINAL_THEME_META).find(([, meta]) => meta.group === preferredGroup)?.[0] || "termark-dark";
 }
 
 function syncTerminalThemeEditor() {
@@ -5199,7 +5208,9 @@ function setWindowMaximizeButtonState(maximized) {
   windowIsMaximized = Boolean(maximized);
   if (!windowMaximizeButton) return;
   windowMaximizeButton.dataset.maximized = windowIsMaximized ? "true" : "false";
-  windowMaximizeButton.textContent = windowIsMaximized ? "❐" : "□";
+  windowMaximizeButton.innerHTML = windowIsMaximized
+    ? '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.5h6.5v6.5"></path><path d="M4 6h6v6H4z"></path></svg>'
+    : '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1.2"></rect></svg>';
   windowMaximizeButton.setAttribute("title", t(windowIsMaximized ? "window.restore" : "window.maximize"));
 }
 
@@ -5218,6 +5229,7 @@ async function syncWindowMaximizeButtonState() {
 
 function isTitlebarInteractiveTarget(target) {
   if (!target || typeof target.closest !== "function") return false;
+  if (target.closest(".term-tab-scroll-wrap") && !target.closest("button, .tab-item")) return false;
   return Boolean(
     target.closest(
       "button, input, select, textarea, a, .tab-item, .workspace-tab, .workspace-icon-btn, [data-tauri-drag-region='false']",
@@ -6693,6 +6705,7 @@ function bindDragOnBar(el) {
   if (!el || !appWindow?.startDragging) return;
   el.addEventListener("mousedown", (ev) => {
     if (ev.button !== 0) return;
+    if (ev.detail > 1) return;
     if (isTitlebarInteractiveTarget(ev.target)) return;
     appWindow.startDragging().catch((e) => {
       console.warn("startDragging failed", e);
@@ -8264,36 +8277,8 @@ themeMenuEdit?.addEventListener("click", () => {
   const id = themeMenuTargetId;
   themeCardMenu.hidden = true;
   if (!id) return;
-
-  // Built-in themes are read-only. For "Edit", create a custom copy first
-  // so this action always opens an editable theme dialog.
-  let editableId = id;
-  const existingCustom = terminalCustomThemes.find((t) => t.id === id);
-  if (!existingCustom) {
-    const baseTheme = allTerminalThemes()[id];
-    if (!baseTheme) return;
-    const baseLabel = TERMINAL_THEME_META[id]?.label || id;
-    let newId = `custom-${Date.now()}`;
-    while (terminalCustomThemes.some((t) => t.id === newId)) {
-      newId = `custom-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-    }
-    terminalCustomThemes.push({
-      id: newId,
-      label: `${baseLabel} Custom`,
-      group: TERMINAL_THEME_META[id]?.group === "light" ? "light" : "dark",
-      theme: { ...baseTheme },
-    });
-    saveCustomThemes();
-    editableId = newId;
-    localStorage.setItem(SETTINGS_KEY_TERMINAL_THEME, editableId);
-    terminalEditingThemeId = editableId;
-    rebuildTerminalThemeSelectOptions();
-    renderTerminalThemeCards();
-    syncTerminalThemeEditor();
-    applyTerminalThemeToAllPanes();
-  }
-
-  openThemeEditDialog(editableId);
+  if (!terminalCustomThemes.some((t) => t.id === id)) return;
+  openThemeEditDialog(id);
 });
 
 themeMenuDuplicate?.addEventListener("click", async () => {
@@ -8330,15 +8315,21 @@ themeMenuDelete?.addEventListener("click", () => {
   const target = terminalCustomThemes.find((t) => t.id === id);
   if (!target) return;
   if (!confirm(t("theme.confirm.delete", { name: target.label }))) return;
+  const deletedWasSelected = getTerminalThemeName() === id;
+  const deletedWasEditing = terminalEditingThemeId === id;
+  const fallback = getDefaultTerminalThemeForGroup(target.group);
   terminalCustomThemes = terminalCustomThemes.filter((t) => t.id !== id);
   saveCustomThemes();
-  const fallback = "termark-dark";
-  terminalEditingThemeId = fallback;
-  localStorage.setItem(SETTINGS_KEY_TERMINAL_THEME, fallback);
+  terminalEditingThemeId = deletedWasEditing || deletedWasSelected ? fallback : getTerminalThemeName();
+  if (deletedWasSelected) {
+    localStorage.setItem(SETTINGS_KEY_TERMINAL_THEME, fallback);
+  }
   rebuildTerminalThemeSelectOptions();
   renderTerminalThemeCards();
   syncTerminalThemeEditor();
-  applyTerminalThemeToAllPanes();
+  if (deletedWasSelected) {
+    applyTerminalThemeToAllPanes();
+  }
 });
 
 themeEditCancel?.addEventListener("click", () => {
@@ -8756,6 +8747,9 @@ function renderHosts() {
 // --------------------------------------------------------------------------
 
 const termTabStrip = document.getElementById("term-tab-strip");
+const termTabScrollWrap = document.querySelector(".term-tab-scroll-wrap");
+const termTabScrollLeft = document.getElementById("term-tab-scroll-left");
+const termTabScrollRight = document.getElementById("term-tab-scroll-right");
 const terminalWorkspace = document.getElementById("terminal-workspace");
 
 const termState = {
@@ -9233,7 +9227,43 @@ function renderTabStrip() {
 
     termTabStrip.appendChild(el);
   }
+
+  updateTabOverflowControls();
+
+  const activeTabEl = termTabStrip.querySelector(".tab-item.active");
+  activeTabEl?.scrollIntoView({ block: "nearest", inline: "nearest" });
 }
+
+function updateTabOverflowControls() {
+  if (!termTabStrip || !termTabScrollLeft || !termTabScrollRight) return;
+
+  if (termState.tabs.length === 0) {
+    termTabScrollLeft.hidden = true;
+    termTabScrollRight.hidden = true;
+    return;
+  }
+
+  const canOverflow = termTabStrip.scrollWidth > termTabStrip.clientWidth + 1;
+  const maxScrollLeft = Math.max(0, termTabStrip.scrollWidth - termTabStrip.clientWidth);
+  const scrollLeft = termTabStrip.scrollLeft;
+
+  termTabScrollLeft.hidden = !canOverflow;
+  termTabScrollRight.hidden = !canOverflow;
+  termTabScrollLeft.disabled = !canOverflow || scrollLeft <= 1;
+  termTabScrollRight.disabled = !canOverflow || scrollLeft >= maxScrollLeft - 1;
+}
+
+function scrollTermTabs(direction) {
+  if (!termTabStrip) return;
+  const distance = Math.max(180, Math.floor(termTabStrip.clientWidth * 0.65));
+  termTabStrip.scrollBy({ left: direction * distance, behavior: "smooth" });
+  window.setTimeout(updateTabOverflowControls, 220);
+}
+
+termTabScrollLeft?.addEventListener("click", () => scrollTermTabs(-1));
+termTabScrollRight?.addEventListener("click", () => scrollTermTabs(1));
+termTabStrip?.addEventListener("scroll", updateTabOverflowControls, { passive: true });
+window.addEventListener("resize", updateTabOverflowControls);
 
 function ensurePaneElements(pane, tab) {
   if (pane.rootEl) return;

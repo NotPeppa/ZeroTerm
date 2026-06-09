@@ -124,7 +124,7 @@ body.has-app-bg #app-bg-scrim {
   display: block;
 }
 body.has-app-bg[data-app-theme="light"] #app-bg-scrim {
-  background: rgba(244, 246, 249, 0.28);
+  background: rgba(244, 246, 249, 0.08);
 }
 
 /* Terminal/content surfaces: fully transparent (image + scrim only). */
@@ -147,12 +147,12 @@ body.has-app-bg .settings-page-head {
 
 body.has-app-bg .vault-right-topbar {
   background: rgba(8, 11, 20, 0.30) !important;
-  backdrop-filter: blur(25px) !important;
-  -webkit-backdrop-filter: blur(25px) !important;
+  backdrop-filter: blur(14px) !important;
+  -webkit-backdrop-filter: blur(14px) !important;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
 }
 body.has-app-bg[data-app-theme="light"] .vault-right-topbar {
-  background: rgba(255, 255, 255, 0.30) !important;
+  background: rgba(255, 255, 255, 0.16) !important;
   border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
 }
 
@@ -178,13 +178,19 @@ body.has-app-bg .terminal-side-panel::after {
   bottom: 0 !important;
   z-index: -1 !important;
   background: rgba(8, 11, 20, 0.30) !important;
-  backdrop-filter: blur(25px) !important;
-  -webkit-backdrop-filter: blur(25px) !important;
+  backdrop-filter: blur(14px) !important;
+  -webkit-backdrop-filter: blur(14px) !important;
 }
 body.has-app-bg[data-app-theme="light"] .vault-sidebar::after,
 body.has-app-bg[data-app-theme="light"] .settings-sidebar::after,
 body.has-app-bg[data-app-theme="light"] .terminal-side-panel::after {
-  background: rgba(255, 255, 255, 0.30) !important;
+  background: rgba(255, 255, 255, 0.42) !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .terminal-side-panel,
+body.has-app-bg[data-app-theme="light"] .ai-assistant-panel,
+body.has-app-bg[data-app-theme="light"] .ai-assistant-body {
+  background: transparent !important;
 }
 
 /* Glassmorphic splitters: Styled as a clean, minimal 1px border. */
@@ -477,11 +483,65 @@ body.has-app-bg[data-app-theme="light"] #unlock-path {
 }
 
 .workspace-term-strip {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-width: 0;
   width: auto;
   height: 34px;
   align-items: center;
+}
+
+.term-tab-scroll-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 34px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.term-tab-scroll-btn {
+  width: 22px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(13, 18, 32, 0.28);
+  color: rgba(214, 227, 255, 0.8);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease, opacity 0.18s ease;
+}
+
+.term-tab-scroll-btn:hover:not(:disabled) {
+  background: rgba(104, 168, 255, 0.16);
+  color: #ffffff;
+}
+
+.term-tab-scroll-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.term-tab-scroll-btn[hidden] {
+  display: none;
+}
+
+.vault-right-topbar .workspace-term-strip {
+  max-width: 100%;
+  padding: 0 2px;
+  border-radius: 10px;
+  background: rgba(13, 18, 32, 0.22);
+  mask-image: linear-gradient(90deg, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
+  scrollbar-width: none;
+}
+
+.vault-right-topbar .workspace-term-strip::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .workspace-actions {
@@ -511,6 +571,14 @@ body.has-app-bg[data-app-theme="light"] #unlock-path {
   padding: 0;
   display: grid;
   place-items: center;
+}
+
+.window-control-btn svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
 }
 
 .window-control-btn.danger {
@@ -902,12 +970,29 @@ body[data-app-theme="light"]:not(.has-app-bg) .settings-page-head {
 body.has-app-bg .terminal-sidebar-rail {
   background: rgba(8, 11, 20, 0.20) !important;
   border-left-color: rgba(255, 255, 255, 0.06) !important;
-  backdrop-filter: blur(25px) !important;
-  -webkit-backdrop-filter: blur(25px) !important;
+  backdrop-filter: blur(14px) !important;
+  -webkit-backdrop-filter: blur(14px) !important;
 }
 body.has-app-bg[data-app-theme="light"] .terminal-sidebar-rail {
   background: rgba(255, 255, 255, 0.20) !important;
   border-left-color: rgba(0, 0, 0, 0.06) !important;
+}
+
+body.has-app-bg .terminal-side-btn {
+  color: rgba(226, 232, 240, 0.88) !important;
+}
+
+body.has-app-bg .terminal-side-btn:hover {
+  color: #ffffff !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .terminal-side-btn {
+  color: rgba(15, 23, 42, 0.82) !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .terminal-side-btn:hover,
+body.has-app-bg[data-app-theme="light"] .terminal-side-btn.active {
+  color: #2563eb !important;
 }
 
 .terminal-side-btn .zt-icon {
@@ -1021,6 +1106,33 @@ body[data-app-theme="light"] .terminal-side-add-btn {
 body[data-app-theme="light"] .terminal-side-add-btn:hover {
   background: rgba(37, 99, 235, 0.05) !important;
   color: var(--accent) !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .terminal-side-header {
+  border-bottom-color: rgba(15, 23, 42, 0.16) !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .terminal-side-title-wrap strong {
+  color: #0f172a !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .terminal-side-title-wrap span {
+  color: rgba(51, 65, 85, 0.82) !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .terminal-side-mark {
+  color: #2563eb !important;
+  background: rgba(37, 99, 235, 0.12) !important;
+  border-color: rgba(37, 99, 235, 0.22) !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .terminal-side-add-btn {
+  color: rgba(37, 99, 235, 0.78) !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .terminal-side-add-btn:hover {
+  background: rgba(37, 99, 235, 0.10) !important;
+  color: #1d4ed8 !important;
 }
 
 .terminal-side-body {
@@ -1138,23 +1250,25 @@ body.has-app-bg .terminal-snippets-search:focus {
 }
 
 body.has-app-bg[data-app-theme="light"] .terminal-snippets-search {
-  background: rgba(255, 255, 255, 0.20) !important;
-  border: 1px solid rgba(0, 0, 0, 0.10) !important;
+  background: rgba(255, 255, 255, 0.58) !important;
+  border: 1px solid rgba(15, 23, 42, 0.14) !important;
   color: #0f172a !important;
-  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.05) !important;
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.08), inset 0 1px 1px rgba(255, 255, 255, 0.5) !important;
 }
 
 body.has-app-bg[data-app-theme="light"] .terminal-snippets-search:hover {
-  border-color: rgba(0, 0, 0, 0.15) !important;
+  background: rgba(255, 255, 255, 0.68) !important;
+  border-color: rgba(37, 99, 235, 0.26) !important;
 }
 
 body.has-app-bg[data-app-theme="light"] .terminal-snippets-search:focus {
-  background: rgba(255, 255, 255, 0.35) !important;
-  border-color: #5d93e8 !important;
+  background: rgba(255, 255, 255, 0.78) !important;
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.13), 0 12px 28px rgba(15, 23, 42, 0.10) !important;
 }
 
 body.has-app-bg[data-app-theme="light"] .terminal-snippets-search::placeholder {
-  color: rgba(15, 23, 42, 0.5) !important;
+  color: rgba(51, 65, 85, 0.66) !important;
 }
 
 
@@ -1233,6 +1347,26 @@ body[data-app-theme="light"] .terminal-snippet-group-count {
 
 body[data-app-theme="light"] .terminal-snippet-group-chevron {
   color: rgba(71, 85, 105, 0.7) !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .terminal-snippet-group-title {
+  color: rgba(30, 41, 59, 0.86) !important;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.24);
+}
+
+body.has-app-bg[data-app-theme="light"] .terminal-snippet-group-title:hover {
+  background: rgba(255, 255, 255, 0.36) !important;
+  color: #0f172a !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .terminal-snippet-group-count {
+  background: rgba(37, 99, 235, 0.16) !important;
+  border-color: rgba(37, 99, 235, 0.22) !important;
+  color: #1d4ed8 !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .terminal-snippet-group-chevron {
+  color: rgba(30, 41, 59, 0.68) !important;
 }
 
 .terminal-snippet-card {
@@ -1321,6 +1455,34 @@ body[data-app-theme="light"] .terminal-snippet-actions button.danger:hover {
   background: rgba(239, 68, 68, 0.05) !important;
   border-color: rgba(239, 68, 68, 0.2) !important;
   color: #dc2626 !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .terminal-snippet-card {
+  background: rgba(255, 255, 255, 0.50) !important;
+  border-color: rgba(15, 23, 42, 0.12) !important;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08) !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .terminal-snippet-card h4 {
+  color: #0f172a !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .terminal-snippet-card pre {
+  background: rgba(248, 250, 252, 0.70) !important;
+  border-color: rgba(37, 99, 235, 0.16) !important;
+  color: #1e293b !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .terminal-snippet-actions button {
+  background: rgba(255, 255, 255, 0.56) !important;
+  border-color: rgba(15, 23, 42, 0.12) !important;
+  color: #334155 !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .terminal-snippet-actions button:hover {
+  background: rgba(37, 99, 235, 0.12) !important;
+  border-color: rgba(37, 99, 235, 0.24) !important;
+  color: #1d4ed8 !important;
 }
 
 .ai-panel-splitter {
@@ -2406,6 +2568,10 @@ body[data-app-theme="light"] .ai-compose {
   border-color: rgba(203, 213, 225, 0.72);
 }
 
+body.has-app-bg[data-app-theme="light"] .ai-assistant-header {
+  border-bottom-color: rgba(15, 23, 42, 0.16) !important;
+}
+
 body[data-app-theme="light"] .ai-assistant-title strong,
 body[data-app-theme="light"] .ai-hero-card h3,
 body[data-app-theme="light"] .ai-process-step strong,
@@ -2428,6 +2594,33 @@ body[data-app-theme="light"] .ai-examples button,
 body[data-app-theme="light"] .ai-compose,
 body[data-app-theme="light"] .ai-message-body {
   background: rgba(255, 255, 255, 0.72);
+}
+
+body.has-app-bg[data-app-theme="light"] .ai-hero-card,
+body.has-app-bg[data-app-theme="light"] .ai-process-step,
+body.has-app-bg[data-app-theme="light"] .ai-examples button,
+body.has-app-bg[data-app-theme="light"] .ai-compose,
+body.has-app-bg[data-app-theme="light"] .ai-message-body {
+  background: rgba(255, 255, 255, 0.50) !important;
+  border-color: rgba(15, 23, 42, 0.12) !important;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08) !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .ai-hero-card {
+  background:
+    linear-gradient(135deg, rgba(37, 99, 235, 0.10), rgba(16, 185, 129, 0.04)),
+    rgba(255, 255, 255, 0.50) !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .ai-examples button:hover {
+  background: rgba(37, 99, 235, 0.12) !important;
+  border-color: rgba(37, 99, 235, 0.24) !important;
+  color: #1d4ed8 !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .ai-compose:focus-within {
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.13), 0 12px 30px rgba(15, 23, 42, 0.10) !important;
 }
 
 body[data-app-theme="light"] .ai-message-label {
@@ -2773,29 +2966,72 @@ body.has-app-bg[data-app-theme="light"] .search::placeholder {
   flex: 1;
   overflow: auto;
   overflow-x: hidden;
-  padding: 10px 10px 14px;
+  padding: 10px 8px 14px 10px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(93, 147, 232, 0.35) rgba(13, 19, 35, 0.4);
+  scrollbar-color: rgba(176, 196, 226, 0.72) transparent;
 }
 
 .hosts-grid-wrap::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 6px;
+  height: 6px;
 }
 
 .hosts-grid-wrap::-webkit-scrollbar-track {
-  background: rgba(9, 14, 27, 0.28);
-  border-radius: 10px;
+  background: transparent;
 }
 
 .hosts-grid-wrap::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, rgba(92, 132, 204, 0.56) 0%, rgba(71, 108, 176, 0.5) 100%);
-  border-radius: 10px;
-  border: 2px solid rgba(9, 14, 27, 0.3);
+  background: rgba(176, 196, 226, 0.62);
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
 }
 
 .hosts-grid-wrap::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, rgba(117, 157, 226, 0.72) 0%, rgba(87, 126, 192, 0.64) 100%);
+  background: rgba(207, 220, 240, 0.82);
+  background-clip: padding-box;
+}
+
+body[data-app-theme="light"] .hosts-grid-wrap {
+  scrollbar-color: rgba(71, 85, 105, 0.38) transparent;
+}
+
+body[data-app-theme="light"] .hosts-grid-wrap::-webkit-scrollbar-thumb {
+  background: rgba(71, 85, 105, 0.34);
+  background-clip: padding-box;
+}
+
+body[data-app-theme="light"] .hosts-grid-wrap::-webkit-scrollbar-thumb:hover {
+  background: rgba(51, 65, 85, 0.52);
+  background-clip: padding-box;
+}
+
+body.has-app-bg .hosts-grid-wrap {
+  scrollbar-color: rgba(235, 244, 255, 0.64) transparent;
+}
+
+body.has-app-bg .hosts-grid-wrap::-webkit-scrollbar-thumb {
+  background: rgba(235, 244, 255, 0.56);
+  background-clip: padding-box;
+}
+
+body.has-app-bg .hosts-grid-wrap::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.8);
+  background-clip: padding-box;
+}
+
+body.has-app-bg[data-app-theme="light"] .hosts-grid-wrap {
+  scrollbar-color: rgba(15, 23, 42, 0.32) transparent;
+}
+
+body.has-app-bg[data-app-theme="light"] .hosts-grid-wrap::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.28);
+  background-clip: padding-box;
+}
+
+body.has-app-bg[data-app-theme="light"] .hosts-grid-wrap::-webkit-scrollbar-thumb:hover {
+  background: rgba(15, 23, 42, 0.44);
+  background-clip: padding-box;
 }
 
 .host-cards {
@@ -2834,6 +3070,26 @@ body[data-app-theme="light"] .settings-about-update-card {
   box-shadow: 0 16px 36px rgba(15, 23, 42, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
+body.has-app-bg[data-app-theme="light"] .sftp-pane {
+  background: rgba(255, 255, 255, 0.36) !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .sftp-pane-topbar {
+  background: rgba(255, 255, 255, 0.10) !important;
+  border-bottom-color: rgba(15, 23, 42, 0.06) !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .sftp-pane + .sftp-pane {
+  border-left-color: rgba(15, 23, 42, 0.08) !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .sftp-pane .files-list {
+  background: transparent !important;
+}
+
 body[data-app-theme="light"] .tab-item,
 body[data-app-theme="light"] .settings-nav-item,
 body[data-app-theme="light"] .files-context-menu,
@@ -2869,6 +3125,29 @@ body[data-app-theme="light"] .vault-group-title {
 body[data-app-theme="light"] .workspace-tabbar {
   background: rgba(244, 246, 249, 0.95);
   border-bottom: 1px solid rgba(203, 213, 225, 0.5);
+}
+
+body[data-app-theme="light"] .vault-right-topbar .workspace-term-strip {
+  background: rgba(255, 255, 255, 0.34);
+}
+
+body[data-app-theme="light"] .term-tab-scroll-btn {
+  background: rgba(255, 255, 255, 0.52);
+  color: rgba(51, 65, 85, 0.78);
+}
+
+body[data-app-theme="light"] .term-tab-scroll-btn:hover:not(:disabled) {
+  background: rgba(37, 99, 235, 0.10);
+  color: #1d4ed8;
+}
+
+body.has-app-bg[data-app-theme="light"] .vault-right-topbar .workspace-term-strip {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+body.has-app-bg[data-app-theme="light"] .term-tab-scroll-btn {
+  background: rgba(255, 255, 255, 0.36);
+  color: rgba(15, 23, 42, 0.78);
 }
 
 body[data-app-theme="light"] .workspace-icon-btn {
@@ -2989,7 +3268,12 @@ body[data-app-theme="light"] .sftp-pane-tool-actions:hover {
 }
 
 body[data-app-theme="light"] .sftp-inline-filter-input[type="text"] {
+  background: transparent !important;
+  border-top-color: transparent !important;
+  border-right-color: transparent !important;
+  border-left-color: transparent !important;
   color: var(--text);
+  box-shadow: none !important;
 }
 
 body[data-app-theme="light"] .sftp-inline-filter-input::placeholder {
@@ -3678,6 +3962,8 @@ body[data-app-theme="light"] .pane-ai-toggle.active {
   gap: 5px;
   overflow-x: auto;
   min-height: 34px;
+  overflow-y: hidden;
+  scroll-behavior: smooth;
 }
 
 .tab-item {
@@ -3685,6 +3971,8 @@ body[data-app-theme="light"] .pane-ai-toggle.active {
   align-items: center;
   gap: 6px;
   height: 30px;
+  flex: 0 0 auto;
+  max-width: 128px;
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 8px;
   padding: 0 12px;
@@ -3697,6 +3985,16 @@ body[data-app-theme="light"] .pane-ai-toggle.active {
   font-size: 12px;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.tab-item > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tab-item .close {
+  flex: 0 0 auto;
 }
 
 .tab-item:hover {
@@ -4733,9 +5031,9 @@ body.has-app-bg .dialog {
 }
 
 body.has-app-bg[data-app-theme="light"] .dialog {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(248, 250, 252, 0.88) 100%) !important;
-  border-color: rgba(203, 213, 225, 0.5) !important;
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.70) 0%, rgba(248, 250, 252, 0.62) 100%) !important;
+  border-color: rgba(203, 213, 225, 0.38) !important;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.56) !important;
 }
 
 .dialog.wide {
@@ -5869,24 +6167,106 @@ body[data-app-theme="light"] .ai-settings-grid input::placeholder {
 .terminal-theme-add {
   border: none;
   background: transparent;
-  color: #68a8ff;
+  color: #dbeafe;
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
   cursor: pointer;
-  transition: color 0.2s ease;
+  transition: background 0.2s ease, color 0.2s ease;
 }
 
 .terminal-theme-add:hover {
-  color: #a2c4ff;
+  background: rgba(219, 234, 254, 0.14) !important;
+  color: #ffffff;
+}
+
+body[data-app-theme="light"] .terminal-theme-add {
+  color: #1d4ed8;
+}
+
+body[data-app-theme="light"] .terminal-theme-add:hover {
+  background: rgba(37, 99, 235, 0.1) !important;
+  color: #1d4ed8;
+}
+
+body.has-app-bg[data-app-theme="light"] .terminal-theme-add:hover {
+  background: rgba(37, 99, 235, 0.14) !important;
+  color: #1e40af;
 }
 
 .terminal-theme-list {
   max-height: 500px;
   overflow: auto;
-  padding: 16px;
+  padding: 16px 12px 16px 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(176, 196, 226, 0.72) transparent;
+}
+
+.terminal-theme-list::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.terminal-theme-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.terminal-theme-list::-webkit-scrollbar-thumb {
+  background: rgba(176, 196, 226, 0.62);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+.terminal-theme-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(207, 220, 240, 0.82);
+  background-clip: padding-box;
+}
+
+body[data-app-theme="light"] .terminal-theme-list {
+  scrollbar-color: rgba(71, 85, 105, 0.38) transparent;
+}
+
+body[data-app-theme="light"] .terminal-theme-list::-webkit-scrollbar-thumb {
+  background: rgba(71, 85, 105, 0.34);
+  background-clip: padding-box;
+}
+
+body[data-app-theme="light"] .terminal-theme-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(51, 65, 85, 0.52);
+  background-clip: padding-box;
+}
+
+body.has-app-bg .terminal-theme-list {
+  scrollbar-color: rgba(235, 244, 255, 0.64) transparent;
+}
+
+body.has-app-bg .terminal-theme-list::-webkit-scrollbar-thumb {
+  background: rgba(235, 244, 255, 0.56);
+  background-clip: padding-box;
+}
+
+body.has-app-bg .terminal-theme-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.8);
+  background-clip: padding-box;
+}
+
+body.has-app-bg[data-app-theme="light"] .terminal-theme-list {
+  scrollbar-color: rgba(15, 23, 42, 0.32) transparent;
+}
+
+body.has-app-bg[data-app-theme="light"] .terminal-theme-list::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.28);
+  background-clip: padding-box;
+}
+
+body.has-app-bg[data-app-theme="light"] .terminal-theme-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(15, 23, 42, 0.44);
+  background-clip: padding-box;
 }
 
 .terminal-theme-card {
@@ -6014,6 +6394,10 @@ body[data-app-theme="light"] .ai-settings-grid input::placeholder {
   font-weight: 700;
   margin-bottom: 8px;
   color: #ffffff;
+}
+
+body[data-app-theme="light"] .theme-edit-preview-title {
+  color: #0f172a;
 }
 
 .theme-edit-preview pre {
@@ -7326,23 +7710,43 @@ fieldset.advanced legend {
 }
 
 .settings-about-card {
-  background: rgba(255, 255, 255, 0.02);
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.035) 0%, rgba(96, 165, 250, 0.018) 100%);
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 12px;
   padding: 14px 16px;
   display: flex;
   align-items: center;
   gap: 12px;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
   backdrop-filter: blur(10px);
 }
 
+.settings-about-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(96, 165, 250, 0.22), transparent 34%),
+    linear-gradient(110deg, transparent 0%, rgba(255, 255, 255, 0.1) 42%, transparent 68%);
+  opacity: 0;
+  transform: translateX(-18%);
+  transition: opacity 0.25s ease, transform 0.35s ease;
+  pointer-events: none;
+}
+
 .settings-about-card:hover {
-  background: rgba(255, 255, 255, 0.04) !important;
-  border-color: rgba(255, 255, 255, 0.12) !important;
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  background: linear-gradient(135deg, rgba(23, 43, 70, 0.86) 0%, rgba(28, 58, 96, 0.72) 100%) !important;
+  border-color: rgba(147, 197, 253, 0.58) !important;
+  transform: translateY(-3px) scale(1.01);
+  box-shadow: 0 16px 34px rgba(4, 12, 24, 0.32), 0 0 0 1px rgba(96, 165, 250, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.settings-about-card:hover::before {
+  opacity: 1;
+  transform: translateX(0);
 }
 
 .about-card-icon {
@@ -7356,6 +7760,17 @@ fieldset.advanced legend {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  transition: background 0.25s ease, border-color 0.25s ease, color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+  position: relative;
+  z-index: 1;
+}
+
+.settings-about-card:hover .about-card-icon {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: rgba(147, 197, 253, 0.48);
+  color: #bfdbfe;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
 .about-card-icon .zt-icon {
@@ -7368,6 +7783,8 @@ fieldset.advanced legend {
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+  position: relative;
+  z-index: 1;
 }
 
 .about-card-label {
@@ -7376,6 +7793,11 @@ fieldset.advanced legend {
   letter-spacing: 0.06em;
   color: rgba(165, 181, 214, 0.55);
   font-weight: 700;
+  transition: color 0.25s ease;
+}
+
+.settings-about-card:hover .about-card-label {
+  color: rgba(191, 219, 254, 0.82);
 }
 
 .about-card-val {
@@ -7385,6 +7807,11 @@ fieldset.advanced legend {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: color 0.25s ease;
+}
+
+.settings-about-card:hover .about-card-val {
+  color: #f8fbff;
 }
 
 .about-card-val a {
@@ -7730,8 +8157,30 @@ body[data-app-theme="light"] .about-card-icon {
 }
 
 body[data-app-theme="light"] .settings-about-card:hover {
-  background: rgba(37, 99, 235, 0.02) !important;
-  border-color: rgba(203, 213, 225, 0.8) !important;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(239, 246, 255, 0.94) 100%) !important;
+  border-color: rgba(37, 99, 235, 0.34) !important;
+  box-shadow: 0 16px 34px rgba(37, 99, 235, 0.13), 0 0 0 1px rgba(37, 99, 235, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.95) !important;
+}
+
+body[data-app-theme="light"] .settings-about-card::before {
+  background:
+    radial-gradient(circle at 18% 0%, rgba(37, 99, 235, 0.14), transparent 36%),
+    linear-gradient(110deg, transparent 0%, rgba(255, 255, 255, 0.82) 42%, transparent 68%);
+}
+
+body[data-app-theme="light"] .settings-about-card:hover .about-card-icon {
+  background: rgba(37, 99, 235, 0.12) !important;
+  border-color: rgba(37, 99, 235, 0.36) !important;
+  color: #1d4ed8 !important;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.78);
+}
+
+body[data-app-theme="light"] .settings-about-card:hover .about-card-label {
+  color: #3b6da7 !important;
+}
+
+body[data-app-theme="light"] .settings-about-card:hover .about-card-val {
+  color: #0f172a !important;
 }
 
 body[data-app-theme="light"] .update-status-title {
@@ -7830,11 +8279,34 @@ body[data-app-theme="light"] .workspace-nav-btn.active {
   color: var(--accent) !important;
 }
 
+body.has-app-bg[data-app-theme="light"] .workspace-icon-btn .zt-icon,
+body.has-app-bg[data-app-theme="light"] .workspace-icon-btn {
+  color: rgba(15, 23, 42, 0.78) !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .workspace-icon-btn:hover .zt-icon,
+body.has-app-bg[data-app-theme="light"] .workspace-icon-btn:hover {
+  color: #2563eb !important;
+}
+
 /* 7. Settings Page Light Theme & Subtabs Contrast Overrides */
 body[data-app-theme="light"] .settings-page-head {
   background: transparent !important;
   border-bottom: none !important;
   box-shadow: none !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .settings-page-head h3 {
+  color: #0f172a !important;
+  background: none !important;
+  -webkit-text-fill-color: currentColor !important;
+  text-shadow: none;
+}
+
+body.has-app-bg[data-app-theme="light"] .settings-page-head p {
+  color: #334155 !important;
+  font-weight: 600;
+  text-shadow: none;
 }
 
 body[data-app-theme="light"] .settings-sidebar {
@@ -7870,6 +8342,28 @@ body[data-app-theme="light"] .settings-subtab.active {
   box-shadow: 0 4px 10px rgba(37, 99, 235, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
 }
 
+body.has-app-bg[data-app-theme="light"] .settings-subtabs {
+  background: transparent !important;
+  border-color: rgba(37, 99, 235, 0.22) !important;
+  box-shadow: none !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .settings-subtab {
+  color: #334155 !important;
+  font-weight: 700;
+}
+
+body.has-app-bg[data-app-theme="light"] .settings-subtab:hover {
+  background: rgba(37, 99, 235, 0.11) !important;
+  color: #1d4ed8 !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .settings-subtab.active {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.26) !important;
+}
+
 body[data-app-theme="light"] .settings-section h4 {
   color: var(--text) !important;
 }
@@ -7902,6 +8396,10 @@ body[data-app-theme="light"] .pane-body .xterm .xterm-viewport {
   scrollbar-color: #cbd5e1 #f1f5f9 !important;
 }
 
+body[data-app-theme="light"] .hosts-grid-wrap {
+  scrollbar-color: rgba(71, 85, 105, 0.38) transparent !important;
+}
+
 body[data-app-theme="light"] .hosts-grid-wrap::-webkit-scrollbar-track,
 body[data-app-theme="light"] .settings-page-body::-webkit-scrollbar-track,
 body[data-app-theme="light"] .sftp-pane .files-list::-webkit-scrollbar-track,
@@ -7910,6 +8408,10 @@ body[data-app-theme="light"] #file-editor-content .ace_scrollbar-h::-webkit-scro
 body[data-app-theme="light"] .pane-body .xterm .xterm-viewport::-webkit-scrollbar-track {
   background: #f1f5f9 !important;
   border-radius: 10px;
+}
+
+body[data-app-theme="light"] .hosts-grid-wrap::-webkit-scrollbar-track {
+  background: transparent !important;
 }
 
 body[data-app-theme="light"] .hosts-grid-wrap::-webkit-scrollbar-thumb,
@@ -7923,6 +8425,13 @@ body[data-app-theme="light"] .pane-body .xterm .xterm-viewport::-webkit-scrollba
   border-radius: 10px;
 }
 
+body[data-app-theme="light"] .hosts-grid-wrap::-webkit-scrollbar-thumb {
+  background: rgba(71, 85, 105, 0.34) !important;
+  border: 1px solid transparent !important;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
 body[data-app-theme="light"] .hosts-grid-wrap::-webkit-scrollbar-thumb:hover,
 body[data-app-theme="light"] .settings-page-body::-webkit-scrollbar-thumb:hover,
 body[data-app-theme="light"] .sftp-pane .files-list::-webkit-scrollbar-thumb:hover,
@@ -7930,6 +8439,25 @@ body[data-app-theme="light"] #file-editor-content .ace_scrollbar-v::-webkit-scro
 body[data-app-theme="light"] #file-editor-content .ace_scrollbar-h::-webkit-scrollbar-thumb:hover,
 body[data-app-theme="light"] .pane-body .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
   background: #94a3b8 !important;
+}
+
+body[data-app-theme="light"] .hosts-grid-wrap::-webkit-scrollbar-thumb:hover {
+  background: rgba(51, 65, 85, 0.52) !important;
+  background-clip: padding-box;
+}
+
+body.has-app-bg[data-app-theme="light"] .hosts-grid-wrap {
+  scrollbar-color: rgba(15, 23, 42, 0.32) transparent !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .hosts-grid-wrap::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.28) !important;
+  background-clip: padding-box;
+}
+
+body.has-app-bg[data-app-theme="light"] .hosts-grid-wrap::-webkit-scrollbar-thumb:hover {
+  background: rgba(15, 23, 42, 0.44) !important;
+  background-clip: padding-box;
 }
 
 /* 9. Modal Dialog Popups Light Theme & Contrast Overrides */
@@ -8272,6 +8800,33 @@ body[data-app-theme="light"] #groups-context-menu .menu-separator {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+#settings-bg-clear {
+  border-color: rgba(220, 38, 38, 0.18);
+  background: rgba(220, 38, 38, 0.08);
+  color: #fecaca;
+  font-weight: 700;
+}
+
+#settings-bg-clear:hover {
+  border-color: rgba(248, 113, 113, 0.4);
+  background: rgba(220, 38, 38, 0.16) !important;
+  color: #ffffff;
+}
+
+body[data-app-theme="light"] #settings-bg-clear {
+  border-color: rgba(220, 38, 38, 0.2) !important;
+  background: rgba(254, 226, 226, 0.82) !important;
+  color: #b91c1c !important;
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.08) !important;
+}
+
+body[data-app-theme="light"] #settings-bg-clear:hover {
+  border-color: rgba(220, 38, 38, 0.32) !important;
+  background: #fee2e2 !important;
+  color: #991b1b !important;
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.14) !important;
 }
 
 #settings-bg-options {
