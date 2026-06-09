@@ -5,11 +5,10 @@
 //!   - host-key trust policies including OpenSSH-compatible `known_hosts`
 //!   - PTY-backed interactive shell channel
 //!   - SFTP subsystem with streaming + progress + cancellation
-//!   - Local + dynamic (SOCKS5) port forwarding
+//!   - Local, remote, and dynamic (SOCKS5) port forwarding
 //!   - ProxyJump (single hop)
 //!
-//! Out of scope (tracked for later): remote port forwarding (`ssh -R`),
-//! multi-hop ProxyJump chains, the FFI surface itself.
+//! Out of scope (tracked for later): multi-hop ProxyJump chains, the FFI surface itself.
 
 mod agent;
 mod error;
@@ -20,7 +19,7 @@ mod session;
 mod sftp;
 
 pub use error::SshError;
-pub use forward::{forward_dynamic, forward_local, ForwardHandle};
+pub use forward::{forward_dynamic, forward_local, forward_remote, ForwardHandle};
 pub use host_key::{HostKeyInfo, HostKeyPolicy, HostKeyPrompt, MismatchAction};
 pub use known_hosts::{KnownHostStatus, KnownHosts};
 pub use session::{AuthMethod, ChannelEvent, ConnectConfig, PtySize, Session, ShellChannel};

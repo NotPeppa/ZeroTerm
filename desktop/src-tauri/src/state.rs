@@ -53,6 +53,12 @@ pub struct AppState {
     pub next_transfer_id: AtomicU64,
 
     pub local_sessions: Mutex<HashMap<u64, LocalSessionHandle>>,
+
+    /// Standalone SSH port forwarding tasks. These own their SSH session and
+    /// do not require an interactive terminal tab to stay open.
+    pub port_forwards: Mutex<HashMap<u64, PortForwardHandle>>,
+
+    pub next_port_forward_id: AtomicU64,
 }
 
 impl AppState {
@@ -68,6 +74,8 @@ impl AppState {
             transfers: Mutex::new(HashMap::new()),
             next_transfer_id: AtomicU64::new(1),
             local_sessions: Mutex::new(HashMap::new()),
+            port_forwards: Mutex::new(HashMap::new()),
+            next_port_forward_id: AtomicU64::new(1),
         }
     }
 }
@@ -116,4 +124,14 @@ pub struct SftpHandle {
     pub _session: zeroterm_ssh::Session,
     pub _jump_session: Option<zeroterm_ssh::Session>,
     pub sftp: Arc<zeroterm_ssh::Sftp>,
+}
+
+pub struct PortForwardHandle {
+    pub host_id: String,
+    pub rule_id: String,
+    pub host_name: String,
+    pub _session: zeroterm_ssh::Session,
+    pub _jump_session: Option<zeroterm_ssh::Session>,
+    pub _forwards: Vec<zeroterm_ssh::ForwardHandle>,
+    pub summaries: Vec<String>,
 }

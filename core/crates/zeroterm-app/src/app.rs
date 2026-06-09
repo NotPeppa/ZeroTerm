@@ -14,10 +14,12 @@ use zeroterm_vault::Vault;
 use crate::error::AppError;
 use crate::host::Host;
 use crate::host_group::HostGroup;
+use crate::port_forward::PortForwardRule;
 use crate::snippet::Snippet;
 
 const HOST_KIND: &str = "host";
 const HOST_GROUP_KIND: &str = "host_group";
+const PORT_FORWARD_KIND: &str = "port_forward";
 const SNIPPET_KIND: &str = "snippet";
 
 #[derive(Debug, Clone)]
@@ -130,6 +132,84 @@ impl App {
     pub fn delete_host(&self, id: &str) -> Result<(), AppError> {
         self.vault.delete(id)?;
         Ok(())
+    }
+
+    // -- standalone port forward CRUD --------------------------------------
+
+    pub fn list_port_forwards(&self) -> Result<Vec<PortForwardRule>, AppError> {
+        let records = self.vault.list(PORT_FORWARD_KIND)?;
+        let mut rules = Vec::with_capacity(records.len());
+        for (id, plaintext) in records {
+            match serde_json::from_slice::<PortForwardRule>(&plaintext) {
+                Ok(mut r) => {
+                    r.id = id;
+                    rules.push(r);
+                }
+                Err(e) => {
+                    tracing::warn!(record_id = %id, error = %e, "skipping malformed port_forward record");
+                }
+            }
+        }
+        Ok(rules)
+    }
+
+    pub fn find_port_forward_by_id(&self, id: &str) -> Result<Option<PortForwardRule>, AppError> {
+        match self.vault.get(id) {
+            Ok(plaintext) => {
+                let mut r: PortForwardRule =
+                    serde_json::from_slice(&plaintext).map_err(AppError::BadHostRecord)?;
+                r.id = id.to_string();
+                Ok(Some(r))
+            }
+            Err(zeroterm_vault::VaultError::NotFound(_)) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    pub fn save_port_forward(&self, rule: &PortForwardRule) -> Result<String, AppError> {
+        if self.find_host_by_id(&rule.host_id)?.is_none() {
+            return Err(AppError::HostNotFound(rule.host_id.clone()));
+        }
+        let json = serde_json::to_vec(rule).map_err(AppError::BadHostRecord)?;
+        Ok(self.vault.insert(PORT_FORWARD_KIND, &json)?)
+    }
+
+    pub fn update_port_forward(&self, rule: &PortForwardRule) -> Result<(), AppError> {
+        if rule.id.is_empty() {
+            return Err(AppError::HostNotFound("port forward id is required".into()));
+        }
+        if self.find_host_by_id(&rule.host_id)?.is_none() {
+            return Err(AppError::HostNotFound(rule.host_id.clone()));
+        }
+        let json = serde_json::to_vec(rule).map_err(AppError::BadHostRecord)?;
+        self.vault.update(&rule.id, &json)?;
+        Ok(())
+    }
+
+    pub fn delete_port_forward(&self, id: &str) -> Result<(), AppError> {
+        self.vault.delete(id)?;
+        Ok(())
+    }
+
+    pub fn migrate_embedded_port_forwards(&self) -> Result<usize, AppError> {
+        let mut migrated = 0usize;
+        for mut host in self.list_hosts()? {
+            if host.forwards.is_empty() {
+                continue;
+            }
+            let forwards = std::mem::take(&mut host.forwards);
+            for spec in forwards {
+                let rule = PortForwardRule {
+                    id: String::new(),
+                    host_id: host.id.clone(),
+                    spec,
+                };
+                self.save_port_forward(&rule)?;
+                migrated += 1;
+            }
+            self.update_host(&host)?;
+        }
+        Ok(migrated)
     }
 
     pub fn clear_vault_data(&self) -> Result<(), AppError> {

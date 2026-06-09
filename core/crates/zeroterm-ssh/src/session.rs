@@ -4,9 +4,10 @@ use std::time::Duration;
 use std::time::Instant;
 
 use async_trait::async_trait;
-use russh::client::{self, Handle, Handler};
-use russh::{ChannelId, ChannelMsg, Disconnect};
+use russh::client::{self, Handle, Handler, Msg};
+use russh::{Channel, ChannelId, ChannelMsg, Disconnect};
 use russh_keys::key;
+use tokio::sync::{mpsc, Mutex};
 
 use crate::error::SshError;
 use crate::host_key::HostKeyPolicy;
@@ -85,6 +86,15 @@ pub(crate) struct ZeroTermHandler {
     policy: HostKeyPolicy,
     host: String,
     port: u16,
+    remote_forward_tx: mpsc::UnboundedSender<RemoteForwardIncoming>,
+}
+
+pub(crate) struct RemoteForwardIncoming {
+    pub channel: Channel<Msg>,
+    pub connected_address: String,
+    pub connected_port: u32,
+    pub originator_address: String,
+    pub originator_port: u32,
 }
 
 #[async_trait]
@@ -100,11 +110,31 @@ impl Handler for ZeroTermHandler {
             Err(e) => Err(russh::Error::IO(e)),
         }
     }
+
+    async fn server_channel_open_forwarded_tcpip(
+        &mut self,
+        channel: Channel<Msg>,
+        connected_address: &str,
+        connected_port: u32,
+        originator_address: &str,
+        originator_port: u32,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        let _ = self.remote_forward_tx.send(RemoteForwardIncoming {
+            channel,
+            connected_address: connected_address.to_string(),
+            connected_port,
+            originator_address: originator_address.to_string(),
+            originator_port,
+        });
+        Ok(())
+    }
 }
 
 /// An authenticated SSH session.
 pub struct Session {
     handle: Arc<Handle<ZeroTermHandler>>,
+    remote_forward_rx: Arc<Mutex<mpsc::UnboundedReceiver<RemoteForwardIncoming>>>,
 }
 
 impl Session {
@@ -122,10 +152,12 @@ impl Session {
         // TCP + handshake below instead.
         let config = Arc::new(client::Config::default());
 
+        let (remote_forward_tx, remote_forward_rx) = mpsc::unbounded_channel();
         let handler = ZeroTermHandler {
             policy: cfg.host_key_policy.clone(),
             host: cfg.host.clone(),
             port: cfg.port,
+            remote_forward_tx,
         };
 
         let addr = (cfg.host.as_str(), cfg.port);
@@ -143,7 +175,7 @@ impl Session {
             None => connect_fut.await?,
         };
 
-        authenticate(handle, &cfg).await
+        authenticate(handle, &cfg, remote_forward_rx).await
     }
 
     /// Same as [`Session::connect`], but the underlying TCP transport
@@ -161,10 +193,12 @@ impl Session {
         let stream = channel.into_stream();
 
         let config = Arc::new(client::Config::default());
+        let (remote_forward_tx, remote_forward_rx) = mpsc::unbounded_channel();
         let handler = ZeroTermHandler {
             policy: cfg.host_key_policy.clone(),
             host: cfg.host.clone(),
             port: cfg.port,
+            remote_forward_tx,
         };
 
         let connect_fut = client::connect_stream(config, stream, handler);
@@ -181,7 +215,7 @@ impl Session {
             None => connect_fut.await?,
         };
 
-        authenticate(handle, &cfg).await
+        authenticate(handle, &cfg, remote_forward_rx).await
     }
 
     /// Cheap clone of the underlying russh handle. Used by long-lived
@@ -189,6 +223,20 @@ impl Session {
     /// channels without exclusive access to the `Session`.
     pub(crate) fn handle_clone(&self) -> Arc<Handle<ZeroTermHandler>> {
         Arc::clone(&self.handle)
+    }
+
+    pub(crate) async fn tcpip_forward(&mut self, address: &str, port: u32) -> Result<u32, SshError> {
+        let handle = Arc::get_mut(&mut self.handle).ok_or_else(|| {
+            SshError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "cannot request remote forward after SSH handle was cloned",
+            ))
+        })?;
+        Ok(handle.tcpip_forward(address.to_string(), port).await?)
+    }
+
+    pub(crate) fn remote_forward_receiver(&self) -> Arc<Mutex<mpsc::UnboundedReceiver<RemoteForwardIncoming>>> {
+        Arc::clone(&self.remote_forward_rx)
     }
 
     /// Open an interactive shell on a freshly allocated PTY.
@@ -223,6 +271,26 @@ impl Session {
         Ok(crate::sftp::Sftp::from_session(session))
     }
 
+    /// Execute a non-interactive command and collect stdout/stderr.
+    pub async fn exec(&mut self, command: &str) -> Result<(u32, Vec<u8>, Vec<u8>), SshError> {
+        let mut channel = self.handle.channel_open_session().await?;
+        channel.exec(true, command).await?;
+
+        let mut code = 0;
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        while let Some(msg) = channel.wait().await {
+            match msg {
+                ChannelMsg::Data { data } => stdout.extend_from_slice(&data),
+                ChannelMsg::ExtendedData { data, ext } if ext == 1 => stderr.extend_from_slice(&data),
+                ChannelMsg::ExitStatus { exit_status } => code = exit_status,
+                ChannelMsg::Close | ChannelMsg::Eof => break,
+                _ => {}
+            }
+        }
+        Ok((code, stdout, stderr))
+    }
+
     pub async fn disconnect(self) -> Result<(), SshError> {
         self.handle
             .disconnect(Disconnect::ByApplication, "bye", "en")
@@ -249,11 +317,12 @@ impl Session {
 async fn authenticate(
     mut handle: Handle<ZeroTermHandler>,
     cfg: &ConnectConfig,
+    remote_forward_rx: mpsc::UnboundedReceiver<RemoteForwardIncoming>,
 ) -> Result<Session, SshError> {
     let mut last_error: Option<SshError> = None;
     for method in &cfg.auth_methods {
         match try_authenticate(&mut handle, &cfg.username, method).await {
-            Ok(true) => return Ok(Session { handle: Arc::new(handle) }),
+            Ok(true) => return Ok(Session { handle: Arc::new(handle), remote_forward_rx: Arc::new(Mutex::new(remote_forward_rx)) }),
             Ok(false) => {
                 tracing::debug!(method = method_name(method), "auth method rejected");
             }

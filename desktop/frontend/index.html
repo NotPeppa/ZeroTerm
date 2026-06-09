@@ -179,6 +179,15 @@
                           <path d="M12 14h5"></path>
                         </svg>
                       </button>
+                      <button id="port-forward-button" type="button" class="workspace-icon-btn" title="端口转发" aria-label="端口转发">
+                        <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M6 4v5a4 4 0 0 0 4 4h8"></path>
+                          <path d="M18 8l4 5-4 5"></path>
+                          <circle cx="6" cy="4" r="2"></circle>
+                          <circle cx="6" cy="20" r="2"></circle>
+                          <path d="M6 18v-5a4 4 0 0 1 4-4h2"></path>
+                        </svg>
+                      </button>
                       <div class="term-tab-scroll-wrap">
                         <button id="term-tab-scroll-left" type="button" class="term-tab-scroll-btn" aria-label="Scroll tabs left" title="Scroll tabs left" hidden>‹</button>
                         <div id="term-tab-strip" class="tab-strip workspace-term-strip"></div>
@@ -211,6 +220,84 @@
                     <div id="vault-welcome" class="vault-welcome">
                       <h2>ZeroTerm</h2>
                     </div>
+                    <section id="port-forward-page" class="port-forward-page" hidden>
+                      <header class="port-forward-head">
+                        <div>
+                          <h2 id="port-forward-title">端口转发</h2>
+                          <p id="port-forward-subtitle">Start SSH forwards independently without opening a terminal session.</p>
+                        </div>
+                        <div class="port-forward-head-actions">
+                          <button id="port-forward-create" type="button" class="primary">+ New forward</button>
+                          <button id="port-forward-refresh" type="button" class="workspace-icon-btn" title="Refresh" aria-label="Refresh">
+                            <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 0 1-15.2 6.5"></path><path d="M3 12A9 9 0 0 1 18.2 5.5"></path><path d="M18 3v4h-4"></path><path d="M6 21v-4h4"></path></svg>
+                          </button>
+                        </div>
+                      </header>
+                      <div class="port-forward-search-wrap">
+                        <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+                        <input id="port-forward-search" type="search" placeholder="Search host, port, or remote address..." autocomplete="off">
+                      </div>
+                      <div id="port-forward-list" class="port-forward-list"></div>
+                      <div id="port-forward-empty" class="port-forward-empty" hidden>
+                        <strong>No port forwards yet</strong>
+                        <p>Click "New forward", choose a host, then add an independent forwarding rule.</p>
+                      </div>
+                      <div id="port-forward-editor-overlay" class="port-forward-editor-overlay" hidden>
+                        <div id="port-forward-editor" class="port-forward-editor">
+                          <header class="port-forward-editor-head">
+                            <div>
+                              <h3 id="port-forward-editor-title">Edit forward</h3>
+                              <p id="port-forward-editor-subtitle">Only changes the current host's port forwarding rule.</p>
+                            </div>
+                            <button id="port-forward-editor-close" type="button" class="workspace-icon-btn" aria-label="Close">✕</button>
+                          </header>
+                          <label id="port-forward-editor-host-wrap" class="port-forward-editor-host" hidden>
+                            <span id="port-forward-editor-host-label">Host</span>
+                            <select id="port-forward-editor-host"></select>
+                          </label>
+                          <div class="port-forward-form">
+                            <div class="port-forward-field wide">
+                              <span id="port-forward-editor-kind-label">Forward type</span>
+                              <div id="port-forward-editor-kind-tabs" class="port-forward-kind-tabs" role="tablist" aria-label="Forward type">
+                                <button id="port-forward-kind-local" type="button" class="port-forward-kind-tab active" data-kind="local" role="tab" aria-selected="true">Local forward (-L)</button>
+                                <button id="port-forward-kind-remote" type="button" class="port-forward-kind-tab" data-kind="remote" role="tab" aria-selected="false">Remote forward (-R)</button>
+                                <button id="port-forward-kind-dynamic" type="button" class="port-forward-kind-tab" data-kind="dynamic" role="tab" aria-selected="false">SOCKS5 (-D)</button>
+                              </div>
+                              <select id="port-forward-editor-kind" hidden>
+                                <option value="local">Local forward (-L)</option>
+                                <option value="remote">Remote forward (-R)</option>
+                                <option value="dynamic">SOCKS5 (-D)</option>
+                              </select>
+                            </div>
+                            <div class="port-forward-route">
+                              <label class="port-forward-field">
+                                <span id="port-forward-editor-bind-label">Bind address</span>
+                                <input id="port-forward-editor-bind" type="text" placeholder="127.0.0.1" autocomplete="off" autocapitalize="off" spellcheck="false">
+                              </label>
+                              <label class="port-forward-field port">
+                                <span id="port-forward-editor-bind-port-label">Bind port</span>
+                                <input id="port-forward-editor-bind-port" type="number" min="1" max="65535" placeholder="3000" autocomplete="off">
+                              </label>
+                              <div id="port-forward-editor-arrow" class="port-forward-route-arrow">→</div>
+                              <label id="port-forward-editor-target-host-wrap" class="port-forward-field">
+                                <span id="port-forward-editor-target-host-label">Remote address</span>
+                                <input id="port-forward-editor-target-host" type="text" placeholder="localhost" autocomplete="off" autocapitalize="off" spellcheck="false">
+                              </label>
+                              <label id="port-forward-editor-target-port-wrap" class="port-forward-field port">
+                                <span id="port-forward-editor-target-port-label">Remote port</span>
+                                <input id="port-forward-editor-target-port" type="number" min="1" max="65535" placeholder="3000" autocomplete="off">
+                              </label>
+                            </div>
+                            <p id="port-forward-editor-hint" class="muted tiny">Local forwards listen on a local port and access the remote service over SSH.</p>
+                          </div>
+                          <p id="port-forward-editor-error" class="error" hidden></p>
+                          <footer class="port-forward-editor-actions">
+                            <button id="port-forward-editor-cancel" type="button">Cancel</button>
+                            <button id="port-forward-editor-save" type="button" class="primary">Save</button>
+                          </footer>
+                        </div>
+                      </div>
+                    </section>
                     <div id="terminal-session-layout" class="terminal-session-layout" hidden>
                       <div id="terminal-workspace" class="terminal-workspace"></div>
                       <div id="terminal-side-panel-splitter" class="ai-panel-splitter" role="separator" aria-orientation="vertical" aria-label="调整右侧面板宽度"></div>
@@ -349,6 +436,70 @@
                             </form>
                           </aside>
                         </section>
+                        <section id="terminal-metrics-panel" class="terminal-side-panel" hidden>
+                          <header class="terminal-side-header">
+                            <div class="terminal-side-title-wrap">
+                              <span class="terminal-side-mark" aria-hidden="true">
+                                <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                  <path d="M3 12h4l2-6 4 12 2-6h6"></path>
+                                </svg>
+                              </span>
+                              <div>
+                                <strong id="terminal-metrics-title">指标监控</strong>
+                                <span id="terminal-metrics-subtitle">当前终端会话</span>
+                              </div>
+                            </div>
+                            <button id="terminal-metrics-refresh" type="button" class="terminal-side-add-btn" title="刷新">
+                              <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M21 12a9 9 0 0 1-15.2 6.5"></path>
+                                <path d="M3 12A9 9 0 0 1 18.2 5.5"></path>
+                                <path d="M18 3v4h-4"></path>
+                                <path d="M6 21v-4h4"></path>
+                              </svg>
+                            </button>
+                          </header>
+                          <div id="terminal-metrics-body" class="terminal-side-body metrics-body"></div>
+                        </section>
+                        <section id="terminal-sftp-panel" class="terminal-side-panel" hidden>
+                          <header class="terminal-side-header">
+                            <div class="terminal-side-title-wrap">
+                              <span class="terminal-side-mark" aria-hidden="true">
+                                <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                                </svg>
+                              </span>
+                              <div>
+                                <strong id="terminal-sftp-title">SFTP</strong>
+                                <span id="terminal-sftp-subtitle">当前终端文件</span>
+                              </div>
+                            </div>
+                            <button id="terminal-sftp-refresh" type="button" class="terminal-side-add-btn" title="刷新">
+                              <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M21 12a9 9 0 0 1-15.2 6.5"></path>
+                                <path d="M3 12A9 9 0 0 1 18.2 5.5"></path>
+                                <path d="M18 3v4h-4"></path>
+                                <path d="M6 21v-4h4"></path>
+                              </svg>
+                            </button>
+                          </header>
+                          <div id="sftp-terminal-pane" class="terminal-side-body terminal-sftp-body sftp-pane">
+                            <select id="sftp-terminal-host" hidden></select>
+                            <div class="terminal-sftp-toolbar">
+                              <button id="sftp-terminal-up" type="button" class="sftp-nav-btn" title="Up">‹</button>
+                              <button id="sftp-terminal-forward" type="button" class="sftp-nav-btn" hidden>›</button>
+                              <div id="sftp-terminal-pathbar" class="sftp-pathbar">
+                                <div id="sftp-terminal-breadcrumbs" class="sftp-breadcrumbs"></div>
+                                <input id="sftp-terminal-path-input" class="sftp-path-input" type="text" autocomplete="off" />
+                              </div>
+                            </div>
+                            <label class="sftp-inline-filter terminal-sftp-filter" hidden>
+                              <span id="sftp-terminal-filter-label">筛选</span>
+                              <input id="sftp-terminal-filter-input" class="sftp-inline-filter-input" type="text" autocomplete="off" placeholder="例如 log、conf、docker" />
+                            </label>
+                            <div id="sftp-terminal-status" class="sftp-status">未连接</div>
+                            <ul id="sftp-terminal-list" class="files-list terminal-sftp-list"></ul>
+                          </div>
+                        </section>
                       </aside>
                       <aside id="terminal-sidebar-rail" class="terminal-sidebar-rail" hidden aria-label="终端侧边栏">
                         <button id="terminal-sidebar-snippets-toggle" type="button" class="terminal-side-btn" title="Command Snippets" aria-label="Command Snippets">
@@ -363,6 +514,16 @@
                             <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path>
                             <path d="m5 3 1 2.5L8.5 6 6 7 5 9.5 4 7 1.5 6 4 5.5z"></path>
                             <path d="m19 17 1 2.5 2.5.5-2.5 1-1 2.5-1-2.5-2.5-1 2.5-1z"></path>
+                          </svg>
+                        </button>
+                        <button id="terminal-sidebar-metrics-toggle" type="button" class="terminal-side-btn" title="指标监控" aria-label="指标监控">
+                          <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M3 12h4l2-6 4 12 2-6h6"></path>
+                          </svg>
+                        </button>
+                        <button id="terminal-sidebar-sftp-toggle" type="button" class="terminal-side-btn" title="SFTP" aria-label="SFTP">
+                          <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
                           </svg>
                         </button>
                       </aside>
@@ -893,7 +1054,6 @@ $ npm run build && npm run start</pre>
                                       spellcheck="false"
                                     />
                                   </label>
-                                  <button id="sftp-left-actions" type="button" class="sftp-pane-tool-btn sftp-pane-tool-actions">Actions</button>
                                 </div>
                               </div>
                               <div class="sftp-pane-nav-row">
@@ -944,7 +1104,6 @@ $ npm run build && npm run start</pre>
                                       spellcheck="false"
                                     />
                                   </label>
-                                  <button id="sftp-right-actions" type="button" class="sftp-pane-tool-btn sftp-pane-tool-actions">Actions</button>
                                 </div>
                               </div>
                               <div class="sftp-pane-nav-row">
@@ -1099,7 +1258,6 @@ $ npm run build && npm run start</pre>
               <div class="forwards-block">
                 <div class="forwards-label">
                   <span id="hf-forwards-label">Port forwards</span>
-                  <button id="hf-forward-add" type="button" class="small">+ Add forward</button>
                 </div>
                 <ul id="hf-forwards" class="forward-list"></ul>
                 <p id="hf-forwards-hint" class="muted tiny">

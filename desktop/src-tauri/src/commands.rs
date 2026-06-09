@@ -7,7 +7,7 @@
 //!     the lock is dropped.
 
 use std::sync::atomic::Ordering;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use std::time::Duration;
 #[cfg(target_os = "windows")]
@@ -36,7 +36,9 @@ use tauri_plugin_updater::UpdaterExt;
 
 use crate::host_key::TauriHostKeyPrompt;
 use crate::session::{run as run_session, ClosedEvent};
-use crate::state::{AppState, LocalSessionHandle, SessionCommand, SessionHandle, SftpHandle};
+use crate::state::{
+    AppState, LocalSessionHandle, PortForwardHandle, SessionCommand, SessionHandle, SftpHandle,
+};
 
 // --------------------------------------------------------------------------
 // vault
@@ -178,6 +180,40 @@ pub struct AiStreamEvent {
     pub delta: String,
     pub done: bool,
     pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemMetricsDto {
+    pub host: String,
+    pub os: String,
+    pub arch: String,
+    pub uptime_seconds: u64,
+    pub cpu_cores: u32,
+    pub cpu_usage: f64,
+    pub memory_total: u64,
+    pub memory_used: u64,
+    pub swap_total: u64,
+    pub swap_used: u64,
+    pub disks: Vec<SystemDiskDto>,
+    pub networks: Vec<SystemNetworkDto>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemDiskDto {
+    pub mount: String,
+    pub total: u64,
+    pub used: u64,
+    pub usage: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemNetworkDto {
+    pub name: String,
+    pub rx_bytes_per_sec: u64,
+    pub tx_bytes_per_sec: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1800,8 +1836,6 @@ pub struct HostInput {
     pub auth: HostAuthInput,
     #[serde(default)]
     pub os_type: Option<String>,
-    #[serde(default)]
-    pub forwards: Vec<ForwardSpecIO>,
     #[serde(default, alias = "proxy_jump")]
     pub proxy_jump_host_id: Option<String>,
     #[serde(default)]
@@ -1826,6 +1860,15 @@ pub enum HostAuthInput {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ForwardSpecIO {
     Local {
+        #[serde(default = "default_forward_enabled")]
+        enabled: bool,
+        #[serde(default = "default_bind_addr")]
+        bind_addr: String,
+        bind_port: u16,
+        target_host: String,
+        target_port: u16,
+    },
+    Remote {
         #[serde(default = "default_forward_enabled")]
         enabled: bool,
         #[serde(default = "default_bind_addr")]
@@ -1892,6 +1935,19 @@ impl ForwardSpecIO {
                 target_host,
                 target_port,
             },
+            ForwardSpecIO::Remote {
+                enabled,
+                bind_addr,
+                bind_port,
+                target_host,
+                target_port,
+            } => zeroterm_app::ForwardSpec::Remote {
+                enabled,
+                bind_addr,
+                bind_port,
+                target_host,
+                target_port,
+            },
             ForwardSpecIO::Dynamic {
                 enabled,
                 bind_addr,
@@ -1913,6 +1969,19 @@ impl ForwardSpecIO {
                 target_host,
                 target_port,
             } => ForwardSpecIO::Local {
+                enabled: *enabled,
+                bind_addr: bind_addr.clone(),
+                bind_port: *bind_port,
+                target_host: target_host.clone(),
+                target_port: *target_port,
+            },
+            zeroterm_app::ForwardSpec::Remote {
+                enabled,
+                bind_addr,
+                bind_port,
+                target_host,
+                target_port,
+            } => ForwardSpecIO::Remote {
                 enabled: *enabled,
                 bind_addr: bind_addr.clone(),
                 bind_port: *bind_port,
@@ -1952,7 +2021,7 @@ impl HostInput {
                 HostAuthInput::Agent => zeroterm_app::HostAuth::Agent,
             },
             os_type: self.os_type.and_then(|v| normalize_os_type(&v)),
-            forwards: self.forwards.into_iter().map(|f| f.into_app()).collect(),
+            forwards: Vec::new(),
             proxy_jump_host_id: self.proxy_jump_host_id.filter(|s| !s.is_empty()),
             group_id: self.group_id.filter(|s| !s.is_empty()),
         }
@@ -1977,6 +2046,52 @@ pub struct HostFull {
     pub forwards: Vec<ForwardSpecIO>,
     pub proxy_jump_host_id: Option<String>,
     pub group_id: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortForwardStatus {
+    pub id: u64,
+    pub host_id: String,
+    pub host_name: String,
+    pub summaries: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortForwardHostStatus {
+    pub host_id: String,
+    pub host_name: String,
+    pub forwards: Vec<ForwardSpecIO>,
+    pub active: Option<PortForwardStatus>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortForwardRuleStatus {
+    pub id: String,
+    pub host_id: String,
+    pub host_name: String,
+    pub forward: ForwardSpecIO,
+    pub summary: String,
+    pub active: Option<PortForwardStatus>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortForwardRuleInput {
+    pub host_id: String,
+    pub forward: ForwardSpecIO,
+}
+
+impl PortForwardRuleInput {
+    fn into_app_rule(self, id: String) -> zeroterm_app::PortForwardRule {
+        zeroterm_app::PortForwardRule {
+            id,
+            host_id: self.host_id,
+            spec: self.forward.into_app(),
+        }
+    }
 }
 
 #[tauri::command]
@@ -2009,6 +2124,23 @@ pub async fn update_host(
         new_host.os_type = existing.os_type;
     }
     app.update_host(&new_host).map_err(|e| e.to_string())?;
+    manager.schedule_debounced_sync_for_all(app);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn update_host_forwards(
+    state: State<'_, AppState>,
+    id: String,
+    forwards: Vec<ForwardSpecIO>,
+) -> Result<(), String> {
+    let (app, manager) = clone_app_and_sync(&state)?;
+    let mut host = app
+        .find_host_by_id(&id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("no host with id {id}"))?;
+    host.forwards = forwards.into_iter().map(|f| f.into_app()).collect();
+    app.update_host(&host).map_err(|e| e.to_string())?;
     manager.schedule_debounced_sync_for_all(app);
     Ok(())
 }
@@ -2443,6 +2575,251 @@ fn build_connect_chain_for_host_strict(
     Ok((host, cfg, jump_cfg))
 }
 
+async fn connect_host_sessions(
+    cfg: zeroterm_ssh::ConnectConfig,
+    jump_cfg: Option<zeroterm_ssh::ConnectConfig>,
+) -> Result<(Option<Session>, Session), String> {
+    match jump_cfg {
+        Some(jcfg) => {
+            let j = Session::connect(jcfg).await.map_err(|e| e.to_string())?;
+            let s = Session::connect_via(cfg, &j).await.map_err(|e| e.to_string())?;
+            Ok((Some(j), s))
+        }
+        None => {
+            let s = Session::connect(cfg).await.map_err(|e| e.to_string())?;
+            Ok((None, s))
+        }
+    }
+}
+
+const METRICS_SCRIPT: &str = r#"printf 'ZT_METRICS_V1\n'
+hostname 2>/dev/null || uname -n
+uname -s 2>/dev/null || printf 'unknown\n'
+uname -m 2>/dev/null || printf 'unknown\n'
+awk '{print int($1)}' /proc/uptime 2>/dev/null || printf '0\n'
+nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || printf '1\n'
+awk 'NR==1{total=$2+$3+$4+$5+$6+$7+$8; idle=$5+$6; print total, idle}' /proc/stat 2>/dev/null
+sleep 0.25
+awk 'NR==1{total=$2+$3+$4+$5+$6+$7+$8; idle=$5+$6; print total, idle}' /proc/stat 2>/dev/null
+awk '
+/^MemTotal:/ {mt=$2*1024}
+/^MemAvailable:/ {ma=$2*1024}
+/^SwapTotal:/ {st=$2*1024}
+/^SwapFree:/ {sf=$2*1024}
+END {printf "%d %d %d %d\n", mt, mt-ma, st, st-sf}
+' /proc/meminfo 2>/dev/null
+df -P -B1 2>/dev/null | awk 'NR>1 && $2 ~ /^[0-9]+$/ {print "D|" $6 "|" $2 "|" $3}' | head -n 12
+awk 'NR>2 {gsub(":", "", $1); print "A|" $1 "|" $2 "|" $10}' /proc/net/dev 2>/dev/null
+sleep 1
+awk 'NR>2 {gsub(":", "", $1); print "B|" $1 "|" $2 "|" $10}' /proc/net/dev 2>/dev/null
+"#;
+
+const WINDOWS_METRICS_SCRIPT: &str = r#"
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+$OutputEncoding = [System.Text.UTF8Encoding]::new()
+$os = Get-CimInstance Win32_OperatingSystem | Select-Object -First 1
+'ZT_METRICS_V1'
+$env:COMPUTERNAME
+'Windows'
+$env:PROCESSOR_ARCHITECTURE
+[int]((Get-Date) - $os.LastBootUpTime).TotalSeconds
+$env:NUMBER_OF_PROCESSORS
+'0 0'
+'0 0'
+[string]($os.TotalVisibleMemorySize * 1024) + ' ' + [string](($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) * 1024) + ' ' + [string]($os.TotalVirtualMemorySize * 1024) + ' ' + [string](($os.TotalVirtualMemorySize - $os.FreeVirtualMemory) * 1024)
+Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | ForEach-Object {
+  if ($_.Size -gt 0) { 'D|' + $_.DeviceID + '|'+ [string]$_.Size + '|' + [string]($_.Size - $_.FreeSpace) }
+}
+$netA = @{}
+$adapters = Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object {
+  $_.Status -eq 'Up' -and
+  $_.HardwareInterface -eq $true -and
+  $_.Name -notmatch '^et_' -and
+  $_.Name -notmatch '^(vEthernet|Loopback|Npcap|VMware|VirtualBox|ZeroTier|Tailscale|Bluetooth)' -and
+  $_.InterfaceDescription -notmatch '(Virtual|Miniport|Loopback|TAP|TUN|VPN|Hyper-V|Bluetooth)'
+}
+$adapters | ForEach-Object {
+  $s = Get-NetAdapterStatistics -Name $_.Name -ErrorAction SilentlyContinue
+  if ($null -eq $s) { return }
+  $netA[$_.Name] = @([uint64]$s.ReceivedBytes, [uint64]$s.SentBytes)
+  'A|' + $_.Name + '|' + [string]$s.ReceivedBytes + '|' + [string]$s.SentBytes
+}
+Start-Sleep -Seconds 1
+$adapters | ForEach-Object {
+  $s = Get-NetAdapterStatistics -Name $_.Name -ErrorAction SilentlyContinue
+  if ($null -eq $s) { return }
+  'B|' + $_.Name + '|' + [string]$s.ReceivedBytes + '|' + [string]$s.SentBytes
+}
+"#;
+
+fn parse_metric_u64(s: Option<&str>) -> u64 {
+    s.unwrap_or("0").trim().parse::<u64>().unwrap_or(0)
+}
+
+fn parse_metrics_output(text: &str) -> Result<SystemMetricsDto, String> {
+    let mut lines = text.lines();
+    if lines.next().map(str::trim) != Some("ZT_METRICS_V1") {
+        return Err("unexpected metrics response".to_string());
+    }
+    let host = lines.next().unwrap_or("unknown").trim().to_string();
+    let os = lines.next().unwrap_or("unknown").trim().to_string();
+    let arch = lines.next().unwrap_or("unknown").trim().to_string();
+    let uptime_seconds = parse_metric_u64(lines.next());
+    let cpu_cores = parse_metric_u64(lines.next()).max(1) as u32;
+    let parse_cpu = |s: &str| -> (u64, u64) {
+        let mut p = s.split_whitespace();
+        (parse_metric_u64(p.next()), parse_metric_u64(p.next()))
+    };
+    let (t1, i1) = parse_cpu(lines.next().unwrap_or("0 0"));
+    let (t2, i2) = parse_cpu(lines.next().unwrap_or("0 0"));
+    let dt = t2.saturating_sub(t1);
+    let di = i2.saturating_sub(i1);
+    let cpu_usage = if dt > 0 { ((dt.saturating_sub(di)) as f64 / dt as f64) * 100.0 } else { 0.0 };
+    let mut mem = lines.next().unwrap_or("0 0 0 0").split_whitespace();
+    let memory_total = parse_metric_u64(mem.next());
+    let memory_used = parse_metric_u64(mem.next());
+    let swap_total = parse_metric_u64(mem.next());
+    let swap_used = parse_metric_u64(mem.next());
+    let mut disks = Vec::new();
+    let mut network_first: HashMap<String, (u64, u64)> = HashMap::new();
+    let mut networks = Vec::new();
+    for line in lines {
+        let mut parts = line.split('|');
+        match parts.next() {
+            Some("D") => {
+                let mount = parts.next().unwrap_or("").to_string();
+                let total = parse_metric_u64(parts.next());
+                let used = parse_metric_u64(parts.next());
+                let usage = if total > 0 { used as f64 / total as f64 * 100.0 } else { 0.0 };
+                disks.push(SystemDiskDto { mount, total, used, usage });
+            }
+            Some("A") => {
+                let name = parts.next().unwrap_or("").to_string();
+                let rx = parse_metric_u64(parts.next());
+                let tx = parse_metric_u64(parts.next());
+                network_first.insert(name, (rx, tx));
+            }
+            Some("B") => {
+                let name = parts.next().unwrap_or("").to_string();
+                let rx = parse_metric_u64(parts.next());
+                let tx = parse_metric_u64(parts.next());
+                let (rx0, tx0) = network_first.get(&name).copied().unwrap_or((rx, tx));
+                networks.push(SystemNetworkDto {
+                    name,
+                    rx_bytes_per_sec: rx.saturating_sub(rx0),
+                    tx_bytes_per_sec: tx.saturating_sub(tx0),
+                });
+            }
+            _ => {}
+        }
+    }
+    Ok(SystemMetricsDto { host, os, arch, uptime_seconds, cpu_cores, cpu_usage, memory_total, memory_used, swap_total, swap_used, disks, networks })
+}
+
+async fn local_metrics() -> Result<SystemMetricsDto, String> {
+    #[cfg(target_os = "windows")]
+    let output = tokio::process::Command::new("powershell")
+        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", WINDOWS_METRICS_SCRIPT])
+        .output()
+        .await
+        .map_err(|e| format!("local metrics failed: {e}"))?;
+    #[cfg(not(target_os = "windows"))]
+    let output = Command::new("sh")
+        .arg("-lc")
+        .arg(METRICS_SCRIPT)
+        .output()
+        .await
+        .map_err(|e| format!("local metrics failed: {e}"))?;
+    parse_metrics_output(&String::from_utf8_lossy(&output.stdout))
+}
+
+#[tauri::command]
+pub async fn collect_system_metrics(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+    host_id: Option<String>,
+) -> Result<SystemMetricsDto, String> {
+    let host_id = host_id.unwrap_or_default();
+    if host_id.is_empty() || host_id.starts_with("local-") {
+        return local_metrics().await;
+    }
+    let (_host, cfg, jump_cfg) = build_connect_chain_for_host(&state, &app_handle, &host_id)?;
+    let (jump_session, mut session) = connect_host_sessions(cfg, jump_cfg).await?;
+    let (_code, stdout, stderr) = session.exec(METRICS_SCRIPT).await.map_err(|e| e.to_string())?;
+    drop(session);
+    drop(jump_session);
+    if stdout.is_empty() && !stderr.is_empty() {
+        return Err(String::from_utf8_lossy(&stderr).to_string());
+    }
+    parse_metrics_output(&String::from_utf8_lossy(&stdout))
+}
+
+async fn start_host_forwards(
+    session: &mut Session,
+    specs: &[zeroterm_app::ForwardSpec],
+) -> Result<(Vec<zeroterm_ssh::ForwardHandle>, Vec<String>), String> {
+    let mut forwards: Vec<zeroterm_ssh::ForwardHandle> = Vec::new();
+    let mut summaries: Vec<String> = Vec::new();
+
+    for spec in specs {
+        let enabled = match spec {
+            zeroterm_app::ForwardSpec::Local { enabled, .. } => *enabled,
+            zeroterm_app::ForwardSpec::Remote { enabled, .. } => *enabled,
+            zeroterm_app::ForwardSpec::Dynamic { enabled, .. } => *enabled,
+        };
+        if !enabled {
+            continue;
+        }
+
+        let summary = spec.summary();
+        let handle = match spec {
+            zeroterm_app::ForwardSpec::Local {
+                enabled: _,
+                bind_addr,
+                bind_port,
+                target_host,
+                target_port,
+            } => zeroterm_ssh::forward_local(
+                session,
+                bind_addr,
+                *bind_port,
+                target_host.clone(),
+                *target_port,
+            )
+            .await
+            .map_err(|e| format!("forward `{summary}`: {e}"))?,
+            zeroterm_app::ForwardSpec::Remote {
+                enabled: _,
+                bind_addr,
+                bind_port,
+                target_host,
+                target_port,
+            } => zeroterm_ssh::forward_remote(
+                session,
+                bind_addr,
+                *bind_port,
+                target_host.clone(),
+                *target_port,
+            )
+            .await
+            .map_err(|e| format!("forward `{summary}`: {e}"))?,
+            zeroterm_app::ForwardSpec::Dynamic {
+                enabled: _,
+                bind_addr,
+                bind_port,
+            } => zeroterm_ssh::forward_dynamic(session, bind_addr, *bind_port)
+                .await
+                .map_err(|e| format!("forward `{summary}`: {e}"))?,
+        };
+
+        info!(addr = %handle.local_addr(), spec = %summary, "forward up");
+        forwards.push(handle);
+        summaries.push(summary);
+    }
+
+    Ok((forwards, summaries))
+}
+
 #[allow(dead_code)]
 fn parse_os_release_value(raw: &str) -> &str {
     let v = raw.trim();
@@ -2624,18 +3001,7 @@ pub async fn connect_host(
 
     info!(host = %host.host, port = host.port, jump = ?jump_summary, "connecting");
 
-    // ProxyJump first if configured.
-    let (jump_session, mut session) = match jump_cfg {
-        Some(jcfg) => {
-            let j = Session::connect(jcfg).await.map_err(|e| e.to_string())?;
-            let t = Session::connect_via(cfg, &j).await.map_err(|e| e.to_string())?;
-            (Some(j), t)
-        }
-        None => {
-            let s = Session::connect(cfg).await.map_err(|e| e.to_string())?;
-            (None, s)
-        }
-    };
+    let (jump_session, mut session) = connect_host_sessions(cfg, jump_cfg).await?;
 
     // NOTE: compatibility-first path.
     // Some embedded SSH servers (notably on OpenWRT variants) behave
@@ -2643,46 +3009,8 @@ pub async fn connect_host(
     // auth but before interactive shell startup. We skip eager OS probing
     // here to keep shell startup reliable.
 
-    // Saved forwards.
-    let mut forwards: Vec<zeroterm_ssh::ForwardHandle> = Vec::new();
-    let mut forward_summaries: Vec<String> = Vec::new();
-    for spec in &host.forwards {
-        let enabled = match spec {
-            zeroterm_app::ForwardSpec::Local { enabled, .. } => *enabled,
-            zeroterm_app::ForwardSpec::Dynamic { enabled, .. } => *enabled,
-        };
-        if !enabled {
-            continue;
-        }
-        let summary = spec.summary();
-        let h = match spec {
-            zeroterm_app::ForwardSpec::Local {
-                enabled: _,
-                bind_addr,
-                bind_port,
-                target_host,
-                target_port,
-            } => zeroterm_ssh::forward_local(
-                &session,
-                bind_addr,
-                *bind_port,
-                target_host.clone(),
-                *target_port,
-            )
-            .await
-            .map_err(|e| format!("forward `{summary}`: {e}"))?,
-            zeroterm_app::ForwardSpec::Dynamic {
-                enabled: _,
-                bind_addr,
-                bind_port,
-            } => zeroterm_ssh::forward_dynamic(&session, bind_addr, *bind_port)
-                .await
-                .map_err(|e| format!("forward `{summary}`: {e}"))?,
-        };
-        info!(local = %h.local_addr(), spec = %summary, "saved forward up");
-        forwards.push(h);
-        forward_summaries.push(summary);
-    }
+    let forwards: Vec<zeroterm_ssh::ForwardHandle> = Vec::new();
+    let forward_summaries: Vec<String> = Vec::new();
 
     let pty = PtySize::new(cols.unwrap_or(80).max(1), rows.unwrap_or(24).max(1));
     let channel = session.open_shell(pty).await.map_err(|e| e.to_string())?;
@@ -2724,6 +3052,175 @@ pub async fn connect_host(
     });
 
     Ok(session_id)
+}
+
+#[tauri::command]
+pub async fn list_port_forward_status(
+    state: State<'_, AppState>,
+) -> Result<Vec<PortForwardRuleStatus>, String> {
+    let app_lock = state.app.lock().unwrap();
+    let app = app_lock.as_ref().ok_or("vault is locked")?;
+    let hosts = app.list_hosts().map_err(|e| e.to_string())?;
+    let rules = app.list_port_forwards().map_err(|e| e.to_string())?;
+    drop(app_lock);
+
+    let active = state.port_forwards.lock().unwrap();
+    let mut out = Vec::new();
+    for host in hosts {
+        for rule in rules.iter().filter(|rule| rule.host_id == host.id) {
+            let active_forward = active.iter().find_map(|(id, handle)| {
+                if handle.rule_id == rule.id {
+                    Some(PortForwardStatus {
+                        id: *id,
+                        host_id: handle.host_id.clone(),
+                        host_name: handle.host_name.clone(),
+                        summaries: handle.summaries.clone(),
+                    })
+                } else {
+                    None
+                }
+            });
+            out.push(PortForwardRuleStatus {
+                id: rule.id.clone(),
+                host_id: host.id.clone(),
+                host_name: host.name.clone(),
+                forward: ForwardSpecIO::from_app(&rule.spec),
+                summary: rule.spec.summary(),
+                active: active_forward,
+            });
+        }
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+pub async fn list_port_forward_hosts(
+    state: State<'_, AppState>,
+) -> Result<Vec<PortForwardHostStatus>, String> {
+    let app_lock = state.app.lock().unwrap();
+    let app = app_lock.as_ref().ok_or("vault is locked")?;
+    let hosts = app.list_hosts().map_err(|e| e.to_string())?;
+    let rules = app.list_port_forwards().map_err(|e| e.to_string())?;
+    drop(app_lock);
+
+    let active = state.port_forwards.lock().unwrap();
+    let mut out = Vec::new();
+    for host in hosts {
+        let host_id = host.id.clone();
+        let active_forward = active.iter().find_map(|(id, handle)| {
+            if handle.host_id == host_id {
+                Some(PortForwardStatus {
+                    id: *id,
+                    host_id: handle.host_id.clone(),
+                    host_name: handle.host_name.clone(),
+                    summaries: handle.summaries.clone(),
+                })
+            } else {
+                None
+            }
+        });
+        out.push(PortForwardHostStatus {
+            host_id: host_id.clone(),
+            host_name: host.name,
+            forwards: rules
+                .iter()
+                .filter(|rule| rule.host_id == host_id)
+                .map(|rule| ForwardSpecIO::from_app(&rule.spec))
+                .collect(),
+            active: active_forward,
+        });
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+pub async fn create_port_forward_rule(
+    state: State<'_, AppState>,
+    input: PortForwardRuleInput,
+) -> Result<String, String> {
+    let (app, manager) = clone_app_and_sync(&state)?;
+    let rule = input.into_app_rule(String::new());
+    let id = app.save_port_forward(&rule).map_err(|e| e.to_string())?;
+    manager.schedule_debounced_sync_for_all(app);
+    Ok(id)
+}
+
+#[tauri::command]
+pub async fn update_port_forward_rule(
+    state: State<'_, AppState>,
+    id: String,
+    input: PortForwardRuleInput,
+) -> Result<(), String> {
+    let (app, manager) = clone_app_and_sync(&state)?;
+    let rule = input.into_app_rule(id);
+    app.update_port_forward(&rule).map_err(|e| e.to_string())?;
+    manager.schedule_debounced_sync_for_all(app);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn migrate_port_forward_rules(state: State<'_, AppState>) -> Result<usize, String> {
+    let (app, manager) = clone_app_and_sync(&state)?;
+    let migrated = app.migrate_embedded_port_forwards().map_err(|e| e.to_string())?;
+    if migrated > 0 {
+        manager.schedule_debounced_sync_for_all(app);
+    }
+    Ok(migrated)
+}
+
+#[tauri::command]
+pub async fn start_port_forward(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+    rule_id: String,
+) -> Result<u64, String> {
+    let (host_id, spec) = {
+        let app_lock = state.app.lock().unwrap();
+        let app = app_lock.as_ref().ok_or("vault is locked")?;
+        let rule = app
+            .find_port_forward_by_id(&rule_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("no port forward rule with id {rule_id}"))?;
+        (rule.host_id, rule.spec)
+    };
+    {
+        let active = state.port_forwards.lock().unwrap();
+        if active.values().any(|handle| handle.rule_id == rule_id) {
+            return Err("port forward is already running".to_string());
+        }
+    }
+
+    let (host, cfg, jump_cfg) = build_connect_chain_for_host(&state, &app_handle, &host_id)?;
+    if !match &spec {
+        zeroterm_app::ForwardSpec::Local { enabled, .. } => *enabled,
+        zeroterm_app::ForwardSpec::Remote { enabled, .. } => *enabled,
+        zeroterm_app::ForwardSpec::Dynamic { enabled, .. } => *enabled,
+    } {
+        return Err("port forward is disabled".to_string());
+    }
+
+    let (jump_session, mut session) = connect_host_sessions(cfg, jump_cfg).await?;
+    let (forwards, summaries) = start_host_forwards(&mut session, &[spec]).await?;
+    let id = state.next_port_forward_id.fetch_add(1, Ordering::SeqCst);
+    state.port_forwards.lock().unwrap().insert(
+        id,
+        PortForwardHandle {
+            host_id: host.id,
+            rule_id,
+            host_name: host.name,
+            _session: session,
+            _jump_session: jump_session,
+            _forwards: forwards,
+            summaries,
+        },
+    );
+    Ok(id)
+}
+
+#[tauri::command]
+pub async fn stop_port_forward(state: State<'_, AppState>, id: u64) -> Result<(), String> {
+    let removed = state.port_forwards.lock().unwrap().remove(&id);
+    removed.map(|_| ()).ok_or_else(|| format!("no port forward with id {id}"))
 }
 
 #[derive(Debug, Deserialize)]

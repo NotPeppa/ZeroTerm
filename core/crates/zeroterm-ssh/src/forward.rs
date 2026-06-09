@@ -1,7 +1,7 @@
 //! TCP port forwarding helpers built on top of an authenticated
 //! [`crate::Session`].
 //!
-//! Two flavours are exposed:
+//! Three flavours are exposed:
 //!
 //! * [`forward_local`] — `ssh -L bind:port:host:hport` semantics. Opens
 //!   a local TCP listener; each accepted connection is bridged to
@@ -11,14 +11,15 @@
 //!   listener (no auth, CONNECT only); each request becomes a
 //!   `direct-tcpip` channel.
 //!
+//! * [`forward_remote`] — `ssh -R bind:port:host:hport` semantics. Asks the
+//!   SSH server to listen remotely and open `forwarded-tcpip` channels back to
+//!   the client; each channel is bridged to a local TCP target.
+//!
 //! Both helpers spawn a long-lived task that runs until the returned
 //! [`ForwardHandle`] is dropped. The handle's `local_addr()` is the
 //! address actually bound (useful when the caller passed port 0 to let
 //! the OS choose).
 //!
-//! Remote forwarding (`ssh -R`) is not yet implemented — it requires
-//! sshd-side `AllowTcpForwarding` plus a different message flow.
-
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -178,6 +179,100 @@ pub async fn forward_dynamic(
     tokio::spawn(socks_loop(listener, handle, cancel_for_task));
 
     Ok(ForwardHandle { local, cancel })
+}
+
+/// `ssh -R bind:port:host:hport` — remote listener forwarded back to a local target.
+pub async fn forward_remote(
+    session: &mut Session,
+    bind_addr: &str,
+    bind_port: u16,
+    target_host: String,
+    target_port: u16,
+) -> Result<ForwardHandle, SshError> {
+    let allocated_port = session
+        .tcpip_forward(bind_addr, bind_port as u32)
+        .await?;
+    let remote_port = if bind_port == 0 { allocated_port } else { bind_port as u32 };
+    let local: SocketAddr = "0.0.0.0:0".parse().map_err(|e| SshError::Io(io_err(format!("remote addr parse failed: {e}"))))?;
+    let cancel = CancellationToken::new();
+    let cancel_for_task = cancel.clone();
+    let incoming = session.remote_forward_receiver();
+
+    debug!(remote = %format!("{bind_addr}:{remote_port}"), target = %format!("{target_host}:{target_port}"), "remote forward requested");
+    tokio::spawn(remote_loop(
+        incoming,
+        bind_addr.to_string(),
+        remote_port,
+        target_host,
+        target_port,
+        cancel_for_task,
+    ));
+
+    Ok(ForwardHandle { local, cancel })
+}
+
+async fn remote_loop(
+    incoming: Arc<tokio::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<crate::session::RemoteForwardIncoming>>>,
+    bind_addr: String,
+    bind_port: u32,
+    target_host: String,
+    target_port: u16,
+    cancel: CancellationToken,
+) {
+    loop {
+        let next = tokio::select! {
+            _ = cancel.cancelled() => break,
+            item = async {
+                let mut rx = incoming.lock().await;
+                rx.recv().await
+            } => item,
+        };
+        match next {
+            Some(item) => {
+                if item.connected_address != bind_addr || item.connected_port != bind_port {
+                    debug!(connected_address = %item.connected_address, connected_port = item.connected_port, expected = %format!("{bind_addr}:{bind_port}"), "ignoring forwarded-tcpip for another remote listener");
+                    continue;
+                }
+                let target_host = target_host.clone();
+                let cancel = cancel.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = bridge_remote_channel(
+                        item.channel,
+                        target_host,
+                        target_port,
+                        item.originator_address,
+                        item.originator_port,
+                        cancel,
+                    ).await {
+                        warn!(error = %e, "remote forward bridge ended with error");
+                    }
+                });
+            }
+            None => break,
+        }
+    }
+}
+
+async fn bridge_remote_channel(
+    channel: Channel<Msg>,
+    target_host: String,
+    target_port: u16,
+    originator_address: String,
+    originator_port: u32,
+    cancel: CancellationToken,
+) -> Result<(), SshError> {
+    let mut tcp = TcpStream::connect((target_host.as_str(), target_port)).await?;
+    let mut stream = channel.into_stream();
+    debug!(originator = %format!("{originator_address}:{originator_port}"), target = %format!("{target_host}:{target_port}"), "remote forward connection accepted");
+    tokio::select! {
+        _ = cancel.cancelled() => {}
+        res = tokio::io::copy_bidirectional(&mut stream, &mut tcp) => {
+            if let Err(e) = res {
+                debug!(error = %e, "remote bidirectional copy ended");
+            }
+        }
+    }
+    Ok(())
 }
 
 async fn socks_loop(

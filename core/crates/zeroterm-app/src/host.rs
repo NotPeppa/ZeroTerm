@@ -64,14 +64,23 @@ pub enum HostAuth {
     Agent,
 }
 
-/// Saved forward spec. Mirrors the subset of OpenSSH `-L`/`-D` syntax
-/// we support today; remote forwards (`-R`) will get their own variant
-/// once the SSH layer implements them.
+/// Saved forward spec. Mirrors the subset of OpenSSH `-L`/`-R`/`-D` syntax
+/// we support today.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ForwardSpec {
     /// `ssh -L bind_addr:bind_port:target_host:target_port`
     Local {
+        #[serde(default = "default_forward_enabled")]
+        enabled: bool,
+        #[serde(default = "default_bind_addr")]
+        bind_addr: String,
+        bind_port: u16,
+        target_host: String,
+        target_port: u16,
+    },
+    /// `ssh -R bind_addr:bind_port:target_host:target_port`
+    Remote {
         #[serde(default = "default_forward_enabled")]
         enabled: bool,
         #[serde(default = "default_bind_addr")]
@@ -127,6 +136,20 @@ impl ForwardSpec {
                     format!("{prefix} {bind_port}")
                 } else {
                     format!("{prefix} {bind_addr}:{bind_port}")
+                }
+            }
+            ForwardSpec::Remote {
+                enabled,
+                bind_addr,
+                bind_port,
+                target_host,
+                target_port,
+            } => {
+                let prefix = if *enabled { "R" } else { "R(off)" };
+                if bind_addr == "127.0.0.1" {
+                    format!("{prefix} {bind_port}:{target_host}:{target_port}")
+                } else {
+                    format!("{prefix} {bind_addr}:{bind_port}:{target_host}:{target_port}")
                 }
             }
         }

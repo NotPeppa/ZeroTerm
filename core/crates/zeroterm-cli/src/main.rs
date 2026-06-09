@@ -390,11 +390,12 @@ async fn run_session(
     for spec in saved_forwards {
         let h = match spec {
             zeroterm_app::ForwardSpec::Local {
+                enabled,
                 bind_addr,
                 bind_port,
                 target_host,
                 target_port,
-            } => zeroterm_ssh::forward_local(
+            } if *enabled => zeroterm_ssh::forward_local(
                 &session,
                 bind_addr,
                 *bind_port,
@@ -403,12 +404,29 @@ async fn run_session(
             )
             .await
             .with_context(|| format!("setting up saved forward {}", spec.summary()))?,
-            zeroterm_app::ForwardSpec::Dynamic {
+            zeroterm_app::ForwardSpec::Remote {
+                enabled,
                 bind_addr,
                 bind_port,
-            } => zeroterm_ssh::forward_dynamic(&session, bind_addr, *bind_port)
+                target_host,
+                target_port,
+            } if *enabled => zeroterm_ssh::forward_remote(
+                &mut session,
+                bind_addr,
+                *bind_port,
+                target_host.clone(),
+                *target_port,
+            )
+            .await
+            .with_context(|| format!("setting up saved forward {}", spec.summary()))?,
+            zeroterm_app::ForwardSpec::Dynamic {
+                enabled,
+                bind_addr,
+                bind_port,
+            } if *enabled => zeroterm_ssh::forward_dynamic(&session, bind_addr, *bind_port)
                 .await
                 .with_context(|| format!("setting up saved forward {}", spec.summary()))?,
+            _ => continue,
         };
         info!(local = %h.local_addr(), spec = spec.summary(), "saved forward up");
         forwards.push(h);
@@ -901,6 +919,7 @@ fn cmd_forward(args: &Args, vault_path: &Path, action: &ForwardAction) -> Result
             let new_spec = if let Some(spec) = local {
                 let lf = parse_local_forward(spec)?;
                 zeroterm_app::ForwardSpec::Local {
+                    enabled: true,
                     bind_addr: lf.bind_addr,
                     bind_port: lf.bind_port,
                     target_host: lf.target_host,
@@ -909,6 +928,7 @@ fn cmd_forward(args: &Args, vault_path: &Path, action: &ForwardAction) -> Result
             } else {
                 let df = parse_dynamic_forward(dynamic.as_ref().unwrap())?;
                 zeroterm_app::ForwardSpec::Dynamic {
+                    enabled: true,
                     bind_addr: df.bind_addr,
                     bind_port: df.bind_port,
                 }

@@ -235,6 +235,30 @@ const I18N = {
     "sidebar.lock": "Lock",
     "sidebar.collapse": "Collapse",
     "sidebar.expand": "Expand",
+    "metrics.title": "Metrics",
+    "metrics.subtitle": "Current terminal session",
+    "metrics.refresh": "Refresh",
+    "metrics.empty.title": "No active terminal",
+    "metrics.empty.desc": "Open a terminal session to view system metrics.",
+    "metrics.system": "System",
+    "metrics.host": "Host",
+    "metrics.arch": "Arch",
+    "metrics.os": "System",
+    "metrics.uptime": "Uptime",
+    "metrics.cpu": "CPU",
+    "metrics.cpu.cores": "{count} cores",
+    "metrics.cpu.avg": "Average usage",
+    "metrics.memory": "Memory",
+    "metrics.ram": "RAM",
+    "metrics.swap": "Swap",
+    "metrics.network": "Network",
+    "metrics.disk": "Disk",
+    "metrics.loading": "Collecting metrics...",
+    "metrics.error": "Failed to collect metrics: {error}",
+    "terminal_sftp.title": "SFTP",
+    "terminal_sftp.subtitle": "Current terminal files",
+    "terminal_sftp.empty.title": "No current terminal",
+    "terminal_sftp.empty.desc": "Open a terminal session to browse files here.",
     "window.minimize": "Minimize",
     "window.maximize": "Maximize",
     "window.restore": "Restore",
@@ -389,7 +413,7 @@ const I18N = {
     "host_editor.label.advanced": "Jump host and forwards",
     "host_editor.label.port_forwards": "Port forwards",
     "host_editor.button.add_forward": "+ Add forward",
-    "host_editor.hint.forwards": "Supports local forward (-L) and dynamic SOCKS5 (-D).",
+    "host_editor.hint.forwards": "Port forwards are now managed and synced as independent records from the Port Forwarding page.",
     "host_editor.button.choose_key": "Choose file...",
     "host_editor.button.cancel": "Cancel",
     "host_editor.button.save": "Save",
@@ -419,6 +443,7 @@ const I18N = {
     "host_editor.jump.none": "(none)",
     "host_editor.forward.none": "(no forwards)",
     "host_editor.forward.local": "Local (-L)",
+    "host_editor.forward.remote": "Remote (-R)",
     "host_editor.forward.dynamic": "SOCKS5 (-D)",
     "host_editor.forward.enabled": "Enabled",
     "host_editor.forward.bind": "bind",
@@ -439,6 +464,47 @@ const I18N = {
     "host_editor.error.forward_bind_port": "forward {index}: invalid bind port",
     "host_editor.error.forward_target_host": "forward {index}: remote host required",
     "host_editor.error.forward_target_port": "forward {index}: invalid remote port",
+    "port_forward.title": "Port Forwarding",
+    "port_forward.subtitle": "Start SSH forwards independently without opening a terminal session.",
+    "port_forward.create": "+ New forward",
+    "port_forward.refresh": "Refresh",
+    "port_forward.search.placeholder": "Search host, port, or remote address...",
+    "port_forward.empty.title": "No port forwards yet",
+    "port_forward.empty.search_title": "No matching forwards",
+    "port_forward.empty.desc": "Click \"New forward\", choose a host, then add an independent forwarding rule.",
+    "port_forward.empty.search_desc": "Try another keyword, such as host name, port, or remote address.",
+    "port_forward.title.dynamic": "SOCKS5 proxy: {bindAddr}:{bindPort}",
+    "port_forward.title.local": "Local port {bindPort} forwards to {targetHost}:{targetPort}",
+    "port_forward.title.remote": "Remote port {bindPort} forwards to {targetHost}:{targetPort}",
+    "port_forward.detail.dynamic": "App proxy address: {bindAddr}:{bindPort}",
+    "port_forward.detail.local": "Open local {bindAddr}:{bindPort} to connect to {targetHost}:{targetPort} on the server",
+    "port_forward.detail.remote": "Open server {bindAddr}:{bindPort} to connect back to local {targetHost}:{targetPort}",
+    "port_forward.status.running": "running",
+    "port_forward.status.stopped": "stopped",
+    "port_forward.action.start": "Start",
+    "port_forward.action.stop": "Stop",
+    "port_forward.action.starting": "Starting...",
+    "port_forward.action.stopping": "Stopping...",
+    "port_forward.action.edit": "Edit",
+    "port_forward.editor.title.create": "New forward",
+    "port_forward.editor.title.edit": "Edit forward - {hostName}",
+    "port_forward.editor.subtitle": "Forward rules sync independently from host connection details.",
+    "port_forward.editor.host": "Host",
+    "port_forward.editor.kind": "Forward type",
+    "port_forward.editor.kind.local": "Local forward (-L)",
+    "port_forward.editor.kind.remote": "Remote forward (-R)",
+    "port_forward.editor.kind.dynamic": "SOCKS5 (-D)",
+    "port_forward.editor.bind": "Bind address",
+    "port_forward.editor.bind_port": "Bind port",
+    "port_forward.editor.target_host": "Remote address",
+    "port_forward.editor.target_port": "Remote port",
+    "port_forward.editor.hint.local": "Local forwards listen on a local port and access the remote service over SSH.",
+    "port_forward.editor.hint.remote": "Remote forwards listen on the SSH server and connect back to a local service on this computer.",
+    "port_forward.editor.hint.dynamic": "SOCKS5 listens on a local proxy port; the target address is chosen by the client request.",
+    "port_forward.editor.error.host_required": "Please choose a host",
+    "port_forward.editor.close": "Close",
+    "port_forward.editor.cancel": "Cancel",
+    "port_forward.editor.save": "Save",
     "files.title": "Files",
     "files.button.back": "Back",
     "files.button.up": "Up",
@@ -629,6 +695,8 @@ const I18N = {
     "ai.session.toast.clear_failed": "Failed to clear AI sessions: {error}",
     "ai.session.meta.messages": "{count} messages",
     "ai.panel.aria": "AI Assistant",
+    "ai.panel.expand": "Open AI Assistant",
+    "ai.panel.collapse": "Close AI Assistant",
     "ai.workflow.aria": "AI workflow",
     "ai.examples.aria": "Example goals",
     "settings.sync.desc": "Manage your sync repo for ZeroTerm.",
@@ -705,6 +773,21 @@ const I18N = {
     "settings.sync.conflicts.no_profile": "Configure a sync profile to see conflicts.",
     "settings.sync.conflicts.local": "Local",
     "settings.sync.conflicts.remote": "Remote",
+    "settings.sync.conflicts.local_hint": "Version on this device",
+    "settings.sync.conflicts.remote_hint": "Version from the sync repo / other device",
+    "settings.sync.conflicts.record_fallback": "Unnamed record",
+    "settings.sync.conflicts.detected_unknown": "Detected time unknown",
+    "settings.sync.conflicts.summary": "Both sides changed this record. Pick the version you want to keep; the other version will be overwritten on the next sync.",
+    "settings.sync.conflicts.preview_empty": "No readable fields in this version. It may be an old, deleted, or incompatible record.",
+    "settings.sync.conflicts.field_name": "Name",
+    "settings.sync.conflicts.field_host": "Host",
+    "settings.sync.conflicts.field_port": "Port",
+    "settings.sync.conflicts.field_user": "User",
+    "settings.sync.conflicts.field_auth": "Auth",
+    "settings.sync.conflicts.field_group": "Group",
+    "settings.sync.conflicts.field_os": "OS",
+    "settings.sync.conflicts.field_forwards": "Forwards",
+    "settings.sync.conflicts.field_host_id": "Host ID",
     "settings.sync.conflicts.tombstone": "(deleted upstream)",
     "settings.sync.conflicts.redacted": "(secret content, {bytes} bytes)",
     "settings.sync.conflicts.keep_local": "Keep local",
@@ -897,6 +980,30 @@ const I18N = {
     "sidebar.lock": "锁定",
     "sidebar.collapse": "收起",
     "sidebar.expand": "展开",
+    "metrics.title": "指标监控",
+    "metrics.subtitle": "当前终端会话",
+    "metrics.refresh": "刷新",
+    "metrics.empty.title": "没有活动终端",
+    "metrics.empty.desc": "打开一个终端会话后查看系统指标。",
+    "metrics.system": "系统",
+    "metrics.host": "主机",
+    "metrics.arch": "架构",
+    "metrics.os": "系统",
+    "metrics.uptime": "运行时长",
+    "metrics.cpu": "CPU",
+    "metrics.cpu.cores": "{count} 核",
+    "metrics.cpu.avg": "平均使用率",
+    "metrics.memory": "内存",
+    "metrics.ram": "RAM",
+    "metrics.swap": "Swap",
+    "metrics.network": "网络",
+    "metrics.disk": "磁盘",
+    "metrics.loading": "正在采集指标...",
+    "metrics.error": "指标采集失败：{error}",
+    "terminal_sftp.title": "SFTP",
+    "terminal_sftp.subtitle": "当前终端文件",
+    "terminal_sftp.empty.title": "没有当前终端",
+    "terminal_sftp.empty.desc": "打开终端会话后，可在这里浏览当前主机文件。",
     "window.minimize": "最小化",
     "window.maximize": "最大化",
     "window.restore": "还原",
@@ -1050,7 +1157,7 @@ const I18N = {
     "host_editor.label.advanced": "跳板机与转发",
     "host_editor.label.port_forwards": "端口转发",
     "host_editor.button.add_forward": "+ 添加转发",
-    "host_editor.hint.forwards": "支持本地转发（-L）和动态 SOCKS5（-D）。",
+    "host_editor.hint.forwards": "端口转发现在请到“端口转发”页面管理，并会作为独立记录同步。",
     "host_editor.button.choose_key": "选择文件...",
     "host_editor.button.cancel": "取消",
     "host_editor.button.save": "保存",
@@ -1080,6 +1187,7 @@ const I18N = {
     "host_editor.jump.none": "（无）",
     "host_editor.forward.none": "（无转发）",
     "host_editor.forward.local": "本地转发 (-L)",
+    "host_editor.forward.remote": "远程转发 (-R)",
     "host_editor.forward.dynamic": "SOCKS5 (-D)",
     "host_editor.forward.enabled": "启用",
     "host_editor.forward.bind": "监听地址",
@@ -1100,6 +1208,47 @@ const I18N = {
     "host_editor.error.forward_bind_port": "第 {index} 条转发：监听端口无效",
     "host_editor.error.forward_target_host": "第 {index} 条转发：远端地址必填",
     "host_editor.error.forward_target_port": "第 {index} 条转发：远端端口无效",
+    "port_forward.title": "端口转发",
+    "port_forward.subtitle": "独立启动 SSH 转发，无需打开终端会话。",
+    "port_forward.create": "+ 新建转发",
+    "port_forward.refresh": "刷新",
+    "port_forward.search.placeholder": "搜索主机、端口或远端地址...",
+    "port_forward.empty.title": "暂无端口转发",
+    "port_forward.empty.search_title": "没有匹配的转发",
+    "port_forward.empty.desc": "点击“新建转发”，选择主机后即可添加独立转发规则。",
+    "port_forward.empty.search_desc": "换个关键词试试，例如主机名、端口号或远端地址。",
+    "port_forward.title.dynamic": "SOCKS5 代理：{bindAddr}:{bindPort}",
+    "port_forward.title.local": "本机端口 {bindPort} 转发到 {targetHost}:{targetPort}",
+    "port_forward.title.remote": "远程端口 {bindPort} 转发到 {targetHost}:{targetPort}",
+    "port_forward.detail.dynamic": "应用代理地址：{bindAddr}:{bindPort}",
+    "port_forward.detail.local": "访问本机 {bindAddr}:{bindPort}，会连接到服务器上的 {targetHost}:{targetPort}",
+    "port_forward.detail.remote": "访问服务器 {bindAddr}:{bindPort}，会反连到本机 {targetHost}:{targetPort}",
+    "port_forward.status.running": "运行中",
+    "port_forward.status.stopped": "未启动",
+    "port_forward.action.start": "启动",
+    "port_forward.action.stop": "停止",
+    "port_forward.action.starting": "启动中...",
+    "port_forward.action.stopping": "停止中...",
+    "port_forward.action.edit": "编辑",
+    "port_forward.editor.title.create": "新建转发",
+    "port_forward.editor.title.edit": "编辑转发 - {hostName}",
+    "port_forward.editor.subtitle": "转发规则会独立于主机连接信息同步。",
+    "port_forward.editor.host": "主机",
+    "port_forward.editor.kind": "转发类型",
+    "port_forward.editor.kind.local": "本地转发 (-L)",
+    "port_forward.editor.kind.remote": "远程转发 (-R)",
+    "port_forward.editor.kind.dynamic": "SOCKS5 (-D)",
+    "port_forward.editor.bind": "监听地址",
+    "port_forward.editor.bind_port": "监听端口",
+    "port_forward.editor.target_host": "远端地址",
+    "port_forward.editor.target_port": "远端端口",
+    "port_forward.editor.hint.local": "本地转发会监听本机端口，并通过 SSH 连接访问远端服务。",
+    "port_forward.editor.hint.remote": "远程转发会监听服务器端口，并通过 SSH 反连到本机服务。",
+    "port_forward.editor.hint.dynamic": "SOCKS5 会在本机监听一个代理端口，目标地址由客户端请求决定。",
+    "port_forward.editor.error.host_required": "请选择主机",
+    "port_forward.editor.close": "关闭",
+    "port_forward.editor.cancel": "取消",
+    "port_forward.editor.save": "保存",
     "files.title": "文件",
     "files.button.back": "返回",
     "files.button.up": "上级目录",
@@ -1288,6 +1437,8 @@ const I18N = {
     "ai.session.toast.clear_failed": "清空 AI 会话失败：{error}",
     "ai.session.meta.messages": "{count} 条消息",
     "ai.panel.aria": "AI 助手",
+    "ai.panel.expand": "展开 AI 助手",
+    "ai.panel.collapse": "收起 AI 助手",
     "ai.workflow.aria": "AI 工作流程",
     "ai.examples.aria": "示例目标",
     "settings.sync.desc": "管理 ZeroTerm 同步仓库。",
@@ -1364,6 +1515,21 @@ const I18N = {
     "settings.sync.conflicts.no_profile": "请先配置同步以查看冲突。",
     "settings.sync.conflicts.local": "本地",
     "settings.sync.conflicts.remote": "远端",
+    "settings.sync.conflicts.local_hint": "当前这台设备上的版本",
+    "settings.sync.conflicts.remote_hint": "同步仓库 / 其他设备上的版本",
+    "settings.sync.conflicts.record_fallback": "未命名记录",
+    "settings.sync.conflicts.detected_unknown": "发现时间未知",
+    "settings.sync.conflicts.summary": "这条记录在本地和远端都被改过，无法自动判断保留哪份。请选择要保留的版本，另一份会在下次同步时被覆盖。",
+    "settings.sync.conflicts.preview_empty": "这一版没有可显示字段，可能是旧版本、已删除或格式不兼容的记录。",
+    "settings.sync.conflicts.field_name": "名称",
+    "settings.sync.conflicts.field_host": "主机",
+    "settings.sync.conflicts.field_port": "端口",
+    "settings.sync.conflicts.field_user": "用户",
+    "settings.sync.conflicts.field_auth": "认证",
+    "settings.sync.conflicts.field_group": "分组",
+    "settings.sync.conflicts.field_os": "系统",
+    "settings.sync.conflicts.field_forwards": "端口转发",
+    "settings.sync.conflicts.field_host_id": "主机 ID",
     "settings.sync.conflicts.tombstone": "（远端已删除）",
     "settings.sync.conflicts.redacted": "（私密内容，{bytes} 字节）",
     "settings.sync.conflicts.keep_local": "保留本地",
@@ -1692,6 +1858,7 @@ function setLocale(locale) {
 }
 
 const FILE_EDITOR_MAX_BYTES = 5 * 1024 * 1024;
+const LOG_FILE_EDITOR_MAX_BYTES = 50 * 1024 * 1024;
 
 const EDITABLE_TEXT_EXTS = new Set([
   "txt", "log", "md", "markdown", "json", "jsonc", "yaml", "yml", "toml",
@@ -1790,6 +1957,11 @@ function isLikelyEditableTextName(name) {
   if (idx <= 0 || idx === lower.length - 1) return false;
   const ext = lower.slice(idx + 1);
   return EDITABLE_TEXT_EXTS.has(ext);
+}
+
+function fileEditorMaxBytesForName(name) {
+  const lower = String(name || "").toLowerCase();
+  return lower.endsWith(".log") ? LOG_FILE_EDITOR_MAX_BYTES : FILE_EDITOR_MAX_BYTES;
 }
 
 function detectAceModeByName(name) {
@@ -1935,6 +2107,15 @@ const terminalSidebarAiToggle = document.getElementById("terminal-sidebar-ai-tog
 const terminalSidePanels = document.getElementById("terminal-side-panels");
 const terminalSnippetsPanel = document.getElementById("terminal-snippets-panel");
 const terminalAiPanel = document.getElementById("terminal-ai-panel");
+const terminalMetricsPanel = document.getElementById("terminal-metrics-panel");
+const terminalSidebarMetricsToggle = document.getElementById("terminal-sidebar-metrics-toggle");
+const terminalMetricsBody = document.getElementById("terminal-metrics-body");
+const terminalMetricsRefresh = document.getElementById("terminal-metrics-refresh");
+const terminalSftpPanel = document.getElementById("terminal-sftp-panel");
+const terminalSidebarSftpToggle = document.getElementById("terminal-sidebar-sftp-toggle");
+const terminalSftpRefresh = document.getElementById("terminal-sftp-refresh");
+const terminalSftpTitle = document.getElementById("terminal-sftp-title");
+const terminalSftpSubtitle = document.getElementById("terminal-sftp-subtitle");
 const terminalSnippetsAdd = document.getElementById("terminal-snippets-add");
 const terminalSnippetsSearch = document.getElementById("terminal-snippets-search");
 const terminalSnippetsEmpty = document.getElementById("terminal-snippets-empty");
@@ -1977,6 +2158,34 @@ const newWindowButton = document.getElementById("new-window-button");
 const settingsButton = document.getElementById("settings-button");
 const quickConnectButton = document.getElementById("quick-connect-button");
 const localTerminalButton = document.getElementById("local-terminal-button");
+const portForwardButton = document.getElementById("port-forward-button");
+const portForwardPage = document.getElementById("port-forward-page");
+const portForwardList = document.getElementById("port-forward-list");
+const portForwardEmpty = document.getElementById("port-forward-empty");
+const portForwardSearch = document.getElementById("port-forward-search");
+const portForwardRefresh = document.getElementById("port-forward-refresh");
+const portForwardCreate = document.getElementById("port-forward-create");
+const portForwardEditor = document.getElementById("port-forward-editor");
+const portForwardEditorOverlay = document.getElementById("port-forward-editor-overlay");
+const portForwardEditorTitle = document.getElementById("port-forward-editor-title");
+const portForwardEditorHostWrap = document.getElementById("port-forward-editor-host-wrap");
+const portForwardEditorHost = document.getElementById("port-forward-editor-host");
+const portForwardEditorClose = document.getElementById("port-forward-editor-close");
+const portForwardEditorAdd = document.getElementById("port-forward-editor-add");
+const portForwardEditorList = document.getElementById("port-forward-editor-list");
+const portForwardEditorKind = document.getElementById("port-forward-editor-kind");
+const portForwardEditorKindTabs = document.getElementById("port-forward-editor-kind-tabs");
+const portForwardEditorBind = document.getElementById("port-forward-editor-bind");
+const portForwardEditorBindPort = document.getElementById("port-forward-editor-bind-port");
+const portForwardEditorArrow = document.getElementById("port-forward-editor-arrow");
+const portForwardEditorTargetHostWrap = document.getElementById("port-forward-editor-target-host-wrap");
+const portForwardEditorTargetPortWrap = document.getElementById("port-forward-editor-target-port-wrap");
+const portForwardEditorTargetHost = document.getElementById("port-forward-editor-target-host");
+const portForwardEditorTargetPort = document.getElementById("port-forward-editor-target-port");
+const portForwardEditorHint = document.getElementById("port-forward-editor-hint");
+const portForwardEditorError = document.getElementById("port-forward-editor-error");
+const portForwardEditorCancel = document.getElementById("port-forward-editor-cancel");
+const portForwardEditorSave = document.getElementById("port-forward-editor-save");
 const vaultBottomSettingsButton = document.getElementById("vault-bottom-settings");
 const vaultBottomSettingsRow = document.getElementById("vault-bottom-settings-row");
 const themeModeButton = document.getElementById("theme-mode-button");
@@ -2071,6 +2280,9 @@ let aiSessionFilter = "current";
 let aiActivePaneKey = null;
 let aiPanelCollapsed = true;
 let terminalActiveSidePanel = null;
+const terminalSidePanelByPane = new Map();
+let metricsRefreshTimer = null;
+let metricsRefreshToken = 0;
 let terminalCommandSnippets = [];
 let terminalSnippetSearchQuery = "";
 let snippetGroupMenuTarget = "";
@@ -2259,16 +2471,162 @@ async function sendSnippetToActiveTerminal(command) {
   pane.term?.focus?.();
 }
 
+function escapeMetricText(value) {
+  return String(value ?? "").replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+}
+
+function pct(n) {
+  return `${Math.max(0, Math.min(100, Math.round(Number(n) || 0)))}%`;
+}
+
+function metricMeterMarkup(value, tone = "good") {
+  const p = pct(value);
+  return `<div class="metric-bar metric-${tone}"><span style="width:${p}"></span></div>`;
+}
+
+function metricGaugeMarkup(value, tone = "good") {
+  const p = Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+  return `<div class="metric-gauge metric-${tone}" style="--metric:${p}"><span>${p}</span></div>`;
+}
+
+function formatMetricBytes(bytes) {
+  const n = Number(bytes) || 0;
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = n;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value >= 10 || unit === 0 ? value.toFixed(0) : value.toFixed(2)} ${units[unit]}`;
+}
+
+function formatMetricUptime(seconds) {
+  const total = Math.max(0, Number(seconds) || 0);
+  const days = Math.floor(total / 86400);
+  const hours = Math.floor((total % 86400) / 3600);
+  if (days > 0) return `${days} 天 ${hours} 小时`;
+  return `${hours} 小时`;
+}
+
+function metricTone(value) {
+  const n = Number(value) || 0;
+  if (n >= 95) return "danger";
+  if (n >= 85) return "warn";
+  return "good";
+}
+
+function renderMetricsData(metrics) {
+  const cpu = Number(metrics.cpuUsage) || 0;
+  const ram = metrics.memoryTotal > 0 ? (metrics.memoryUsed / metrics.memoryTotal) * 100 : 0;
+  const swap = metrics.swapTotal > 0 ? (metrics.swapUsed / metrics.swapTotal) * 100 : 0;
+  const disks = Array.isArray(metrics.disks) ? metrics.disks.slice(0, 8) : [];
+  const networks = Array.isArray(metrics.networks) ? metrics.networks.slice(0, 6) : [];
+  terminalMetricsBody.innerHTML = `
+    <section class="metrics-card metrics-system-card">
+      <div class="metrics-card-head"><span>${t("metrics.system")}</span><button type="button" id="metrics-inline-refresh">${t("metrics.refresh")}</button></div>
+      <div class="metrics-kv-grid">
+        <div><small>${t("metrics.host")}</small><strong>${escapeMetricText(metrics.host || "--")}</strong></div>
+        <div><small>${t("metrics.arch")}</small><strong>${escapeMetricText(metrics.arch || "--")}</strong></div>
+        <div><small>${t("metrics.os")}</small><strong>${escapeMetricText(metrics.os || "--")}</strong></div>
+        <div><small>${t("metrics.uptime")}</small><strong>${formatMetricUptime(metrics.uptimeSeconds)}</strong></div>
+      </div>
+    </section>
+    <section class="metrics-card">
+      <div class="metrics-card-head"><span>${t("metrics.cpu")}</span><em>${t("metrics.cpu.cores", { count: metrics.cpuCores || 1 })}</em></div>
+      <div class="metric-row metric-row-gauge">${metricGaugeMarkup(cpu, metricTone(cpu))}<div><strong>${t("metrics.cpu.avg")}</strong>${metricMeterMarkup(cpu, metricTone(cpu))}<small>${cpu.toFixed(1)}%</small></div><b>${cpu.toFixed(1)}%</b></div>
+    </section>
+    <section class="metrics-card">
+      <div class="metrics-card-head"><span>${t("metrics.memory")}</span></div>
+      <div class="metric-row metric-row-gauge">${metricGaugeMarkup(ram, metricTone(ram))}<div><strong>${t("metrics.ram")}</strong>${metricMeterMarkup(ram, metricTone(ram))}<small>${formatMetricBytes(metrics.memoryUsed)} / ${formatMetricBytes(metrics.memoryTotal)}</small></div><b>${ram.toFixed(1)}%</b></div>
+      <div class="metric-line"><span>${t("metrics.swap")}</span><b>${swap.toFixed(0)}%</b>${metricMeterMarkup(swap, metricTone(swap))}<small>${formatMetricBytes(metrics.swapUsed)} / ${formatMetricBytes(metrics.swapTotal)}</small></div>
+    </section>
+    <section class="metrics-card">
+      <div class="metrics-card-head"><span>${t("metrics.network")}</span></div>
+      ${networks.length ? networks.map((n) => `<div class="metrics-net-row"><strong>${escapeMetricText(n.name)}</strong><span>↑ ${formatMetricBytes(n.txBytesPerSec)}/s</span><span>↓ ${formatMetricBytes(n.rxBytesPerSec)}/s</span></div>`).join("") : `<div class="metrics-net-row"><strong>--</strong><span>↑ 0 B/s</span><span>↓ 0 B/s</span></div>`}
+    </section>
+    <section class="metrics-card">
+      <div class="metrics-card-head"><span>${t("metrics.disk")}</span></div>
+      ${disks.map((d) => `<div class="metric-line"><span>${escapeMetricText(d.mount)}</span><b class="${d.usage >= 90 ? "danger" : ""}">${Number(d.usage || 0).toFixed(0)}%</b>${metricMeterMarkup(d.usage, metricTone(d.usage))}<small>${formatMetricBytes(d.used)} / ${formatMetricBytes(d.total)}</small></div>`).join("")}
+    </section>
+  `;
+  document.getElementById("metrics-inline-refresh")?.addEventListener("click", renderMetricsPanel);
+}
+
+async function renderMetricsPanel(options = {}) {
+  if (!terminalMetricsBody) return;
+  const silent = Boolean(options.silent);
+  const token = ++metricsRefreshToken;
+  const pane = getActivePane();
+  if (!pane) {
+    terminalMetricsBody.innerHTML = `<div class="terminal-side-empty"><strong>${t("metrics.empty.title")}</strong><p>${t("metrics.empty.desc")}</p></div>`;
+    return;
+  }
+  if (!silent || !terminalMetricsBody.querySelector(".metrics-card")) {
+    terminalMetricsBody.innerHTML = `<div class="terminal-side-empty"><strong>${t("metrics.loading")}</strong><p>${escapeMetricText(pane.host?.name || pane.host?.host || "Local")}</p></div>`;
+  }
+  try {
+    const metrics = await invoke("collect_system_metrics", { hostId: pane.host?.id || null });
+    if (token !== metricsRefreshToken || terminalActiveSidePanel !== "metrics") return;
+    renderMetricsData(metrics);
+  } catch (e) {
+    if (token !== metricsRefreshToken || terminalActiveSidePanel !== "metrics") return;
+    if (silent && terminalMetricsBody.querySelector(".metrics-card")) return;
+    terminalMetricsBody.innerHTML = `<div class="terminal-side-empty"><strong>${t("metrics.error", { error: String(e) })}</strong><p>${escapeMetricText(pane.host?.name || pane.host?.host || "Local")}</p></div>`;
+  }
+}
+
+function startMetricsAutoRefresh() {
+  if (metricsRefreshTimer) clearInterval(metricsRefreshTimer);
+  metricsRefreshTimer = setInterval(() => {
+    if (terminalActiveSidePanel === "metrics") renderMetricsPanel({ silent: true });
+  }, 5000);
+}
+
+function stopMetricsAutoRefresh() {
+  if (metricsRefreshTimer) clearInterval(metricsRefreshTimer);
+  metricsRefreshTimer = null;
+  metricsRefreshToken += 1;
+}
+
 function setTerminalSidePanel(panel) {
   terminalActiveSidePanel = panel || null;
+  const paneKey = getAiPaneKey();
+  if (paneKey !== "no-terminal") {
+    terminalSidePanelByPane.set(paneKey, terminalActiveSidePanel);
+  }
   aiPanelCollapsed = !terminalActiveSidePanel;
   terminalSessionLayout?.classList.toggle("ai-collapsed", !terminalActiveSidePanel);
   if (terminalSidePanels) terminalSidePanels.hidden = !terminalActiveSidePanel;
   if (terminalAiPanel) terminalAiPanel.hidden = terminalActiveSidePanel !== "ai";
   if (terminalSnippetsPanel) terminalSnippetsPanel.hidden = terminalActiveSidePanel !== "snippets";
+  if (terminalMetricsPanel) terminalMetricsPanel.hidden = terminalActiveSidePanel !== "metrics";
+  if (terminalSftpPanel) terminalSftpPanel.hidden = terminalActiveSidePanel !== "sftp";
   terminalSidebarAiToggle?.classList.toggle("active", terminalActiveSidePanel === "ai");
+  if (terminalSidebarAiToggle) {
+    const label = terminalActiveSidePanel === "ai" ? t("ai.panel.collapse") : t("ai.panel.expand");
+    terminalSidebarAiToggle.title = label;
+    terminalSidebarAiToggle.setAttribute("aria-label", label);
+  }
   terminalSidebarSnippetsToggle?.classList.toggle("active", terminalActiveSidePanel === "snippets");
+  terminalSidebarMetricsToggle?.classList.toggle("active", terminalActiveSidePanel === "metrics");
+  terminalSidebarSftpToggle?.classList.toggle("active", terminalActiveSidePanel === "sftp");
   if (terminalActiveSidePanel === "ai") refreshAiModelsOnFirstPanelOpen();
+  if (terminalActiveSidePanel === "metrics") {
+    renderMetricsPanel();
+    startMetricsAutoRefresh();
+  } else {
+    stopMetricsAutoRefresh();
+  }
+  if (terminalActiveSidePanel === "sftp") {
+    connectTerminalSftpToActivePane().catch((e) => console.warn("terminal sftp connect failed", e));
+  }
+}
+
+function applyTerminalSidePanelForActivePane() {
+  const paneKey = getAiPaneKey();
+  const panel = paneKey === "no-terminal" ? null : (terminalSidePanelByPane.get(paneKey) || null);
+  setTerminalSidePanel(panel);
 }
 
 function hideSnippetGroupContextMenu() {
@@ -2645,8 +3003,9 @@ function scrollAiPanelToBottom({ force = false } = {}) {
 function setAiPanelCollapsed(collapsed) {
   setTerminalSidePanel(collapsed ? null : "ai");
   if (terminalSidebarAiToggle) {
-    terminalSidebarAiToggle.title = aiPanelCollapsed ? "展开 AI 助手" : "收起 AI 助手";
-    terminalSidebarAiToggle.setAttribute("aria-label", aiPanelCollapsed ? "展开 AI 助手" : "收起 AI 助手");
+    const label = aiPanelCollapsed ? t("ai.panel.expand") : t("ai.panel.collapse");
+    terminalSidebarAiToggle.title = label;
+    terminalSidebarAiToggle.setAttribute("aria-label", label);
   }
 }
 
@@ -3295,6 +3654,7 @@ function commandWaitMaxMs(command) {
 
 async function continueAiAfterCommand(command, output) {
   const userGoal = [...aiMessages].reverse().find((m) => m.role === "user")?.content || "";
+  const includeCommandOutput = aiContextMode !== "off";
   await streamAiMessages([
     {
       role: "system",
@@ -3311,20 +3671,28 @@ async function continueAiAfterCommand(command, output) {
         "不要假装执行未执行的命令。",
       ].join("\n"),
     },
-    ...redactAiMessagesForRequest(aiMessages.slice(-6)),
+    ...redactAiMessagesForRequest(aiMessages.slice(-6), { includeTerminalContent: includeCommandOutput }),
     { role: "user", content: userGoal },
     {
       role: "system",
-      content: [
-        "已批准并执行的命令：",
-        "```bash",
-        command,
-        "```",
-        "本次终端输出（已本地脱敏）：",
-        "```terminal",
-        redactSensitiveText(output),
-        "```",
-      ].join("\n"),
+      content: includeCommandOutput
+        ? [
+          "已批准并执行的命令：",
+          "```bash",
+          command,
+          "```",
+          "本次终端输出（已本地脱敏）：",
+          "```terminal",
+          redactSensitiveText(output),
+          "```",
+        ].join("\n")
+        : [
+          "已批准并执行的命令：",
+          "```bash",
+          command,
+          "```",
+          "用户当前选择了“不附带终端内容”，因此不要基于终端输出做判断，也不要声称看到了命令输出。",
+        ].join("\n"),
     },
   ], "正在分析执行结果...");
 }
@@ -3333,16 +3701,19 @@ async function continueAiAfterCommands(results, { totalCommands = 0 } = {}) {
   const executed = Array.isArray(results) ? results.filter((item) => item?.command) : [];
   if (!executed.length) return;
   const userGoal = [...aiMessages].reverse().find((m) => m.role === "user")?.content || "";
+  const includeCommandOutput = aiContextMode !== "off";
   const blocks = [];
   executed.forEach((item, index) => {
     blocks.push(`命令 ${index + 1}：`);
     blocks.push("```bash");
     blocks.push(item.command);
     blocks.push("```");
-    blocks.push("输出：");
-    blocks.push("```terminal");
-    blocks.push(redactSensitiveText(item.output || "(无输出)"));
-    blocks.push("```");
+    if (includeCommandOutput) {
+      blocks.push("输出：");
+      blocks.push("```terminal");
+      blocks.push(redactSensitiveText(item.output || "(无输出)"));
+      blocks.push("```");
+    }
   });
   await streamAiMessages([
     {
@@ -3356,15 +3727,18 @@ async function continueAiAfterCommands(results, { totalCommands = 0 } = {}) {
         "每次最多建议一条命令，且每个 fenced code block 只能包含一条命令。",
         "引用终端输出、报错或日志时必须使用 ```terminal 代码块；只有真正需要用户批准执行的命令才使用 ```bash。",
         "不要假装执行未执行的命令。",
+        includeCommandOutput
+          ? "用户允许附带这些已执行命令的输出，你可以基于下面的输出继续分析。"
+          : "用户当前选择了“不附带终端内容”，因此下面只提供已执行命令名称；不要基于终端输出做判断，也不要声称看到了命令输出。",
       ].join("\n"),
     },
-    ...redactAiMessagesForRequest(aiMessages.slice(-6)),
+    ...redactAiMessagesForRequest(aiMessages.slice(-6), { includeTerminalContent: includeCommandOutput }),
     { role: "user", content: userGoal },
     {
       role: "system",
       content: [
         `同一条 AI 回复中共有 ${totalCommands || executed.length} 条可执行命令，用户本次已执行 ${executed.length} 条。`,
-        "仅基于下面这些已执行命令和输出继续分析：",
+        includeCommandOutput ? "仅基于下面这些已执行命令和输出继续分析：" : "仅基于下面这些已执行命令名称继续分析：",
         ...blocks,
       ].join("\n"),
     },
@@ -3653,10 +4027,18 @@ function shouldAttachTerminalContext(text) {
   return /终端|命令|输出|结果|报错|错误|日志|执行|刚才|上面|当前|这台|机器|服务器|主机|系统|环境|配置|性能|cpu|内存|磁盘|硬盘|网络|公网|ip|端口|进程|服务|登录|连接|ssh|shell|目录|文件|项目|部署|安装|启动|运行|检查|看看|分析|诊断/.test(q);
 }
 
-function redactAiMessagesForRequest(messages) {
+function stripTerminalContentFromAiText(text) {
+  return String(text || "")
+    .replace(/```terminal[\s\S]*?```/gi, "```terminal\n[终端内容已按当前设置省略]\n```")
+    .replace(/本次终端输出（已本地脱敏）：[\s\S]*?(?=\n\S|$)/g, "本次终端输出已按当前设置省略。")
+    .replace(/下面是当前活动终端最近的屏幕内容[\s\S]*?(?=\n\S|$)/g, "当前活动终端内容已按当前设置省略。");
+}
+
+function redactAiMessagesForRequest(messages, { includeTerminalContent = true } = {}) {
   return messages.map((message) => ({
     ...message,
-    content: redactSensitiveText(message.content),
+    content: redactSensitiveText(includeTerminalContent ? message.content : stripTerminalContentFromAiText(message.content)),
+    commandResults: includeTerminalContent ? message.commandResults : [],
   }));
 }
 
@@ -3897,7 +4279,7 @@ async function sendAiMessage(text) {
     const terminalContext = shouldAttachTerminalContext(text) ? buildAiTerminalContext() : "";
     const messages = [{ role: "system", content: system }];
     if (terminalContext) messages.push({ role: "system", content: terminalContext });
-    messages.push(...redactAiMessagesForRequest(aiMessages.slice(-10)));
+    messages.push(...redactAiMessagesForRequest(aiMessages.slice(-10), { includeTerminalContent: aiContextMode !== "off" }));
     await streamAiMessages(messages);
   } catch (e) {
     appendAiMessage("error", String(e));
@@ -5457,11 +5839,13 @@ function setWorkspaceMode(mode) {
   const showingSftp = mode === "sftp";
   const showingTerminal = mode === "terminal";
   const showingSettings = mode === "settings";
+  const showingPortForward = mode === "port-forward";
   panelVaults.hidden = false;
   panelTerminal.hidden = true;
   panelSftp.hidden = mode !== "sftp";
   if (settingsPage) settingsPage.hidden = !showingSettings;
-  if (vaultWelcome) vaultWelcome.hidden = showingTerminal || showingSftp || showingSettings;
+  if (vaultWelcome) vaultWelcome.hidden = showingTerminal || showingSftp || showingSettings || showingPortForward;
+  if (portForwardPage) portForwardPage.hidden = !showingPortForward;
   if (terminalSessionLayout) terminalSessionLayout.hidden = !showingTerminal;
   else if (terminalWorkspace) terminalWorkspace.hidden = !showingTerminal;
   terminalSessionLayout?.classList.toggle("ai-collapsed", aiPanelCollapsed);
@@ -5469,6 +5853,7 @@ function setWorkspaceMode(mode) {
   workspaceTabSftp.classList.toggle("active", mode === "sftp");
   workspaceNavVaults?.classList.toggle("active", mode === "vaults");
   workspaceNavSftp?.classList.toggle("active", mode === "sftp");
+  portForwardButton?.classList.toggle("active", showingPortForward);
   if (mode === "terminal") {
     renderTerminalWorkspace();
   } else if (mode === "sftp") {
@@ -5497,6 +5882,339 @@ function setWorkspaceMode(mode) {
     if (settingsTerminalLineHeight) settingsTerminalLineHeight.value = String(getTerminalLineHeight());
     syncTerminalFontPreview();
     syncTerminalThemeCardsActive();
+  } else if (showingPortForward) {
+    loadPortForwardPage().catch((e) => {
+      console.warn("loadPortForwardPage failed", e);
+    });
+  }
+}
+
+function summarizeForwardSpec(spec) {
+  const kind = spec?.kind || spec?.type;
+  const bindAddr = spec?.bindAddr ?? spec?.bind_addr ?? "127.0.0.1";
+  const bindPort = spec?.bindPort ?? spec?.bind_port ?? "";
+  if (kind === "dynamic") return `D ${bindAddr}:${bindPort}`;
+  const targetHost = spec?.targetHost ?? spec?.target_host ?? "";
+  const targetPort = spec?.targetPort ?? spec?.target_port ?? "";
+  if (kind === "remote") return `R ${bindAddr}:${bindPort} -> ${targetHost}:${targetPort}`;
+  return `L ${bindAddr}:${bindPort} -> ${targetHost}:${targetPort}`;
+}
+
+function friendlyForwardTitle(spec) {
+  const kind = spec?.kind || spec?.type;
+  const bindAddr = spec?.bindAddr ?? spec?.bind_addr ?? "127.0.0.1";
+  const bindPort = spec?.bindPort ?? spec?.bind_port ?? "";
+  if (kind === "dynamic") return t("port_forward.title.dynamic", { bindAddr, bindPort });
+  const targetHost = spec?.targetHost ?? spec?.target_host ?? "";
+  const targetPort = spec?.targetPort ?? spec?.target_port ?? "";
+  if (kind === "remote") return t("port_forward.title.remote", { bindPort, targetHost, targetPort });
+  return t("port_forward.title.local", { bindPort, targetHost, targetPort });
+}
+
+function friendlyForwardDetail(spec) {
+  const kind = spec?.kind || spec?.type;
+  const bindAddr = spec?.bindAddr ?? spec?.bind_addr ?? "127.0.0.1";
+  const bindPort = spec?.bindPort ?? spec?.bind_port ?? "";
+  if (kind === "dynamic") return t("port_forward.detail.dynamic", { bindAddr, bindPort });
+  const targetHost = spec?.targetHost ?? spec?.target_host ?? "";
+  const targetPort = spec?.targetPort ?? spec?.target_port ?? "";
+  if (kind === "remote") return t("port_forward.detail.remote", { bindAddr, bindPort, targetHost, targetPort });
+  return t("port_forward.detail.local", { bindAddr, bindPort, targetHost, targetPort });
+}
+
+let portForwardEditorHostId = null;
+let portForwardEditorForwards = [];
+let portForwardEditorMode = "edit";
+let portForwardEditorIndex = null;
+let portForwardRowsCache = [];
+
+async function loadPortForwardPage() {
+  if (!portForwardList || !portForwardEmpty) return;
+  try {
+    await invoke("migrate_port_forward_rules");
+  } catch (e) {
+    console.warn("migrate_port_forward_rules failed", e);
+  }
+  portForwardRowsCache = await invoke("list_port_forward_status");
+  renderPortForwardRows();
+}
+
+function portForwardSearchText(row) {
+  return [
+    row.hostName,
+    friendlyForwardTitle(row.forward),
+    friendlyForwardDetail(row.forward),
+    summarizeForwardSpec(row.forward),
+  ].join(" ").toLowerCase();
+}
+
+function portForwardMatchesSearch(row, query) {
+  const text = portForwardSearchText(row);
+  if (/^\d+$/.test(query)) {
+    return text.includes(query);
+  }
+  return text.includes(query) || fuzzyMatchSelectOption(text, query);
+}
+
+function renderPortForwardRows() {
+  if (!portForwardList || !portForwardEmpty) return;
+  portForwardList.innerHTML = "";
+  const query = (portForwardSearch?.value || "").trim().toLowerCase();
+  const rows = query
+    ? portForwardRowsCache.filter((row) => portForwardMatchesSearch(row, query))
+    : portForwardRowsCache;
+  portForwardEmpty.hidden = rows.length > 0;
+  if (!rows.length) {
+    const strong = portForwardEmpty.querySelector("strong");
+    const desc = portForwardEmpty.querySelector("p");
+    if (strong) strong.textContent = query ? t("port_forward.empty.search_title") : t("port_forward.empty.title");
+    if (desc) desc.textContent = query ? t("port_forward.empty.search_desc") : t("port_forward.empty.desc");
+  }
+
+  for (const row of rows) {
+    const card = document.createElement("article");
+    card.className = "port-forward-card" + (row.active ? " active" : "");
+
+    const head = document.createElement("div");
+    head.className = "port-forward-card-head";
+    const title = document.createElement("div");
+    title.innerHTML = `<strong></strong><span></span>`;
+    title.querySelector("strong").textContent = friendlyForwardTitle(row.forward);
+    title.querySelector("span").textContent = `${row.hostName} · ${row.active ? t("port_forward.status.running") : t("port_forward.status.stopped")}`;
+
+    const action = document.createElement("button");
+    action.type = "button";
+    action.className = row.active ? "danger" : "primary";
+    action.textContent = row.active ? t("port_forward.action.stop") : t("port_forward.action.start");
+    action.addEventListener("click", async () => {
+      action.disabled = true;
+      action.textContent = row.active ? t("port_forward.action.stopping") : t("port_forward.action.starting");
+      try {
+        if (row.active) {
+          await invoke("stop_port_forward", { id: row.active.id });
+        } else {
+          await invoke("start_port_forward", { ruleId: row.id });
+        }
+        await loadPortForwardPage();
+      } catch (e) {
+        action.disabled = false;
+        action.textContent = row.active ? t("port_forward.action.stop") : t("port_forward.action.start");
+        alert(String(e));
+      }
+    });
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.textContent = t("port_forward.action.edit");
+    edit.addEventListener("click", () => openPortForwardEditor(row));
+
+    const actions = document.createElement("div");
+    actions.className = "port-forward-card-actions";
+    actions.append(edit, action);
+    head.append(title, actions);
+
+    const list = document.createElement("div");
+    list.className = "port-forward-specs";
+    const specs = [friendlyForwardDetail(row.forward)];
+    for (const spec of specs) {
+      const item = document.createElement("code");
+      item.textContent = spec;
+      list.appendChild(item);
+    }
+
+    const raw = document.createElement("code");
+    raw.className = "muted";
+    raw.textContent = summarizeForwardSpec(row.forward);
+    list.appendChild(raw);
+
+    card.append(head, list);
+    portForwardList.appendChild(card);
+  }
+}
+
+function openPortForwardEditor(row) {
+  if (!portForwardEditor) return;
+  portForwardEditorMode = "edit";
+  portForwardEditorHostId = row.hostId;
+  portForwardEditorIndex = row.id;
+  portForwardEditorForwards = [forwardFromIO(row.forward)];
+  if (portForwardEditorTitle) portForwardEditorTitle.textContent = t("port_forward.editor.title.edit", { hostName: row.hostName });
+  if (portForwardEditorHostWrap) portForwardEditorHostWrap.hidden = true;
+  if (portForwardEditorAdd) portForwardEditorAdd.hidden = true;
+  if (portForwardEditorError) {
+    portForwardEditorError.hidden = true;
+    portForwardEditorError.textContent = "";
+  }
+  syncPortForwardEditorFormFromState();
+  if (portForwardEditorOverlay) portForwardEditorOverlay.hidden = false;
+}
+
+async function openPortForwardCreateEditor() {
+  if (!portForwardEditor || !portForwardEditorHost) return;
+  await refreshHostsCacheFromVault({ silent: true });
+  portForwardEditorMode = "create";
+  portForwardEditorIndex = null;
+  portForwardEditorHostId = "";
+  portForwardEditorForwards = [{
+    kind: "local",
+    enabled: true,
+    bindAddr: "127.0.0.1",
+    bindPort: "",
+    targetHost: "localhost",
+    targetPort: "",
+  }];
+  portForwardEditorHost.innerHTML = "";
+  for (const host of hostsCache) {
+    const opt = document.createElement("option");
+    opt.value = host.id;
+    opt.textContent = `${host.name} (${host.user}@${host.host}:${host.port})`;
+    portForwardEditorHost.appendChild(opt);
+  }
+  portForwardEditorHostId = portForwardEditorHost.value || "";
+  syncCustomSelect("port-forward-editor-host");
+  if (portForwardEditorTitle) portForwardEditorTitle.textContent = t("port_forward.editor.title.create");
+  if (portForwardEditorHostWrap) portForwardEditorHostWrap.hidden = false;
+  if (portForwardEditorAdd) portForwardEditorAdd.hidden = true;
+  if (portForwardEditorError) {
+    portForwardEditorError.hidden = true;
+    portForwardEditorError.textContent = "";
+  }
+  syncPortForwardEditorFormFromState();
+  if (portForwardEditorOverlay) portForwardEditorOverlay.hidden = false;
+}
+
+function closePortForwardEditor() {
+  if (portForwardEditorOverlay) portForwardEditorOverlay.hidden = true;
+  if (portForwardEditorAdd) portForwardEditorAdd.hidden = false;
+  portForwardEditorHostId = null;
+  portForwardEditorForwards = [];
+  portForwardEditorMode = "edit";
+  portForwardEditorIndex = null;
+}
+
+function showPortForwardEditorError(message) {
+  if (!portForwardEditorError) return;
+  portForwardEditorError.textContent = message;
+  portForwardEditorError.hidden = false;
+}
+
+function syncPortForwardEditorKind() {
+  const isDynamic = portForwardEditorKind?.value === "dynamic";
+  const isRemote = portForwardEditorKind?.value === "remote";
+  portForwardEditorKindTabs?.querySelectorAll(".port-forward-kind-tab").forEach((tab) => {
+    const active = tab.dataset.kind === portForwardEditorKind?.value;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  if (portForwardEditorTargetHostWrap) portForwardEditorTargetHostWrap.hidden = isDynamic;
+  if (portForwardEditorTargetPortWrap) portForwardEditorTargetPortWrap.hidden = isDynamic;
+  if (portForwardEditorArrow) portForwardEditorArrow.hidden = isDynamic;
+  if (portForwardEditorHint) {
+    portForwardEditorHint.textContent = isDynamic
+      ? t("port_forward.editor.hint.dynamic")
+      : isRemote
+        ? t("port_forward.editor.hint.remote")
+        : t("port_forward.editor.hint.local");
+  }
+}
+
+function syncPortForwardEditorFormFromState() {
+  const fwd = portForwardEditorForwards[0] || {
+    kind: "local",
+    enabled: true,
+    bindAddr: "127.0.0.1",
+    bindPort: "",
+    targetHost: "localhost",
+    targetPort: "",
+  };
+  if (portForwardEditorKind) {
+    portForwardEditorKind.value = fwd.kind || "local";
+  }
+  if (portForwardEditorBind) portForwardEditorBind.value = fwd.bindAddr || "127.0.0.1";
+  if (portForwardEditorBindPort) portForwardEditorBindPort.value = fwd.bindPort || "";
+  if (portForwardEditorTargetHost) portForwardEditorTargetHost.value = fwd.targetHost || "localhost";
+  if (portForwardEditorTargetPort) portForwardEditorTargetPort.value = fwd.targetPort || "";
+  syncPortForwardEditorKind();
+}
+
+function readPortForwardEditorForm() {
+  const kind = portForwardEditorKind?.value || "local";
+  const fwd = {
+    kind,
+    enabled: true,
+    bindAddr: portForwardEditorBind?.value || "127.0.0.1",
+    bindPort: portForwardEditorBindPort?.value || "",
+  };
+  if (kind === "local" || kind === "remote") {
+    fwd.targetHost = portForwardEditorTargetHost?.value || "localhost";
+    fwd.targetPort = portForwardEditorTargetPort?.value || "";
+  }
+  return fwd;
+}
+
+async function savePortForwardEditor() {
+  if (portForwardEditorMode === "create") {
+    portForwardEditorHostId = portForwardEditorHost?.value || "";
+    if (!portForwardEditorHostId) {
+      showPortForwardEditorError(t("port_forward.editor.error.host_required"));
+      return;
+    }
+  }
+  if (!portForwardEditorHostId) return;
+  if (portForwardEditorError) portForwardEditorError.hidden = true;
+
+  const forwards = [];
+  for (const [i, fwd] of [readPortForwardEditorForm()].entries()) {
+    const bindPort = parseInt(fwd.bindPort, 10);
+    if (!bindPort || bindPort < 1 || bindPort > 65535) {
+      showPortForwardEditorError(t("host_editor.error.forward_bind_port", { index: i + 1 }));
+      return;
+    }
+    if (fwd.kind === "local" || fwd.kind === "remote") {
+      if (!fwd.targetHost?.trim()) {
+        showPortForwardEditorError(t("host_editor.error.forward_target_host", { index: i + 1 }));
+        return;
+      }
+      const targetPort = parseInt(fwd.targetPort, 10);
+      if (!targetPort || targetPort < 1 || targetPort > 65535) {
+        showPortForwardEditorError(t("host_editor.error.forward_target_port", { index: i + 1 }));
+        return;
+      }
+      forwards.push({
+        kind: fwd.kind,
+        enabled: fwd.enabled !== false,
+        bind_addr: fwd.bindAddr || "127.0.0.1",
+        bind_port: bindPort,
+        target_host: fwd.targetHost.trim(),
+        target_port: targetPort,
+      });
+    } else {
+      forwards.push({
+        kind: "dynamic",
+        enabled: fwd.enabled !== false,
+        bind_addr: fwd.bindAddr || "127.0.0.1",
+        bind_port: bindPort,
+      });
+    }
+  }
+
+  portForwardEditorSave.disabled = true;
+  try {
+    const input = {
+      hostId: portForwardEditorHostId,
+      forward: forwards[0],
+    };
+    if (portForwardEditorMode === "edit" && portForwardEditorIndex) {
+      await invoke("update_port_forward_rule", { id: portForwardEditorIndex, input });
+    } else {
+      await invoke("create_port_forward_rule", { input });
+    }
+    closePortForwardEditor();
+    await loadPortForwardPage();
+    await refreshHostsCacheFromVault({ silent: true });
+  } catch (e) {
+    showPortForwardEditorError(String(e));
+  } finally {
+    portForwardEditorSave.disabled = false;
   }
 }
 
@@ -6040,18 +6758,19 @@ function renderConflictItem(profileId, conflict) {
   const header = document.createElement("div");
   header.className = "settings-sync-conflict-header";
   const title = document.createElement("strong");
-  title.textContent = `${conflict.kind} · ${conflict.recordId}`;
+  title.textContent = conflictTitle(conflict);
   header.appendChild(title);
 
   const when = document.createElement("span");
   when.className = "muted tiny";
-  try {
-    when.textContent = new Date(conflict.detectedAt).toLocaleString();
-  } catch {
-    when.textContent = String(conflict.detectedAt);
-  }
+  when.textContent = formatConflictDetectedAt(conflictValue(conflict, "detectedAt", "detected_at"));
   header.appendChild(when);
   li.appendChild(header);
+
+  const summary = document.createElement("p");
+  summary.className = "settings-sync-conflict-summary muted tiny";
+  summary.textContent = t("settings.sync.conflicts.summary");
+  li.appendChild(summary);
 
   const grid = document.createElement("div");
   grid.className = "settings-sync-conflict-grid";
@@ -6061,10 +6780,14 @@ function renderConflictItem(profileId, conflict) {
   const localLabel = document.createElement("div");
   localLabel.className = "settings-sync-conflict-side-label";
   localLabel.textContent = t("settings.sync.conflicts.local");
+  const localHint = document.createElement("span");
+  localHint.className = "settings-sync-conflict-side-hint";
+  localHint.textContent = t("settings.sync.conflicts.local_hint");
   const localPre = document.createElement("pre");
   localPre.className = "settings-sync-conflict-preview";
-  localPre.textContent = previewToText(conflict.localPreview);
+  localPre.textContent = previewToText(conflictValue(conflict, "localPreview", "local_preview"));
   localBox.appendChild(localLabel);
+  localBox.appendChild(localHint);
   localBox.appendChild(localPre);
   grid.appendChild(localBox);
 
@@ -6073,10 +6796,14 @@ function renderConflictItem(profileId, conflict) {
   const remoteLabel = document.createElement("div");
   remoteLabel.className = "settings-sync-conflict-side-label";
   remoteLabel.textContent = t("settings.sync.conflicts.remote");
+  const remoteHint = document.createElement("span");
+  remoteHint.className = "settings-sync-conflict-side-hint";
+  remoteHint.textContent = t("settings.sync.conflicts.remote_hint");
   const remotePre = document.createElement("pre");
   remotePre.className = "settings-sync-conflict-preview";
-  remotePre.textContent = previewToText(conflict.remotePreview);
+  remotePre.textContent = previewToText(conflictValue(conflict, "remotePreview", "remote_preview"));
   remoteBox.appendChild(remoteLabel);
+  remoteBox.appendChild(remoteHint);
   remoteBox.appendChild(remotePre);
   grid.appendChild(remoteBox);
 
@@ -6103,6 +6830,27 @@ function renderConflictItem(profileId, conflict) {
   return li;
 }
 
+function conflictTitle(conflict) {
+  const kind = conflictValue(conflict, "kind", "kind") ? String(conflictValue(conflict, "kind", "kind")) : "record";
+  const recordId = conflictValue(conflict, "recordId", "record_id");
+  const id = recordId ? String(recordId) : t("settings.sync.conflicts.record_fallback");
+  return `${kind} · ${id}`;
+}
+
+function conflictValue(conflict, camelKey, snakeKey) {
+  if (!conflict || typeof conflict !== "object") return undefined;
+  if (conflict[camelKey] !== undefined && conflict[camelKey] !== null) return conflict[camelKey];
+  return conflict[snakeKey];
+}
+
+function formatConflictDetectedAt(value) {
+  const ms = Number(value);
+  if (!Number.isFinite(ms) || ms <= 0) return t("settings.sync.conflicts.detected_unknown");
+  const date = new Date(ms);
+  if (Number.isNaN(date.getTime())) return t("settings.sync.conflicts.detected_unknown");
+  return date.toLocaleString();
+}
+
 function previewToText(preview) {
   if (preview && typeof preview === "object" && preview.tombstone) {
     return t("settings.sync.conflicts.tombstone");
@@ -6110,11 +6858,63 @@ function previewToText(preview) {
   if (preview && typeof preview === "object" && preview.redacted) {
     return t("settings.sync.conflicts.redacted", { bytes: preview.bytes ?? 0 });
   }
+  const summary = conflictPreviewSummary(preview);
+  if (summary) return summary;
+  if (preview === undefined || preview === null || preview === "") {
+    return t("settings.sync.conflicts.preview_empty");
+  }
   try {
     return JSON.stringify(preview, null, 2);
   } catch {
     return String(preview);
   }
+}
+
+function conflictPreviewSummary(preview) {
+  if (!preview || typeof preview !== "object" || Array.isArray(preview)) return "";
+  const lines = [];
+  const add = (label, value) => {
+    if (value === undefined || value === null || value === "") return;
+    lines.push(`${label}: ${String(value)}`);
+  };
+
+  const name = preview.name ?? preview.title;
+  const host = preview.host ?? preview.hostname ?? preview.address;
+  const hostId = preview.host_id ?? preview.hostId;
+  const spec = preview.spec && typeof preview.spec === "object" ? preview.spec : null;
+  const port = preview.port;
+  const user = preview.user ?? preview.username;
+  const group = preview.group_id ?? preview.groupId;
+  const os = preview.os_type ?? preview.osType;
+  const forwards = Array.isArray(preview.forwards) ? preview.forwards : [];
+
+  add(t("settings.sync.conflicts.field_name"), name);
+  add(t("settings.sync.conflicts.field_host_id"), hostId);
+  add(t("settings.sync.conflicts.field_host"), host);
+  add(t("settings.sync.conflicts.field_port"), port);
+  add(t("settings.sync.conflicts.field_user"), user);
+  if (preview.auth && typeof preview.auth === "object") {
+    add(t("settings.sync.conflicts.field_auth"), preview.auth.type ?? preview.auth.kind);
+  }
+  add(t("settings.sync.conflicts.field_group"), group);
+  add(t("settings.sync.conflicts.field_os"), os);
+  if (forwards.length) {
+    add(t("settings.sync.conflicts.field_forwards"), forwards.map(formatForwardPreview).join("; "));
+  }
+  if (spec) {
+    add(t("settings.sync.conflicts.field_forwards"), formatForwardPreview(spec));
+  }
+
+  if (!lines.length) return "";
+  return lines.join("\n");
+}
+
+function formatForwardPreview(forward) {
+  if (!forward || typeof forward !== "object") return String(forward);
+  const kind = forward.kind || "forward";
+  const bind = [forward.bind_addr ?? forward.bindAddr, forward.bind_port ?? forward.bindPort].filter(Boolean).join(":");
+  const target = [forward.target_host ?? forward.targetHost, forward.target_port ?? forward.targetPort].filter(Boolean).join(":");
+  return target ? `${kind} ${bind} -> ${target}` : `${kind} ${bind}`;
 }
 
 async function resolveConflict(profileId, conflictId, resolution, button) {
@@ -7016,6 +7816,45 @@ function applyI18n() {
   setAttr("settings-button", "title", "sidebar.settings");
   setAttr("quick-connect-button", "title", "sidebar.quick_connect");
   setAttr("local-terminal-button", "title", "sidebar.local_terminal");
+  setText("port-forward-title", "port_forward.title");
+  setText("port-forward-subtitle", "port_forward.subtitle");
+  setText("port-forward-create", "port_forward.create");
+  setAttr("port-forward-refresh", "title", "port_forward.refresh");
+  setAttr("port-forward-refresh", "aria-label", "port_forward.refresh");
+  setPlaceholder("port-forward-search", "port_forward.search.placeholder");
+  setText("port-forward-editor-subtitle", "port_forward.editor.subtitle");
+  setAttr("port-forward-editor-close", "aria-label", "port_forward.editor.close");
+  setText("port-forward-editor-host-label", "port_forward.editor.host");
+  setText("port-forward-editor-kind-label", "port_forward.editor.kind");
+  setOptionText("port-forward-editor-kind", "local", "port_forward.editor.kind.local");
+  setOptionText("port-forward-editor-kind", "remote", "port_forward.editor.kind.remote");
+  setOptionText("port-forward-editor-kind", "dynamic", "port_forward.editor.kind.dynamic");
+  setText("port-forward-kind-local", "port_forward.editor.kind.local");
+  setText("port-forward-kind-remote", "port_forward.editor.kind.remote");
+  setText("port-forward-kind-dynamic", "port_forward.editor.kind.dynamic");
+  setText("port-forward-editor-bind-label", "port_forward.editor.bind");
+  setText("port-forward-editor-bind-port-label", "port_forward.editor.bind_port");
+  setText("port-forward-editor-target-host-label", "port_forward.editor.target_host");
+  setText("port-forward-editor-target-port-label", "port_forward.editor.target_port");
+  setText("port-forward-editor-cancel", "port_forward.editor.cancel");
+  setText("port-forward-editor-save", "port_forward.editor.save");
+  if (portForwardEditorTitle) {
+    portForwardEditorTitle.textContent = portForwardEditorMode === "create"
+      ? t("port_forward.editor.title.create")
+      : portForwardEditorTitle.textContent;
+  }
+  syncPortForwardEditorKind();
+  renderPortForwardRows();
+  setAttr("terminal-sidebar-metrics-toggle", "title", "metrics.title");
+  setAttr("terminal-sidebar-metrics-toggle", "aria-label", "metrics.title");
+  setText("terminal-metrics-title", "metrics.title");
+  setText("terminal-metrics-subtitle", "metrics.subtitle");
+  setAttr("terminal-metrics-refresh", "title", "metrics.refresh");
+  setAttr("terminal-sidebar-sftp-toggle", "title", "terminal_sftp.title");
+  setAttr("terminal-sidebar-sftp-toggle", "aria-label", "terminal_sftp.title");
+  setText("terminal-sftp-title", "terminal_sftp.title");
+  setText("terminal-sftp-subtitle", "terminal_sftp.subtitle");
+  setAttr("terminal-sftp-refresh", "title", "metrics.refresh");
   setAttr("lock-button", "title", "sidebar.lock");
   setAttr("window-minimize", "title", "window.minimize");
   setAttr("window-close", "title", "window.close");
@@ -7033,8 +7872,6 @@ function applyI18n() {
   setText("sftp-right-filter-label", "sftp.button.filter");
   setPlaceholder("sftp-left-filter-input", "sftp.filter.placeholder");
   setPlaceholder("sftp-right-filter-input", "sftp.filter.placeholder");
-  setText("sftp-left-actions", "sftp.button.actions");
-  setText("sftp-right-actions", "sftp.button.actions");
   setText("sftp-right-empty-title", "sftp.empty.connect_title");
   setText("sftp-right-empty-desc", "sftp.empty.connect_desc");
   setText("files-menu-open", "files.menu.open");
@@ -7214,6 +8051,11 @@ function applyI18n() {
   setAttr("ai-session-filter", "aria-label", "ai.session.filter.aria");
   setAttr("ai-new-chat", "title", "ai.session.new_title");
   setAttr("ai-new-chat", "aria-label", "ai.session.new_title");
+  if (terminalSidebarAiToggle) {
+    const aiToggleLabel = terminalActiveSidePanel === "ai" ? t("ai.panel.collapse") : t("ai.panel.expand");
+    terminalSidebarAiToggle.title = aiToggleLabel;
+    terminalSidebarAiToggle.setAttribute("aria-label", aiToggleLabel);
+  }
   renderAiSessions();
   syncAiContextToggle();
   setAttr("ai-model-pill", "title", "ai.model.pill_title");
@@ -7427,6 +8269,26 @@ workspaceTabVaults.addEventListener("click", () => setWorkspaceMode("vaults"));
 workspaceTabSftp.addEventListener("click", () => setWorkspaceMode("sftp"));
 workspaceNavVaults?.addEventListener("click", () => setWorkspaceMode("vaults"));
 workspaceNavSftp?.addEventListener("click", () => setWorkspaceMode("sftp"));
+portForwardButton?.addEventListener("click", () => setWorkspaceMode("port-forward"));
+portForwardRefresh?.addEventListener("click", () => loadPortForwardPage().catch((e) => alert(String(e))));
+portForwardSearch?.addEventListener("input", renderPortForwardRows);
+portForwardCreate?.addEventListener("click", () => openPortForwardCreateEditor().catch((e) => alert(String(e))));
+portForwardEditorHost?.addEventListener("change", () => {
+  portForwardEditorHostId = portForwardEditorHost.value;
+});
+portForwardEditorClose?.addEventListener("click", closePortForwardEditor);
+portForwardEditorCancel?.addEventListener("click", closePortForwardEditor);
+portForwardEditorOverlay?.addEventListener("click", (ev) => {
+  if (ev.target === portForwardEditorOverlay) closePortForwardEditor();
+});
+portForwardEditorKind?.addEventListener("change", syncPortForwardEditorKind);
+portForwardEditorKindTabs?.addEventListener("click", (ev) => {
+  const tab = ev.target.closest?.(".port-forward-kind-tab");
+  if (!tab || !portForwardEditorKind) return;
+  portForwardEditorKind.value = tab.dataset.kind || "local";
+  portForwardEditorKind.dispatchEvent(new Event("change", { bubbles: true }));
+});
+portForwardEditorSave?.addEventListener("click", () => savePortForwardEditor());
 workspaceSidebarToggle?.addEventListener("click", () => {
   setWorkspaceSidebarCollapsed(!workspaceSidebarCollapsed);
 });
@@ -8978,14 +9840,16 @@ function renderTerminalWorkspace() {
   sanitizeTerminalTabs();
   renderTabStrip();
   syncAiConversationToActivePane();
+  applyTerminalSidePanelForActivePane();
   renderTerminalCommandSnippets();
+  if (terminalActiveSidePanel === "metrics") renderMetricsPanel();
+  if (terminalActiveSidePanel === "sftp") connectTerminalSftpToActivePane().catch((e) => console.warn("terminal sftp sync failed", e));
 
   terminalWorkspace.innerHTML = "";
   const tab = getActiveTab();
   const hasTerminalTab = !!tab;
   terminalSessionLayout?.classList.toggle("no-terminal-sidebar", !hasTerminalTab);
   if (terminalSidebarRail) terminalSidebarRail.hidden = !hasTerminalTab;
-  if (!hasTerminalTab) setTerminalSidePanel(null);
   if (!tab) {
     terminalWorkspace.className = "terminal-workspace layout-single";
     const empty = document.createElement("div");
@@ -9063,6 +9927,22 @@ terminalSidebarAiToggle?.addEventListener("click", () => {
 
 terminalSidebarSnippetsToggle?.addEventListener("click", () => {
   setTerminalSidePanel(terminalActiveSidePanel === "snippets" ? null : "snippets");
+});
+
+terminalSidebarMetricsToggle?.addEventListener("click", () => {
+  setTerminalSidePanel(terminalActiveSidePanel === "metrics" ? null : "metrics");
+});
+
+terminalMetricsRefresh?.addEventListener("click", renderMetricsPanel);
+
+terminalSidebarSftpToggle?.addEventListener("click", () => {
+  setTerminalSidePanel(terminalActiveSidePanel === "sftp" ? null : "sftp");
+});
+
+terminalSftpRefresh?.addEventListener("click", () => {
+  const pane = sftpPanes.terminal;
+  if (pane && isPaneConnected(pane)) navigateSftpPane(pane, pane.path, { source: "system" });
+  else connectTerminalSftpToActivePane().catch((e) => console.warn("terminal sftp refresh failed", e));
 });
 
 terminalSnippetsAdd?.addEventListener("click", async () => {
@@ -10218,7 +11098,7 @@ const hfKeyStatus = document.getElementById("hf-key-status");
 const hfKeyPassphrase = document.getElementById("hf-key-passphrase");
 const hfKeyPassphraseToggle = document.getElementById("hf-key-passphrase-toggle");
 const hfJump = document.getElementById("hf-jump");
-const hfForwardsList = document.getElementById("hf-forwards");
+let hfForwardsList = document.getElementById("hf-forwards");
 const hfForwardAdd = document.getElementById("hf-forward-add");
 const hostError = document.getElementById("host-edit-error");
 const hostReadonly = document.getElementById("host-edit-readonly");
@@ -10273,7 +11153,7 @@ settingsSyncS3StToggle?.addEventListener("click", () => {
   settingsSyncS3St.type = show ? "text" : "password";
   syncPasswordToggleButton(settingsSyncS3StToggle, show, { show: "显示密码", hide: "隐藏密码" });
 });
-hfForwardAdd.addEventListener("click", () => {
+hfForwardAdd?.addEventListener("click", () => {
   hfForwards.push({
     kind: "local",
     enabled: true,
@@ -10326,7 +11206,7 @@ async function openHostEditor(id = null, defaultGroupId = "") {
       populateHostGroupOptions(h.groupId || "");
 
       hfJump.value = h.proxyJumpHostId ?? "";
-      hfForwards = h.forwards.map(forwardFromIO);
+      hfForwards = [];
     } catch (e) {
       hostError.textContent = t("host_editor.error.load_failed", { error: e });
       hostError.hidden = false;
@@ -10391,11 +11271,11 @@ function forwardFromIO(spec) {
     spec?.type ||
     (targetHost || targetPort ? "local" : "dynamic");
 
-  if (kind === "local") {
-    return {
-      kind: "local",
-      enabled,
-      bindAddr,
+    if (kind === "local" || kind === "remote") {
+      return {
+        kind,
+        enabled,
+        bindAddr,
       bindPort: String(bindPort),
       targetHost,
       targetPort: String(targetPort),
@@ -10409,19 +11289,19 @@ function forwardFromIO(spec) {
   };
 }
 
-function renderForwards() {
-  hfForwardsList.innerHTML = "";
+function renderForwards(listEl = hfForwardsList, forwards = hfForwards, rerender = renderForwards) {
+  listEl.innerHTML = "";
 
-  if (hfForwards.length === 0) {
+  if (forwards.length === 0) {
     const empty = document.createElement("li");
     empty.style.gridTemplateColumns = "1fr";
     empty.style.color = "var(--muted)";
-    empty.textContent = t("host_editor.forward.none");
-    hfForwardsList.appendChild(empty);
+    empty.textContent = t("host_editor.hint.forwards");
+    listEl.appendChild(empty);
     return;
   }
 
-  hfForwards.forEach((fwd, idx) => {
+  forwards.forEach((fwd, idx) => {
     const li = document.createElement("li");
 
     const enabledRow = document.createElement("label");
@@ -10439,7 +11319,7 @@ function renderForwards() {
     li.appendChild(enabledRow);
 
     const kind = document.createElement("select");
-    [["local", t("host_editor.forward.local")], ["dynamic", t("host_editor.forward.dynamic")]].forEach(([v, label]) => {
+    [["local", t("host_editor.forward.local")], ["remote", t("host_editor.forward.remote")], ["dynamic", t("host_editor.forward.dynamic")]].forEach(([v, label]) => {
       const o = document.createElement("option");
       o.value = v;
       o.textContent = label;
@@ -10455,7 +11335,7 @@ function renderForwards() {
         fwd.targetHost = fwd.targetHost ?? "";
         fwd.targetPort = fwd.targetPort ?? "";
       }
-      renderForwards();
+      rerender();
     });
     li.appendChild(kind);
     buildCustomSelect(kind);
@@ -10481,7 +11361,7 @@ function renderForwards() {
     bp.addEventListener("input", () => (fwd.bindPort = bp.value));
     fields.appendChild(bp);
 
-    if (fwd.kind === "local") {
+    if (fwd.kind === "local" || fwd.kind === "remote") {
       const arrow = document.createElement("span");
       arrow.textContent = "->";
       arrow.style.alignSelf = "center";
@@ -10512,12 +11392,12 @@ function renderForwards() {
     remove.textContent = t("host_editor.forward.remove");
     remove.className = "danger";
     remove.addEventListener("click", () => {
-      hfForwards.splice(idx, 1);
-      renderForwards();
+      forwards.splice(idx, 1);
+      rerender();
     });
 
     li.append(fields, remove);
-    hfForwardsList.appendChild(li);
+    listEl.appendChild(li);
   });
 }
 
@@ -10586,43 +11466,6 @@ async function saveHostForm(ev) {
     auth = { type: "agent" };
   }
 
-  const forwards = [];
-  for (const [i, fwd] of hfForwards.entries()) {
-    const bindPort = parseInt(fwd.bindPort, 10);
-    if (!bindPort || bindPort < 1 || bindPort > 65535) {
-      showHostError(t("host_editor.error.forward_bind_port", { index: i + 1 }));
-      return;
-    }
-
-    if (fwd.kind === "local") {
-      if (!fwd.targetHost?.trim()) {
-        showHostError(t("host_editor.error.forward_target_host", { index: i + 1 }));
-        return;
-      }
-      const targetPort = parseInt(fwd.targetPort, 10);
-      if (!targetPort || targetPort < 1 || targetPort > 65535) {
-        showHostError(t("host_editor.error.forward_target_port", { index: i + 1 }));
-        return;
-      }
-
-      forwards.push({
-        kind: "local",
-        enabled: fwd.enabled !== false,
-        bind_addr: fwd.bindAddr || "127.0.0.1",
-        bind_port: bindPort,
-        target_host: fwd.targetHost.trim(),
-        target_port: targetPort,
-      });
-    } else {
-      forwards.push({
-        kind: "dynamic",
-        enabled: fwd.enabled !== false,
-        bind_addr: fwd.bindAddr || "127.0.0.1",
-        bind_port: bindPort,
-      });
-    }
-  }
-
   let resolvedGroupId = hfGroup?.value || null;
   const customGroupName = String(hfGroup?.dataset.customValue || "").trim();
   if (customGroupName) {
@@ -10644,7 +11487,7 @@ async function saveHostForm(ev) {
     port: parseInt(hfPort.value, 10),
     user: hfUser.value.trim(),
     auth,
-    forwards,
+    forwards: [],
     proxyJumpHostId: hfJump.value || null,
     groupId: resolvedGroupId || null,
   };
@@ -10717,6 +11560,10 @@ const filesMenuCloseSeparator = document.getElementById("files-menu-close-separa
 const filesMenuClose = document.getElementById("files-menu-close");
 const LOCAL_HOST_ID = "__local__";
 
+if (filesContextMenu && filesContextMenu.parentElement !== document.body) {
+  document.body.appendChild(filesContextMenu);
+}
+
 function isLocalPane(pane) {
   return pane.hostId === LOCAL_HOST_ID;
 }
@@ -10727,6 +11574,10 @@ function isPaneConnected(pane) {
 
 function isRightPaneHostEmpty(pane) {
   return pane.key === "right" && !pane.hostId;
+}
+
+function isTerminalSideSftpPane(pane) {
+  return pane?.key === "terminal";
 }
 
 function buildSftpPane(key) {
@@ -10750,7 +11601,6 @@ function buildSftpPane(key) {
     filterLabel: document.getElementById(`sftp-${key}-filter-label`),
     filterInput,
     filterWrap: filterInput ? filterInput.closest(".sftp-inline-filter") : null,
-    actionsButton: document.getElementById(`sftp-${key}-actions`),
     statusEl: document.getElementById(`sftp-${key}-status`),
     listEl: document.getElementById(`sftp-${key}-list`),
     emptyStateEl: document.getElementById(`sftp-${key}-empty`),
@@ -10765,9 +11615,47 @@ function buildSftpPane(key) {
   };
 }
 
+function buildTerminalSftpPane() {
+  const key = "terminal";
+  const filterInput = document.getElementById("sftp-terminal-filter-input");
+  return {
+    key,
+    hostId: "",
+    host: null,
+    connectedHostId: null,
+    sftpId: null,
+    localConnected: false,
+    path: "/",
+    entries: [],
+    rootEl: document.getElementById("sftp-terminal-pane"),
+    hostSelect: document.getElementById("sftp-terminal-host"),
+    upButton: document.getElementById("sftp-terminal-up"),
+    forwardButton: document.getElementById("sftp-terminal-forward"),
+    pathbarEl: document.getElementById("sftp-terminal-pathbar"),
+    breadcrumbsEl: document.getElementById("sftp-terminal-breadcrumbs"),
+    pathInputEl: document.getElementById("sftp-terminal-path-input"),
+    filterLabel: document.getElementById("sftp-terminal-filter-label"),
+    filterInput,
+    filterWrap: filterInput ? filterInput.closest(".sftp-inline-filter") : null,
+    statusEl: document.getElementById("sftp-terminal-status"),
+    listEl: document.getElementById("sftp-terminal-list"),
+    emptyStateEl: null,
+    emptySelectButton: null,
+    pathEditing: false,
+    filterQuery: "",
+    showHidden: false,
+    selectedEntries: new Set(),
+    lastUserNavAt: 0,
+    followLockedByUser: false,
+    autoConnectQueue: Promise.resolve(),
+    terminalSidePane: true,
+  };
+}
+
 const sftpPanes = {
   left: buildSftpPane("left"),
   right: buildSftpPane("right"),
+  terminal: buildTerminalSftpPane(),
 };
 
 const sftpDragState = {
@@ -10791,6 +11679,7 @@ const fileEditorState = {
 };
 
 function getSftpPane(key) {
+  if (key === "terminal") return sftpPanes.terminal;
   return key === "right" ? sftpPanes.right : sftpPanes.left;
 }
 
@@ -11348,6 +12237,7 @@ function renderSftpPathBar(pane) {
 
 function syncSftpHostOptions() {
   for (const pane of Object.values(sftpPanes)) {
+    if (isTerminalSideSftpPane(pane)) continue;
     const selected = pane.hostId || pane.host?.id || "";
     pane.hostSelect.dataset.emptyDisplay = "";
     pane.hostSelect.innerHTML = "";
@@ -11531,6 +12421,40 @@ async function connectLocalPane(pane) {
   }
 }
 
+async function connectTerminalSftpToActivePane() {
+  const pane = sftpPanes.terminal;
+  const active = getActivePane();
+  if (!pane) return;
+  if (!active) {
+    await disconnectSftpPane(pane);
+    if (terminalSftpSubtitle) terminalSftpSubtitle.textContent = t("terminal_sftp.subtitle");
+    pane.statusEl.textContent = t("terminal_sftp.empty.desc");
+    renderSftpPane(pane);
+    return;
+  }
+  if (active.isLocal || active.host?.id?.startsWith?.("local-")) {
+    if (terminalSftpSubtitle) terminalSftpSubtitle.textContent = t("terminal.status.local");
+    if (pane.hostId !== LOCAL_HOST_ID || !pane.localConnected) {
+      await connectLocalPane(pane);
+    }
+    return;
+  }
+  const host = active.host;
+  if (!host?.id) {
+    await disconnectSftpPane(pane);
+    if (terminalSftpSubtitle) terminalSftpSubtitle.textContent = t("terminal_sftp.subtitle");
+    pane.statusEl.textContent = t("terminal_sftp.empty.desc");
+    renderSftpPane(pane);
+    return;
+  }
+  if (terminalSftpSubtitle) terminalSftpSubtitle.textContent = host.name || host.host || t("terminal_sftp.subtitle");
+  if (pane.sftpId !== null && pane.connectedHostId === host.id) {
+    await navigateSftpPane(pane, pane.path, { source: "system" });
+    return;
+  }
+  await connectSftpPane(pane, host);
+}
+
 async function disconnectSftpPane(pane) {
   if (pane.sftpId !== null) {
     try {
@@ -11673,6 +12597,15 @@ function renderSftpPane(pane) {
     pane.statusEl.textContent = t("sftp.status.not_connected");
     return;
   }
+  if (isTerminalSideSftpPane(pane) && !pane.hostId) {
+    pane.selectedEntries = new Set();
+    const empty = document.createElement("li");
+    empty.className = "file-row terminal-sftp-empty-row";
+    empty.style.gridTemplateColumns = "1fr";
+    empty.innerHTML = `<strong>${t("terminal_sftp.empty.title")}</strong><span>${t("terminal_sftp.empty.desc")}</span>`;
+    pane.listEl.appendChild(empty);
+    return;
+  }
   if (!pane.hostId) {
     pane.selectedEntries = new Set();
     const empty = document.createElement("li");
@@ -11725,6 +12658,13 @@ function renderSftpPane(pane) {
       selectSingleEntry(pane, entry.name);
       renderSftpPane(pane);
       showFilesContextMenu(pane, entry, ev.clientX, ev.clientY);
+    });
+    row.addEventListener("dblclick", async () => {
+      if (entry.kind === "dir") {
+        await navigateSftpPane(pane, joinPanePath(pane, entry.name));
+      } else if (canInlineEditEntry(entry)) {
+        await openRemoteEditor(pane, entry);
+      }
     });
     row.addEventListener("dragstart", (ev) => {
       if (!beginSftpDrag(pane, entry.name, ev)) {
@@ -11831,7 +12771,7 @@ async function assignHostToSftpPane(host) {
 function canInlineEditEntry(entry) {
   return (
     entry.kind === "file" &&
-    entry.size <= FILE_EDITOR_MAX_BYTES &&
+    entry.size <= fileEditorMaxBytesForName(entry.name) &&
     isLikelyEditableTextName(entry.name)
   );
 }
@@ -12397,6 +13337,7 @@ async function openRemoteEditor(pane, entry) {
 
   resetFileEditorState();
   const path = joinPanePath(pane, entry.name);
+  const maxBytes = fileEditorMaxBytesForName(entry.name);
   fileEditorOverlay.hidden = false;
   fileEditorTitle.textContent = t("editor.hint.opening");
   fileEditorPath.textContent = path;
@@ -12410,12 +13351,12 @@ async function openRemoteEditor(pane, entry) {
     const readArgs = isLocalPane(pane)
       ? {
         path,
-        maxBytes: FILE_EDITOR_MAX_BYTES,
+        maxBytes,
       }
       : {
         sftpId: pane.sftpId,
         path,
-        maxBytes: FILE_EDITOR_MAX_BYTES,
+        maxBytes,
       };
     const doc = await invoke(readCommand, readArgs);
     fileEditorState.open = true;
@@ -12599,12 +13540,6 @@ for (const pane of Object.values(sftpPanes)) {
       pane.filterInput.blur();
       ev.preventDefault();
     }
-  });
-
-  pane.actionsButton.addEventListener("click", (ev) => {
-    hideFilesContextMenu();
-    const rect = ev.currentTarget.getBoundingClientRect();
-    showFilesContextMenu(pane, null, rect.left, rect.bottom + 6);
   });
 
   pane.pathInputEl.addEventListener("keydown", async (ev) => {

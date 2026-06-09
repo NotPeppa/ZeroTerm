@@ -821,13 +821,15 @@ impl App {
 ///   - `host` records get parsed as JSON and stripped of `auth.value`
 ///     (password) / `auth.passphrase`. We surface the *names* of secret
 ///     fields that are present so the user knows there's an override.
+///   - `port_forward`, `host_group`, and `snippet` records are plain JSON
+///     metadata and can be previewed directly.
 ///   - anything else gets a `{ "redacted": true }` marker so the diff
 ///     UI can show "secret content differs" without leaking bytes.
 fn conflict_preview(kind: &str, payload: &[u8]) -> serde_json::Value {
     if payload.is_empty() {
         return serde_json::json!({ "tombstone": true });
     }
-    if kind == "host_group" || kind == "snippet" {
+    if kind == "host_group" || kind == "snippet" || kind == "port_forward" {
         return match serde_json::from_slice::<serde_json::Value>(payload) {
             Ok(v) => v,
             Err(_) => serde_json::json!({ "redacted": true, "bytes": payload.len() }),
