@@ -466,7 +466,7 @@ const I18N = {
     "host_editor.error.forward_target_port": "forward {index}: invalid remote port",
     "port_forward.title": "Port Forwarding",
     "port_forward.subtitle": "Start SSH forwards independently without opening a terminal session.",
-    "port_forward.create": "+ New forward",
+    "port_forward.create": "New forward",
     "port_forward.refresh": "Refresh",
     "port_forward.search.placeholder": "Search host, port, or remote address...",
     "port_forward.empty.title": "No port forwards yet",
@@ -1213,7 +1213,7 @@ const I18N = {
     "host_editor.error.forward_target_port": "第 {index} 条转发：远端端口无效",
     "port_forward.title": "端口转发",
     "port_forward.subtitle": "独立启动 SSH 转发，无需打开终端会话。",
-    "port_forward.create": "+ 新建转发",
+    "port_forward.create": "新建转发",
     "port_forward.refresh": "刷新",
     "port_forward.search.placeholder": "搜索主机、端口或远端地址...",
     "port_forward.empty.title": "暂无端口转发",
@@ -2208,6 +2208,7 @@ const settingsGeneralPanel = document.getElementById("settings-general-panel");
 const settingsTerminalPanel = document.getElementById("settings-terminal-panel");
 const settingsAiPanel = document.getElementById("settings-ai-panel");
 const settingsSyncPanel = document.getElementById("settings-sync-panel");
+const settingsPageBody = document.querySelector(".settings-page-body");
 const settingsAiProvider = document.getElementById("settings-ai-provider");
 const settingsAiModel = document.getElementById("settings-ai-model");
 const settingsAiModelCustom = document.getElementById("settings-ai-model-custom");
@@ -6315,6 +6316,7 @@ function setSettingsSection(section) {
   if (settingsTerminalPanel) settingsTerminalPanel.hidden = settingsSection !== "terminal";
   if (settingsAiPanel) settingsAiPanel.hidden = settingsSection !== "ai";
   if (settingsSyncPanel) settingsSyncPanel.hidden = settingsSection !== "sync";
+  settingsPageBody?.classList.toggle("settings-sync-scrollbar", settingsSection === "sync");
   if (settingsDataPanel) settingsDataPanel.hidden = settingsSection !== "data";
   if (settingsAboutPanel) settingsAboutPanel.hidden = settingsSection !== "about";
   if (settingsSection === "ai") {
@@ -7947,7 +7949,8 @@ function applyI18n() {
   setAttr("local-terminal-button", "title", "sidebar.local_terminal");
   setText("port-forward-title", "port_forward.title");
   setText("port-forward-subtitle", "port_forward.subtitle");
-  setText("port-forward-create", "port_forward.create");
+  setAttr("port-forward-create", "title", "port_forward.create");
+  setAttr("port-forward-create", "aria-label", "port_forward.create");
   setAttr("port-forward-refresh", "title", "port_forward.refresh");
   setAttr("port-forward-refresh", "aria-label", "port_forward.refresh");
   setPlaceholder("port-forward-search", "port_forward.search.placeholder");

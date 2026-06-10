@@ -985,6 +985,12 @@ body[data-app-theme="light"]:not(.has-app-bg) .settings-page-head {
   gap: 10px;
 }
 
+.port-forward-head-actions #port-forward-create .zt-icon {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.35;
+}
+
 .port-forward-head-actions button.primary {
   height: 34px;
   padding: 0 14px;
@@ -9962,6 +9968,35 @@ body[data-app-theme="light"] .hosts-grid-wrap::-webkit-scrollbar-thumb:hover,
 body[data-app-theme="light"] .pane-body .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
   background: rgba(51, 65, 85, 0.52) !important;
   background-clip: padding-box;
+}
+
+body[data-app-theme="light"] .settings-page-body.settings-sync-scrollbar {
+  scrollbar-color: rgba(15, 23, 42, 0.34) transparent !important;
+}
+
+body[data-app-theme="light"] .settings-page-body.settings-sync-scrollbar::-webkit-scrollbar {
+  width: 10px;
+}
+
+body[data-app-theme="light"] .settings-page-body.settings-sync-scrollbar::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+body[data-app-theme="light"] .settings-page-body.settings-sync-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.30) !important;
+  background-clip: padding-box !important;
+  border: 3px solid transparent !important;
+  border-radius: 999px;
+  box-shadow: none;
+}
+
+body[data-app-theme="light"] .settings-page-body.settings-sync-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(15, 23, 42, 0.48) !important;
+  background-clip: padding-box !important;
+}
+
+body[data-app-theme="light"] .settings-page-body.settings-sync-scrollbar::-webkit-scrollbar-corner {
+  background: transparent !important;
 }
 
 body.has-app-bg[data-app-theme="light"] .pane-body .xterm .xterm-viewport {
