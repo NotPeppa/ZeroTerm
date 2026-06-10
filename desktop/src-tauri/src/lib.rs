@@ -66,6 +66,7 @@ pub fn run() {
             commands::delete_all_sync_profiles,
             commands::create_port_forward_rule,
             commands::update_port_forward_rule,
+            commands::delete_port_forward_rule,
             commands::migrate_port_forward_rules,
             commands::get_host,
             commands::list_host_groups,

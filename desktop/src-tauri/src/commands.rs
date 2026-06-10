@@ -2614,6 +2614,49 @@ sleep 1
 awk 'NR>2 {gsub(":", "", $1); print "B|" $1 "|" $2 "|" $10}' /proc/net/dev 2>/dev/null
 "#;
 
+#[cfg(target_os = "macos")]
+const MACOS_METRICS_SCRIPT: &str = r#"printf 'ZT_METRICS_V1\n'
+hostname 2>/dev/null || uname -n
+uname -s 2>/dev/null || printf 'Darwin\n'
+uname -m 2>/dev/null || printf 'unknown\n'
+boot=$(sysctl -n kern.boottime 2>/dev/null | awk -F'[=,]' '{gsub(/ /, "", $2); print $2}')
+now=$(date +%s)
+if [ -n "$boot" ]; then printf '%s\n' $((now - boot)); else printf '0\n'; fi
+sysctl -n hw.ncpu 2>/dev/null || printf '1\n'
+printf '0 0\n'
+top -l 1 -n 0 2>/dev/null | awk -F'[:,% ]+' '
+/CPU usage/ {idle=$7; printf "10000 %d\n", int(idle * 100); found=1; exit}
+END {if (!found) print "10000 10000"}
+'
+pagesize=$(sysctl -n hw.pagesize 2>/dev/null || printf '4096')
+mem_total=$(sysctl -n hw.memsize 2>/dev/null || printf '0')
+vm_stat 2>/dev/null | awk -v ps="$pagesize" -v total="$mem_total" '
+/Pages active/ {gsub("\\.", "", $3); active=$3}
+/Pages wired down/ {gsub("\\.", "", $4); wired=$4}
+/Pages occupied by compressor/ {gsub("\\.", "", $5); compressed=$5}
+END {used=(active+wired+compressed)*ps; printf "%d %d ", total, used}
+'
+sysctl vm.swapusage 2>/dev/null | awk '{total=0; used=0; for(i=1;i<=NF;i++){if($i=="total") total=$(i+2); if($i=="used") used=$(i+2)} unit=1024*1024; printf "%d %d\n", total*unit, used*unit}'
+df -P -k 2>/dev/null | awk '
+NR>1 && $2 ~ /^[0-9]+$/ && $6 ~ /^\// {
+  mount=$6
+  if (mount == "/") { root_total=$2*1024; root_used=$3*1024; next }
+  if (mount == "/System/Volumes/Data") { data_total=$2*1024; data_used=$3*1024; next }
+  if (substr(mount, 1, 9) == "/Volumes/" && substr(mount, 10) !~ /\//) {
+    volumes[++volume_count]="D|" mount "|" $2*1024 "|" $3*1024
+  }
+}
+END {
+  if (data_total > 0) print "D|/|" data_total "|" data_used
+  else if (root_total > 0) print "D|/|" root_total "|" root_used
+  for (i=1; i<=volume_count && i<=7; i++) print volumes[i]
+}'
+netstat -ibn 2>/dev/null | awk 'NR>1 && $1 !~ /^(lo|gif|stf|utun|awdl|llw|bridge|anpi)/ && $7 ~ /^[0-9]+$/ && $10 ~ /^[0-9]+$/ {rx[$1]=$7; tx[$1]=$10} END {for (i in rx) print "A|" i "|" rx[i] "|" tx[i]}'
+sleep 1
+netstat -ibn 2>/dev/null | awk 'NR>1 && $1 !~ /^(lo|gif|stf|utun|awdl|llw|bridge|anpi)/ && $7 ~ /^[0-9]+$/ && $10 ~ /^[0-9]+$/ {rx[$1]=$7; tx[$1]=$10} END {for (i in rx) print "B|" i "|" rx[i] "|" tx[i]}'
+"#;
+
+#[cfg(target_os = "windows")]
 const WINDOWS_METRICS_SCRIPT: &str = r#"
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 $OutputEncoding = [System.Text.UTF8Encoding]::new()
@@ -2723,7 +2766,14 @@ async fn local_metrics() -> Result<SystemMetricsDto, String> {
         .output()
         .await
         .map_err(|e| format!("local metrics failed: {e}"))?;
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    let output = Command::new("sh")
+        .arg("-lc")
+        .arg(MACOS_METRICS_SCRIPT)
+        .output()
+        .await
+        .map_err(|e| format!("local metrics failed: {e}"))?;
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
     let output = Command::new("sh")
         .arg("-lc")
         .arg(METRICS_SCRIPT)
@@ -3154,6 +3204,17 @@ pub async fn update_port_forward_rule(
     let (app, manager) = clone_app_and_sync(&state)?;
     let rule = input.into_app_rule(id);
     app.update_port_forward(&rule).map_err(|e| e.to_string())?;
+    manager.schedule_debounced_sync_for_all(app);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn delete_port_forward_rule(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
+    let (app, manager) = clone_app_and_sync(&state)?;
+    app.delete_port_forward(&id).map_err(|e| e.to_string())?;
     manager.schedule_debounced_sync_for_all(app);
     Ok(())
 }

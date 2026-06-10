@@ -410,7 +410,7 @@ const I18N = {
     "host_editor.label.private_key": "Private key",
     "host_editor.label.passphrase": "Passphrase (optional)",
     "host_editor.label.proxy_jump": "Jump host (saved host)",
-    "host_editor.label.advanced": "Jump host and forwards",
+    "host_editor.label.advanced": "Jump host",
     "host_editor.label.port_forwards": "Port forwards",
     "host_editor.button.add_forward": "+ Add forward",
     "host_editor.hint.forwards": "Port forwards are now managed and synced as independent records from the Port Forwarding page.",
@@ -474,8 +474,8 @@ const I18N = {
     "port_forward.empty.desc": "Click \"New forward\", choose a host, then add an independent forwarding rule.",
     "port_forward.empty.search_desc": "Try another keyword, such as host name, port, or remote address.",
     "port_forward.title.dynamic": "SOCKS5 proxy: {bindAddr}:{bindPort}",
-    "port_forward.title.local": "Local port {bindPort} forwards to {targetHost}:{targetPort}",
-    "port_forward.title.remote": "Remote port {bindPort} forwards to {targetHost}:{targetPort}",
+    "port_forward.title.local": "Open local {bindPort} to reach {targetHost}:{targetPort}",
+    "port_forward.title.remote": "Open remote {bindPort} to reach local {targetHost}:{targetPort}",
     "port_forward.detail.dynamic": "App proxy address: {bindAddr}:{bindPort}",
     "port_forward.detail.local": "Open local {bindAddr}:{bindPort} to connect to {targetHost}:{targetPort} on the server",
     "port_forward.detail.remote": "Open server {bindAddr}:{bindPort} to connect back to local {targetHost}:{targetPort}",
@@ -486,6 +486,9 @@ const I18N = {
     "port_forward.action.starting": "Starting...",
     "port_forward.action.stopping": "Stopping...",
     "port_forward.action.edit": "Edit",
+    "port_forward.action.delete": "Delete",
+    "port_forward.confirm.delete.title": "Delete port forward?",
+    "port_forward.confirm.delete": "This rule will be removed from synced data. If it is running, ZeroTerm will stop it first.",
     "port_forward.editor.title.create": "New forward",
     "port_forward.editor.title.edit": "Edit forward - {hostName}",
     "port_forward.editor.subtitle": "Forward rules sync independently from host connection details.",
@@ -1154,7 +1157,7 @@ const I18N = {
     "host_editor.label.private_key": "私钥",
     "host_editor.label.passphrase": "私钥口令（可选）",
     "host_editor.label.proxy_jump": "跳板机（已保存主机）",
-    "host_editor.label.advanced": "跳板机与转发",
+    "host_editor.label.advanced": "跳板机",
     "host_editor.label.port_forwards": "端口转发",
     "host_editor.button.add_forward": "+ 添加转发",
     "host_editor.hint.forwards": "端口转发现在请到“端口转发”页面管理，并会作为独立记录同步。",
@@ -1218,8 +1221,8 @@ const I18N = {
     "port_forward.empty.desc": "点击“新建转发”，选择主机后即可添加独立转发规则。",
     "port_forward.empty.search_desc": "换个关键词试试，例如主机名、端口号或远端地址。",
     "port_forward.title.dynamic": "SOCKS5 代理：{bindAddr}:{bindPort}",
-    "port_forward.title.local": "本机端口 {bindPort} 转发到 {targetHost}:{targetPort}",
-    "port_forward.title.remote": "远程端口 {bindPort} 转发到 {targetHost}:{targetPort}",
+    "port_forward.title.local": "访问本机端口 {bindPort} 连接远程 {targetHost}:{targetPort}",
+    "port_forward.title.remote": "访问远程端口 {bindPort} 连接本机 {targetHost}:{targetPort}",
     "port_forward.detail.dynamic": "应用代理地址：{bindAddr}:{bindPort}",
     "port_forward.detail.local": "访问本机 {bindAddr}:{bindPort}，会连接到服务器上的 {targetHost}:{targetPort}",
     "port_forward.detail.remote": "访问服务器 {bindAddr}:{bindPort}，会反连到本机 {targetHost}:{targetPort}",
@@ -1230,6 +1233,9 @@ const I18N = {
     "port_forward.action.starting": "启动中...",
     "port_forward.action.stopping": "停止中...",
     "port_forward.action.edit": "编辑",
+    "port_forward.action.delete": "删除",
+    "port_forward.confirm.delete.title": "删除端口转发？",
+    "port_forward.confirm.delete": "这条规则会从同步数据中删除。如果正在运行，ZeroTerm 会先停止转发。",
     "port_forward.editor.title.create": "新建转发",
     "port_forward.editor.title.edit": "编辑转发 - {hostName}",
     "port_forward.editor.subtitle": "转发规则会独立于主机连接信息同步。",
@@ -2475,6 +2481,10 @@ function escapeMetricText(value) {
   return String(value ?? "").replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
 }
 
+function svgIcon(paths) {
+  return `<svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">${paths}</svg>`;
+}
+
 function pct(n) {
   return `${Math.max(0, Math.min(100, Math.round(Number(n) || 0)))}%`;
 }
@@ -2484,9 +2494,9 @@ function metricMeterMarkup(value, tone = "good") {
   return `<div class="metric-bar metric-${tone}"><span style="width:${p}"></span></div>`;
 }
 
-function metricGaugeMarkup(value, tone = "good") {
+function metricGaugeMarkup(value, tone = "good", { showValue = true } = {}) {
   const p = Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
-  return `<div class="metric-gauge metric-${tone}" style="--metric:${p}"><span>${p}</span></div>`;
+  return `<div class="metric-gauge metric-${tone}" style="--metric:${p}">${showValue ? `<span class="metric-gauge-value"><strong>${p}</strong><em>%</em></span>` : ""}</div>`;
 }
 
 function formatMetricBytes(bytes) {
@@ -2532,12 +2542,12 @@ function renderMetricsData(metrics) {
         <div><small>${t("metrics.uptime")}</small><strong>${formatMetricUptime(metrics.uptimeSeconds)}</strong></div>
       </div>
     </section>
-    <section class="metrics-card">
-      <div class="metrics-card-head"><span>${t("metrics.cpu")}</span><em>${t("metrics.cpu.cores", { count: metrics.cpuCores || 1 })}</em></div>
-      <div class="metric-row metric-row-gauge">${metricGaugeMarkup(cpu, metricTone(cpu))}<div><strong>${t("metrics.cpu.avg")}</strong>${metricMeterMarkup(cpu, metricTone(cpu))}<small>${cpu.toFixed(1)}%</small></div><b>${cpu.toFixed(1)}%</b></div>
+    <section class="metrics-card metrics-compact-card">
+      <div class="metrics-card-head"><span><i aria-hidden="true">⚙</i>${t("metrics.cpu")}</span><em>${t("metrics.cpu.cores", { count: metrics.cpuCores || 1 })}<b aria-hidden="true">›</b></em></div>
+      <div class="metric-row metric-row-gauge">${metricGaugeMarkup(cpu, metricTone(cpu))}<div><strong>${t("metrics.cpu.avg")}</strong>${metricMeterMarkup(cpu, metricTone(cpu))}</div><b>${cpu.toFixed(1)}%</b></div>
     </section>
-    <section class="metrics-card">
-      <div class="metrics-card-head"><span>${t("metrics.memory")}</span></div>
+    <section class="metrics-card metrics-compact-card">
+      <div class="metrics-card-head"><span><i aria-hidden="true">▥</i>${t("metrics.memory")}</span></div>
       <div class="metric-row metric-row-gauge">${metricGaugeMarkup(ram, metricTone(ram))}<div><strong>${t("metrics.ram")}</strong>${metricMeterMarkup(ram, metricTone(ram))}<small>${formatMetricBytes(metrics.memoryUsed)} / ${formatMetricBytes(metrics.memoryTotal)}</small></div><b>${ram.toFixed(1)}%</b></div>
       <div class="metric-line"><span>${t("metrics.swap")}</span><b>${swap.toFixed(0)}%</b>${metricMeterMarkup(swap, metricTone(swap))}<small>${formatMetricBytes(metrics.swapUsed)} / ${formatMetricBytes(metrics.swapTotal)}</small></div>
     </section>
@@ -4423,6 +4433,11 @@ const textInputMessage = document.getElementById("text-input-message");
 const textInputValue = document.getElementById("text-input-value");
 const textInputCancelButton = document.getElementById("text-input-cancel");
 const textInputConfirmButton = document.getElementById("text-input-confirm");
+const confirmOverlay = document.getElementById("confirm-overlay");
+const confirmTitle = document.getElementById("confirm-title");
+const confirmMessage = document.getElementById("confirm-message");
+const confirmCancelButton = document.getElementById("confirm-cancel");
+const confirmOkButton = document.getElementById("confirm-ok");
 const permissionsOverlay = document.getElementById("permissions-overlay");
 const permissionsTitle = document.getElementById("permissions-title");
 const permissionsMessage = document.getElementById("permissions-message");
@@ -4460,6 +4475,7 @@ let quickConnectKeyPem = null;
 let hostsCache = [];
 let workspaceMode = "vaults";
 let textInputResolver = null;
+let confirmResolver = null;
 let permissionsResolver = null;
 let permissionsSyncingFromOctal = false;
 let permissionsSyncingFromChecks = false;
@@ -5696,6 +5712,31 @@ function openTextInputDialog({ title, message = "", defaultValue = "", placehold
   });
 }
 
+function closeConfirmDialog(result) {
+  if (!confirmResolver) return;
+  const resolve = confirmResolver;
+  confirmResolver = null;
+  if (confirmOverlay) confirmOverlay.hidden = true;
+  resolve(Boolean(result));
+}
+
+function openConfirmDialog({ title, message = "", okText = "OK", cancelText = "Cancel" } = {}) {
+  if (confirmResolver) closeConfirmDialog(false);
+  return new Promise((resolve) => {
+    if (!confirmOverlay || !confirmTitle || !confirmMessage || !confirmOkButton || !confirmCancelButton) {
+      resolve(false);
+      return;
+    }
+    confirmResolver = resolve;
+    confirmTitle.textContent = title || "Confirm";
+    confirmMessage.textContent = message;
+    confirmOkButton.textContent = okText;
+    confirmCancelButton.textContent = cancelText;
+    confirmOverlay.hidden = false;
+    requestAnimationFrame(() => confirmOkButton.focus());
+  });
+}
+
 function permissionsModeToCheckboxes(modeText) {
   const normalized = normalizePermissionModeInput(modeText) || "000";
   const mode = Number.parseInt(normalized, 8) & 0o777;
@@ -5984,11 +6025,16 @@ function renderPortForwardRows() {
 
     const action = document.createElement("button");
     action.type = "button";
-    action.className = row.active ? "danger" : "primary";
-    action.textContent = row.active ? t("port_forward.action.stop") : t("port_forward.action.start");
+    action.className = `port-forward-icon-action ${row.active ? "is-stop" : "is-start"}`;
+    action.title = row.active ? t("port_forward.action.stop") : t("port_forward.action.start");
+    action.setAttribute("aria-label", action.title);
+    action.innerHTML = row.active
+      ? svgIcon('<rect x="6" y="6" width="12" height="12" rx="2"></rect>')
+      : svgIcon('<path d="M8 5v14l11-7z"></path>');
     action.addEventListener("click", async () => {
       action.disabled = true;
-      action.textContent = row.active ? t("port_forward.action.stopping") : t("port_forward.action.starting");
+      action.title = row.active ? t("port_forward.action.stopping") : t("port_forward.action.starting");
+      action.setAttribute("aria-label", action.title);
       try {
         if (row.active) {
           await invoke("stop_port_forward", { id: row.active.id });
@@ -5998,18 +6044,47 @@ function renderPortForwardRows() {
         await loadPortForwardPage();
       } catch (e) {
         action.disabled = false;
-        action.textContent = row.active ? t("port_forward.action.stop") : t("port_forward.action.start");
+        action.title = row.active ? t("port_forward.action.stop") : t("port_forward.action.start");
+        action.setAttribute("aria-label", action.title);
         alert(String(e));
       }
     });
     const edit = document.createElement("button");
     edit.type = "button";
-    edit.textContent = t("port_forward.action.edit");
+    edit.className = "port-forward-icon-action";
+    edit.title = t("port_forward.action.edit");
+    edit.setAttribute("aria-label", edit.title);
+    edit.innerHTML = svgIcon('<path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path>');
     edit.addEventListener("click", () => openPortForwardEditor(row));
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "port-forward-icon-action is-delete";
+    remove.title = t("port_forward.action.delete");
+    remove.setAttribute("aria-label", remove.title);
+    remove.innerHTML = svgIcon('<path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v5"></path><path d="M14 11v5"></path>');
+    remove.addEventListener("click", async () => {
+      const ok = await openConfirmDialog({
+        title: t("port_forward.confirm.delete.title"),
+        message: t("port_forward.confirm.delete"),
+        okText: t("port_forward.action.delete"),
+        cancelText: t("snippets.dialog.cancel"),
+      });
+      if (!ok) return;
+      remove.disabled = true;
+      try {
+        if (row.active) await invoke("stop_port_forward", { id: row.active.id });
+        await invoke("delete_port_forward_rule", { id: row.id });
+        await loadPortForwardPage();
+      } catch (e) {
+        remove.disabled = false;
+        alert(String(e));
+      }
+    });
 
     const actions = document.createElement("div");
     actions.className = "port-forward-card-actions";
-    actions.append(edit, action);
+    actions.append(edit, action, remove);
     head.append(title, actions);
 
     const list = document.createElement("div");
@@ -7662,6 +7737,50 @@ function buildCustomSelect(selectEl) {
 
   let selectedLabel = "";
   let customValue = "";
+  let menuPortaled = false;
+
+  const usesPortalMenu = () => Boolean(wrap.closest("#host-edit-overlay"));
+  const resetPortalMenu = () => {
+    if (!menuPortaled) return;
+    menuPortaled = false;
+    menu.classList.remove("zt-select-menu-portal");
+    menu.style.position = "";
+    menu.style.left = "";
+    menu.style.right = "";
+    menu.style.top = "";
+    menu.style.width = "";
+    menu.style.maxHeight = "";
+    menu.style.zIndex = "";
+    wrap.insertBefore(menu, selectEl);
+  };
+
+  const positionPortalMenu = () => {
+    if (!usesPortalMenu() || menu.hidden) return;
+    if (menu.parentElement !== document.body) {
+      document.body.appendChild(menu);
+      menuPortaled = true;
+      menu.classList.add("zt-select-menu-portal");
+    }
+    const rect = trigger.getBoundingClientRect();
+    const gap = 6;
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+    const below = Math.max(0, viewportHeight - rect.bottom - gap - 8);
+    const above = Math.max(0, rect.top - gap - 8);
+    const openUp = below < 180 && above > below;
+    const available = openUp ? above : below;
+    const maxHeight = Math.max(120, Math.min(280, available));
+    menu.style.position = "fixed";
+    menu.style.left = `${Math.round(rect.left)}px`;
+    menu.style.right = "auto";
+    menu.style.width = `${Math.round(rect.width)}px`;
+    menu.style.top = openUp
+      ? `${Math.max(8, Math.round(rect.top - gap - maxHeight))}px`
+      : `${Math.round(rect.bottom + gap)}px`;
+    menu.style.maxHeight = `${Math.round(maxHeight)}px`;
+    menu.style.zIndex = "10000";
+  };
+
+  const onPortalViewportChange = () => positionPortalMenu();
 
   const close = () => {
     menu.hidden = true;
@@ -7671,6 +7790,9 @@ function buildCustomSelect(selectEl) {
       customSelectState.openId = null;
     }
     stackingAncestor?.classList.remove("zt-select-open");
+    window.removeEventListener("resize", onPortalViewportChange);
+    window.removeEventListener("scroll", onPortalViewportChange, true);
+    resetPortalMenu();
   };
 
   let suppressLabelRestore = false;
@@ -7696,6 +7818,11 @@ function buildCustomSelect(selectEl) {
     sync();
     suppressLabelRestore = false;
     stackingAncestor?.classList.add("zt-select-open");
+    positionPortalMenu();
+    if (usesPortalMenu()) {
+      window.addEventListener("resize", onPortalViewportChange);
+      window.addEventListener("scroll", onPortalViewportChange, true);
+    }
   };
 
   const sync = () => {
@@ -7736,6 +7863,8 @@ function buildCustomSelect(selectEl) {
 
   trigger.addEventListener("mousedown", (ev) => ev.stopPropagation());
   trigger.addEventListener("click", (ev) => ev.stopPropagation());
+  menu.addEventListener("mousedown", (ev) => ev.stopPropagation());
+  menu.addEventListener("click", (ev) => ev.stopPropagation());
   wrap.addEventListener("zt-select-close", close);
   document.addEventListener("click", (ev) => {
     if (!wrap.contains(ev.target)) close();
@@ -7905,9 +8034,6 @@ function applyI18n() {
   setText("hf-key-passphrase-label", "host_editor.label.passphrase");
   setText("hf-jump-label", "host_editor.label.proxy_jump");
   setText("hf-advanced-legend", "host_editor.label.advanced");
-  setText("hf-forwards-label", "host_editor.label.port_forwards");
-  setText("hf-forward-add", "host_editor.button.add_forward");
-  setText("hf-forwards-hint", "host_editor.hint.forwards");
   setText("hf-key-pick", "host_editor.button.choose_key");
   setText("host-edit-cancel", "host_editor.button.cancel");
   setText("host-edit-save", "host_editor.button.save");
@@ -9287,6 +9413,18 @@ textInputValue.addEventListener("keydown", (ev) => {
   if (ev.key === "Enter") {
     ev.preventDefault();
     closeTextInputDialog(textInputValue.value.trim());
+  }
+});
+
+confirmCancelButton?.addEventListener("click", () => closeConfirmDialog(false));
+confirmOkButton?.addEventListener("click", () => closeConfirmDialog(true));
+confirmOverlay?.addEventListener("click", (ev) => {
+  if (ev.target === confirmOverlay) closeConfirmDialog(false);
+});
+confirmOverlay?.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape") {
+    ev.preventDefault();
+    closeConfirmDialog(false);
   }
 });
 
@@ -11290,6 +11428,7 @@ function forwardFromIO(spec) {
 }
 
 function renderForwards(listEl = hfForwardsList, forwards = hfForwards, rerender = renderForwards) {
+  if (!listEl) return;
   listEl.innerHTML = "";
 
   if (forwards.length === 0) {
@@ -12412,8 +12551,8 @@ async function connectLocalPane(pane) {
     const configuredLocalPath = (localStorage.getItem(SETTINGS_KEY_SFTP_LOCAL_DIR) || "").trim();
     const home = await invoke("local_home_path");
     pane.path = configuredLocalPath || home || "/";
-    await navigateSftpPane(pane, pane.path);
     pane.localConnected = true;
+    await navigateSftpPane(pane, pane.path);
     renderSftpPane(pane);
   } catch (e) {
     pane.localConnected = false;
@@ -12591,6 +12730,8 @@ function renderSftpPane(pane) {
 
   if (!connected) {
     pane.statusEl.textContent = t("sftp.status.not_connected");
+  } else if (isLocalPane(pane) && pane.statusEl.textContent === t("sftp.status.not_connected")) {
+    pane.statusEl.textContent = "";
   }
   if (showRightEmpty) {
     pane.selectedEntries = new Set();

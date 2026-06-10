@@ -181,11 +181,8 @@
                       </button>
                       <button id="port-forward-button" type="button" class="workspace-icon-btn" title="端口转发" aria-label="端口转发">
                         <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
-                          <path d="M6 4v5a4 4 0 0 0 4 4h8"></path>
-                          <path d="M18 8l4 5-4 5"></path>
-                          <circle cx="6" cy="4" r="2"></circle>
-                          <circle cx="6" cy="20" r="2"></circle>
-                          <path d="M6 18v-5a4 4 0 0 1 4-4h2"></path>
+                          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
                         </svg>
                       </button>
                       <div class="term-tab-scroll-wrap">
@@ -1249,21 +1246,11 @@ $ npm run build && npm run start</pre>
             </div>
 
             <fieldset class="advanced">
-              <legend id="hf-advanced-legend">跳板机与转发</legend>
+              <legend id="hf-advanced-legend">跳板机</legend>
               <label>
                 <span id="hf-jump-label">跳板机（已保存主机）</span>
                 <select id="hf-jump"></select>
               </label>
-
-              <div class="forwards-block">
-                <div class="forwards-label">
-                  <span id="hf-forwards-label">Port forwards</span>
-                </div>
-                <ul id="hf-forwards" class="forward-list"></ul>
-                <p id="hf-forwards-hint" class="muted tiny">
-                  Supports local forward (-L) and dynamic SOCKS5 (-D).
-                </p>
-              </div>
             </fieldset>
 
             <p id="host-edit-error" class="error" hidden></p>
@@ -1355,6 +1342,17 @@ $ npm run build && npm run start</pre>
           <div class="dialog-actions">
             <button id="text-input-cancel" type="button">Cancel</button>
             <button id="text-input-confirm" type="button" class="primary">OK</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="confirm-overlay" class="overlay" hidden>
+        <div class="dialog text-input-dialog confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+          <h3 id="confirm-title">Confirm</h3>
+          <p id="confirm-message" class="muted"></p>
+          <div class="dialog-actions">
+            <button id="confirm-cancel" type="button" class="confirm-ghost-text">Cancel</button>
+            <button id="confirm-ok" type="button" class="confirm-danger-text">Delete</button>
           </div>
         </div>
       </div>
