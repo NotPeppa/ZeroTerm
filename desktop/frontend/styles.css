@@ -247,6 +247,18 @@ body.has-app-bg .ai-assistant-panel {
   position: relative !important;
 }
 
+/* In glass mode the ::after pseudo already supplies the frosted backdrop. A
+   sidebar's own backdrop-filter would then NEST a second blur over the same
+   backdrop, which WebView2 re-rasterizes inconsistently whenever the region
+   repaints (e.g. hovering a rail icon) — showing a mismatched seam at the edge.
+   Drop the redundant outer blur so only the ::after glass remains. */
+body.has-app-bg .vault-sidebar,
+body.has-app-bg .settings-sidebar,
+body.has-app-bg .terminal-side-panel {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
 body.has-app-bg .vault-sidebar::after,
 body.has-app-bg .settings-sidebar::after,
 body.has-app-bg .terminal-side-panel::after {
@@ -265,6 +277,10 @@ body.has-app-bg[data-app-theme="light"] .vault-sidebar::after,
 body.has-app-bg[data-app-theme="light"] .settings-sidebar::after,
 body.has-app-bg[data-app-theme="light"] .terminal-side-panel::after {
   background: rgba(255, 255, 255, 0.42) !important;
+}
+
+body.has-app-bg[data-app-theme="light"] #terminal-metrics-panel::after {
+  background: rgba(255, 255, 255, 0.16) !important;
 }
 
 body.has-app-bg[data-app-theme="light"] .terminal-side-panel,
@@ -1621,6 +1637,7 @@ body.has-app-bg[data-app-theme="light"] .port-forward-head p {
   right: 0;
   bottom: 0;
   width: 42px;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1872,6 +1889,16 @@ body[data-app-theme="light"] .terminal-side-empty {
   border-color: rgba(203, 213, 225, 0.6) !important;
   background: rgba(255, 255, 255, 0.45) !important;
 }
+
+body[data-app-theme="light"] .terminal-side-empty.metrics-loading-card {
+  border-color: transparent !important;
+  background: rgba(255, 255, 255, 0.24) !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .terminal-side-empty.metrics-loading-card {
+  background: rgba(255, 255, 255, 0.18) !important;
+}
+
 body[data-app-theme="light"] .terminal-side-empty strong {
   color: #0f172a !important;
 }
@@ -2382,12 +2409,40 @@ body.resizing-ai-panel .ai-panel-splitter {
   width: min(240px, calc(100% - 24px));
   max-height: 260px;
   overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(104, 168, 255, 0.34) transparent;
   padding: 6px;
   border-radius: 12px;
   border: 1px solid rgba(104, 168, 255, 0.16);
   background: rgba(11, 16, 29, 0.96);
   box-shadow: 0 14px 36px rgba(0, 0, 0, 0.36);
   transform: translateX(-50%);
+}
+
+.ai-model-menu::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.ai-model-menu::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.ai-model-menu::-webkit-scrollbar-thumb {
+  min-height: 44px;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: rgba(104, 168, 255, 0.32) !important;
+  background-clip: padding-box !important;
+}
+
+.ai-model-menu::-webkit-scrollbar-thumb:hover {
+  background: rgba(147, 197, 253, 0.56) !important;
+  background-clip: padding-box !important;
+}
+
+.ai-model-menu::-webkit-scrollbar-corner {
+  background: transparent !important;
 }
 
 .ai-model-menu[hidden] {
@@ -5520,6 +5575,23 @@ body.has-app-bg .pane-body .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover
   display: flex;
   flex-direction: column;
   gap: 14px;
+  scrollbar-width: none;
+}
+
+.metrics-body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.metrics-body.metrics-loading {
+  overflow: hidden;
+}
+
+.metrics-body.metrics-loading::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 .metrics-note,
@@ -5581,6 +5653,7 @@ body.has-app-bg .pane-body .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover
   color: rgba(168, 184, 216, 0.8);
   font-size: 11px;
   font-style: normal;
+  padding: 0;
 }
 
 .metrics-card-head em {
@@ -5820,6 +5893,10 @@ body[data-app-theme="light"] .metric-gauge-value strong {
   color: #059669;
 }
 
+body[data-app-theme="light"] .metric-gauge-value em {
+  color: #334155;
+}
+
 body[data-app-theme="light"] .metric-bar {
   background: rgba(100, 116, 139, 0.32);
 }
@@ -5842,23 +5919,23 @@ body[data-app-theme="light"] .metric-line b.danger {
 
 body[data-app-theme="light"] .metric-gauge {
   background:
-    radial-gradient(circle at center, rgba(39, 39, 42, 0.98) 0 52%, transparent 53%),
+    radial-gradient(circle at center, rgba(248, 250, 252, 0.92) 0 52%, transparent 53%),
     conic-gradient(from 225deg, #059669 calc(var(--metric) * 2.7deg), transparent 0 270deg, transparent 0),
-    conic-gradient(from 225deg, rgba(109, 126, 154, 0.48) 0 270deg, transparent 0);
+    conic-gradient(from 225deg, rgba(100, 116, 139, 0.34) 0 270deg, transparent 0);
 }
 
 body[data-app-theme="light"] .metric-gauge.metric-warn {
   background:
-    radial-gradient(circle at center, rgba(39, 39, 42, 0.98) 0 52%, transparent 53%),
+    radial-gradient(circle at center, rgba(248, 250, 252, 0.92) 0 52%, transparent 53%),
     conic-gradient(from 225deg, #d97706 calc(var(--metric) * 2.7deg), transparent 0 270deg, transparent 0),
-    conic-gradient(from 225deg, rgba(109, 126, 154, 0.48) 0 270deg, transparent 0);
+    conic-gradient(from 225deg, rgba(100, 116, 139, 0.34) 0 270deg, transparent 0);
 }
 
 body[data-app-theme="light"] .metric-gauge.metric-danger {
   background:
-    radial-gradient(circle at center, rgba(39, 39, 42, 0.98) 0 52%, transparent 53%),
+    radial-gradient(circle at center, rgba(248, 250, 252, 0.92) 0 52%, transparent 53%),
     conic-gradient(from 225deg, #dc2626 calc(var(--metric) * 2.7deg), transparent 0 270deg, transparent 0),
-    conic-gradient(from 225deg, rgba(109, 126, 154, 0.48) 0 270deg, transparent 0);
+    conic-gradient(from 225deg, rgba(100, 116, 139, 0.34) 0 270deg, transparent 0);
 }
 
 body[data-app-theme="light"] .metric-gauge.metric-warn .metric-gauge-value strong {

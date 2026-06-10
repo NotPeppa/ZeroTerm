@@ -40,6 +40,9 @@ use crate::state::{
     AppState, LocalSessionHandle, PortForwardHandle, SessionCommand, SessionHandle, SftpHandle,
 };
 
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 // --------------------------------------------------------------------------
 // vault
 // --------------------------------------------------------------------------
@@ -2667,8 +2670,13 @@ $env:COMPUTERNAME
 $env:PROCESSOR_ARCHITECTURE
 [int]((Get-Date) - $os.LastBootUpTime).TotalSeconds
 $env:NUMBER_OF_PROCESSORS
+$cpu = 0.0
+try {
+  $cpuSample = Get-CimInstance Win32_PerfFormattedData_PerfOS_Processor -Filter "Name='_Total'" -ErrorAction Stop | Select-Object -First 1
+  if ($null -ne $cpuSample) { $cpu = [double]$cpuSample.PercentProcessorTime }
+} catch {}
 '0 0'
-'0 0'
+[string]10000 + ' ' + [string]([math]::Max(0, 10000 - [int]($cpu * 100)))
 [string]($os.TotalVisibleMemorySize * 1024) + ' ' + [string](($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) * 1024) + ' ' + [string]($os.TotalVirtualMemorySize * 1024) + ' ' + [string](($os.TotalVirtualMemorySize - $os.FreeVirtualMemory) * 1024)
 Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | ForEach-Object {
   if ($_.Size -gt 0) { 'D|' + $_.DeviceID + '|'+ [string]$_.Size + '|' + [string]($_.Size - $_.FreeSpace) }
@@ -2762,6 +2770,7 @@ fn parse_metrics_output(text: &str) -> Result<SystemMetricsDto, String> {
 async fn local_metrics() -> Result<SystemMetricsDto, String> {
     #[cfg(target_os = "windows")]
     let output = tokio::process::Command::new("powershell")
+        .creation_flags(CREATE_NO_WINDOW)
         .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", WINDOWS_METRICS_SCRIPT])
         .output()
         .await

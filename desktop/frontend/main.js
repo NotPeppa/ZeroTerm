@@ -2533,9 +2533,10 @@ function renderMetricsData(metrics) {
   const swap = metrics.swapTotal > 0 ? (metrics.swapUsed / metrics.swapTotal) * 100 : 0;
   const disks = Array.isArray(metrics.disks) ? metrics.disks.slice(0, 8) : [];
   const networks = Array.isArray(metrics.networks) ? metrics.networks.slice(0, 6) : [];
+  terminalMetricsBody?.classList.remove("metrics-loading");
   terminalMetricsBody.innerHTML = `
     <section class="metrics-card metrics-system-card">
-      <div class="metrics-card-head"><span>${t("metrics.system")}</span><button type="button" id="metrics-inline-refresh">${t("metrics.refresh")}</button></div>
+      <div class="metrics-card-head"><span>${t("metrics.system")}</span></div>
       <div class="metrics-kv-grid">
         <div><small>${t("metrics.host")}</small><strong>${escapeMetricText(metrics.host || "--")}</strong></div>
         <div><small>${t("metrics.arch")}</small><strong>${escapeMetricText(metrics.arch || "--")}</strong></div>
@@ -2544,7 +2545,7 @@ function renderMetricsData(metrics) {
       </div>
     </section>
     <section class="metrics-card metrics-compact-card">
-      <div class="metrics-card-head"><span><i aria-hidden="true">⚙</i>${t("metrics.cpu")}</span><em>${t("metrics.cpu.cores", { count: metrics.cpuCores || 1 })}<b aria-hidden="true">›</b></em></div>
+      <div class="metrics-card-head"><span><i aria-hidden="true">⚙</i>${t("metrics.cpu")}</span><em>${t("metrics.cpu.cores", { count: metrics.cpuCores || 1 })}</em></div>
       <div class="metric-row metric-row-gauge">${metricGaugeMarkup(cpu, metricTone(cpu))}<div><strong>${t("metrics.cpu.avg")}</strong>${metricMeterMarkup(cpu, metricTone(cpu))}</div><b>${cpu.toFixed(1)}%</b></div>
     </section>
     <section class="metrics-card metrics-compact-card">
@@ -2561,7 +2562,6 @@ function renderMetricsData(metrics) {
       ${disks.map((d) => `<div class="metric-line"><span>${escapeMetricText(d.mount)}</span><b class="${d.usage >= 90 ? "danger" : ""}">${Number(d.usage || 0).toFixed(0)}%</b>${metricMeterMarkup(d.usage, metricTone(d.usage))}<small>${formatMetricBytes(d.used)} / ${formatMetricBytes(d.total)}</small></div>`).join("")}
     </section>
   `;
-  document.getElementById("metrics-inline-refresh")?.addEventListener("click", renderMetricsPanel);
 }
 
 async function renderMetricsPanel(options = {}) {
@@ -2569,12 +2569,14 @@ async function renderMetricsPanel(options = {}) {
   const silent = Boolean(options.silent);
   const token = ++metricsRefreshToken;
   const pane = getActivePane();
+  terminalMetricsBody.classList.remove("metrics-loading");
   if (!pane) {
     terminalMetricsBody.innerHTML = `<div class="terminal-side-empty"><strong>${t("metrics.empty.title")}</strong><p>${t("metrics.empty.desc")}</p></div>`;
     return;
   }
   if (!silent || !terminalMetricsBody.querySelector(".metrics-card")) {
-    terminalMetricsBody.innerHTML = `<div class="terminal-side-empty"><strong>${t("metrics.loading")}</strong><p>${escapeMetricText(pane.host?.name || pane.host?.host || "Local")}</p></div>`;
+    terminalMetricsBody.classList.add("metrics-loading");
+    terminalMetricsBody.innerHTML = `<div class="terminal-side-empty metrics-loading-card"><strong>${t("metrics.loading")}</strong><p>${escapeMetricText(pane.host?.name || pane.host?.host || "Local")}</p></div>`;
   }
   try {
     const metrics = await invoke("collect_system_metrics", { hostId: pane.host?.id || null });
@@ -2582,6 +2584,7 @@ async function renderMetricsPanel(options = {}) {
     renderMetricsData(metrics);
   } catch (e) {
     if (token !== metricsRefreshToken || terminalActiveSidePanel !== "metrics") return;
+    terminalMetricsBody.classList.remove("metrics-loading");
     if (silent && terminalMetricsBody.querySelector(".metrics-card")) return;
     terminalMetricsBody.innerHTML = `<div class="terminal-side-empty"><strong>${t("metrics.error", { error: String(e) })}</strong><p>${escapeMetricText(pane.host?.name || pane.host?.host || "Local")}</p></div>`;
   }
@@ -4111,7 +4114,7 @@ function isExecutableCodeBlock(block, command) {
   if (!lines.length) return false;
   if (lines.some((line) => looksLikeTerminalOutput(line))) return false;
   if (["output", "terminal", "text", "log", "txt"].includes(lang)) return false;
-  if (["bash", "sh", "shell", "zsh"].includes(lang)) return true;
+  if (["bash", "sh", "shell", "zsh", "powershell", "pwsh", "ps1", "cmd", "bat", "batch"].includes(lang)) return true;
   return false;
 }
 
