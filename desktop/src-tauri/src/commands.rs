@@ -72,6 +72,7 @@ const AI_CONFIG_FILE: &str = "ai-config.json";
 const AI_SESSION_FILE: &str = "ai-sessions.json";
 const AI_KEYCHAIN_PROFILE: &str = "default";
 const AI_SESSION_MAX_ITEMS: usize = 80;
+const AI_STORE_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -97,6 +98,62 @@ pub struct SaveAiConfigInput {
     pub safe_mode: bool,
     pub auto_read: bool,
     pub show_commands: bool,
+}
+
+/// A single named AI configuration. `id` doubles as the keychain profile id,
+/// so each profile stores its own API key under `ai-api-key:{id}`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiProfile {
+    pub id: String,
+    pub name: String,
+    pub provider: String,
+    pub base_url: String,
+    pub model: String,
+    #[serde(default)]
+    pub models: Vec<String>,
+    #[serde(default)]
+    pub has_api_key: bool,
+}
+
+/// The multi-profile store persisted to `ai-config.json` (schema v2).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiConfigStore {
+    #[serde(default)]
+    pub version: u32,
+    #[serde(default)]
+    pub profiles: Vec<AiProfile>,
+    #[serde(default)]
+    pub active_profile_id: String,
+    #[serde(default = "default_true")]
+    pub safe_mode: bool,
+    #[serde(default)]
+    pub auto_read: bool,
+    #[serde(default)]
+    pub show_commands: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveAiProfileInput {
+    #[serde(default)]
+    pub id: String,
+    pub name: String,
+    pub provider: String,
+    pub base_url: String,
+    pub model: String,
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default)]
+    pub models: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetAiProfileModelInput {
+    pub id: String,
+    pub model: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -175,6 +232,8 @@ pub struct AiModelListResponse {
 pub struct AiChatStreamInput {
     pub request_id: String,
     pub messages: Vec<AiChatMessage>,
+    #[serde(default)]
+    pub profile_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -266,16 +325,76 @@ fn canceled_ai_requests() -> &'static StdMutex<HashSet<String>> {
     CANCELED_AI_REQUESTS.get_or_init(|| StdMutex::new(HashSet::new()))
 }
 
-fn default_ai_config() -> AiConfig {
-    AiConfig {
-        provider: "openai-compatible".to_string(),
-        base_url: "".to_string(),
-        model: "gpt-4.1".to_string(),
+fn default_true() -> bool {
+    true
+}
+
+fn default_ai_store() -> AiConfigStore {
+    AiConfigStore {
+        version: AI_STORE_VERSION,
+        profiles: Vec::new(),
+        active_profile_id: String::new(),
         safe_mode: true,
-        auto_read: true,
+        auto_read: false,
         show_commands: false,
-        has_api_key: false,
     }
+}
+
+fn generate_profile_id() -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("prof-{nanos:x}")
+}
+
+fn legacy_profile_name(cfg: &AiConfig) -> String {
+    if !cfg.model.trim().is_empty() {
+        cfg.model.trim().to_string()
+    } else if !cfg.provider.trim().is_empty() {
+        cfg.provider.trim().to_string()
+    } else {
+        "Default".to_string()
+    }
+}
+
+fn normalize_ai_profile(mut p: AiProfile) -> AiProfile {
+    p.id = p.id.trim().to_string();
+    p.name = p.name.trim().to_string();
+    if p.provider.trim().is_empty() {
+        p.provider = "openai-compatible".to_string();
+    }
+    p.base_url = p.base_url.trim().trim_end_matches('/').to_string();
+    if p.base_url.is_empty() && p.provider == "openai" {
+        p.base_url = "https://api.openai.com/v1".to_string();
+    }
+    p.model = p.model.trim().to_string();
+    if p.name.is_empty() {
+        p.name = if !p.model.is_empty() {
+            p.model.clone()
+        } else {
+            p.provider.clone()
+        };
+    }
+    p
+}
+
+fn normalize_ai_store(mut store: AiConfigStore) -> AiConfigStore {
+    store.version = AI_STORE_VERSION;
+    store.profiles = store
+        .profiles
+        .into_iter()
+        .map(normalize_ai_profile)
+        .filter(|p| !p.id.is_empty())
+        .collect();
+    if !store.profiles.iter().any(|p| p.id == store.active_profile_id) {
+        store.active_profile_id = store
+            .profiles
+            .first()
+            .map(|p| p.id.clone())
+            .unwrap_or_default();
+    }
+    store
 }
 
 fn ai_config_path() -> Result<PathBuf, String> {
@@ -308,24 +427,100 @@ fn normalize_ai_config(mut cfg: AiConfig) -> AiConfig {
     cfg
 }
 
-fn read_ai_config_from_disk() -> Result<AiConfig, String> {
+fn read_ai_store_from_disk() -> Result<AiConfigStore, String> {
     let path = ai_config_path()?;
     if !path.exists() {
-        return Ok(default_ai_config());
+        return Ok(default_ai_store());
     }
     let text = fs::read_to_string(&path).map_err(|e| format!("reading {}: {e}", path.display()))?;
-    let cfg: AiConfig = serde_json::from_str(&text)
-        .map_err(|e| format!("parsing {}: {e}", path.display()))?;
-    Ok(normalize_ai_config(cfg))
+    let value: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("parsing {}: {e}", path.display()))?;
+
+    // New schema (v2) is keyed by a `profiles` array.
+    if value.get("profiles").is_some() {
+        let store: AiConfigStore = serde_json::from_value(value)
+            .map_err(|e| format!("parsing {}: {e}", path.display()))?;
+        return Ok(normalize_ai_store(store));
+    }
+
+    // Legacy single-config file -> migrate to a one-profile store. The legacy
+    // API key already lives in the keychain under AI_KEYCHAIN_PROFILE
+    // ("default"), so reusing that id as the migrated profile id preserves it.
+    let legacy = normalize_ai_config(
+        serde_json::from_value::<AiConfig>(value)
+            .map_err(|e| format!("parsing {}: {e}", path.display()))?,
+    );
+    let store = normalize_ai_store(AiConfigStore {
+        version: AI_STORE_VERSION,
+        profiles: vec![AiProfile {
+            id: AI_KEYCHAIN_PROFILE.to_string(),
+            name: legacy_profile_name(&legacy),
+            provider: legacy.provider,
+            base_url: legacy.base_url,
+            model: legacy.model,
+            models: Vec::new(),
+            has_api_key: false,
+        }],
+        active_profile_id: AI_KEYCHAIN_PROFILE.to_string(),
+        safe_mode: legacy.safe_mode,
+        auto_read: legacy.auto_read,
+        show_commands: legacy.show_commands,
+    });
+    write_ai_store_to_disk(&store)?;
+    Ok(store)
 }
 
-fn write_ai_config_to_disk(cfg: &AiConfig) -> Result<(), String> {
+fn write_ai_store_to_disk(store: &AiConfigStore) -> Result<(), String> {
     let path = ai_config_path()?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("creating {}: {e}", parent.display()))?;
     }
-    let text = serde_json::to_string_pretty(cfg).map_err(|e| e.to_string())?;
+    let text = serde_json::to_string_pretty(store).map_err(|e| e.to_string())?;
     fs::write(&path, text).map_err(|e| format!("writing {}: {e}", path.display()))
+}
+
+/// Fill each profile's `has_api_key` from the keychain (never returns secrets).
+fn store_with_key_flags(mut store: AiConfigStore) -> AiConfigStore {
+    for p in store.profiles.iter_mut() {
+        p.has_api_key = zeroterm_app::keychain::get_ai_api_key(&p.id)
+            .ok()
+            .flatten()
+            .is_some();
+    }
+    store
+}
+
+async fn fetch_ai_models(base_url: &str, api_key: &str) -> Result<Vec<String>, String> {
+    let endpoint = format!("{}/models", base_url.trim_end_matches('/'));
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let response = client
+        .get(endpoint)
+        .bearer_auth(api_key)
+        .send()
+        .await
+        .map_err(|e| format!("AI model request failed: {e}"))?;
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .map_err(|e| format!("reading AI model response failed: {e}"))?;
+    if !status.is_success() {
+        return Err(format!("AI model request failed ({status}): {body}"));
+    }
+    let parsed: OpenAiModelsResponse = serde_json::from_str(&body)
+        .map_err(|e| format!("parsing AI model response failed: {e}"))?;
+    let mut models: Vec<String> = parsed
+        .data
+        .into_iter()
+        .map(|m| m.id)
+        .filter(|id| !id.trim().is_empty())
+        .collect();
+    models.sort();
+    models.dedup();
+    Ok(models)
 }
 
 fn normalize_ai_session_item(mut item: AiSessionItem) -> Option<AiSessionItem> {
@@ -535,19 +730,31 @@ pub async fn clear_background_image() -> Result<(), String> {
     Ok(())
 }
 
-fn prepare_ai_request(messages: Vec<AiChatMessage>) -> Result<(AiConfig, String, Vec<serde_json::Value>), String> {
-    let cfg = read_ai_config_from_disk()?;
-    if cfg.provider != "openai-compatible" && cfg.provider != "openai" {
+fn prepare_ai_request(
+    messages: Vec<AiChatMessage>,
+    profile_id: Option<String>,
+) -> Result<(AiProfile, String, Vec<serde_json::Value>), String> {
+    let store = read_ai_store_from_disk()?;
+    let id = profile_id
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| store.active_profile_id.clone());
+    let profile = store
+        .profiles
+        .into_iter()
+        .find(|p| p.id == id)
+        .ok_or_else(|| "No AI profile is selected. Configure one in Settings > AI.".to_string())?;
+    if profile.provider != "openai-compatible" && profile.provider != "openai" {
         return Err("This preview only supports OpenAI-compatible APIs for now.".into());
     }
-    if cfg.base_url.trim().is_empty() {
+    if profile.base_url.trim().is_empty() {
         return Err("AI Base URL is not configured. Set it in Settings > AI.".into());
     }
     if messages.is_empty() {
         return Err("message is empty".into());
     }
 
-    let api_key = zeroterm_app::keychain::get_ai_api_key(AI_KEYCHAIN_PROFILE)
+    let api_key = zeroterm_app::keychain::get_ai_api_key(&profile.id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "AI API Key is not configured.".to_string())?;
 
@@ -569,7 +776,7 @@ fn prepare_ai_request(messages: Vec<AiChatMessage>) -> Result<(AiConfig, String,
     if payload_messages.is_empty() {
         return Err("message is empty".into());
     }
-    Ok((cfg, api_key, payload_messages))
+    Ok((profile, api_key, payload_messages))
 }
 
 fn emit_ai_stream(app: &AppHandle, event: AiStreamEvent) {
@@ -617,39 +824,96 @@ pub async fn vault_status(state: State<'_, AppState>) -> Result<VaultStatus, Str
 }
 
 #[tauri::command]
-pub async fn get_ai_config() -> Result<AiConfig, String> {
-    let mut cfg = read_ai_config_from_disk()?;
-    cfg.has_api_key = zeroterm_app::keychain::get_ai_api_key(AI_KEYCHAIN_PROFILE)
-        .map_err(|e| e.to_string())?
-        .is_some();
-    Ok(cfg)
+pub async fn get_ai_config() -> Result<AiConfigStore, String> {
+    Ok(store_with_key_flags(read_ai_store_from_disk()?))
 }
 
 #[tauri::command]
-pub async fn save_ai_config(input: SaveAiConfigInput) -> Result<AiConfig, String> {
-    let mut cfg = normalize_ai_config(AiConfig {
+pub async fn save_ai_profile(input: SaveAiProfileInput) -> Result<AiConfigStore, String> {
+    let mut store = read_ai_store_from_disk()?;
+    let mut id = input.id.trim().to_string();
+    if id.is_empty() {
+        id = generate_profile_id();
+    }
+    let mut profile = normalize_ai_profile(AiProfile {
+        id,
+        name: input.name,
         provider: input.provider,
         base_url: input.base_url,
         model: input.model,
-        safe_mode: input.safe_mode,
-        auto_read: input.auto_read,
-        show_commands: input.show_commands,
+        models: input.models,
         has_api_key: false,
     });
 
     let api_key = input.api_key.trim();
     if !api_key.is_empty() {
-        zeroterm_app::keychain::save_ai_api_key(AI_KEYCHAIN_PROFILE, api_key)
-            .map_err(|e| e.to_string())?;
-        cfg.has_api_key = true;
-    } else {
-        cfg.has_api_key = zeroterm_app::keychain::get_ai_api_key(AI_KEYCHAIN_PROFILE)
-            .map_err(|e| e.to_string())?
-            .is_some();
+        zeroterm_app::keychain::save_ai_api_key(&profile.id, api_key).map_err(|e| e.to_string())?;
     }
 
-    write_ai_config_to_disk(&cfg)?;
-    Ok(cfg)
+    if let Some(existing) = store.profiles.iter_mut().find(|p| p.id == profile.id) {
+        // Preserve the cached model list when the caller didn't send one.
+        if profile.models.is_empty() {
+            profile.models = existing.models.clone();
+        }
+        *existing = profile.clone();
+    } else {
+        store.profiles.push(profile.clone());
+    }
+    if store.active_profile_id.trim().is_empty() {
+        store.active_profile_id = profile.id.clone();
+    }
+
+    let store = normalize_ai_store(store);
+    write_ai_store_to_disk(&store)?;
+    Ok(store_with_key_flags(store))
+}
+
+#[tauri::command]
+pub async fn delete_ai_profile(id: String) -> Result<AiConfigStore, String> {
+    let id = id.trim().to_string();
+    let mut store = read_ai_store_from_disk()?;
+    let before = store.profiles.len();
+    store.profiles.retain(|p| p.id != id);
+    if store.profiles.len() != before {
+        let _ = zeroterm_app::keychain::forget_ai_api_key(&id);
+    }
+    if store.active_profile_id == id {
+        store.active_profile_id = store
+            .profiles
+            .first()
+            .map(|p| p.id.clone())
+            .unwrap_or_default();
+    }
+    let store = normalize_ai_store(store);
+    write_ai_store_to_disk(&store)?;
+    Ok(store_with_key_flags(store))
+}
+
+#[tauri::command]
+pub async fn set_active_ai_profile(id: String) -> Result<AiConfigStore, String> {
+    let id = id.trim().to_string();
+    let mut store = read_ai_store_from_disk()?;
+    if store.profiles.iter().any(|p| p.id == id) {
+        store.active_profile_id = id;
+    }
+    let store = normalize_ai_store(store);
+    write_ai_store_to_disk(&store)?;
+    Ok(store_with_key_flags(store))
+}
+
+#[tauri::command]
+pub async fn set_ai_profile_model(input: SetAiProfileModelInput) -> Result<AiConfigStore, String> {
+    let id = input.id.trim().to_string();
+    let model = input.model.trim().to_string();
+    let mut store = read_ai_store_from_disk()?;
+    if let Some(p) = store.profiles.iter_mut().find(|p| p.id == id) {
+        if !model.is_empty() {
+            p.model = model;
+        }
+    }
+    let store = normalize_ai_store(store);
+    write_ai_store_to_disk(&store)?;
+    Ok(store_with_key_flags(store))
 }
 
 #[tauri::command]
@@ -734,51 +998,51 @@ pub async fn list_ai_models(input: SaveAiConfigInput) -> Result<AiModelListRespo
     if cfg.base_url.trim().is_empty() {
         return Err("AI Base URL is not configured.".into());
     }
-
-    let api_key = if input.api_key.trim().is_empty() {
-        zeroterm_app::keychain::get_ai_api_key(AI_KEYCHAIN_PROFILE)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| "AI API Key is not configured.".to_string())?
-    } else {
-        input.api_key.trim().to_string()
-    };
-
-    let endpoint = format!("{}/models", cfg.base_url.trim_end_matches('/'));
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-        .map_err(|e| e.to_string())?;
-    let response = client
-        .get(endpoint)
-        .bearer_auth(api_key)
-        .send()
-        .await
-        .map_err(|e| format!("AI model request failed: {e}"))?;
-    let status = response.status();
-    let body = response
-        .text()
-        .await
-        .map_err(|e| format!("reading AI model response failed: {e}"))?;
-    if !status.is_success() {
-        return Err(format!("AI model request failed ({status}): {body}"));
+    let api_key = input.api_key.trim();
+    if api_key.is_empty() {
+        return Err("AI API Key is not configured.".into());
     }
-    let parsed: OpenAiModelsResponse = serde_json::from_str(&body)
-        .map_err(|e| format!("parsing AI model response failed: {e}"))?;
-    let mut models: Vec<String> = parsed
-        .data
-        .into_iter()
-        .map(|m| m.id)
-        .filter(|id| !id.trim().is_empty())
-        .collect();
-    models.sort();
-    models.dedup();
+    let models = fetch_ai_models(&cfg.base_url, api_key).await?;
+    Ok(AiModelListResponse { models })
+}
+
+/// List models for an already-saved profile, using its keychain API key, and
+/// cache the result into the profile (used by the header pill's "refresh").
+#[tauri::command]
+pub async fn list_ai_models_for_profile(id: String) -> Result<AiModelListResponse, String> {
+    let id = id.trim().to_string();
+    let mut store = read_ai_store_from_disk()?;
+    let profile = store
+        .profiles
+        .iter()
+        .find(|p| p.id == id)
+        .cloned()
+        .ok_or_else(|| "AI profile not found.".to_string())?;
+    if profile.provider != "openai-compatible" && profile.provider != "openai" {
+        return Err("This preview only supports OpenAI-compatible APIs for now.".into());
+    }
+    if profile.base_url.trim().is_empty() {
+        return Err("AI Base URL is not configured.".into());
+    }
+    let api_key = zeroterm_app::keychain::get_ai_api_key(&profile.id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "AI API Key is not configured.".to_string())?;
+    let models = fetch_ai_models(&profile.base_url, &api_key).await?;
+    if let Some(p) = store.profiles.iter_mut().find(|p| p.id == id) {
+        p.models = models.clone();
+    }
+    let store = normalize_ai_store(store);
+    write_ai_store_to_disk(&store)?;
     Ok(AiModelListResponse { models })
 }
 
 #[tauri::command]
-pub async fn ai_chat(messages: Vec<AiChatMessage>) -> Result<AiChatResponse, String> {
-    let (cfg, api_key, payload_messages) = prepare_ai_request(messages)?;
-    let endpoint = format!("{}/chat/completions", cfg.base_url.trim_end_matches('/'));
+pub async fn ai_chat(
+    messages: Vec<AiChatMessage>,
+    profile_id: Option<String>,
+) -> Result<AiChatResponse, String> {
+    let (profile, api_key, payload_messages) = prepare_ai_request(messages, profile_id)?;
+    let endpoint = format!("{}/chat/completions", profile.base_url.trim_end_matches('/'));
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(90))
         .build()
@@ -787,7 +1051,7 @@ pub async fn ai_chat(messages: Vec<AiChatMessage>) -> Result<AiChatResponse, Str
         .post(endpoint)
         .bearer_auth(api_key)
         .json(&json!({
-            "model": cfg.model,
+            "model": profile.model,
             "messages": payload_messages,
             "temperature": 0.2,
         }))
@@ -827,14 +1091,14 @@ pub async fn ai_chat_stream(app: AppHandle, input: AiChatStreamInput) -> Result<
     }
     take_ai_request_canceled(&request_id);
 
-    let (cfg, api_key, payload_messages) = match prepare_ai_request(input.messages) {
+    let (profile, api_key, payload_messages) = match prepare_ai_request(input.messages, input.profile_id) {
         Ok(v) => v,
         Err(e) => {
             emit_ai_stream_error(&app, &request_id, e.clone());
             return Err(e);
         }
     };
-    let endpoint = format!("{}/chat/completions", cfg.base_url.trim_end_matches('/'));
+    let endpoint = format!("{}/chat/completions", profile.base_url.trim_end_matches('/'));
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(120))
         .build()
@@ -843,7 +1107,7 @@ pub async fn ai_chat_stream(app: AppHandle, input: AiChatStreamInput) -> Result<
         .post(endpoint)
         .bearer_auth(api_key)
         .json(&json!({
-            "model": cfg.model,
+            "model": profile.model,
             "messages": payload_messages,
             "temperature": 0.2,
             "stream": true,
@@ -3502,7 +3766,12 @@ pub async fn create_local_terminal_session(
         .map_err(|e| format!("open pty failed: {e}"))?;
 
     #[cfg(target_os = "windows")]
-    let cmd = CommandBuilder::new("cmd.exe");
+    let cmd = {
+        let mut cmd = CommandBuilder::new("cmd.exe");
+        cmd.arg("/K");
+        cmd.arg("chcp 65001 > nul");
+        cmd
+    };
     #[cfg(not(target_os = "windows"))]
     let mut cmd = {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());

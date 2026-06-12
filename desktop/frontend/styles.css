@@ -2490,6 +2490,57 @@ body.resizing-ai-panel .ai-panel-splitter {
   text-align: center;
 }
 
+.ai-model-menu-section {
+  padding: 8px 8px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(156, 170, 208, 0.7);
+}
+
+.ai-model-menu-section:first-child {
+  padding-top: 4px;
+}
+
+.ai-profile-menu-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  white-space: normal;
+}
+
+.ai-profile-menu-item small {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(156, 170, 208, 0.72);
+}
+
+.ai-profile-menu-item.active small {
+  color: rgba(180, 214, 255, 0.9);
+}
+
+.ai-model-menu-manage {
+  width: 100%;
+  min-height: 30px;
+  margin-top: 4px;
+  padding: 6px 8px;
+  border: 0;
+  border-top: 1px solid rgba(104, 168, 255, 0.12);
+  background: transparent;
+  color: #9dd3ff;
+  font-size: 12px;
+  font-weight: 650;
+  text-align: center;
+}
+
+.ai-model-menu-manage:hover {
+  background: rgba(104, 168, 255, 0.14);
+  color: #f4f8ff;
+}
+
 .ai-session-actions {
   justify-self: end;
   flex: 0 0 auto;
@@ -3931,6 +3982,18 @@ body.has-app-bg[data-app-theme="light"] .sftp-pane {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
 }
 
+body.has-app-bg[data-app-theme="light"] .settings-section,
+body.has-app-bg[data-app-theme="light"] .settings-about-card,
+body.has-app-bg[data-app-theme="light"] .settings-about-update-card,
+body.has-app-bg[data-app-theme="light"] .dialog,
+body.has-app-bg[data-app-theme="light"] .window-mock {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72) 0%, rgba(248, 250, 252, 0.62) 100%) !important;
+  border-color: rgba(203, 213, 225, 0.34) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.42) !important;
+}
+
 body.has-app-bg[data-app-theme="light"] .sftp-pane-topbar {
   background: rgba(255, 255, 255, 0.10) !important;
   border-bottom-color: rgba(15, 23, 42, 0.06) !important;
@@ -4217,6 +4280,9 @@ body[data-app-theme="light"] .pane-reconnect-btn,
 body[data-app-theme="light"] .files-context-menu button,
 body[data-app-theme="light"] .hosts-context-menu button,
 body[data-app-theme="light"] .settings-nav-item {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
   color: var(--text) !important;
 }
 
@@ -4259,6 +4325,17 @@ body[data-app-theme="light"] .settings-nav-item.active {
   border-color: rgba(37, 99, 235, 0.25);
   color: var(--accent) !important;
   box-shadow: 0 4px 15px rgba(37, 99, 235, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+body.has-app-bg[data-app-theme="light"] .settings-nav-item:hover {
+  background: rgba(255, 255, 255, 0.58) !important;
+  border-color: rgba(37, 99, 235, 0.18) !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .settings-nav-item.active {
+  background: rgba(255, 255, 255, 0.52) !important;
+  border-color: rgba(37, 99, 235, 0.28) !important;
+  box-shadow: 0 8px 22px rgba(37, 99, 235, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
 body[data-app-theme="light"] .settings-nav-item .zt-icon {
@@ -6942,6 +7019,236 @@ body[data-app-theme="light"] .permissions-col-title {
   margin-bottom: 6px;
 }
 
+.settings-ai-add-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none !important;
+  background: transparent !important;
+  appearance: none;
+  -webkit-appearance: none;
+  color: rgba(214, 226, 255, 0.7);
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.12s ease;
+}
+
+.settings-ai-add-btn:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #f4f8ff;
+}
+
+.settings-ai-add-btn .zt-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.settings-ai-profiles {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-ai-empty {
+  margin: 4px 0 0;
+}
+
+.settings-ai-profile {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.settings-ai-profile.active {
+  border-color: rgba(104, 168, 255, 0.4);
+  background: rgba(104, 168, 255, 0.1);
+}
+
+.settings-ai-profile-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.settings-ai-profile-info strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.settings-ai-profile-info small {
+  font-size: 11px;
+  color: rgba(176, 190, 220, 0.75);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-ai-profile-badge {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(72, 220, 165, 0.28);
+  background: rgba(72, 220, 165, 0.12);
+  color: #9df0cf;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.settings-ai-profile-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+}
+
+.settings-ai-profile-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  border-radius: 8px;
+  color: rgba(214, 226, 255, 0.62);
+  cursor: pointer;
+}
+
+.settings-ai-profile-actions button.danger {
+  background: transparent !important;
+  background-color: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.settings-ai-profile-actions button:hover {
+  color: #f4f8ff;
+}
+
+.settings-ai-profile-actions button.danger:hover {
+  background: rgba(37, 99, 235, 0.08) !important;
+  background-color: rgba(37, 99, 235, 0.08) !important;
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.08) !important;
+}
+
+.settings-ai-profile-actions button:not(.danger):hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.settings-ai-profile-actions button.danger:hover {
+  color: #ff8a8a;
+}
+
+.settings-ai-profile-actions button .zt-icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* Light theme: the profile list lives on the (light) settings page, so it needs
+   readable dark text instead of the dark-theme light text used above. */
+body[data-app-theme="light"] .settings-ai-profile {
+  border-color: rgba(0, 0, 0, 0.1);
+  background: rgba(0, 0, 0, 0.02);
+}
+
+body[data-app-theme="light"] .settings-ai-profile.active {
+  border-color: rgba(37, 99, 235, 0.5);
+  background: rgba(37, 99, 235, 0.12);
+}
+
+body[data-app-theme="light"] .settings-ai-profile-badge {
+  border-color: rgba(22, 163, 74, 0.24);
+  background: rgba(22, 163, 74, 0.14);
+  color: #166534;
+}
+
+body[data-app-theme="light"] .settings-ai-profile-info strong {
+  color: #0f172a;
+}
+
+body[data-app-theme="light"] .settings-ai-profile-info small {
+  color: #475569;
+}
+
+body[data-app-theme="light"] .settings-ai-profile-actions button {
+  color: #475569;
+}
+
+body[data-app-theme="light"] .settings-ai-profile-actions button:hover {
+  color: #1e3a8a;
+}
+
+body[data-app-theme="light"] .settings-ai-profile-actions button:not(.danger):hover {
+  background: rgba(37, 99, 235, 0.05) !important;
+  background-color: rgba(37, 99, 235, 0.05) !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .settings-ai-profile-actions button:not(.danger):hover {
+  background: rgba(37, 99, 235, 0.1) !important;
+  background-color: rgba(37, 99, 235, 0.1) !important;
+}
+
+body[data-app-theme="light"] .settings-ai-profile-actions button.danger {
+  color: #ef4444;
+}
+
+body[data-app-theme="light"] .settings-ai-profile-actions button.danger:hover {
+  background: rgba(37, 99, 235, 0.05) !important;
+  background-color: rgba(37, 99, 235, 0.05) !important;
+  color: #dc2626;
+}
+
+body[data-app-theme="light"] .settings-ai-add-btn {
+  color: rgba(15, 23, 42, 0.6);
+}
+
+body[data-app-theme="light"] .settings-ai-add-btn:hover {
+  background: rgba(37, 99, 235, 0.05) !important;
+  color: #1e3a8a;
+}
+
+body.has-app-bg[data-app-theme="light"] .settings-ai-add-btn {
+  color: rgba(37, 99, 235, 0.78) !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .settings-ai-add-btn:hover {
+  background: rgba(37, 99, 235, 0.1) !important;
+  color: #1d4ed8 !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .settings-ai-profile-actions button {
+  color: rgba(51, 65, 85, 0.85) !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .settings-ai-profile-actions button:hover {
+  color: #1d4ed8 !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .settings-ai-profile-actions button.danger {
+  color: #ef4444 !important;
+}
+
+body.has-app-bg[data-app-theme="light"] .settings-ai-profile-actions button.danger:hover {
+  background: rgba(37, 99, 235, 0.1) !important;
+  background-color: rgba(37, 99, 235, 0.1) !important;
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.08) !important;
+  color: #dc2626 !important;
+}
+
 .ai-settings-badge {
   flex: 0 0 auto;
   display: inline-flex;
@@ -7610,12 +7917,6 @@ body[data-app-theme="light"] .settings-sync-method-row .zt-select-trigger:hover 
   padding: 12px;
 }
 
-.terminal-theme-panel-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 10px;
-}
-
 .terminal-theme-list-all {
   max-height: none;
   overflow: visible;
@@ -7681,35 +7982,11 @@ body[data-app-theme="light"] .settings-sync-method-row .zt-select-trigger:hover 
   justify-content: space-between;
 }
 
-.terminal-theme-add {
-  border: none;
-  background: transparent;
-  color: #dbeafe;
-  font-size: 13px;
-  font-weight: 700;
-  padding: 3px 8px;
-  border-radius: 999px;
-  cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease;
-}
-
-.terminal-theme-add:hover {
-  background: rgba(219, 234, 254, 0.14) !important;
-  color: #ffffff;
-}
-
-body[data-app-theme="light"] .terminal-theme-add {
-  color: #1d4ed8;
-}
-
-body[data-app-theme="light"] .terminal-theme-add:hover {
-  background: rgba(37, 99, 235, 0.1) !important;
-  color: #1d4ed8;
-}
-
-body.has-app-bg[data-app-theme="light"] .terminal-theme-add:hover {
-  background: rgba(37, 99, 235, 0.14) !important;
-  color: #1e40af;
+.terminal-side-add-btn#terminal-theme-add-light,
+.terminal-side-add-btn#terminal-theme-add-dark {
+  font-size: 22px;
+  line-height: 1;
+  font-weight: 400;
 }
 
 .terminal-theme-list {
@@ -9657,6 +9934,23 @@ body[data-app-theme="light"] .settings-sync-actions button.danger:hover {
   border-color: #b91c1c !important;
   box-shadow: 0 6px 16px rgba(220, 38, 38, 0.35) !important;
   color: #ffffff !important;
+}
+
+body[data-app-theme="light"] .settings-ai-profile-actions button.danger,
+body.has-app-bg[data-app-theme="light"] .settings-ai-profile-actions button.danger {
+  background: transparent !important;
+  background-color: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+
+body[data-app-theme="light"] .settings-ai-profile-actions button.danger:hover,
+body.has-app-bg[data-app-theme="light"] .settings-ai-profile-actions button.danger:hover {
+  background: rgba(37, 99, 235, 0.05) !important;
+  background-color: rgba(37, 99, 235, 0.05) !important;
+  border: 0 !important;
+  box-shadow: none !important;
 }
 
 body[data-app-theme="light"] .port-forward-icon-action.is-start,

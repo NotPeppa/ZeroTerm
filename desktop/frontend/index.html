@@ -522,12 +522,10 @@
                                 <span id="terminal-theme-panel-subtitle">实时预览终端主题</span>
                               </div>
                             </div>
+                            <button id="terminal-theme-add-light" type="button" class="terminal-side-add-btn" aria-label="新建主题" title="新建主题">+</button>
+                            <button id="terminal-theme-add-dark" type="button" class="terminal-side-add-btn" aria-label="新建主题" title="新建主题" hidden>+</button>
                           </header>
                           <div class="terminal-side-body terminal-theme-side-body">
-                            <div class="terminal-theme-panel-actions">
-                              <button id="terminal-theme-add-light" type="button" class="terminal-theme-add">+ 新建</button>
-                              <button id="terminal-theme-add-dark" type="button" class="terminal-theme-add" hidden>+ 新建</button>
-                            </div>
                             <div id="terminal-theme-list-light" class="terminal-theme-list terminal-theme-list-all"></div>
                             <div id="terminal-theme-list-dark" class="terminal-theme-list" hidden></div>
                           </div>
@@ -717,49 +715,13 @@ $ npm run build && npm run start</pre>
                               <div class="ai-settings-head">
                                 <div>
                                   <h4 id="settings-ai-provider-title">AI 服务</h4>
-                                  <p id="settings-ai-provider-desc" class="muted tiny">配置用于终端助手的模型服务。支持 OpenAI 兼容接口，密钥后续会保存到系统钥匙串。</p>
+                                  <p id="settings-ai-provider-desc" class="muted tiny">配置用于终端助手的模型服务。可保存多个配置并随时切换；密钥保存到系统钥匙串。</p>
                                 </div>
                               </div>
 
-                              <div class="settings-grid-2 ai-settings-grid">
-                                <label class="settings-field">
-                                  <span id="settings-ai-provider-label">服务商</span>
-                                  <select id="settings-ai-provider">
-                                    <option value="openai-compatible">OpenAI Compatible</option>
-                                    <option value="openai">OpenAI</option>
-                                    <option value="anthropic">Anthropic</option>
-                                    <option value="gemini">Gemini</option>
-                                    <option value="ollama">Ollama</option>
-                                  </select>
-                                </label>
-                                <label class="settings-field">
-                                  <span id="settings-ai-model-label">模型</span>
-                                  <div class="ai-model-picker">
-                                    <select id="settings-ai-model">
-                                      <option value="">手动填写或刷新模型列表</option>
-                                    </select>
-                                    <button id="settings-ai-refresh-models" type="button">刷新</button>
-                                  </div>
-                                </label>
-                                <label class="settings-field settings-grid-span-2" id="settings-ai-model-custom-row">
-                                  <span id="settings-ai-model-custom-label">自定义模型</span>
-                                  <input id="settings-ai-model-custom" type="text" placeholder="例如：gpt-4.1 或 qwen2.5-coder" autocomplete="off" />
-                                </label>
-                                <label class="settings-field settings-grid-span-2">
-                                  <span id="settings-ai-base-url-label">接口地址</span>
-                                  <input id="settings-ai-base-url" type="text" placeholder="例如：https://api.example.com/v1" autocomplete="off" />
-                                </label>
-                                <label class="settings-field settings-grid-span-2">
-                                  <span id="settings-ai-api-key-label">API Key</span>
-                                  <input id="settings-ai-api-key" type="password" placeholder="输入后将保存到系统钥匙串（待接入）" autocomplete="off" />
-                                </label>
-                              </div>
+                              <div id="settings-ai-profiles" class="settings-ai-profiles"></div>
+                              <p id="settings-ai-empty" class="muted tiny settings-ai-empty" hidden>还没有任何 AI 配置，点击「新建配置」添加一个。</p>
                             </section>
-
-                            <div class="settings-actions-row">
-                              <p id="settings-ai-status" class="muted tiny">AI 配置尚未保存。</p>
-                              <button id="settings-ai-save" type="button" class="primary">保存 AI 配置</button>
-                            </div>
                           </section>
 
                           <section id="settings-sync-panel" class="settings-panel" hidden>
@@ -846,6 +808,12 @@ $ npm run build && npm run start</pre>
                                     <input id="settings-sync-s3-token" type="password" placeholder="STS 临时凭据(可选)" autocomplete="off" />
                                   </div>
                                 </div>
+                                <button id="settings-ai-add" type="button" class="settings-ai-add-btn" title="新建配置" aria-label="新建配置">
+                                  <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M12 5v14"></path>
+                                    <path d="M5 12h14"></path>
+                                  </svg>
+                                </button>
                               </div>
 
                               <p id="settings-sync-tip" class="muted tiny">Local Folder mode requires iCloud/Dropbox/Syncthing to sync across devices.</p>
@@ -1457,6 +1425,54 @@ drwxr-xr-x 1 root  data</pre>
               <button id="snippet-edit-save" type="submit" class="primary">Save</button>
             </div>
           </form>
+        </div>
+      </div>
+
+      <div id="ai-config-overlay" class="overlay" hidden>
+        <div class="dialog wide ai-config-dialog" role="dialog" aria-modal="true" aria-labelledby="ai-config-title">
+          <h3 id="ai-config-title">新建配置</h3>
+          <div class="settings-grid-2 ai-settings-grid">
+            <label class="settings-field settings-grid-span-2">
+              <span id="settings-ai-name-label">名称</span>
+              <input id="settings-ai-name" type="text" placeholder="例如：OpenAI 工作号 / 本地 Ollama" autocomplete="off" />
+            </label>
+            <label class="settings-field">
+              <span id="settings-ai-provider-label">服务商</span>
+              <select id="settings-ai-provider">
+                <option value="openai-compatible">OpenAI Compatible</option>
+                <option value="openai">OpenAI</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="gemini">Gemini</option>
+                <option value="ollama">Ollama</option>
+              </select>
+            </label>
+            <label class="settings-field">
+              <span id="settings-ai-model-label">模型</span>
+              <div class="ai-model-picker">
+                <select id="settings-ai-model">
+                  <option value="">手动填写或刷新模型列表</option>
+                </select>
+                <button id="settings-ai-refresh-models" type="button">刷新</button>
+              </div>
+            </label>
+            <label class="settings-field settings-grid-span-2" id="settings-ai-model-custom-row">
+              <span id="settings-ai-model-custom-label">自定义模型</span>
+              <input id="settings-ai-model-custom" type="text" placeholder="例如：gpt-4.1 或 qwen2.5-coder" autocomplete="off" />
+            </label>
+            <label class="settings-field settings-grid-span-2">
+              <span id="settings-ai-base-url-label">接口地址</span>
+              <input id="settings-ai-base-url" type="text" placeholder="例如：https://api.example.com/v1" autocomplete="off" />
+            </label>
+            <label class="settings-field settings-grid-span-2">
+              <span id="settings-ai-api-key-label">API Key</span>
+              <input id="settings-ai-api-key" type="password" placeholder="留空则沿用已保存的密钥" autocomplete="off" />
+            </label>
+          </div>
+          <p id="settings-ai-status" class="muted tiny">AI 配置尚未保存。</p>
+          <div class="dialog-actions">
+            <button id="settings-ai-cancel" type="button">取消</button>
+            <button id="settings-ai-save" type="button" class="primary">保存配置</button>
+          </div>
         </div>
       </div>
     </main>

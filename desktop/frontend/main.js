@@ -652,6 +652,10 @@ const I18N = {
     "ai.model.pill_title": "Current AI model",
     "ai.model.switch_title": "Switch AI model",
     "ai.model.empty": "Refresh models in Settings first",
+    "ai.model.section": "Models",
+    "ai.profile.section": "Configs",
+    "ai.profile.empty": "No configs yet — add one in Settings",
+    "ai.profile.manage": "Manage configs…",
     "ai.hero.kicker": "Natural language operation",
     "ai.hero.title": "Tell the AI your goal — no commands needed.",
     "ai.hero.desc": "The AI inspects the server, lays out a plan, then asks before acting. Commands and logs are folded by default; expand them when you want detail.",
@@ -891,7 +895,7 @@ const I18N = {
     "settings.ai.title": "AI Assistant",
     "settings.ai.desc": "Configure the model service and what the assistant is allowed to do.",
     "settings.ai.provider.title": "AI Service",
-    "settings.ai.provider.desc": "Configure the model service for the terminal assistant. OpenAI-compatible APIs are supported; keys will be stored in the OS keychain after backend integration.",
+    "settings.ai.provider.desc": "Configure model services for the terminal assistant. Save multiple configs and switch anytime; keys are stored in the OS keychain.",
     "settings.ai.provider.label": "Provider",
     "settings.ai.provider.openai_compatible": "OpenAI Compatible",
     "settings.ai.provider.openai": "OpenAI",
@@ -905,15 +909,28 @@ const I18N = {
     "settings.ai.base_url.label": "Base URL",
     "settings.ai.base_url.placeholder": "e.g. https://api.example.com/v1",
     "settings.ai.api_key.label": "API Key",
-    "settings.ai.api_key.placeholder": "Will be stored in OS keychain after integration",
+    "settings.ai.api_key.placeholder": "Leave blank to keep the saved key",
     "settings.ai.status.unsaved": "AI config has not been saved yet.",
     "settings.ai.status.saved": "AI config saved locally.",
     "settings.ai.status.ready": "AI config is ready.",
     "settings.ai.status.no_key": "AI config loaded. Add an API Key before chatting.",
-    "settings.ai.button.save": "Save AI Config",
+    "settings.ai.button.save": "Save config",
     "settings.ai.button.busy.refresh": "Refreshing…",
     "settings.ai.status.models_fetched": "Fetched {count} model(s).",
     "settings.ai.toast.models_refreshed": "Model list refreshed.",
+    "settings.ai.name.label": "Name",
+    "settings.ai.name.placeholder": "e.g. OpenAI work / local Ollama",
+    "settings.ai.add": "New config",
+    "settings.ai.cancel": "Cancel",
+    "settings.ai.empty": "No AI configs yet. Click \"New config\" to add one.",
+    "settings.ai.profile.active": "Active",
+    "settings.ai.profile.no_key": "no key",
+    "settings.ai.profile.set_active": "Switch",
+    "settings.ai.profile.edit": "Edit",
+    "settings.ai.profile.delete": "Delete",
+    "settings.ai.profile.confirm_delete": "Delete config \"{name}\"? Its saved API key will be removed.",
+    "settings.ai.profile.new": "New config",
+    "settings.ai.profile.edit_title": "Edit config",
     "settings.language.label": "Language",
     "settings.language.hint": "Changes apply immediately and are saved locally.",
     "settings.version.label": "Version",
@@ -1398,6 +1415,10 @@ const I18N = {
     "ai.model.pill_title": "当前 AI 模型",
     "ai.model.switch_title": "切换 AI 模型",
     "ai.model.empty": "请先在设置里刷新模型列表",
+    "ai.model.section": "模型",
+    "ai.profile.section": "配置",
+    "ai.profile.empty": "还没有配置，去设置里添加",
+    "ai.profile.manage": "管理配置…",
     "ai.hero.kicker": "自然语言操作",
     "ai.hero.title": "告诉 AI 你的目标，不需要会命令。",
     "ai.hero.desc": "AI 会理解当前服务器环境，先说明计划，确认后再操作。命令和日志默认折叠，需要时可以展开查看。",
@@ -1637,7 +1658,7 @@ const I18N = {
     "settings.ai.title": "AI 助手",
     "settings.ai.desc": "配置模型服务，以及 AI 可以执行哪些操作。",
     "settings.ai.provider.title": "AI 服务",
-    "settings.ai.provider.desc": "配置终端助手使用的模型服务。支持 OpenAI 兼容接口，密钥后续会保存到系统钥匙串。",
+    "settings.ai.provider.desc": "配置终端助手使用的模型服务。可保存多个配置并随时切换；密钥保存到系统钥匙串。",
     "settings.ai.provider.label": "服务商",
     "settings.ai.provider.openai_compatible": "OpenAI 兼容接口",
     "settings.ai.provider.openai": "OpenAI",
@@ -1651,15 +1672,28 @@ const I18N = {
     "settings.ai.base_url.label": "接口地址",
     "settings.ai.base_url.placeholder": "例如：https://api.example.com/v1",
     "settings.ai.api_key.label": "API Key",
-    "settings.ai.api_key.placeholder": "接入后将保存到系统钥匙串",
+    "settings.ai.api_key.placeholder": "留空则沿用已保存的密钥",
     "settings.ai.status.unsaved": "AI 配置尚未保存。",
     "settings.ai.status.saved": "AI 配置已保存到本地。",
     "settings.ai.status.ready": "AI 配置已就绪。",
     "settings.ai.status.no_key": "AI 配置已加载，请先填写 API Key 再开始聊天。",
-    "settings.ai.button.save": "保存 AI 配置",
+    "settings.ai.button.save": "保存配置",
     "settings.ai.button.busy.refresh": "刷新中…",
     "settings.ai.status.models_fetched": "已获取 {count} 个模型。",
     "settings.ai.toast.models_refreshed": "模型列表已刷新。",
+    "settings.ai.name.label": "名称",
+    "settings.ai.name.placeholder": "例如：OpenAI 工作号 / 本地 Ollama",
+    "settings.ai.add": "新建配置",
+    "settings.ai.cancel": "取消",
+    "settings.ai.empty": "还没有任何 AI 配置，点击「新建配置」添加一个。",
+    "settings.ai.profile.active": "当前",
+    "settings.ai.profile.no_key": "未设密钥",
+    "settings.ai.profile.set_active": "切换",
+    "settings.ai.profile.edit": "编辑",
+    "settings.ai.profile.delete": "删除",
+    "settings.ai.profile.confirm_delete": "删除配置「{name}」？其保存的密钥也会被一并清除。",
+    "settings.ai.profile.new": "新建配置",
+    "settings.ai.profile.edit_title": "编辑配置",
     "settings.language.label": "语言",
     "settings.language.hint": "修改立即生效，并会保存在本地。",
     "settings.version.label": "版本",
@@ -2221,6 +2255,13 @@ const settingsAiBaseUrl = document.getElementById("settings-ai-base-url");
 const settingsAiApiKey = document.getElementById("settings-ai-api-key");
 const settingsAiSave = document.getElementById("settings-ai-save");
 const settingsAiStatus = document.getElementById("settings-ai-status");
+const settingsAiAdd = document.getElementById("settings-ai-add");
+const settingsAiProfiles = document.getElementById("settings-ai-profiles");
+const settingsAiEmpty = document.getElementById("settings-ai-empty");
+const aiConfigOverlay = document.getElementById("ai-config-overlay");
+const aiConfigTitle = document.getElementById("ai-config-title");
+const settingsAiName = document.getElementById("settings-ai-name");
+const settingsAiCancel = document.getElementById("settings-ai-cancel");
 const settingsSyncRefresh = document.getElementById("settings-sync-refresh");
 const settingsSyncSave = document.getElementById("settings-sync-save");
 const settingsSyncStatus = document.getElementById("settings-sync-status");
@@ -2315,6 +2356,10 @@ let currentAiModelLabel = "";
 /// whenever either is missing, instead of showing the default `gpt-4.1`
 /// stub from `default_ai_config()`.
 let aiConfigured = false;
+// Multi-profile AI config store mirrored from the backend (`get_ai_config`).
+let aiStore = { version: 2, profiles: [], activeProfileId: "" };
+// null = editor closed; "" = adding a new profile; "<id>" = editing existing.
+let aiEditingProfileId = null;
 let pendingAiCommandCounter = 0;
 const aiMultiCommandState = new WeakMap();
 const aiMessageByNode = new WeakMap();
@@ -2887,32 +2932,92 @@ function getAiModelValue() {
 
 function syncAiModelPill(model) {
   if (!aiModelPill) return;
-  const value = String(model || getAiModelValue() || currentAiModelLabel || "").trim();
+  const active = getActiveAiProfile();
+  const value = String(model || (active ? active.model : "") || currentAiModelLabel || "").trim();
   if (value) currentAiModelLabel = value;
-  // Only show the model name when AI is fully configured (model + API key).
-  // Otherwise show the "未配置 / Not configured" label so the header
-  // doesn't claim a model is in use when nothing actually works.
+  // Only show the model name when the active profile is fully usable (key + model).
   const label = aiConfigured && value ? value : t("ai.model.unconfigured");
   aiModelPill.replaceChildren();
   const dot = document.createElement("span");
   dot.setAttribute("aria-hidden", "true");
   aiModelPill.append(dot, document.createTextNode(label));
-  aiModelPill.title = aiConfigured && value
-    ? `${t("ai.model.current", { label: value })} · ${t("ai.model.switch_title")}`
+  aiModelPill.title = aiConfigured && active
+    ? `${active.name || active.provider} · ${value} · ${t("ai.model.switch_title")}`
     : t("ai.model.unconfigured");
   aiModelPill.classList.toggle("ai-pill-unconfigured", !aiConfigured || !value);
 }
 
-function getAiModelMenuItems() {
-  const current = String(getAiModelValue() || currentAiModelLabel || "").trim();
-  const models = settingsAiModel
-    ? Array.from(settingsAiModel.options).map((option) => String(option.value || "").trim()).filter(Boolean)
-    : [];
-  const unique = [];
-  for (const model of [current, ...models]) {
-    if (model && !unique.includes(model)) unique.push(model);
+function getActiveAiProfile() {
+  return aiStore.profiles.find((p) => p.id === aiStore.activeProfileId) || null;
+}
+
+// Mirror the backend store into local state + refresh the pill and the
+// settings list. Called after every command that returns the store.
+function applyAiStore(store) {
+  aiStore = store && Array.isArray(store.profiles)
+    ? store
+    : { version: 2, profiles: [], activeProfileId: "" };
+  const active = getActiveAiProfile();
+  aiConfigured = Boolean(active && active.hasApiKey && String(active.model || "").trim());
+  currentAiModelLabel = active ? String(active.model || "") : "";
+  syncAiModelPill(active ? active.model : "");
+  renderAiProfileList();
+}
+
+function renderAiProfileList() {
+  if (!settingsAiProfiles) return;
+  settingsAiProfiles.replaceChildren();
+  const profiles = Array.isArray(aiStore.profiles) ? aiStore.profiles : [];
+  if (settingsAiEmpty) settingsAiEmpty.hidden = profiles.length > 0;
+  for (const p of profiles) {
+    const isActive = p.id === aiStore.activeProfileId;
+    const row = document.createElement("div");
+    row.className = "settings-ai-profile" + (isActive ? " active" : "");
+
+    const info = document.createElement("div");
+    info.className = "settings-ai-profile-info";
+    const name = document.createElement("strong");
+    name.textContent = p.name || p.provider || p.id;
+    if (isActive) {
+      const badge = document.createElement("span");
+      badge.className = "settings-ai-profile-badge";
+      badge.textContent = t("settings.ai.profile.active");
+      name.appendChild(badge);
+    }
+    const meta = document.createElement("small");
+    const bits = [p.provider, p.model].filter(Boolean);
+    meta.textContent = bits.join(" · ") + (p.hasApiKey ? "" : ` · ${t("settings.ai.profile.no_key")}`);
+    info.append(name, meta);
+
+    const actions = document.createElement("div");
+    actions.className = "settings-ai-profile-actions";
+    if (!isActive) {
+      const useBtn = document.createElement("button");
+      useBtn.type = "button";
+      useBtn.title = t("settings.ai.profile.set_active");
+      useBtn.setAttribute("aria-label", useBtn.title);
+      useBtn.innerHTML = svgIcon('<path d="M19 7H6.8"></path><path d="m14.5 3 4 4-4 4"></path><path d="M5 17h12.2"></path><path d="m9.5 21-4-4 4-4"></path>');
+      useBtn.addEventListener("click", () => setActiveAiProfileById(p.id));
+      actions.appendChild(useBtn);
+    }
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.title = t("settings.ai.profile.edit");
+    editBtn.setAttribute("aria-label", editBtn.title);
+    editBtn.innerHTML = svgIcon('<path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path>');
+    editBtn.addEventListener("click", () => editAiProfile(p.id));
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "danger";
+    delBtn.title = t("settings.ai.profile.delete");
+    delBtn.setAttribute("aria-label", delBtn.title);
+    delBtn.innerHTML = svgIcon('<path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v5"></path><path d="M14 11v5"></path>');
+    delBtn.addEventListener("click", () => deleteAiProfileById(p.id));
+    actions.append(editBtn, delBtn);
+
+    row.append(info, actions);
+    settingsAiProfiles.appendChild(row);
   }
-  return unique;
 }
 
 function setAiModelMenuOpen(open) {
@@ -2922,84 +3027,206 @@ function setAiModelMenuOpen(open) {
   if (open) renderAiModelMenu();
 }
 
-function setSettingsAiModelValue(model) {
-  const value = String(model || "").trim();
-  if (!value || !settingsAiModel) return;
-  const hasOption = Array.from(settingsAiModel.options).some((option) => option.value === value);
-  settingsAiModel.value = hasOption ? value : "";
-  if (settingsAiModelCustom) settingsAiModelCustom.value = hasOption ? "" : value;
-  syncCustomSelect("settings-ai-model");
-  syncAiModelPill(value);
+async function setActiveAiProfileById(id) {
+  try {
+    const store = await invoke("set_active_ai_profile", { id });
+    applyAiStore(store);
+    showToast(t("settings.ai.status.saved"), "success", 1500);
+  } catch (e) {
+    showToast(String(e), "error", 4200);
+  }
 }
 
-async function selectAiModelFromPill(model) {
-  const value = String(model || "").trim();
-  if (!value) return;
-  setSettingsAiModelValue(value);
+async function switchActiveProfileFromPill(id) {
+  setAiModelMenuOpen(false);
+  await setActiveAiProfileById(id);
+}
+
+async function switchActiveProfileModelFromPill(model) {
+  const active = getActiveAiProfile();
+  if (!active) return;
   setAiModelMenuOpen(false);
   try {
-    await saveAiConfigFromForm();
-    showToast(t("settings.ai.status.saved"), "success", 1800);
+    const store = await invoke("set_ai_profile_model", { input: { id: active.id, model } });
+    applyAiStore(store);
   } catch (e) {
-    const msg = String(e);
-    if (settingsAiStatus) settingsAiStatus.textContent = msg;
-    showToast(msg, "error", 4200);
+    showToast(String(e), "error", 4200);
+  }
+}
+
+function showAiEditor(show) {
+  if (!aiConfigOverlay) return;
+  aiConfigOverlay.hidden = !show;
+}
+
+function startNewAiProfile() {
+  aiEditingProfileId = "";
+  if (settingsAiName) settingsAiName.value = "";
+  if (settingsAiProvider) {
+    settingsAiProvider.value = "openai-compatible";
+    syncCustomSelect("settings-ai-provider");
+  }
+  if (settingsAiBaseUrl) settingsAiBaseUrl.value = "";
+  if (settingsAiApiKey) settingsAiApiKey.value = "";
+  setAiModelOptions([], "");
+  if (settingsAiStatus) settingsAiStatus.textContent = t("settings.ai.status.unsaved");
+  lastAutoAiModelsKey = "";
+  if (aiConfigTitle) aiConfigTitle.textContent = t("settings.ai.profile.new");
+  showAiEditor(true);
+  settingsAiName?.focus?.();
+}
+
+function editAiProfile(id) {
+  const p = aiStore.profiles.find((x) => x.id === id);
+  if (!p) return;
+  aiEditingProfileId = id;
+  if (settingsAiName) settingsAiName.value = p.name || "";
+  if (settingsAiProvider) {
+    settingsAiProvider.value = p.provider || "openai-compatible";
+    syncCustomSelect("settings-ai-provider");
+  }
+  if (settingsAiBaseUrl) settingsAiBaseUrl.value = p.baseUrl || "";
+  if (settingsAiApiKey) settingsAiApiKey.value = "";
+  setAiModelOptions(Array.isArray(p.models) ? p.models : [], p.model || "");
+  if (settingsAiStatus) {
+    settingsAiStatus.textContent = p.hasApiKey
+      ? t("settings.ai.status.ready")
+      : t("settings.ai.status.no_key");
+  }
+  lastAutoAiModelsKey = "";
+  if (aiConfigTitle) aiConfigTitle.textContent = t("settings.ai.profile.edit_title");
+  showAiEditor(true);
+  maybeAutoRefreshAiModels().catch(() => {});
+}
+
+function cancelAiEditor() {
+  aiEditingProfileId = null;
+  showAiEditor(false);
+}
+
+async function deleteAiProfileById(id) {
+  const p = aiStore.profiles.find((x) => x.id === id);
+  const label = p ? (p.name || p.provider || id) : id;
+  if (!confirm(t("settings.ai.profile.confirm_delete", { name: label }))) return;
+  try {
+    const store = await invoke("delete_ai_profile", { id });
+    applyAiStore(store);
+    if (aiEditingProfileId === id) cancelAiEditor();
+  } catch (e) {
+    showToast(String(e), "error", 4200);
   }
 }
 
 function renderAiModelMenu() {
   if (!aiModelMenu) return;
   aiModelMenu.replaceChildren();
-  const current = String(getAiModelValue() || currentAiModelLabel || "").trim();
-  const models = getAiModelMenuItems();
+  const active = getActiveAiProfile();
 
-  if (models.length === 0) {
+  // --- Section: profiles (switch the global active config) ---
+  const profHeader = document.createElement("div");
+  profHeader.className = "ai-model-menu-section";
+  profHeader.textContent = t("ai.profile.section");
+  aiModelMenu.appendChild(profHeader);
+
+  const profiles = Array.isArray(aiStore.profiles) ? aiStore.profiles : [];
+  if (profiles.length === 0) {
     const empty = document.createElement("div");
     empty.className = "ai-model-menu-empty";
-    empty.textContent = t("ai.model.empty");
+    empty.textContent = t("ai.profile.empty");
     aiModelMenu.appendChild(empty);
   } else {
-    for (const model of models) {
+    for (const p of profiles) {
       const item = document.createElement("button");
       item.type = "button";
-      item.className = "ai-model-menu-item" + (model === current ? " active" : "");
-      item.textContent = model;
+      item.className = "ai-model-menu-item ai-profile-menu-item" + (active && p.id === active.id ? " active" : "");
+      const name = document.createElement("span");
+      name.textContent = p.name || p.provider || p.id;
+      const meta = document.createElement("small");
+      meta.textContent = p.model || "—";
+      item.append(name, meta);
       item.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        selectAiModelFromPill(model);
+        switchActiveProfileFromPill(p.id);
       });
       aiModelMenu.appendChild(item);
     }
   }
 
-  const refresh = document.createElement("button");
-  refresh.type = "button";
-  refresh.className = "ai-model-menu-refresh";
-  refresh.textContent = t("settings.ai.model.refresh");
-  refresh.addEventListener("click", async (ev) => {
-    ev.stopPropagation();
-    try {
-      await refreshAiModels();
-      renderAiModelMenu();
-      showToast(t("settings.ai.toast.models_refreshed"), "success", 1800);
-    } catch (e) {
-      const msg = String(e);
-      if (settingsAiStatus) settingsAiStatus.textContent = msg;
-      showToast(msg, "error", 4200);
+  // --- Section: models within the active profile (quick model switch) ---
+  if (active) {
+    const modHeader = document.createElement("div");
+    modHeader.className = "ai-model-menu-section";
+    modHeader.textContent = t("ai.model.section");
+    aiModelMenu.appendChild(modHeader);
+
+    const list = [];
+    for (const m of [active.model, ...(Array.isArray(active.models) ? active.models : [])]) {
+      const v = String(m || "").trim();
+      if (v && !list.includes(v)) list.push(v);
     }
+    if (list.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "ai-model-menu-empty";
+      empty.textContent = t("ai.model.empty");
+      aiModelMenu.appendChild(empty);
+    } else {
+      for (const m of list) {
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = "ai-model-menu-item" + (m === active.model ? " active" : "");
+        item.textContent = m;
+        item.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          switchActiveProfileModelFromPill(m);
+        });
+        aiModelMenu.appendChild(item);
+      }
+    }
+
+    const refresh = document.createElement("button");
+    refresh.type = "button";
+    refresh.className = "ai-model-menu-refresh";
+    refresh.textContent = t("settings.ai.model.refresh");
+    refresh.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      try {
+        const res = await invoke("list_ai_models_for_profile", { id: active.id });
+        const cur = getActiveAiProfile();
+        if (cur) cur.models = res?.models || [];
+        renderAiModelMenu();
+        showToast(t("settings.ai.toast.models_refreshed"), "success", 1800);
+      } catch (e) {
+        showToast(String(e), "error", 4200);
+      }
+    });
+    aiModelMenu.appendChild(refresh);
+  }
+
+  // --- Manage profiles in Settings ---
+  const manage = document.createElement("button");
+  manage.type = "button";
+  manage.className = "ai-model-menu-manage";
+  manage.textContent = t("ai.profile.manage");
+  manage.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    setAiModelMenuOpen(false);
+    openSettingsPage();
+    setSettingsSection("ai");
   });
-  aiModelMenu.appendChild(refresh);
+  aiModelMenu.appendChild(manage);
 }
 
 async function refreshAiModelsOnFirstPanelOpen() {
   if (aiModelsRefreshedOnFirstOpen) return;
   aiModelsRefreshedOnFirstOpen = true;
+  const active = getActiveAiProfile();
+  if (!active || !active.hasApiKey) return;
   try {
-    await refreshAiModels();
+    const res = await invoke("list_ai_models_for_profile", { id: active.id });
+    const cur = getActiveAiProfile();
+    if (cur) cur.models = res?.models || [];
     if (aiModelMenu?.hidden === false) renderAiModelMenu();
   } catch (e) {
-    const msg = String(e);
-    if (settingsAiStatus) settingsAiStatus.textContent = msg;
     console.warn("refresh AI models on first panel open failed", e);
   }
 }
@@ -3026,7 +3253,6 @@ function setAiModelOptions(models, selected) {
     if (settingsAiModelCustom) settingsAiModelCustom.value = current || "";
   }
   syncCustomSelect("settings-ai-model");
-  syncAiModelPill(current);
 }
 
 function cycleAiContextMode() {
@@ -3816,6 +4042,7 @@ async function streamAiMessages(messages, pendingText = "正在思考...") {
       input: {
         requestId,
         messages,
+        profileId: aiStore.activeProfileId || null,
       },
     });
   } catch (e) {
@@ -3823,7 +4050,7 @@ async function streamAiMessages(messages, pendingText = "正在思考...") {
     if (!state) return;
     if (state.timeoutId) window.clearTimeout(state.timeoutId);
     try {
-      const fallback = await invoke("ai_chat", { messages });
+      const fallback = await invoke("ai_chat", { messages, profileId: aiStore.activeProfileId || null });
       const content = fallback?.content || "";
       if (content.trim()) {
         state.node.classList.remove("pending");
@@ -4245,50 +4472,47 @@ async function ensureAiStreamListener() {
 }
 
 async function loadAiConfig() {
-  if (!settingsAiProvider) return;
   try {
-    const cfg = await invoke("get_ai_config");
-    settingsAiProvider.value = cfg.provider || "openai-compatible";
-    setAiModelOptions([], cfg.model || "");
-    if (settingsAiModelCustom && !settingsAiModel?.value) settingsAiModelCustom.value = cfg.model || "";
-    aiConfigured = Boolean(cfg.hasApiKey) && Boolean((cfg.model || "").trim());
-    syncAiModelPill(cfg.model || "");
-    if (settingsAiBaseUrl) settingsAiBaseUrl.value = cfg.baseUrl || "";
-    if (settingsAiApiKey) settingsAiApiKey.value = "";
-    if (settingsAiStatus) {
-      settingsAiStatus.textContent = cfg.hasApiKey
-        ? t("settings.ai.status.ready")
-        : t("settings.ai.status.no_key");
-    }
-    syncCustomSelect("settings-ai-provider");
+    const store = await invoke("get_ai_config");
+    applyAiStore(store);
   } catch (e) {
     if (settingsAiStatus) settingsAiStatus.textContent = String(e);
   }
 }
 
-async function saveAiConfigFromForm() {
+async function saveAiProfileFromForm() {
+  const models = settingsAiModel
+    ? Array.from(settingsAiModel.options).map((o) => String(o.value || "").trim()).filter(Boolean)
+    : [];
   const input = {
+    id: aiEditingProfileId || "",
+    name: settingsAiName?.value?.trim() || "",
     provider: settingsAiProvider?.value || "openai-compatible",
     model: getAiModelValue(),
     baseUrl: settingsAiBaseUrl?.value || "",
     apiKey: settingsAiApiKey?.value || "",
-    safeMode: true,
-    autoRead: false,
-    showCommands: false,
+    models,
   };
-  const cfg = await invoke("save_ai_config", { input });
+  const store = await invoke("save_ai_profile", { input });
   if (settingsAiApiKey) settingsAiApiKey.value = "";
-  if (settingsAiStatus) {
-    settingsAiStatus.textContent = cfg.hasApiKey
-      ? t("settings.ai.status.ready")
-      : t("settings.ai.status.no_key");
-  }
-  aiConfigured = Boolean(cfg.hasApiKey) && Boolean((cfg.model || input.model || "").trim());
-  syncAiModelPill(cfg.model || input.model);
-  return cfg;
+  applyAiStore(store);
+  if (settingsAiStatus) settingsAiStatus.textContent = t("settings.ai.status.saved");
+  cancelAiEditor();
+  return store;
 }
 
 async function refreshAiModels() {
+  // Editing a saved profile with no freshly-typed key -> use its stored key.
+  if (aiEditingProfileId && !(settingsAiApiKey?.value || "").trim()) {
+    const res = await invoke("list_ai_models_for_profile", { id: aiEditingProfileId });
+    setAiModelOptions(res?.models || [], getAiModelValue());
+    if (settingsAiStatus) {
+      settingsAiStatus.textContent = t("settings.ai.status.models_fetched", {
+        count: res?.models?.length || 0,
+      });
+    }
+    return;
+  }
   const input = {
     provider: settingsAiProvider?.value || "openai-compatible",
     model: getAiModelValue(),
@@ -4308,6 +4532,7 @@ async function refreshAiModels() {
 }
 
 async function maybeAutoRefreshAiModels() {
+  if (aiEditingProfileId === null) return;
   if (!settingsAiBaseUrl?.value) return;
   const keyReady = !!settingsAiApiKey?.value || !/no_key|尚未保存/.test(settingsAiStatus?.textContent || "");
   if (!keyReady) return;
@@ -7788,7 +8013,7 @@ function buildCustomSelect(selectEl) {
   let customValue = "";
   let menuPortaled = false;
 
-  const usesPortalMenu = () => Boolean(wrap.closest("#host-edit-overlay"));
+  const usesPortalMenu = () => Boolean(wrap.closest("#host-edit-overlay") || wrap.closest("#ai-config-overlay"));
   const resetPortalMenu = () => {
     if (!menuPortaled) return;
     menuPortaled = false;
@@ -8270,8 +8495,10 @@ function applyI18n() {
   setAttr("terminal-sidebar-theme-toggle", "aria-label", "settings.terminal_theme.title");
   setText("terminal-theme-light-title", "settings.terminal_theme.light_title");
   setText("terminal-theme-dark-title", "settings.terminal_theme.dark_title");
-  setText("terminal-theme-add-light", "settings.terminal_theme.add");
-  setText("terminal-theme-add-dark", "settings.terminal_theme.add");
+  setAttr("terminal-theme-add-light", "title", "theme.create.title");
+  setAttr("terminal-theme-add-light", "aria-label", "theme.create.title");
+  setAttr("terminal-theme-add-dark", "title", "theme.create.title");
+  setAttr("terminal-theme-add-dark", "aria-label", "theme.create.title");
   setText("settings-terminal-theme-label", "settings.terminal_theme.label");
   setText("settings-terminal-font-title", "settings.terminal_font.title");
   setText("settings-terminal-font-hint", "settings.terminal_font.hint");
@@ -8289,6 +8516,13 @@ function applyI18n() {
   setText("settings-ai-api-key-label", "settings.ai.api_key.label");
   setText("settings-ai-status", "settings.ai.status.unsaved");
   setText("settings-ai-save", "settings.ai.button.save");
+  setAttr("settings-ai-add", "title", "settings.ai.add");
+  setAttr("settings-ai-add", "aria-label", "settings.ai.add");
+  setText("settings-ai-name-label", "settings.ai.name.label");
+  setText("settings-ai-cancel", "settings.ai.cancel");
+  setText("settings-ai-empty", "settings.ai.empty");
+  setPlaceholder("settings-ai-name", "settings.ai.name.placeholder");
+  if (typeof renderAiProfileList === "function") renderAiProfileList();
   setPlaceholder("settings-ai-model", "settings.ai.model.placeholder");
   setPlaceholder("settings-ai-model-custom", "settings.ai.model.placeholder");
   setPlaceholder("settings-ai-base-url", "settings.ai.base_url.placeholder");
@@ -8761,7 +8995,7 @@ settingsNavAbout?.addEventListener("click", () => setSettingsSection("about"));
 settingsAiSave?.addEventListener("click", async () => {
   await runSyncButtonAction(settingsAiSave, t("settings.sync.button.busy.save"), async () => {
     try {
-      await saveAiConfigFromForm();
+      await saveAiProfileFromForm();
       showToast(t("settings.ai.status.saved"), "success");
     } catch (e) {
       const msg = String(e);
@@ -8770,6 +9004,17 @@ settingsAiSave?.addEventListener("click", async () => {
     }
   });
 });
+settingsAiAdd?.addEventListener("click", () => startNewAiProfile());
+settingsAiCancel?.addEventListener("click", () => cancelAiEditor());
+aiConfigOverlay?.addEventListener("click", (ev) => {
+  if (ev.target === aiConfigOverlay) cancelAiEditor();
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && aiConfigOverlay && !aiConfigOverlay.hidden) {
+    ev.stopPropagation();
+    cancelAiEditor();
+  }
+}, true);
 settingsAiRefreshModels?.addEventListener("click", async () => {
   await runSyncButtonAction(settingsAiRefreshModels, t("settings.ai.button.busy.refresh"), async () => {
     try {
@@ -8782,8 +9027,6 @@ settingsAiRefreshModels?.addEventListener("click", async () => {
     }
   });
 });
-settingsAiModel?.addEventListener("change", () => syncAiModelPill());
-settingsAiModelCustom?.addEventListener("input", () => syncAiModelPill());
 aiModelPill?.addEventListener("click", (ev) => {
   ev.stopPropagation();
   setAiModelMenuOpen(aiModelMenu?.hidden !== false);
