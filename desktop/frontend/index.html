@@ -427,8 +427,10 @@
                                 <span id="ai-compose-hint">Enter 发送，Shift+Enter 换行</span>
                                 <button type="submit" class="ai-send-button" aria-label="发送给 AI">
                                   <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
-                                    <path d="M12 19V5"></path>
-                                    <path d="m5 12 7-7 7 7"></path>
+                                    <g transform="translate(24 0) scale(-1 1)">
+                                      <path d="M4 12 20 5l-4 14-4.5-5-3 1.5 1.5-3Z"></path>
+                                      <path d="M10 14 20 5"></path>
+                                    </g>
                                   </svg>
                                 </button>
                               </div>
@@ -499,6 +501,37 @@
                             <ul id="sftp-terminal-list" class="files-list terminal-sftp-list"></ul>
                           </div>
                         </section>
+                        <section id="terminal-theme-panel" class="terminal-side-panel" hidden>
+                          <header class="terminal-side-header">
+                            <div class="terminal-side-title-wrap">
+                              <span class="terminal-side-mark" aria-hidden="true">
+                                <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                  <path d="M12 3v2"></path>
+                                  <path d="M12 19v2"></path>
+                                  <path d="M4.22 4.22l1.42 1.42"></path>
+                                  <path d="M18.36 18.36l1.42 1.42"></path>
+                                  <path d="M3 12h2"></path>
+                                  <path d="M19 12h2"></path>
+                                  <path d="M4.22 19.78l1.42-1.42"></path>
+                                  <path d="M18.36 5.64l1.42-1.42"></path>
+                                  <path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"></path>
+                                </svg>
+                              </span>
+                              <div>
+                                <strong id="terminal-theme-panel-title">主题</strong>
+                                <span id="terminal-theme-panel-subtitle">实时预览终端主题</span>
+                              </div>
+                            </div>
+                          </header>
+                          <div class="terminal-side-body terminal-theme-side-body">
+                            <div class="terminal-theme-panel-actions">
+                              <button id="terminal-theme-add-light" type="button" class="terminal-theme-add">+ 新建</button>
+                              <button id="terminal-theme-add-dark" type="button" class="terminal-theme-add" hidden>+ 新建</button>
+                            </div>
+                            <div id="terminal-theme-list-light" class="terminal-theme-list terminal-theme-list-all"></div>
+                            <div id="terminal-theme-list-dark" class="terminal-theme-list" hidden></div>
+                          </div>
+                        </section>
                       </aside>
                       <aside id="terminal-sidebar-rail" class="terminal-sidebar-rail" hidden aria-label="终端侧边栏">
                         <button id="terminal-sidebar-snippets-toggle" type="button" class="terminal-side-btn" title="Command Snippets" aria-label="Command Snippets">
@@ -523,6 +556,19 @@
                         <button id="terminal-sidebar-sftp-toggle" type="button" class="terminal-side-btn" title="SFTP" aria-label="SFTP">
                           <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
                             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                          </svg>
+                        </button>
+                        <button id="terminal-sidebar-theme-toggle" type="button" class="terminal-side-btn" title="主题" aria-label="主题">
+                          <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M12 3v2"></path>
+                            <path d="M12 19v2"></path>
+                            <path d="M4.22 4.22l1.42 1.42"></path>
+                            <path d="M18.36 18.36l1.42 1.42"></path>
+                            <path d="M3 12h2"></path>
+                            <path d="M19 12h2"></path>
+                            <path d="M4.22 19.78l1.42-1.42"></path>
+                            <path d="M18.36 5.64l1.42-1.42"></path>
+                            <path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"></path>
                           </svg>
                         </button>
                       </aside>
@@ -623,68 +669,12 @@
 
                           <section id="settings-terminal-panel" class="settings-panel" hidden>
                             <div class="settings-subtabs">
-                              <button id="settings-terminal-subtab-theme" type="button" class="settings-subtab active">主题</button>
-                              <button id="settings-terminal-subtab-font" type="button" class="settings-subtab">字体</button>
+                              <button id="settings-terminal-subtab-theme" type="button" class="settings-subtab" hidden>主题</button>
+                              <button id="settings-terminal-subtab-font" type="button" class="settings-subtab active">字体</button>
                             </div>
-                            <section id="settings-terminal-theme-section" class="settings-section">
-                            <h4 id="settings-terminal-theme-title" class="settings-terminal-title">终端主题</h4>
-                            <div class="terminal-theme-grid">
-                                <div class="terminal-theme-column">
-                                  <div class="terminal-theme-column-head">
-                                    <span id="terminal-theme-light-title">亮色终端主题</span>
-                                    <button id="terminal-theme-add-light" type="button" class="terminal-theme-add">+ 新建</button>
-                                  </div>
-                                <div id="terminal-theme-list-light" class="terminal-theme-list">
-                                  <button type="button" class="terminal-theme-card" data-theme="tokyo-day">
-                                    <div class="terminal-theme-name">Tokyo Day</div>
-                                    <pre class="terminal-theme-preview light">root@termark$ ls
-drwxr-xr-x 1 root  boot
-drwxr-xr-x 1 root  data</pre>
-                                  </button>
-                                  <button type="button" class="terminal-theme-card" data-theme="catppuccin-latte">
-                                    <div class="terminal-theme-name">Catppuccin Latte</div>
-                                    <pre class="terminal-theme-preview light">root@termark$ ls
-drwxr-xr-x 1 root  boot
-drwxr-xr-x 1 root  data</pre>
-                                  </button>
-                                </div>
-                              </div>
-                              <div class="terminal-theme-column">
-                                <div class="terminal-theme-column-head">
-                                  <span id="terminal-theme-dark-title">暗色终端主题</span>
-                                  <button id="terminal-theme-add-dark" type="button" class="terminal-theme-add">+ 新建</button>
-                                </div>
-                                <div id="terminal-theme-list-dark" class="terminal-theme-list">
-                                  <button type="button" class="terminal-theme-card" data-theme="termark-dark">
-                                    <div class="terminal-theme-name">Termark Dark</div>
-                                    <pre class="terminal-theme-preview dark">root@termark$ ls
-drwxr-xr-x 1 root  boot
-drwxr-xr-x 1 root  data</pre>
-                                  </button>
-                                  <button type="button" class="terminal-theme-card" data-theme="kanagawa-wave">
-                                    <div class="terminal-theme-name">Kanagawa Wave</div>
-                                    <pre class="terminal-theme-preview dark">root@termark$ ls
-drwxr-xr-x 1 root  boot
-drwxr-xr-x 1 root  data</pre>
-                                  </button>
-                                  <button type="button" class="terminal-theme-card" data-theme="catppuccin-mocha">
-                                    <div class="terminal-theme-name">Catppuccin Mocha</div>
-                                    <pre class="terminal-theme-preview dark">root@termark$ ls
-drwxr-xr-x 1 root  boot
-drwxr-xr-x 1 root  data</pre>
-                                  </button>
-                                  <button type="button" class="terminal-theme-card" data-theme="nord">
-                                    <div class="terminal-theme-name">Nord</div>
-                                    <pre class="terminal-theme-preview dark">root@termark$ ls
-drwxr-xr-x 1 root  boot
-drwxr-xr-x 1 root  data</pre>
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                            </section>
+                            <section id="settings-terminal-theme-section" class="settings-section" hidden></section>
 
-                            <section id="settings-terminal-font-section" class="settings-section" hidden>
+                            <section id="settings-terminal-font-section" class="settings-section">
                               <h4 id="settings-terminal-font-title">字体配置</h4>
                               <p id="settings-terminal-font-hint" class="muted tiny">字体、字号和行高在同一行设置，下方实时预览。</p>
                               <div class="settings-row settings-font-row">

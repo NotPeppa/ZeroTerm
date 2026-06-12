@@ -40,6 +40,7 @@ pub fn run() {
             commands::list_ai_models,
             commands::ai_chat,
             commands::ai_chat_stream,
+            commands::cancel_ai_chat_stream,
             commands::set_background_image,
             commands::get_background_image,
             commands::clear_background_image,

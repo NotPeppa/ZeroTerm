@@ -3349,9 +3349,53 @@ body[data-app-theme="light"] .terminal-side-btn.active::before {
   place-items: center;
   padding: 0;
   border-radius: 10px;
-  border-color: rgba(104, 168, 255, 0.7);
-  background: linear-gradient(180deg, #72b2ff 0%, #4f8cff 100%);
-  color: #091325;
+  border-color: rgba(104, 168, 255, 0.34);
+  background: rgba(104, 168, 255, 0.16);
+  color: #bfe0ff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 4px 12px rgba(15, 23, 42, 0.16);
+}
+
+.ai-send-button.is-stop {
+  border-color: rgba(248, 113, 113, 0.34);
+  background: rgba(248, 113, 113, 0.14);
+  color: #ffc2cb;
+}
+
+.ai-send-button:hover {
+  background: rgba(104, 168, 255, 0.22);
+  border-color: rgba(104, 168, 255, 0.46);
+  color: #e8f3ff;
+}
+
+.ai-send-button.is-stop:hover {
+  background: rgba(248, 113, 113, 0.18);
+  border-color: rgba(248, 113, 113, 0.46);
+  color: #ffe2e7;
+}
+
+body[data-app-theme="light"] .ai-send-button {
+  border-color: rgba(37, 99, 235, 0.24);
+  background: rgba(37, 99, 235, 0.1);
+  color: #2563eb;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.58), 0 4px 12px rgba(15, 23, 42, 0.08);
+}
+
+body[data-app-theme="light"] .ai-send-button:hover {
+  background: rgba(37, 99, 235, 0.14);
+  border-color: rgba(37, 99, 235, 0.34);
+  color: #1d4ed8;
+}
+
+body[data-app-theme="light"] .ai-send-button.is-stop {
+  border-color: rgba(220, 38, 38, 0.22);
+  background: rgba(220, 38, 38, 0.08);
+  color: #dc2626;
+}
+
+body[data-app-theme="light"] .ai-send-button.is-stop:hover {
+  background: rgba(220, 38, 38, 0.12);
+  border-color: rgba(220, 38, 38, 0.3);
+  color: #b91c1c;
 }
 
 body[data-app-theme="light"]:not(.has-app-bg) .terminal-side-panel,
@@ -7546,6 +7590,38 @@ body[data-app-theme="light"] .settings-sync-method-row .zt-select-trigger:hover 
   margin-top: 4px;
 }
 
+.terminal-theme-side-body {
+  overflow: auto;
+}
+
+.terminal-theme-grid-side {
+  grid-template-columns: 1fr;
+  gap: 14px;
+  margin-top: 0;
+}
+
+.terminal-theme-grid-side .terminal-theme-column {
+  border-radius: 14px;
+}
+
+.terminal-theme-grid-side .terminal-theme-list {
+  max-height: none;
+  overflow: visible;
+  padding: 12px;
+}
+
+.terminal-theme-panel-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+}
+
+.terminal-theme-list-all {
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+}
+
 .settings-subtabs {
   display: inline-flex;
   background: rgba(13, 19, 35, 0.6);
@@ -7708,6 +7784,12 @@ body.has-app-bg[data-app-theme="light"] .terminal-theme-list::-webkit-scrollbar-
 body.has-app-bg[data-app-theme="light"] .terminal-theme-list::-webkit-scrollbar-thumb:hover {
   background: rgba(15, 23, 42, 0.44);
   background-clip: padding-box;
+}
+
+.terminal-theme-side-body .terminal-theme-list-all {
+  max-height: none !important;
+  overflow: visible !important;
+  padding: 0 !important;
 }
 
 .terminal-theme-card {

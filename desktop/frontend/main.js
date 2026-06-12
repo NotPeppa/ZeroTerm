@@ -928,10 +928,11 @@ const I18N = {
     "settings.update.latest": "You are on the latest version ({version}).",
     "settings.update.available": "Update available: {current} -> {latest}",
     "settings.update.failed": "Update failed: {error}",
-    "settings.terminal_theme.title": "Terminal Theme",
+    "settings.terminal_theme.title": "Theme",
+    "settings.terminal_theme.subtitle": "Preview and tune terminal colors live",
     "settings.terminal_theme.light_title": "Light Terminal Themes",
     "settings.terminal_theme.dark_title": "Dark Terminal Themes",
-    "settings.terminal_theme.add": "+ New",
+    "settings.terminal_theme.add": "+ New Theme",
     "settings.terminal_theme.label": "Theme",
     "settings.terminal_font.title": "Font Settings",
     "settings.terminal_font.hint": "Set font family, size, and line height together with live preview.",
@@ -1673,10 +1674,11 @@ const I18N = {
     "settings.update.latest": "当前已是最新版本（{version}）。",
     "settings.update.available": "发现新版本：{current} -> {latest}",
     "settings.update.failed": "更新失败：{error}",
-    "settings.terminal_theme.title": "终端主题",
+    "settings.terminal_theme.title": "主题",
+    "settings.terminal_theme.subtitle": "实时预览并调整终端配色",
     "settings.terminal_theme.light_title": "亮色终端主题",
     "settings.terminal_theme.dark_title": "暗色终端主题",
-    "settings.terminal_theme.add": "+ 新建",
+    "settings.terminal_theme.add": "+ 新建主题",
     "settings.terminal_theme.label": "主题",
     "settings.terminal_font.title": "字体配置",
     "settings.terminal_font.hint": "字体、字号和行高在同一行设置，下方实时预览。",
@@ -2119,6 +2121,8 @@ const terminalMetricsBody = document.getElementById("terminal-metrics-body");
 const terminalMetricsRefresh = document.getElementById("terminal-metrics-refresh");
 const terminalSftpPanel = document.getElementById("terminal-sftp-panel");
 const terminalSidebarSftpToggle = document.getElementById("terminal-sidebar-sftp-toggle");
+const terminalThemePanel = document.getElementById("terminal-theme-panel");
+const terminalSidebarThemeToggle = document.getElementById("terminal-sidebar-theme-toggle");
 const terminalSftpRefresh = document.getElementById("terminal-sftp-refresh");
 const terminalSftpTitle = document.getElementById("terminal-sftp-title");
 const terminalSftpSubtitle = document.getElementById("terminal-sftp-subtitle");
@@ -2276,6 +2280,8 @@ function showToast(message, kind = "info", timeoutMs = 2600) {
 
 let aiMessages = [];
 let aiSending = false;
+let aiActiveRequestId = "";
+let aiCanceling = false;
 let aiStreamUnlistenPromise = null;
 const aiConversationByPane = new Map();
 const aiSessionIdentityByPane = new Map();
@@ -2616,6 +2622,7 @@ function setTerminalSidePanel(panel) {
   if (terminalSnippetsPanel) terminalSnippetsPanel.hidden = terminalActiveSidePanel !== "snippets";
   if (terminalMetricsPanel) terminalMetricsPanel.hidden = terminalActiveSidePanel !== "metrics";
   if (terminalSftpPanel) terminalSftpPanel.hidden = terminalActiveSidePanel !== "sftp";
+  if (terminalThemePanel) terminalThemePanel.hidden = terminalActiveSidePanel !== "theme";
   terminalSidebarAiToggle?.classList.toggle("active", terminalActiveSidePanel === "ai");
   if (terminalSidebarAiToggle) {
     const label = terminalActiveSidePanel === "ai" ? t("ai.panel.collapse") : t("ai.panel.expand");
@@ -2625,6 +2632,7 @@ function setTerminalSidePanel(panel) {
   terminalSidebarSnippetsToggle?.classList.toggle("active", terminalActiveSidePanel === "snippets");
   terminalSidebarMetricsToggle?.classList.toggle("active", terminalActiveSidePanel === "metrics");
   terminalSidebarSftpToggle?.classList.toggle("active", terminalActiveSidePanel === "sftp");
+  terminalSidebarThemeToggle?.classList.toggle("active", terminalActiveSidePanel === "theme");
   if (terminalActiveSidePanel === "ai") refreshAiModelsOnFirstPanelOpen();
   if (terminalActiveSidePanel === "metrics") {
     renderMetricsPanel();
@@ -2635,6 +2643,7 @@ function setTerminalSidePanel(panel) {
   if (terminalActiveSidePanel === "sftp") {
     connectTerminalSftpToActivePane().catch((e) => console.warn("terminal sftp connect failed", e));
   }
+  if (terminalActiveSidePanel === "theme") renderTerminalThemeCards();
 }
 
 function applyTerminalSidePanelForActivePane() {
@@ -2844,6 +2853,32 @@ function syncAiContextToggle() {
   };
   aiContextToggle.textContent = labels[aiContextMode];
   aiContextToggle.dataset.mode = aiContextMode;
+}
+
+function updateAiSendButton() {
+  const button = aiComposeForm?.querySelector("button[type='submit']");
+  if (!button) return;
+  button.disabled = aiCanceling;
+  button.setAttribute("aria-label", aiSending ? "停止 AI 分析" : "发送给 AI");
+  button.title = aiSending ? "停止 AI 分析" : "发送给 AI";
+  button.classList.toggle("is-stop", aiSending);
+  button.innerHTML = aiSending
+    ? '<svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>'
+    : '<svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><g transform="translate(24 0) scale(-1 1)"><path d="M4 12 20 5l-4 14-4.5-5-3 1.5 1.5-3Z"></path><path d="M10 14 20 5"></path></g></svg>';
+}
+
+async function cancelAiStreaming() {
+  if (!aiSending || !aiActiveRequestId || aiCanceling) return;
+  aiCanceling = true;
+  updateAiSendButton();
+  try {
+    await invoke("cancel_ai_chat_stream", { requestId: aiActiveRequestId });
+  } catch (e) {
+    showToast(String(e), "error", 2600);
+  } finally {
+    aiCanceling = false;
+    updateAiSendButton();
+  }
 }
 
 function getAiModelValue() {
@@ -3764,6 +3799,8 @@ async function streamAiMessages(messages, pendingText = "正在思考...") {
   if (!window.__ztAiStreams) window.__ztAiStreams = new Map();
   const pendingNode = appendAiMessage("assistant", pendingText, { pending: true });
   const requestId = `ai-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  aiActiveRequestId = requestId;
+  updateAiSendButton();
   window.__ztAiStreams.set(requestId, { node: pendingNode, content: "" });
   const timeoutId = window.setTimeout(() => {
     const state = window.__ztAiStreams?.get?.(requestId);
@@ -3806,6 +3843,7 @@ async function streamAiMessages(messages, pendingText = "正在思考...") {
       state.node.className = "ai-message ai-message-error";
       setAiMessageContent(state.node, `AI 响应失败：${String(fallbackError || e)}`);
     } finally {
+      if (aiActiveRequestId === requestId) aiActiveRequestId = "";
       window.__ztAiStreams.delete(requestId);
     }
   }
@@ -4170,9 +4208,14 @@ async function ensureAiStreamListener() {
     if (!state) return;
     if (payload.error) {
       if (state.timeoutId) window.clearTimeout(state.timeoutId);
-      state.node.classList.remove("pending");
-      state.node.className = "ai-message ai-message-error";
-      setAiMessageContent(state.node, payload.error);
+      if (payload.error === "canceled") {
+        state.node.remove();
+      } else {
+        state.node.classList.remove("pending");
+        state.node.className = "ai-message ai-message-error";
+        setAiMessageContent(state.node, payload.error);
+      }
+      if (aiActiveRequestId === payload.requestId) aiActiveRequestId = "";
       window.__ztAiStreams.delete(payload.requestId);
       return;
     }
@@ -4185,6 +4228,7 @@ async function ensureAiStreamListener() {
     if (payload.done) {
       if (state.timeoutId) window.clearTimeout(state.timeoutId);
       state.node.classList.remove("pending");
+      if (aiActiveRequestId === payload.requestId) aiActiveRequestId = "";
       if (!state.content.trim()) {
         state.node.className = "ai-message ai-message-error";
         setAiMessageContent(state.node, "AI 没有返回内容，请重试。");
@@ -4283,8 +4327,7 @@ async function sendAiMessage(text) {
   aiSending = true;
   await ensureAiStreamListener();
   if (!window.__ztAiStreams) window.__ztAiStreams = new Map();
-  const submitButton = aiComposeForm?.querySelector("button[type='submit']");
-  if (submitButton) submitButton.disabled = true;
+  updateAiSendButton();
   try {
     aiMessages.push({ role: "user", content: text, commandResults: [] });
     storeAiConversationForActivePane();
@@ -4299,7 +4342,8 @@ async function sendAiMessage(text) {
     appendAiMessage("error", String(e));
   } finally {
     aiSending = false;
-    if (submitButton) submitButton.disabled = false;
+    aiActiveRequestId = "";
+    updateAiSendButton();
   }
 }
 
@@ -4509,7 +4553,7 @@ const SETTINGS_KEY_APP_BG_OPACITY = "zeroterm.settings.app_background.opacity";
 const SETTINGS_KEY_APP_BG_BLUR = "zeroterm.settings.app_background.blur";
 const SETTINGS_KEY_APP_BG_ENABLED = "zeroterm.settings.app_background.enabled";
 let settingsSection = "general";
-let settingsTerminalSubtab = "theme";
+let settingsTerminalSubtab = "font";
 let settingsGeneralSubtab = "basic";
 let syncProfiles = [];
 let syncEditingId = null;
@@ -5302,7 +5346,7 @@ function renderTerminalThemeCards() {
     // Click / context-menu are handled by delegation on the stable list
     // containers (bound once below), so a card responds even if it's the
     // static HTML fallback that renderTerminalThemeCards hasn't replaced.
-    (group === "light" ? terminalThemeListLight : terminalThemeListDark).appendChild(card);
+    terminalThemeListLight.appendChild(card);
   };
 
   Object.entries(TERMINAL_THEME_META).forEach(([id, meta]) => addCard(id, meta.label, meta.group));
@@ -7574,7 +7618,7 @@ function setSettingsGeneralSubtab(subtab) {
 }
 
 function setSettingsTerminalSubtab(subtab) {
-  settingsTerminalSubtab = subtab === "font" ? "font" : "theme";
+  settingsTerminalSubtab = "font";
   settingsTerminalSubtabTheme?.classList.toggle("active", settingsTerminalSubtab === "theme");
   settingsTerminalSubtabFont?.classList.toggle("active", settingsTerminalSubtab === "font");
   if (settingsTerminalThemeSection) settingsTerminalThemeSection.hidden = settingsTerminalSubtab !== "theme";
@@ -8220,6 +8264,10 @@ function applyI18n() {
   // re-applies the localized message whenever the About section opens; we
   // don't reset it here to avoid stomping on a real "Update available" line.
   setText("settings-terminal-theme-title", "settings.terminal_theme.title");
+  setText("terminal-theme-panel-title", "settings.terminal_theme.title");
+  setText("terminal-theme-panel-subtitle", "settings.terminal_theme.subtitle");
+  setAttr("terminal-sidebar-theme-toggle", "title", "settings.terminal_theme.title");
+  setAttr("terminal-sidebar-theme-toggle", "aria-label", "settings.terminal_theme.title");
   setText("terminal-theme-light-title", "settings.terminal_theme.light_title");
   setText("terminal-theme-dark-title", "settings.terminal_theme.dark_title");
   setText("terminal-theme-add-light", "settings.terminal_theme.add");
@@ -8427,7 +8475,7 @@ workspaceSidebarToggle?.addEventListener("click", () => {
 workspaceSidebarToggleRight?.addEventListener("click", () => {
   setWorkspaceSidebarCollapsed(!workspaceSidebarCollapsed);
 });
-terminalThemeAddLight?.addEventListener("click", () => openThemeCreateDialog("light"));
+terminalThemeAddLight?.addEventListener("click", () => openThemeCreateDialog(getResolvedAppTheme() === "light" ? "light" : "dark"));
 terminalThemeAddDark?.addEventListener("click", () => openThemeCreateDialog("dark"));
 document.getElementById("add-group-button")?.addEventListener("click", async () => {
   const name = await openTextInputDialog({
@@ -10081,6 +10129,10 @@ terminalMetricsRefresh?.addEventListener("click", renderMetricsPanel);
 
 terminalSidebarSftpToggle?.addEventListener("click", () => {
   setTerminalSidePanel(terminalActiveSidePanel === "sftp" ? null : "sftp");
+});
+
+terminalSidebarThemeToggle?.addEventListener("click", () => {
+  setTerminalSidePanel(terminalActiveSidePanel === "theme" ? null : "theme");
 });
 
 terminalSftpRefresh?.addEventListener("click", () => {
@@ -14021,6 +14073,10 @@ aiSessionClear?.addEventListener("click", async () => {
 
 aiComposeForm?.addEventListener("submit", (ev) => {
   ev.preventDefault();
+  if (aiSending) {
+    cancelAiStreaming().catch((e) => showToast(String(e), "error", 2600));
+    return;
+  }
   const text = aiComposeInput?.value.trim();
   if (!text) return;
   aiComposeInput.value = "";
@@ -14028,6 +14084,8 @@ aiComposeForm?.addEventListener("submit", (ev) => {
     appendAiMessage("error", String(e));
   });
 });
+
+updateAiSendButton();
 
 fileEditorCancelButton.addEventListener("click", () => closeRemoteEditor());
 fileEditorSaveButton.addEventListener("click", () => saveRemoteEditor());

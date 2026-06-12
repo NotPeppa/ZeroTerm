@@ -7,8 +7,9 @@
 //!     the lock is dropped.
 
 use std::sync::atomic::Ordering;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
+use std::sync::OnceLock;
 use std::time::Duration;
 #[cfg(target_os = "windows")]
 use std::process::Command;
@@ -257,6 +258,12 @@ struct OpenAiStreamChoice {
 #[derive(Debug, Deserialize)]
 struct OpenAiStreamDelta {
     content: Option<String>,
+}
+
+static CANCELED_AI_REQUESTS: OnceLock<StdMutex<HashSet<String>>> = OnceLock::new();
+
+fn canceled_ai_requests() -> &'static StdMutex<HashSet<String>> {
+    CANCELED_AI_REQUESTS.get_or_init(|| StdMutex::new(HashSet::new()))
 }
 
 fn default_ai_config() -> AiConfig {
@@ -578,6 +585,10 @@ fn emit_ai_stream_error(app: &AppHandle, request_id: &str, error: String) {
     });
 }
 
+fn take_ai_request_canceled(request_id: &str) -> bool {
+    canceled_ai_requests().lock().unwrap().remove(request_id)
+}
+
 fn parse_sse_frames(buffer: &mut String) -> Vec<String> {
     let mut frames = Vec::new();
     while let Some((idx, len)) = buffer
@@ -814,6 +825,7 @@ pub async fn ai_chat_stream(app: AppHandle, input: AiChatStreamInput) -> Result<
     if request_id.is_empty() {
         return Err("request id is empty".into());
     }
+    take_ai_request_canceled(&request_id);
 
     let (cfg, api_key, payload_messages) = match prepare_ai_request(input.messages) {
         Ok(v) => v,
@@ -858,6 +870,15 @@ pub async fn ai_chat_stream(app: AppHandle, input: AiChatStreamInput) -> Result<
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
     while let Some(item) = stream.next().await {
+        if take_ai_request_canceled(&request_id) {
+            emit_ai_stream(&app, AiStreamEvent {
+                request_id,
+                delta: String::new(),
+                done: true,
+                error: Some("canceled".to_string()),
+            });
+            return Ok(());
+        }
         let bytes = match item {
             Ok(v) => v,
             Err(e) => {
@@ -880,6 +901,15 @@ pub async fn ai_chat_stream(app: AppHandle, input: AiChatStreamInput) -> Result<
                         delta: String::new(),
                         done: true,
                         error: None,
+                    });
+                    return Ok(());
+                }
+                if take_ai_request_canceled(&request_id) {
+                    emit_ai_stream(&app, AiStreamEvent {
+                        request_id,
+                        delta: String::new(),
+                        done: true,
+                        error: Some("canceled".to_string()),
                     });
                     return Ok(());
                 }
@@ -908,6 +938,16 @@ pub async fn ai_chat_stream(app: AppHandle, input: AiChatStreamInput) -> Result<
         done: true,
         error: None,
     });
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn cancel_ai_chat_stream(request_id: String) -> Result<(), String> {
+    let id = request_id.trim();
+    if id.is_empty() {
+        return Err("request id is empty".into());
+    }
+    canceled_ai_requests().lock().unwrap().insert(id.to_string());
     Ok(())
 }
 
@@ -2611,7 +2651,16 @@ awk '
 /^SwapFree:/ {sf=$2*1024}
 END {printf "%d %d %d %d\n", mt, mt-ma, st, st-sf}
 ' /proc/meminfo 2>/dev/null
-df -P -B1 2>/dev/null | awk 'NR>1 && $2 ~ /^[0-9]+$/ {print "D|" $6 "|" $2 "|" $3}' | head -n 12
+df -P -B1 -T 2>/dev/null | awk '
+NR>1 && $3 ~ /^[0-9]+$/ {
+  fstype=$2
+  mount=$7
+  if (fstype ~ /^(tmpfs|devtmpfs|squashfs|overlay|proc|sysfs|cgroup2?|devpts|mqueue|securityfs|pstore|autofs|tracefs|debugfs|fusectl|configfs)$/) next
+  if (mount ~ /^(\/dev|\/proc|\/sys)(\/|$)/) next
+  if (mount ~ /^(\/run)(\/|$)/) next
+  if (mount ~ /^\/tmp(\/|$)/) next
+  print "D|" mount "|" $3 "|" $4
+}' | head -n 8
 awk 'NR>2 {gsub(":", "", $1); print "A|" $1 "|" $2 "|" $10}' /proc/net/dev 2>/dev/null
 sleep 1
 awk 'NR>2 {gsub(":", "", $1); print "B|" $1 "|" $2 "|" $10}' /proc/net/dev 2>/dev/null
