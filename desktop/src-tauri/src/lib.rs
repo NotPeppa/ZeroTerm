@@ -32,16 +32,10 @@ pub fn run() {
                 // behavior across monitor/layout changes.
                 let (w, h) = commands::read_startup_window_size().unwrap_or((1500.0, 860.0));
                 let _ = win.set_size(tauri::Size::Logical(tauri::LogicalSize::new(w, h)));
+                // Center on the current monitor *before* revealing the window, so
+                // there's no visible jump from the OS default position.
+                let _ = win.center();
                 let _ = win.show();
-                if let Ok(Some(monitor)) = win.current_monitor() {
-                    if let Ok(window_size) = win.outer_size() {
-                        let monitor_size = monitor.size();
-                        let monitor_pos = monitor.position();
-                        let x = monitor_pos.x + ((monitor_size.width.saturating_sub(window_size.width)) / 2) as i32;
-                        let y = monitor_pos.y + ((monitor_size.height.saturating_sub(window_size.height)) / 2) as i32;
-                        let _ = win.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(x, y)));
-                    }
-                }
             }
             Ok(())
         })
