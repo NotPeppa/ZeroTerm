@@ -6,26 +6,26 @@ mod state;
 use crate::state::AppState;
 use tauri::Manager;
 
-/// Center `win` on the monitor it currently occupies, computed by hand in
-/// logical coordinates. Tauri's built-in `center()` mis-places the window
-/// horizontally on macOS in some setups (it lands too far left even when the
-/// window fits the screen); doing the math ourselves against a freshly read
-/// size avoids that. Falls back to `center()` if the monitor can't be queried.
-/// Must be called after `show()` on macOS, when the window is attached to a
-/// screen and its size is settled. Only used on macOS, but compiled
+/// Center `win` on the monitor it currently occupies, using the *intended*
+/// logical size (the one we just passed to `set_size`) instead of querying the
+/// window. On macOS `set_size` isn't reflected in `outer_size()` yet when we
+/// position the window right after `show()`, so Tauri's `center()` (and any
+/// size we read back) still use the pre-resize default — which leaves a
+/// smaller saved window biased toward the top-left. Centering against the
+/// known target size sidesteps that timing entirely. Falls back to `center()`
+/// if the monitor can't be queried. Only used on macOS, but compiled
 /// everywhere so it's type-checked on every platform.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-fn center_window(win: &tauri::WebviewWindow) {
-    let (Ok(Some(monitor)), Ok(size)) = (win.current_monitor(), win.outer_size()) else {
+fn center_window(win: &tauri::WebviewWindow, logical_w: f64, logical_h: f64) {
+    let Ok(Some(monitor)) = win.current_monitor() else {
         let _ = win.center();
         return;
     };
     let scale = monitor.scale_factor();
     let mon = monitor.size().to_logical::<f64>(scale);
     let mon_pos = monitor.position().to_logical::<f64>(scale);
-    let win_size = size.to_logical::<f64>(scale);
-    let x = mon_pos.x + ((mon.width - win_size.width) / 2.0).max(0.0);
-    let y = mon_pos.y + ((mon.height - win_size.height) / 2.0).max(0.0);
+    let x = mon_pos.x + ((mon.width - logical_w) / 2.0).max(0.0);
+    let y = mon_pos.y + ((mon.height - logical_h) / 2.0).max(0.0);
     let _ = win.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y)));
 }
 
@@ -58,10 +58,10 @@ pub fn run() {
 
                 // Centering timing differs by platform. On Windows/Linux the
                 // window can be positioned while still hidden, so we center
-                // before show() to avoid any visible jump. On macOS the
-                // window isn't attached to a screen until it's on-screen, and
-                // the built-in center() lands too far left there — so we show
-                // first, then center by hand on the monitor it ended up on.
+                // before show() to avoid any visible jump. On macOS set_size
+                // hasn't taken effect yet at that point, so we show first then
+                // center against the *known* target size (w, h) — see
+                // center_window() for why we don't query the live size.
                 #[cfg(not(target_os = "macos"))]
                 {
                     let _ = win.center();
@@ -70,7 +70,7 @@ pub fn run() {
                 #[cfg(target_os = "macos")]
                 {
                     let _ = win.show();
-                    center_window(&win);
+                    center_window(&win, w, h);
                 }
             }
             Ok(())
