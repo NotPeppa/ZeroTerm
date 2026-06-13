@@ -645,15 +645,15 @@ const I18N = {
     "settings.bg.status.cleared": "Background removed",
     "settings.bg.status.failed": "Could not load image: {error}",
     "settings.bg.status.too_large": "Image is too large (max 16 MB).",
-    "settings.winsize.label": "Startup Window Size",
-    "settings.winsize.hint": "Resize the window to your liking, then save it as the size the app opens at.",
-    "settings.winsize.saved": "Saved startup size: {size}",
-    "settings.winsize.default": "Using default ({size})",
-    "settings.winsize.save": "Save current size",
+    "settings.winsize.label": "Startup Window Layout",
+    "settings.winsize.hint": "Resize the window and the left/right side panels to your liking, then save them as the layout the app opens with.",
+    "settings.winsize.saved": "Saved — window {win}, left sidebar {left}, right sidebar {right}",
+    "settings.winsize.default": "Default — window {win}, left sidebar {left}, right sidebar {right}",
+    "settings.winsize.save": "Save current layout",
     "settings.winsize.reset": "Reset to default",
-    "settings.winsize.status.saved": "Saved {size} as the startup size.",
-    "settings.winsize.status.reset": "Restored the default startup size.",
-    "settings.winsize.status.failed": "Could not save window size: {error}",
+    "settings.winsize.status.saved": "Saved the current window and sidebar layout.",
+    "settings.winsize.status.reset": "Cleared the saved layout; defaults apply on next launch.",
+    "settings.winsize.status.failed": "Could not save the layout: {error}",
     "ai.assistant.title": "AI Assistant",
     "ai.assistant.subtitle": "Current SSH session",
     "ai.model.unconfigured": "No model configured",
@@ -1425,15 +1425,15 @@ const I18N = {
     "settings.bg.status.cleared": "背景已移除",
     "settings.bg.status.failed": "无法加载图片：{error}",
     "settings.bg.status.too_large": "图片过大（上限 16 MB）。",
-    "settings.winsize.label": "启动窗口大小",
-    "settings.winsize.hint": "把窗口调整到你喜欢的大小，再保存为应用启动时的尺寸。",
-    "settings.winsize.saved": "已保存启动大小：{size}",
-    "settings.winsize.default": "使用默认（{size}）",
-    "settings.winsize.save": "记录当前窗口大小",
+    "settings.winsize.label": "启动窗口布局",
+    "settings.winsize.hint": "把窗口和左右两侧的面板调整到喜欢的大小，再保存为应用启动时的布局。",
+    "settings.winsize.saved": "已保存 — 窗口 {win}，左侧栏 {left}，右侧栏 {right}",
+    "settings.winsize.default": "使用默认 — 窗口 {win}，左侧栏 {left}，右侧栏 {right}",
+    "settings.winsize.save": "记录当前布局",
     "settings.winsize.reset": "恢复默认",
-    "settings.winsize.status.saved": "已将 {size} 设为启动大小。",
-    "settings.winsize.status.reset": "已恢复默认启动大小。",
-    "settings.winsize.status.failed": "保存窗口大小失败：{error}",
+    "settings.winsize.status.saved": "已记录当前窗口与侧边栏布局。",
+    "settings.winsize.status.reset": "已清除保存的布局，下次启动使用默认值。",
+    "settings.winsize.status.failed": "保存布局失败：{error}",
     "ai.assistant.title": "AI 助手",
     "ai.assistant.subtitle": "当前 SSH 会话",
     "ai.model.unconfigured": "未配置模型",
@@ -5233,47 +5233,93 @@ async function clearBackgroundImage() {
   if (settingsBgStatus) settingsBgStatus.textContent = t("settings.bg.status.cleared");
 }
 
-// --- Startup window size --------------------------------------------------
-// The size is persisted by the backend (config_dir/ZeroTerm/window.json) and
-// applied in the Rust `setup` hook before the window is shown. The frontend
-// only reads it for display and triggers save/clear via commands.
+// --- Startup window layout ------------------------------------------------
+// "Layout" = the window size plus the left (vault) and right (terminal side
+// panel) sidebar widths. The window size is persisted by the backend
+// (config_dir/ZeroTerm/window.json) and applied in the Rust `setup` hook
+// before the window is shown. The two sidebar widths are pure frontend CSS
+// state, so they're kept in localStorage and applied synchronously at
+// startup (no flash). One "save" action captures all three; one "reset"
+// clears all three.
 
 const DEFAULT_WINDOW_WIDTH = 1500;
 const DEFAULT_WINDOW_HEIGHT = 860;
+
+// Sidebar widths. Left bounds reuse VAULT_SIDEBAR_MIN/MAX; right bounds match
+// the clamp in installAiPanelResize() and the CSS default of --ai-panel-width.
+const SETTINGS_KEY_SIDEBAR_LEFT = "zeroterm.settings.sidebar.left_width";
+const SETTINGS_KEY_SIDEBAR_RIGHT = "zeroterm.settings.sidebar.right_width";
+const DEFAULT_VAULT_SIDEBAR_WIDTH = 320;
+const AI_PANEL_MIN = 300;
+const AI_PANEL_MAX = 620;
+const DEFAULT_AI_PANEL_WIDTH = 390;
 
 /// Format a logical size as "W × H" with rounded integers.
 function formatWindowSize(width, height) {
   return `${Math.round(width)} × ${Math.round(height)}`;
 }
 
-/// Reflect the saved startup size into the settings panel: show the saved
-/// value (with a Reset button), or the default when nothing is saved.
-async function syncWindowSizeSettingsUI() {
-  let saved = null;
+/// Read a saved sidebar width from localStorage, or `null` if absent/invalid.
+function getSavedSidebarWidth(key, min, max) {
+  const n = Number(localStorage.getItem(key));
+  return Number.isFinite(n) && n >= min && n <= max ? Math.round(n) : null;
+}
+
+/// Apply a width to the right-side terminal panel (clamped), mirroring how
+/// the splitter drag sets --ai-panel-width. Returns the clamped value.
+function applyAiPanelWidth(width) {
+  const clamped = Math.max(AI_PANEL_MIN, Math.min(AI_PANEL_MAX, Math.round(width)));
+  terminalSessionLayout?.style.setProperty("--ai-panel-width", `${clamped}px`);
+  return clamped;
+}
+
+/// Current effective right-panel width, read from the resolved CSS custom
+/// property (reflects an inline drag value or the stylesheet default).
+function getCurrentAiPanelWidth() {
+  if (!terminalSessionLayout) return DEFAULT_AI_PANEL_WIDTH;
+  const raw = getComputedStyle(terminalSessionLayout).getPropertyValue("--ai-panel-width");
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) ? n : DEFAULT_AI_PANEL_WIDTH;
+}
+
+/// Reflect the saved layout into the settings panel: show the saved values
+/// (with a Reset button), or the defaults when nothing is saved.
+async function syncWindowLayoutSettingsUI() {
+  let savedWin = null;
   try {
-    saved = await invoke("get_window_size_setting");
+    savedWin = await invoke("get_window_size_setting");
   } catch (e) {
     console.warn("load window size setting failed", e);
   }
+  const savedLeft = getSavedSidebarWidth(SETTINGS_KEY_SIDEBAR_LEFT, VAULT_SIDEBAR_MIN, VAULT_SIDEBAR_MAX);
+  const savedRight = getSavedSidebarWidth(SETTINGS_KEY_SIDEBAR_RIGHT, AI_PANEL_MIN, AI_PANEL_MAX);
+  const hasSaved = !!savedWin || savedLeft != null || savedRight != null;
+
   if (settingsWinsizeCurrent) {
-    settingsWinsizeCurrent.textContent = saved
-      ? t("settings.winsize.saved", { size: formatWindowSize(saved.width, saved.height) })
-      : t("settings.winsize.default", {
-          size: formatWindowSize(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT),
-        });
+    const win = savedWin
+      ? formatWindowSize(savedWin.width, savedWin.height)
+      : formatWindowSize(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT);
+    const left = `${savedLeft ?? DEFAULT_VAULT_SIDEBAR_WIDTH}px`;
+    const right = `${savedRight ?? DEFAULT_AI_PANEL_WIDTH}px`;
+    settingsWinsizeCurrent.textContent = t(
+      hasSaved ? "settings.winsize.saved" : "settings.winsize.default",
+      { win, left, right },
+    );
   }
-  if (settingsWinsizeReset) settingsWinsizeReset.hidden = !saved;
+  if (settingsWinsizeReset) settingsWinsizeReset.hidden = !hasSaved;
 }
 
-/// Record the current window size as the startup size.
-async function recordWindowSize() {
+/// Record the current window size + both sidebar widths as the startup layout.
+async function recordWindowLayout() {
+  // Sidebar widths are frontend state — persist them locally.
+  localStorage.setItem(SETTINGS_KEY_SIDEBAR_LEFT, String(vaultSidebarWidth));
+  localStorage.setItem(SETTINGS_KEY_SIDEBAR_RIGHT, String(getCurrentAiPanelWidth()));
+  // Window size is captured by the backend from the live window.
   try {
-    const saved = await invoke("save_window_size");
-    await syncWindowSizeSettingsUI();
+    await invoke("save_window_size");
+    await syncWindowLayoutSettingsUI();
     if (settingsWinsizeStatus) {
-      settingsWinsizeStatus.textContent = t("settings.winsize.status.saved", {
-        size: formatWindowSize(saved.width, saved.height),
-      });
+      settingsWinsizeStatus.textContent = t("settings.winsize.status.saved");
     }
   } catch (e) {
     if (settingsWinsizeStatus) {
@@ -5282,14 +5328,18 @@ async function recordWindowSize() {
   }
 }
 
-/// Forget the saved startup size; the app reverts to the default on next launch.
-async function resetWindowSize() {
+/// Forget the saved layout; the app reverts to defaults on next launch. Like
+/// the window size, this only clears the saved values — the live sidebars
+/// keep their current width until the next launch.
+async function resetWindowLayout() {
+  localStorage.removeItem(SETTINGS_KEY_SIDEBAR_LEFT);
+  localStorage.removeItem(SETTINGS_KEY_SIDEBAR_RIGHT);
   try {
     await invoke("clear_window_size_setting");
   } catch (e) {
     console.warn("clear window size setting failed", e);
   }
-  await syncWindowSizeSettingsUI();
+  await syncWindowLayoutSettingsUI();
   if (settingsWinsizeStatus) settingsWinsizeStatus.textContent = t("settings.winsize.status.reset");
 }
 
@@ -7989,7 +8039,7 @@ function setSettingsGeneralSubtab(subtab) {
   if (settingsGeneralSftpSection) settingsGeneralSftpSection.hidden = settingsGeneralSubtab !== "sftp";
   if (settingsGeneralSubtab === "basic" && typeof syncBackgroundSettingsUI === "function") {
     syncBackgroundSettingsUI();
-    syncWindowSizeSettingsUI();
+    syncWindowLayoutSettingsUI();
   }
 }
 
@@ -8579,8 +8629,8 @@ function applyI18n() {
   setText("settings-winsize-hint", "settings.winsize.hint");
   setText("settings-winsize-save", "settings.winsize.save");
   setText("settings-winsize-reset", "settings.winsize.reset");
-  // The "current size" line is locale-dependent — re-render it in the new language.
-  syncWindowSizeSettingsUI();
+  // The "current layout" line is locale-dependent — re-render it in the new language.
+  syncWindowLayoutSettingsUI();
 
   // --- AI Assistant panel -------------------------------------------------
   setText("ai-assistant-title", "ai.assistant.title");
@@ -8927,7 +8977,15 @@ if (vaultSplitter) {
   });
 }
 
+// Restore saved startup sidebar widths (the window size is restored by the
+// Rust setup hook). Left updates the tracked vaultSidebarWidth var; right only
+// sets the CSS var when a value was saved, otherwise the responsive CSS
+// default stands. localStorage is synchronous, so this applies before paint.
+const savedLeftWidth = getSavedSidebarWidth(SETTINGS_KEY_SIDEBAR_LEFT, VAULT_SIDEBAR_MIN, VAULT_SIDEBAR_MAX);
+if (savedLeftWidth != null) vaultSidebarWidth = savedLeftWidth;
 applyVaultSidebarWidth(vaultSidebarWidth);
+const savedRightWidth = getSavedSidebarWidth(SETTINGS_KEY_SIDEBAR_RIGHT, AI_PANEL_MIN, AI_PANEL_MAX);
+if (savedRightWidth != null) applyAiPanelWidth(savedRightWidth);
 setWorkspaceSidebarCollapsed(false);
 
 document.getElementById("lock-button").addEventListener("click", async () => {
@@ -9246,10 +9304,10 @@ settingsBgBlur?.addEventListener("input", () => {
   applyAppBackground();
 });
 settingsWinsizeSave?.addEventListener("click", () => {
-  recordWindowSize().catch((e) => console.warn("save window size failed", e));
+  recordWindowLayout().catch((e) => console.warn("save window layout failed", e));
 });
 settingsWinsizeReset?.addEventListener("click", () => {
-  resetWindowSize().catch((e) => console.warn("reset window size failed", e));
+  resetWindowLayout().catch((e) => console.warn("reset window layout failed", e));
 });
 vaultBottomSettingsRow?.addEventListener("click", (ev) => {
   if (ev.target?.closest?.("#vault-bottom-settings") || ev.target?.closest?.("#theme-mode-button")) return;
