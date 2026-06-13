@@ -6,6 +6,29 @@ mod state;
 use crate::state::AppState;
 use tauri::Manager;
 
+/// Center `win` on the monitor it currently occupies, computed by hand in
+/// logical coordinates. Tauri's built-in `center()` mis-places the window
+/// horizontally on macOS in some setups (it lands too far left even when the
+/// window fits the screen); doing the math ourselves against a freshly read
+/// size avoids that. Falls back to `center()` if the monitor can't be queried.
+/// Must be called after `show()` on macOS, when the window is attached to a
+/// screen and its size is settled. Only used on macOS, but compiled
+/// everywhere so it's type-checked on every platform.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn center_window(win: &tauri::WebviewWindow) {
+    let (Ok(Some(monitor)), Ok(size)) = (win.current_monitor(), win.outer_size()) else {
+        let _ = win.center();
+        return;
+    };
+    let scale = monitor.scale_factor();
+    let mon = monitor.size().to_logical::<f64>(scale);
+    let mon_pos = monitor.position().to_logical::<f64>(scale);
+    let win_size = size.to_logical::<f64>(scale);
+    let x = mon_pos.x + ((mon.width - win_size.width) / 2.0).max(0.0);
+    let y = mon_pos.y + ((mon.height - win_size.height) / 2.0).max(0.0);
+    let _ = win.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y)));
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_subscriber::fmt()
@@ -36,9 +59,9 @@ pub fn run() {
                 // Centering timing differs by platform. On Windows/Linux the
                 // window can be positioned while still hidden, so we center
                 // before show() to avoid any visible jump. On macOS the
-                // window isn't attached to a screen until it's on-screen —
-                // center() before show() reads the wrong monitor/scale and
-                // lands wildly off (top-left on Retina), so center after show.
+                // window isn't attached to a screen until it's on-screen, and
+                // the built-in center() lands too far left there — so we show
+                // first, then center by hand on the monitor it ended up on.
                 #[cfg(not(target_os = "macos"))]
                 {
                     let _ = win.center();
@@ -47,7 +70,7 @@ pub fn run() {
                 #[cfg(target_os = "macos")]
                 {
                     let _ = win.show();
-                    let _ = win.center();
+                    center_window(&win);
                 }
             }
             Ok(())
