@@ -27,10 +27,21 @@ pub fn run() {
                 // Open at the user's saved startup size, or the default if
                 // none is saved / the file is unreadable. Applied while the
                 // window is still hidden (`visible: false` in tauri.conf.json)
-                // so there's no resize flash, then shown unconditionally.
+                // so there's no resize flash. Position is NOT persisted; every
+                // launch recenters the window, which is the most predictable
+                // behavior across monitor/layout changes.
                 let (w, h) = commands::read_startup_window_size().unwrap_or((1500.0, 860.0));
                 let _ = win.set_size(tauri::Size::Logical(tauri::LogicalSize::new(w, h)));
                 let _ = win.show();
+                if let Ok(Some(monitor)) = win.current_monitor() {
+                    if let Ok(window_size) = win.outer_size() {
+                        let monitor_size = monitor.size();
+                        let monitor_pos = monitor.position();
+                        let x = monitor_pos.x + ((monitor_size.width.saturating_sub(window_size.width)) / 2) as i32;
+                        let y = monitor_pos.y + ((monitor_size.height.saturating_sub(window_size.height)) / 2) as i32;
+                        let _ = win.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(x, y)));
+                    }
+                }
             }
             Ok(())
         })
