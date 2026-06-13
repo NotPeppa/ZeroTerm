@@ -10481,6 +10481,13 @@ async function openLocalTerminalInTab() {
   setWorkspaceMode("terminal");
   renderTerminalWorkspace();
 
+  // Mirror the SSH connect path: wait for the terminal font to load and the
+  // pane size to settle before sizing the PTY. Otherwise the cell size is
+  // measured with the fallback font and the PTY's column count can disagree
+  // with what xterm renders.
+  await waitForTerminalFonts();
+  await stabilizePaneSize(pane, 2);
+
   const cols = pane.term ? pane.term.cols : 80;
   const rows = pane.term ? pane.term.rows : 24;
   const sessionId = await invoke("create_local_terminal_session", { cols, rows });
@@ -11010,6 +11017,29 @@ function ensurePaneTerminal(pane) {
   }
   try {
     pane.term.open(pane.bodyEl);
+    // Use the WebGL renderer when available. It draws each glyph at an
+    // absolute cell position, which fixes the cumulative left-to-right
+    // character drift the DOM renderer exhibits on Retina/macOS with a custom
+    // monospace font — the drift shows up as garbled lines when zsh redraws
+    // the whole input line on history recall (up-arrow). Gated to macOS so the
+    // confirmed-good Windows DOM rendering is left untouched. If the GPU
+    // context is unavailable or later lost, dispose the addon so xterm falls
+    // back to the DOM renderer automatically.
+    try {
+      const WebglAddonCtor = window.WebglAddon?.WebglAddon;
+      if (isMacPlatform && WebglAddonCtor) {
+        const webgl = new WebglAddonCtor();
+        webgl.onContextLoss(() => {
+          try { webgl.dispose(); } catch {}
+          pane.webglAddon = null;
+        });
+        pane.term.loadAddon(webgl);
+        pane.webglAddon = webgl;
+      }
+    } catch (e) {
+      console.warn("webgl renderer unavailable, falling back to DOM renderer", e);
+      pane.webglAddon = null;
+    }
     pane.bodyEl.addEventListener("wheel", (ev) => {
       if (!pane.term) return;
       const cellHeight = pane.term?._core?._renderService?.dimensions?.css?.cell?.height || 18;
