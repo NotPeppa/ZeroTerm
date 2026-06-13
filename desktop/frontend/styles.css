@@ -11019,6 +11019,25 @@ body[data-app-theme="light"] #settings-bg-clear:hover {
   box-shadow: 0 4px 12px rgba(220, 38, 38, 0.14) !important;
 }
 
+.settings-winsize-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.settings-winsize-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#settings-winsize-current {
+  font-variant-numeric: tabular-nums;
+}
+
 #settings-bg-options {
   margin-top: 18px;
   display: flex;

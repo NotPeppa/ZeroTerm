@@ -645,6 +645,15 @@ const I18N = {
     "settings.bg.status.cleared": "Background removed",
     "settings.bg.status.failed": "Could not load image: {error}",
     "settings.bg.status.too_large": "Image is too large (max 16 MB).",
+    "settings.winsize.label": "Startup Window Size",
+    "settings.winsize.hint": "Resize the window to your liking, then save it as the size the app opens at.",
+    "settings.winsize.saved": "Saved startup size: {size}",
+    "settings.winsize.default": "Using default ({size})",
+    "settings.winsize.save": "Save current size",
+    "settings.winsize.reset": "Reset to default",
+    "settings.winsize.status.saved": "Saved {size} as the startup size.",
+    "settings.winsize.status.reset": "Restored the default startup size.",
+    "settings.winsize.status.failed": "Could not save window size: {error}",
     "ai.assistant.title": "AI Assistant",
     "ai.assistant.subtitle": "Current SSH session",
     "ai.model.unconfigured": "No model configured",
@@ -1416,6 +1425,15 @@ const I18N = {
     "settings.bg.status.cleared": "背景已移除",
     "settings.bg.status.failed": "无法加载图片：{error}",
     "settings.bg.status.too_large": "图片过大（上限 16 MB）。",
+    "settings.winsize.label": "启动窗口大小",
+    "settings.winsize.hint": "把窗口调整到你喜欢的大小，再保存为应用启动时的尺寸。",
+    "settings.winsize.saved": "已保存启动大小：{size}",
+    "settings.winsize.default": "使用默认（{size}）",
+    "settings.winsize.save": "记录当前窗口大小",
+    "settings.winsize.reset": "恢复默认",
+    "settings.winsize.status.saved": "已将 {size} 设为启动大小。",
+    "settings.winsize.status.reset": "已恢复默认启动大小。",
+    "settings.winsize.status.failed": "保存窗口大小失败：{error}",
     "ai.assistant.title": "AI 助手",
     "ai.assistant.subtitle": "当前 SSH 会话",
     "ai.model.unconfigured": "未配置模型",
@@ -4675,6 +4693,10 @@ const settingsBgOptions = document.getElementById("settings-bg-options");
 const settingsBgOpacity = document.getElementById("settings-bg-opacity");
 const settingsBgBlur = document.getElementById("settings-bg-blur");
 const settingsBgStatus = document.getElementById("settings-bg-status");
+const settingsWinsizeCurrent = document.getElementById("settings-winsize-current");
+const settingsWinsizeSave = document.getElementById("settings-winsize-save");
+const settingsWinsizeReset = document.getElementById("settings-winsize-reset");
+const settingsWinsizeStatus = document.getElementById("settings-winsize-status");
 const settingsAboutTitle = document.getElementById("settings-about-title");
 const settingsAboutVersionLabel = document.getElementById("settings-about-version-label");
 const settingsAboutVersionValue = document.getElementById("settings-about-version-value");
@@ -5209,6 +5231,66 @@ async function clearBackgroundImage() {
   applyAppBackground();
   syncBackgroundSettingsUI();
   if (settingsBgStatus) settingsBgStatus.textContent = t("settings.bg.status.cleared");
+}
+
+// --- Startup window size --------------------------------------------------
+// The size is persisted by the backend (config_dir/ZeroTerm/window.json) and
+// applied in the Rust `setup` hook before the window is shown. The frontend
+// only reads it for display and triggers save/clear via commands.
+
+const DEFAULT_WINDOW_WIDTH = 1500;
+const DEFAULT_WINDOW_HEIGHT = 860;
+
+/// Format a logical size as "W × H" with rounded integers.
+function formatWindowSize(width, height) {
+  return `${Math.round(width)} × ${Math.round(height)}`;
+}
+
+/// Reflect the saved startup size into the settings panel: show the saved
+/// value (with a Reset button), or the default when nothing is saved.
+async function syncWindowSizeSettingsUI() {
+  let saved = null;
+  try {
+    saved = await invoke("get_window_size_setting");
+  } catch (e) {
+    console.warn("load window size setting failed", e);
+  }
+  if (settingsWinsizeCurrent) {
+    settingsWinsizeCurrent.textContent = saved
+      ? t("settings.winsize.saved", { size: formatWindowSize(saved.width, saved.height) })
+      : t("settings.winsize.default", {
+          size: formatWindowSize(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT),
+        });
+  }
+  if (settingsWinsizeReset) settingsWinsizeReset.hidden = !saved;
+}
+
+/// Record the current window size as the startup size.
+async function recordWindowSize() {
+  try {
+    const saved = await invoke("save_window_size");
+    await syncWindowSizeSettingsUI();
+    if (settingsWinsizeStatus) {
+      settingsWinsizeStatus.textContent = t("settings.winsize.status.saved", {
+        size: formatWindowSize(saved.width, saved.height),
+      });
+    }
+  } catch (e) {
+    if (settingsWinsizeStatus) {
+      settingsWinsizeStatus.textContent = t("settings.winsize.status.failed", { error: String(e) });
+    }
+  }
+}
+
+/// Forget the saved startup size; the app reverts to the default on next launch.
+async function resetWindowSize() {
+  try {
+    await invoke("clear_window_size_setting");
+  } catch (e) {
+    console.warn("clear window size setting failed", e);
+  }
+  await syncWindowSizeSettingsUI();
+  if (settingsWinsizeStatus) settingsWinsizeStatus.textContent = t("settings.winsize.status.reset");
 }
 
 
@@ -7907,6 +7989,7 @@ function setSettingsGeneralSubtab(subtab) {
   if (settingsGeneralSftpSection) settingsGeneralSftpSection.hidden = settingsGeneralSubtab !== "sftp";
   if (settingsGeneralSubtab === "basic" && typeof syncBackgroundSettingsUI === "function") {
     syncBackgroundSettingsUI();
+    syncWindowSizeSettingsUI();
   }
 }
 
@@ -8492,6 +8575,12 @@ function applyI18n() {
   setText("settings-bg-clear", "settings.bg.remove");
   setText("settings-bg-opacity-label", "settings.bg.opacity");
   setText("settings-bg-blur-label", "settings.bg.blur");
+  setText("settings-winsize-label", "settings.winsize.label");
+  setText("settings-winsize-hint", "settings.winsize.hint");
+  setText("settings-winsize-save", "settings.winsize.save");
+  setText("settings-winsize-reset", "settings.winsize.reset");
+  // The "current size" line is locale-dependent — re-render it in the new language.
+  syncWindowSizeSettingsUI();
 
   // --- AI Assistant panel -------------------------------------------------
   setText("ai-assistant-title", "ai.assistant.title");
@@ -9155,6 +9244,12 @@ settingsBgOpacity?.addEventListener("input", () => {
 settingsBgBlur?.addEventListener("input", () => {
   localStorage.setItem(SETTINGS_KEY_APP_BG_BLUR, String(settingsBgBlur.value));
   applyAppBackground();
+});
+settingsWinsizeSave?.addEventListener("click", () => {
+  recordWindowSize().catch((e) => console.warn("save window size failed", e));
+});
+settingsWinsizeReset?.addEventListener("click", () => {
+  resetWindowSize().catch((e) => console.warn("reset window size failed", e));
 });
 vaultBottomSettingsRow?.addEventListener("click", (ev) => {
   if (ev.target?.closest?.("#vault-bottom-settings") || ev.target?.closest?.("#theme-mode-button")) return;

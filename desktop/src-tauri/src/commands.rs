@@ -730,6 +730,111 @@ pub async fn clear_background_image() -> Result<(), String> {
     Ok(())
 }
 
+// --------------------------------------------------------------------------
+// startup window size
+// --------------------------------------------------------------------------
+//
+// The user can save the current window size as the size the app opens at.
+// We persist a *logical* (DPI-independent) size to `config_dir/ZeroTerm/
+// window.json`; the `setup` hook in `lib.rs` reads it back before the window
+// is shown, so there's no resize flash on launch. Doing the read/write in
+// Rust (rather than the JS window API) keeps it DPI-correct and needs no
+// extra `core:window:*` capability entries.
+
+/// Minimum startup size, kept in sync with `minWidth`/`minHeight` in
+/// `tauri.conf.json` so a saved size never opens smaller than the window
+/// is actually allowed to be.
+const WINDOW_MIN_W: f64 = 700.0;
+const WINDOW_MIN_H: f64 = 480.0;
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct WindowSizeSetting {
+    pub width: f64,
+    pub height: f64,
+}
+
+fn window_state_path() -> Result<PathBuf, String> {
+    let base = dirs::config_dir()
+        .ok_or_else(|| "no config directory on this OS".to_string())?
+        .join("ZeroTerm");
+    Ok(base.join("window.json"))
+}
+
+/// Clamp a logical size up to the configured minimum so we never persist
+/// (or restore) something smaller than the window can be.
+fn clamp_window_size(width: f64, height: f64) -> WindowSizeSetting {
+    WindowSizeSetting {
+        width: width.max(WINDOW_MIN_W),
+        height: height.max(WINDOW_MIN_H),
+    }
+}
+
+/// Read the saved startup size as a plain `(width, height)` logical pair,
+/// or `None` if nothing valid is saved. Called by the `setup` hook in
+/// `lib.rs`; deliberately infallible — a missing or corrupt file just means
+/// "fall back to the default size".
+pub fn read_startup_window_size() -> Option<(f64, f64)> {
+    let path = window_state_path().ok()?;
+    let text = fs::read_to_string(&path).ok()?;
+    let saved: WindowSizeSetting = serde_json::from_str(&text).ok()?;
+    if !saved.width.is_finite() || !saved.height.is_finite() {
+        return None;
+    }
+    let s = clamp_window_size(saved.width, saved.height);
+    Some((s.width, s.height))
+}
+
+/// Save the current window's inner size as the startup size. The physical
+/// inner size is converted to logical via the scale factor so it restores
+/// consistently across monitors with different DPI. Runs synchronously on
+/// the main thread, which is also where window introspection is safest.
+#[tauri::command]
+pub fn save_window_size(window: tauri::WebviewWindow) -> Result<WindowSizeSetting, String> {
+    let scale = window
+        .scale_factor()
+        .map_err(|e| format!("reading scale factor: {e}"))?;
+    let phys = window
+        .inner_size()
+        .map_err(|e| format!("reading window size: {e}"))?;
+    let scale = if scale > 0.0 { scale } else { 1.0 };
+    let setting = clamp_window_size(phys.width as f64 / scale, phys.height as f64 / scale);
+
+    let path = window_state_path()?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("creating {}: {e}", parent.display()))?;
+    }
+    let text = serde_json::to_string_pretty(&setting).map_err(|e| e.to_string())?;
+    fs::write(&path, text).map_err(|e| format!("writing {}: {e}", path.display()))?;
+    Ok(setting)
+}
+
+/// Return the saved startup size, or `None` if the user hasn't set one. A
+/// corrupt file is treated as "no setting" rather than a hard error.
+#[tauri::command]
+pub fn get_window_size_setting() -> Result<Option<WindowSizeSetting>, String> {
+    let path = window_state_path()?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = fs::read_to_string(&path).map_err(|e| format!("reading {}: {e}", path.display()))?;
+    match serde_json::from_str::<WindowSizeSetting>(&text) {
+        Ok(s) if s.width.is_finite() && s.height.is_finite() => {
+            Ok(Some(clamp_window_size(s.width, s.height)))
+        }
+        _ => Ok(None),
+    }
+}
+
+/// Forget the saved startup size; the app falls back to the default.
+#[tauri::command]
+pub fn clear_window_size_setting() -> Result<(), String> {
+    let path = window_state_path()?;
+    if path.exists() {
+        fs::remove_file(&path).map_err(|e| format!("removing {}: {e}", path.display()))?;
+    }
+    Ok(())
+}
+
 fn prepare_ai_request(
     messages: Vec<AiChatMessage>,
     profile_id: Option<String>,

@@ -24,7 +24,13 @@ pub fn run() {
         .manage(AppState::new())
         .setup(|app| {
             if let Some(win) = app.get_webview_window("main") {
-                let _ = win.set_size(tauri::Size::Logical(tauri::LogicalSize::new(1500.0, 860.0)));
+                // Open at the user's saved startup size, or the default if
+                // none is saved / the file is unreadable. Applied while the
+                // window is still hidden (`visible: false` in tauri.conf.json)
+                // so there's no resize flash, then shown unconditionally.
+                let (w, h) = commands::read_startup_window_size().unwrap_or((1500.0, 860.0));
+                let _ = win.set_size(tauri::Size::Logical(tauri::LogicalSize::new(w, h)));
+                let _ = win.show();
             }
             Ok(())
         })
@@ -48,6 +54,9 @@ pub fn run() {
             commands::set_background_image,
             commands::get_background_image,
             commands::clear_background_image,
+            commands::save_window_size,
+            commands::get_window_size_setting,
+            commands::clear_window_size_setting,
             commands::unlock_vault,
             commands::create_vault,
             commands::lock_vault,
