@@ -11032,10 +11032,35 @@ body[data-app-theme="light"] #settings-bg-clear:hover {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 #settings-winsize-current {
   font-variant-numeric: tabular-nums;
+}
+
+body[data-app-theme="light"] .settings-winsize-actions button:not(.primary) {
+  background: rgba(255, 255, 255, 0.54) !important;
+  border-color: rgba(148, 163, 184, 0.42) !important;
+  color: #334155 !important;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06) !important;
+}
+
+body[data-app-theme="light"] .settings-winsize-actions button:not(.primary):hover {
+  background: rgba(255, 255, 255, 0.72) !important;
+  border-color: rgba(37, 99, 235, 0.28) !important;
+  color: #1d4ed8 !important;
+}
+
+@media (max-width: 760px) {
+  .settings-winsize-row {
+    align-items: stretch;
+  }
+
+  .settings-winsize-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
 }
 
 #settings-bg-options {
