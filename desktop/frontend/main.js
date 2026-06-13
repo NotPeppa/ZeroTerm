@@ -10976,7 +10976,7 @@ function ensurePaneTerminal(pane) {
     // high-contrast text already exceeds the ratio and is untouched. Left at
     // the default (1 = off) on Windows/Linux, whose DOM renderer shows faint
     // text fine.
-    minimumContrastRatio: isMacPlatform ? 4.5 : 1,
+    minimumContrastRatio: isMacPlatform ? 10 : 1,
     cursorBlink: true,
     allowProposedApi: true,
     customGlyphs: true,
