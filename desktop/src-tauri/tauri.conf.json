@@ -20,6 +20,7 @@
         "resizable": true,
         "fullscreen": false,
         "visible": false,
+        "center": true,
         "theme": "Dark",
         "dragDropEnabled": false,
         "decorations": true,

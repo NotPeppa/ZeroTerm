@@ -32,10 +32,23 @@ pub fn run() {
                 // behavior across monitor/layout changes.
                 let (w, h) = commands::read_startup_window_size().unwrap_or((1500.0, 860.0));
                 let _ = win.set_size(tauri::Size::Logical(tauri::LogicalSize::new(w, h)));
-                // Center on the current monitor *before* revealing the window, so
-                // there's no visible jump from the OS default position.
-                let _ = win.center();
-                let _ = win.show();
+
+                // Centering timing differs by platform. On Windows/Linux the
+                // window can be positioned while still hidden, so we center
+                // before show() to avoid any visible jump. On macOS the
+                // window isn't attached to a screen until it's on-screen —
+                // center() before show() reads the wrong monitor/scale and
+                // lands wildly off (top-left on Retina), so center after show.
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let _ = win.center();
+                    let _ = win.show();
+                }
+                #[cfg(target_os = "macos")]
+                {
+                    let _ = win.show();
+                    let _ = win.center();
+                }
             }
             Ok(())
         })
