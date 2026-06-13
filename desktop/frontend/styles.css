@@ -1722,6 +1722,11 @@ body.has-app-bg[data-app-theme="light"] .terminal-side-btn.active {
   height: 16px;
 }
 
+.terminal-side-btn .theme-palette-icon {
+  width: 17px;
+  height: 17px;
+}
+
 .terminal-side-header {
   flex: 0 0 48px;
   height: 48px;
@@ -1793,6 +1798,11 @@ body[data-app-theme="light"] .terminal-side-mark {
   height: 15px;
   transform: translate(-50%, -50%);
   flex: 0 0 auto;
+}
+
+.terminal-side-mark .theme-palette-icon {
+  width: 16px;
+  height: 16px;
 }
 
 .terminal-side-add-btn {
@@ -8067,6 +8077,107 @@ body.has-app-bg[data-app-theme="light"] .terminal-theme-list::-webkit-scrollbar-
   max-height: none !important;
   overflow: visible !important;
   padding: 0 !important;
+}
+
+.terminal-theme-font-section {
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.terminal-theme-font-section .settings-font-row {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  gap: 10px;
+}
+
+.terminal-theme-font-section .settings-field {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.terminal-theme-font-section .settings-font-row > .settings-field:first-child {
+  grid-column: 1 / -1;
+}
+
+.terminal-theme-font-section .settings-field span {
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
+.terminal-theme-font-section .settings-font-small {
+  width: auto;
+}
+
+.terminal-theme-font-section .zt-select-wrap,
+.terminal-theme-font-section .zt-select-trigger {
+  width: 100%;
+}
+
+.terminal-theme-font-section .zt-select-trigger {
+  min-width: 0;
+}
+
+body[data-app-theme="dark"] .terminal-theme-font-section .zt-select-trigger,
+body:not([data-app-theme="light"]) .terminal-theme-font-section .settings-field input[type="number"] {
+  background: rgba(29, 45, 79, 0.92) !important;
+  border-color: rgba(96, 165, 250, 0.18) !important;
+  color: #ffffff !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
+}
+
+body[data-app-theme="dark"] .terminal-theme-font-section .zt-select-trigger:hover,
+body[data-app-theme="dark"] .terminal-theme-font-section .zt-select-wrap.open .zt-select-trigger,
+body:not([data-app-theme="light"]) .terminal-theme-font-section .settings-field input[type="number"]:hover,
+body:not([data-app-theme="light"]) .terminal-theme-font-section .settings-field input[type="number"]:focus {
+  background: rgba(29, 45, 79, 0.96) !important;
+  border-color: rgba(96, 165, 250, 0.28) !important;
+}
+
+body[data-app-theme="light"] .terminal-theme-font-section .zt-select-trigger,
+body[data-app-theme="light"] .terminal-theme-font-section .settings-field input[type="number"] {
+  background: #ffffff !important;
+  border-color: rgba(203, 213, 225, 0.8) !important;
+  color: #334155 !important;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+}
+
+.terminal-theme-font-section .zt-select-trigger-input,
+.terminal-theme-font-section .settings-field input[type="number"] {
+  color: inherit !important;
+}
+
+.terminal-theme-font-section .zt-select-trigger input {
+  min-width: 0;
+}
+
+.terminal-theme-font-section .settings-field input[type="number"] {
+  width: 100%;
+}
+
+@media (max-width: 520px) {
+  .terminal-theme-font-section .settings-font-row {
+    grid-template-columns: 1fr;
+  }
+
+  .terminal-theme-font-section .settings-field {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+}
+
+.terminal-font-preview-side {
+  margin-top: 12px;
+}
+
+.terminal-font-preview-side .window-mock-body pre {
+  min-height: auto;
 }
 
 .terminal-theme-card {

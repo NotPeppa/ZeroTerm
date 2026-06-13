@@ -883,7 +883,9 @@ const I18N = {
     "theme.edit.save": "Save",
     "theme.prompt.duplicate.title": "Duplicate as custom",
     "theme.prompt.duplicate.message": "Enter a new theme name",
-    "theme.confirm.delete": "Delete custom theme \"{name}\"?",
+    "theme.confirm.delete.title": "Delete theme?",
+    "theme.confirm.delete": "Delete theme \"{name}\"? This cannot be undone.",
+    "theme.error.delete_current": "The current theme cannot be deleted",
     "theme.error.name_required": "Please enter a theme name",
     "theme.mode.button": "Theme mode",
     "theme.mode.system": "System",
@@ -951,6 +953,12 @@ const I18N = {
     "settings.terminal_theme.dark_title": "Dark Terminal Themes",
     "settings.terminal_theme.add": "+ New Theme",
     "settings.terminal_theme.label": "Theme",
+    "terminal.theme.name.tokyo_day": "Mist Paper",
+    "terminal.theme.name.catppuccin_latte": "Cloud Latte",
+    "terminal.theme.name.sage_light": "Sage Field",
+    "terminal.theme.name.termark_dark": "Midnight Slate",
+    "terminal.theme.name.kanagawa_wave": "Ink Garden",
+    "terminal.theme.name.catppuccin_mocha": "Violet Dusk",
     "settings.terminal_font.title": "Font Settings",
     "settings.terminal_font.hint": "Set font family, size, and line height together with live preview.",
     "settings.terminal_font.family": "Font",
@@ -1646,7 +1654,9 @@ const I18N = {
     "theme.edit.save": "保存",
     "theme.prompt.duplicate.title": "复制为自定义",
     "theme.prompt.duplicate.message": "请输入新主题名称",
-    "theme.confirm.delete": "删除自定义主题 \"{name}\"?",
+    "theme.confirm.delete.title": "删除主题？",
+    "theme.confirm.delete": "删除主题 \"{name}\"？此操作无法撤销。",
+    "theme.error.delete_current": "正在使用的主题不能删除",
     "theme.error.name_required": "请输入主题名称",
     "theme.mode.button": "主题模式",
     "theme.mode.system": "跟随系统",
@@ -1714,6 +1724,12 @@ const I18N = {
     "settings.terminal_theme.dark_title": "暗色终端主题",
     "settings.terminal_theme.add": "+ 新建主题",
     "settings.terminal_theme.label": "主题",
+    "terminal.theme.name.tokyo_day": "雾纸",
+    "terminal.theme.name.catppuccin_latte": "云拿铁",
+    "terminal.theme.name.sage_light": "鼠尾草原",
+    "terminal.theme.name.termark_dark": "午夜石板",
+    "terminal.theme.name.kanagawa_wave": "墨庭",
+    "terminal.theme.name.catppuccin_mocha": "紫暮",
     "settings.terminal_font.title": "字体配置",
     "settings.terminal_font.hint": "字体、字号和行高在同一行设置，下方实时预览。",
     "settings.terminal_font.family": "字体",
@@ -2688,7 +2704,17 @@ function setTerminalSidePanel(panel) {
   if (terminalActiveSidePanel === "sftp") {
     connectTerminalSftpToActivePane().catch((e) => console.warn("terminal sftp connect failed", e));
   }
-  if (terminalActiveSidePanel === "theme") renderTerminalThemeCards();
+  if (terminalActiveSidePanel === "theme") {
+    renderTerminalThemeCards();
+    if (settingsTerminalFontFamily) {
+      populateTerminalFontFamilyOptionsAsync().catch((e) => {
+        console.warn("populateTerminalFontFamilyOptionsAsync failed", e);
+      });
+    }
+    if (settingsTerminalFontSize) settingsTerminalFontSize.value = String(getTerminalFontSize());
+    if (settingsTerminalLineHeight) settingsTerminalLineHeight.value = String(getTerminalLineHeight());
+    syncTerminalFontPreview();
+  }
 }
 
 function applyTerminalSidePanelForActivePane() {
@@ -4771,6 +4797,7 @@ const SETTINGS_KEY_SYNC_ACTIVE_PROFILE = "zeroterm.settings.sync.active_profile"
 const SETTINGS_KEY_APP_THEME_MODE = "zeroterm.settings.app_theme_mode";
 const SETTINGS_KEY_TERMINAL_THEME = "zeroterm.settings.terminal.theme";
 const SETTINGS_KEY_TERMINAL_CUSTOM_THEMES = "zeroterm.settings.terminal.custom_themes";
+const SETTINGS_KEY_TERMINAL_HIDDEN_BUILTIN_THEMES = "zeroterm.settings.terminal.hidden_builtin_themes";
 const SETTINGS_KEY_TERMINAL_FONT_FAMILY = "zeroterm.settings.terminal.font_family";
 const SETTINGS_KEY_TERMINAL_FONT_SIZE = "zeroterm.settings.terminal.font_size";
 const SETTINGS_KEY_TERMINAL_LINE_HEIGHT = "zeroterm.settings.terminal.line_height";
@@ -4794,10 +4821,10 @@ const syncDraftByBackend = {
 
 const TERMINAL_THEMES = {
   "termark-dark": {
-    background: "#0a0f1c",
-    foreground: "#dbe7ff",
-    cursor: "#67e8f9",
-    selectionBackground: "#1f3b64",
+    background: "#10151f",
+    foreground: "#d7e2f0",
+    cursor: "#7dd3fc",
+    selectionBackground: "#27384f",
     black: "#101624",
     red: "#ff6b7a",
     green: "#51d88a",
@@ -4816,10 +4843,10 @@ const TERMINAL_THEMES = {
     brightWhite: "#ffffff",
   },
   "kanagawa-wave": {
-    background: "#171820",
-    foreground: "#e4d8b4",
-    cursor: "#d6b56d",
-    selectionBackground: "#36322d",
+    background: "#151714",
+    foreground: "#d8d3bb",
+    cursor: "#a7c080",
+    selectionBackground: "#30382c",
     black: "#111219",
     red: "#d8616b",
     green: "#8fb573",
@@ -4838,10 +4865,10 @@ const TERMINAL_THEMES = {
     brightWhite: "#fff2c7",
   },
   "catppuccin-mocha": {
-    background: "#201925",
-    foreground: "#f0dff1",
-    cursor: "#ffb4d8",
-    selectionBackground: "#46314d",
+    background: "#1b1724",
+    foreground: "#e8def2",
+    cursor: "#c4b5fd",
+    selectionBackground: "#3a3150",
     black: "#17131b",
     red: "#ff7a93",
     green: "#a6e3a1",
@@ -4882,10 +4909,10 @@ const TERMINAL_THEMES = {
     brightWhite: "#f8fbff",
   },
   "tokyo-day": {
-    background: "#f6f1e7",
-    foreground: "#2f3a4a",
-    cursor: "#2f6f9f",
-    selectionBackground: "#d8e4f2",
+    background: "#f4efe3",
+    foreground: "#334155",
+    cursor: "#2563eb",
+    selectionBackground: "#d8e5f3",
     black: "#2f3a4a",
     red: "#c7444e",
     green: "#4f7d45",
@@ -4904,10 +4931,10 @@ const TERMINAL_THEMES = {
     brightWhite: "#fffaf1",
   },
   "catppuccin-latte": {
-    background: "#f7f8fc",
-    foreground: "#3f4560",
-    cursor: "#6f79d8",
-    selectionBackground: "#dfe4f5",
+    background: "#f8fafc",
+    foreground: "#334155",
+    cursor: "#7c3aed",
+    selectionBackground: "#e3e8f4",
     black: "#3f4560",
     red: "#c83e4d",
     green: "#3f8f59",
@@ -4926,10 +4953,10 @@ const TERMINAL_THEMES = {
     brightWhite: "#ffffff",
   },
   "sage-light": {
-    background: "#eef3ec",
-    foreground: "#2e3f38",
-    cursor: "#427d67",
-    selectionBackground: "#cfe0d6",
+    background: "#eef4ed",
+    foreground: "#2f3f37",
+    cursor: "#15803d",
+    selectionBackground: "#d6e4d8",
     black: "#2e3f38",
     red: "#b85d5b",
     green: "#4b855f",
@@ -4951,15 +4978,21 @@ const TERMINAL_THEMES = {
 
 
 const TERMINAL_THEME_META = {
-  "tokyo-day": { label: "Paper Koi", group: "light" },
-  "catppuccin-latte": { label: "Porcelain Latte", group: "light" },
-  "sage-light": { label: "Sage Mist", group: "light" },
-  "termark-dark": { label: "Obsidian Neon", group: "dark" },
-  "kanagawa-wave": { label: "Sumi Wave", group: "dark" },
-  "catppuccin-mocha": { label: "Rose Mocha", group: "dark" },
+  "tokyo-day": { labelKey: "terminal.theme.name.tokyo_day", group: "light" },
+  "catppuccin-latte": { labelKey: "terminal.theme.name.catppuccin_latte", group: "light" },
+  "sage-light": { labelKey: "terminal.theme.name.sage_light", group: "light" },
+  "termark-dark": { labelKey: "terminal.theme.name.termark_dark", group: "dark" },
+  "kanagawa-wave": { labelKey: "terminal.theme.name.kanagawa_wave", group: "dark" },
+  "catppuccin-mocha": { labelKey: "terminal.theme.name.catppuccin_mocha", group: "dark" },
 };
 
+function builtinTerminalThemeLabel(id) {
+  const key = TERMINAL_THEME_META[id]?.labelKey;
+  return key ? t(key) : id;
+}
+
 let terminalCustomThemes = [];
+let terminalHiddenBuiltinThemes = [];
 let terminalEditingThemeId = null;
 let themeMenuTargetId = null;
 let themeEditOriginal = null;
@@ -4975,18 +5008,32 @@ function loadCustomThemes() {
   } catch {
     terminalCustomThemes = [];
   }
+  try {
+    const rawHidden = localStorage.getItem(SETTINGS_KEY_TERMINAL_HIDDEN_BUILTIN_THEMES) || "[]";
+    const parsedHidden = JSON.parse(rawHidden);
+    terminalHiddenBuiltinThemes = Array.isArray(parsedHidden) ? parsedHidden.filter((id) => TERMINAL_THEME_META[id]) : [];
+  } catch {
+    terminalHiddenBuiltinThemes = [];
+  }
 }
 
 function saveCustomThemes() {
   localStorage.setItem(SETTINGS_KEY_TERMINAL_CUSTOM_THEMES, JSON.stringify(terminalCustomThemes));
+  localStorage.setItem(SETTINGS_KEY_TERMINAL_HIDDEN_BUILTIN_THEMES, JSON.stringify(terminalHiddenBuiltinThemes));
 }
 
 function allTerminalThemes() {
   const customMap = {};
+  const builtinMap = {};
+  for (const [id] of Object.entries(TERMINAL_THEME_META)) {
+    const theme = TERMINAL_THEMES[id];
+    if (!theme) continue;
+    if (!terminalHiddenBuiltinThemes.includes(id)) builtinMap[id] = theme;
+  }
   for (const t of terminalCustomThemes) {
     customMap[t.id] = t.theme;
   }
-  return { ...TERMINAL_THEMES, ...customMap };
+  return { ...builtinMap, ...customMap };
 }
 
 function getTerminalThemeName() {
@@ -5007,7 +5054,8 @@ function getTerminalThemeName() {
 
   // No (valid) saved choice yet → default to one that matches the app mode.
   const appTheme = getResolvedAppTheme();
-  return appTheme === "light" ? "tokyo-day" : "termark-dark";
+  const preferred = appTheme === "light" ? "tokyo-day" : "termark-dark";
+  return allThemes[preferred] ? preferred : (Object.keys(allThemes)[0] || preferred);
 }
 
 function getAppThemeMode() {
@@ -5513,7 +5561,7 @@ function syncTerminalThemeCardsActive() {
 
 function setTerminalTheme(themeId) {
   const themes = allTerminalThemes();
-  const next = themes[themeId] ? themeId : "termark-dark";
+  const next = themes[themeId] ? themeId : (Object.keys(themes)[0] || "termark-dark");
   terminalEditingThemeId = next;
   localStorage.setItem(SETTINGS_KEY_TERMINAL_THEME, next);
   if (settingsTerminalTheme) {
@@ -5574,8 +5622,14 @@ function renderTerminalThemeCards() {
     terminalThemeListLight.appendChild(card);
   };
 
-  Object.entries(TERMINAL_THEME_META).forEach(([id, meta]) => addCard(id, meta.label, meta.group));
-  terminalCustomThemes.forEach((t) => addCard(t.id, t.label, t.group));
+  Object.entries(TERMINAL_THEME_META).forEach(([id, meta]) => {
+    if (terminalHiddenBuiltinThemes.includes(id)) return;
+    const override = terminalCustomThemes.find((t) => t.id === id);
+    addCard(id, override?.label || builtinTerminalThemeLabel(id), override?.group || meta.group);
+  });
+  terminalCustomThemes
+    .filter((t) => !TERMINAL_THEME_META[t.id])
+    .forEach((t) => addCard(t.id, t.label, t.group));
   syncTerminalThemeCardsActive();
 }
 
@@ -5612,12 +5666,13 @@ function generateCustomThemeId() {
 
 function showThemeCardMenu(x, y) {
   if (!themeCardMenu) return;
-  const isCustomTheme = terminalCustomThemes.some((t) => t.id === themeMenuTargetId);
+  const currentTheme = getTerminalThemeName();
+  const exists = Boolean(themeMenuTargetId && allTerminalThemes()[themeMenuTargetId]);
   if (themeMenuEdit) {
-    themeMenuEdit.disabled = !isCustomTheme;
+    themeMenuEdit.disabled = !exists;
   }
   if (themeMenuDelete) {
-    themeMenuDelete.disabled = !isCustomTheme;
+    themeMenuDelete.disabled = !exists || themeMenuTargetId === currentTheme;
   }
   themeCardMenu.style.left = "0px";
   themeCardMenu.style.top = "0px";
@@ -5663,12 +5718,14 @@ function resolveTerminalThemeGroup(themeName) {
 
 function getDefaultTerminalThemeForGroup(group) {
   const preferredGroup = group === "light" ? "light" : "dark";
-  return Object.entries(TERMINAL_THEME_META).find(([, meta]) => meta.group === preferredGroup)?.[0] || "termark-dark";
+  return Object.entries(TERMINAL_THEME_META)
+    .find(([id, meta]) => meta.group === preferredGroup && !terminalHiddenBuiltinThemes.includes(id))?.[0]
+    || Object.keys(allTerminalThemes())[0]
+    || "termark-dark";
 }
 
 function syncTerminalThemeEditor() {
   const currentId = terminalEditingThemeId || getTerminalThemeName();
-  const isCustom = terminalCustomThemes.some((t) => t.id === currentId);
   const customTheme = terminalCustomThemes.find((t) => t.id === currentId);
   const theme = allTerminalThemes()[currentId] || getTerminalThemeConfig();
   if (themeEditTitle) {
@@ -5683,7 +5740,7 @@ function syncTerminalThemeEditor() {
   if (themeHexFg) themeHexFg.value = toOpaqueHex(theme.foreground);
   if (themeHexCursor) themeHexCursor.value = toOpaqueHex(theme.cursor);
   if (themeHexSelection) themeHexSelection.value = toOpaqueHex(theme.selectionBackground);
-  if (themeMenuDelete) themeMenuDelete.disabled = !isCustom;
+  if (themeMenuDelete) themeMenuDelete.disabled = currentId === getTerminalThemeName();
   updateThemeEditPreview(theme);
 }
 
@@ -5723,9 +5780,12 @@ function updateCustomThemeLabel(label) {
 }
 
 function openThemeCreateDialog(group) {
-  const baseTheme = { ...getTerminalThemeConfig() };
+  const activeCardThemeId = document.querySelector(".terminal-theme-card.active")?.dataset?.theme;
+  const sourceThemeId = activeCardThemeId || getTerminalThemeName();
+  const sourceTheme = allTerminalThemes()[sourceThemeId] || getTerminalThemeConfig();
+  const baseTheme = JSON.parse(JSON.stringify(sourceTheme));
   const id = generateCustomThemeId();
-  terminalCustomThemes.push({ id, label: "", group, theme: baseTheme });
+  terminalCustomThemes.push({ id, label: "", group: group || resolveTerminalThemeGroup(sourceThemeId), theme: baseTheme });
   terminalEditingThemeId = id;
   themeEditOriginal = JSON.parse(JSON.stringify(baseTheme));
   themeEditOriginalLabel = "";
@@ -5739,8 +5799,20 @@ function openThemeCreateDialog(group) {
 }
 
 function openThemeEditDialog(themeId) {
-  const idx = terminalCustomThemes.findIndex((t) => t.id === themeId);
-  if (idx < 0) return;
+  let idx = terminalCustomThemes.findIndex((t) => t.id === themeId);
+  if (idx < 0) {
+    const builtinTheme = TERMINAL_THEMES[themeId];
+    const meta = TERMINAL_THEME_META[themeId];
+    if (!builtinTheme || !meta || terminalHiddenBuiltinThemes.includes(themeId)) return;
+    terminalCustomThemes.push({
+      id: themeId,
+      label: builtinTerminalThemeLabel(themeId),
+      group: meta.group,
+      theme: JSON.parse(JSON.stringify(builtinTheme)),
+    });
+    idx = terminalCustomThemes.length - 1;
+    saveCustomThemes();
+  }
   terminalEditingThemeId = themeId;
   themeEditOriginal = JSON.parse(JSON.stringify(terminalCustomThemes[idx].theme));
   themeEditOriginalLabel = terminalCustomThemes[idx].label || "";
@@ -5754,12 +5826,14 @@ function rebuildTerminalThemeSelectOptions() {
   const selected = getTerminalThemeName();
   settingsTerminalTheme.innerHTML = "";
   Object.entries(TERMINAL_THEME_META).forEach(([id, meta]) => {
+    if (terminalHiddenBuiltinThemes.includes(id)) return;
+    const override = terminalCustomThemes.find((theme) => theme.id === id);
     const o = document.createElement("option");
     o.value = id;
-    o.textContent = meta.label;
+    o.textContent = override?.label || builtinTerminalThemeLabel(id);
     settingsTerminalTheme.appendChild(o);
   });
-  terminalCustomThemes.forEach((t) => {
+  terminalCustomThemes.filter((t) => !TERMINAL_THEME_META[t.id]).forEach((t) => {
     const o = document.createElement("option");
     o.value = t.id;
     o.textContent = t.label;
@@ -6568,7 +6642,7 @@ async function savePortForwardEditor() {
 
 function setSettingsSection(section) {
   settingsSection = section === "terminal"
-    ? "terminal"
+    ? "general"
     : section === "ai"
       ? "ai"
       : section === "sync"
@@ -6585,7 +6659,7 @@ function setSettingsSection(section) {
   settingsNavData?.classList.toggle("active", settingsSection === "data");
   settingsNavAbout?.classList.toggle("active", settingsSection === "about");
   if (settingsGeneralPanel) settingsGeneralPanel.hidden = settingsSection !== "general";
-  if (settingsTerminalPanel) settingsTerminalPanel.hidden = settingsSection !== "terminal";
+  if (settingsTerminalPanel) settingsTerminalPanel.hidden = true;
   if (settingsAiPanel) settingsAiPanel.hidden = settingsSection !== "ai";
   if (settingsSyncPanel) settingsSyncPanel.hidden = settingsSection !== "sync";
   settingsPageBody?.classList.toggle("settings-sync-scrollbar", settingsSection === "sync");
@@ -6595,9 +6669,7 @@ function setSettingsSection(section) {
     maybeAutoRefreshAiModels().catch(() => {});
   }
   if (settingsGeneralTitle) {
-    settingsGeneralTitle.textContent = settingsSection === "terminal"
-      ? t("settings.nav.terminal")
-      : settingsSection === "ai"
+    settingsGeneralTitle.textContent = settingsSection === "ai"
         ? t("settings.ai.title")
         : settingsSection === "sync"
           ? t("settings.nav.sync")
@@ -6608,9 +6680,7 @@ function setSettingsSection(section) {
         : t("settings.general.title");
   }
   if (settingsGeneralDesc) {
-    settingsGeneralDesc.textContent = settingsSection === "terminal"
-      ? t("settings.terminal.desc")
-      : settingsSection === "ai"
+    settingsGeneralDesc.textContent = settingsSection === "ai"
         ? t("settings.ai.desc")
         : settingsSection === "sync"
           ? t("settings.sync.desc")
@@ -6620,9 +6690,7 @@ function setSettingsSection(section) {
             ? ""
         : t("settings.general.desc");
   }
-  if (settingsSection === "terminal") {
-    setSettingsTerminalSubtab(settingsTerminalSubtab);
-  } else if (settingsSection === "sync") {
+  if (settingsSection === "sync") {
     loadSyncProfiles().catch((e) => {
       if (settingsSyncStatus) settingsSyncStatus.textContent = userFriendlySyncError(e);
     });
@@ -8493,6 +8561,7 @@ function applyI18n() {
   setText("terminal-theme-panel-subtitle", "settings.terminal_theme.subtitle");
   setAttr("terminal-sidebar-theme-toggle", "title", "settings.terminal_theme.title");
   setAttr("terminal-sidebar-theme-toggle", "aria-label", "settings.terminal_theme.title");
+  renderTerminalThemeCards();
   setText("terminal-theme-light-title", "settings.terminal_theme.light_title");
   setText("terminal-theme-dark-title", "settings.terminal_theme.dark_title");
   setAttr("terminal-theme-add-light", "title", "theme.create.title");
@@ -9562,7 +9631,7 @@ themeMenuEdit?.addEventListener("click", () => {
   const id = themeMenuTargetId;
   themeCardMenu.hidden = true;
   if (!id) return;
-  if (!terminalCustomThemes.some((t) => t.id === id)) return;
+  if (!allTerminalThemes()[id]) return;
   openThemeEditDialog(id);
 });
 
@@ -9594,27 +9663,33 @@ themeMenuDuplicate?.addEventListener("click", async () => {
   applyTerminalThemeToAllPanes();
 });
 
-themeMenuDelete?.addEventListener("click", () => {
+themeMenuDelete?.addEventListener("click", async () => {
   const id = themeMenuTargetId;
   themeCardMenu.hidden = true;
-  const target = terminalCustomThemes.find((t) => t.id === id);
-  if (!target) return;
-  if (!confirm(t("theme.confirm.delete", { name: target.label }))) return;
-  const deletedWasSelected = getTerminalThemeName() === id;
-  const deletedWasEditing = terminalEditingThemeId === id;
-  const fallback = getDefaultTerminalThemeForGroup(target.group);
-  terminalCustomThemes = terminalCustomThemes.filter((t) => t.id !== id);
-  saveCustomThemes();
-  terminalEditingThemeId = deletedWasEditing || deletedWasSelected ? fallback : getTerminalThemeName();
-  if (deletedWasSelected) {
-    localStorage.setItem(SETTINGS_KEY_TERMINAL_THEME, fallback);
+  if (!id || !allTerminalThemes()[id]) return;
+  if (getTerminalThemeName() === id) {
+    showToast(t("theme.error.delete_current"), "error", 2600);
+    return;
   }
+  const target = terminalCustomThemes.find((theme) => theme.id === id);
+  const label = target?.label || builtinTerminalThemeLabel(id);
+  const ok = await openConfirmDialog({
+    title: t("theme.confirm.delete.title"),
+    message: t("theme.confirm.delete", { name: label }),
+    okText: t("snippets.menu.delete"),
+    cancelText: t("snippets.dialog.cancel"),
+  });
+  if (!ok) return;
+  const deletedWasEditing = terminalEditingThemeId === id;
+  terminalCustomThemes = terminalCustomThemes.filter((theme) => theme.id !== id);
+  if (TERMINAL_THEME_META[id] && !terminalHiddenBuiltinThemes.includes(id)) {
+    terminalHiddenBuiltinThemes.push(id);
+  }
+  saveCustomThemes();
+  terminalEditingThemeId = deletedWasEditing ? getTerminalThemeName() : terminalEditingThemeId;
   rebuildTerminalThemeSelectOptions();
   renderTerminalThemeCards();
   syncTerminalThemeEditor();
-  if (deletedWasSelected) {
-    applyTerminalThemeToAllPanes();
-  }
 });
 
 themeEditCancel?.addEventListener("click", () => {
