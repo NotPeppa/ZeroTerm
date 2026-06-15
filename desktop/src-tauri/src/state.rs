@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicU64, AtomicU8};
 use std::sync::{Arc, Mutex};
 
 use tokio::sync::{mpsc, oneshot};
@@ -130,8 +130,20 @@ pub struct PortForwardHandle {
     pub host_id: String,
     pub rule_id: String,
     pub host_name: String,
-    pub _session: zeroterm_ssh::Session,
-    pub _jump_session: Option<zeroterm_ssh::Session>,
-    pub _forwards: Vec<zeroterm_ssh::ForwardHandle>,
+    /// Human-readable forward summaries (constant for a given rule).
     pub summaries: Vec<String>,
+    /// Liveness state shared with the supervisor task: [`PF_ACTIVE`] while the
+    /// tunnel is up, [`PF_RECONNECTING`] while it's re-establishing after a
+    /// passive disconnect. The supervisor writes it; commands read it for the
+    /// UI. The actual SSH sessions and forwards live inside the supervisor
+    /// task, not here — so dropping this handle does not by itself tear the
+    /// tunnel down; [`cancel`](Self::cancel) does.
+    pub state: Arc<AtomicU8>,
+    /// User-stop signal. Cancelling makes the supervisor drop its sessions and
+    /// forwards (releasing the local listen ports) and exit.
+    pub cancel: CancellationToken,
 }
+
+/// `PortForwardHandle::state` values.
+pub const PF_ACTIVE: u8 = 0;
+pub const PF_RECONNECTING: u8 = 1;

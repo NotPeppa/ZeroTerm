@@ -39,6 +39,7 @@ use crate::host_key::TauriHostKeyPrompt;
 use crate::session::{run as run_session, ClosedEvent};
 use crate::state::{
     AppState, LocalSessionHandle, PortForwardHandle, SessionCommand, SessionHandle, SftpHandle,
+    PF_ACTIVE, PF_RECONNECTING,
 };
 
 #[cfg(target_os = "windows")]
@@ -2467,6 +2468,9 @@ pub struct PortForwardStatus {
     pub host_id: String,
     pub host_name: String,
     pub summaries: Vec<String>,
+    /// "active" while the tunnel is up, "reconnecting" while it's
+    /// re-establishing after a passive disconnect.
+    pub state: &'static str,
 }
 
 #[derive(Debug, Serialize)]
@@ -2558,10 +2562,20 @@ pub async fn update_host_forwards(
 }
 
 #[tauri::command]
-pub async fn delete_host(state: State<'_, AppState>, id: String) -> Result<(), String> {
+pub async fn delete_host(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+    id: String,
+) -> Result<(), String> {
+    // Stop any running tunnels for this host before removing it, so they don't
+    // linger / auto-reconnect to a host that no longer exists.
+    let stopped = stop_port_forwards_where(&state, |h| h.host_id == id);
     let (app, manager) = clone_app_and_sync(&state)?;
     app.delete_host(&id).map_err(|e| e.to_string())?;
     manager.schedule_debounced_sync_for_all(app);
+    if stopped > 0 {
+        let _ = app_handle.emit("port-forward:changed", ());
+    }
     Ok(())
 }
 
@@ -3547,11 +3561,17 @@ pub async fn list_port_forward_status(
         for rule in rules.iter().filter(|rule| rule.host_id == host.id) {
             let active_forward = active.iter().find_map(|(id, handle)| {
                 if handle.rule_id == rule.id {
+                    let state = if handle.state.load(Ordering::Relaxed) == PF_RECONNECTING {
+                        "reconnecting"
+                    } else {
+                        "active"
+                    };
                     Some(PortForwardStatus {
                         id: *id,
                         host_id: handle.host_id.clone(),
                         host_name: handle.host_name.clone(),
                         summaries: handle.summaries.clone(),
+                        state,
                     })
                 } else {
                     None
@@ -3586,11 +3606,17 @@ pub async fn list_port_forward_hosts(
         let host_id = host.id.clone();
         let active_forward = active.iter().find_map(|(id, handle)| {
             if handle.host_id == host_id {
+                let state = if handle.state.load(Ordering::Relaxed) == PF_RECONNECTING {
+                    "reconnecting"
+                } else {
+                    "active"
+                };
                 Some(PortForwardStatus {
                     id: *id,
                     host_id: handle.host_id.clone(),
                     host_name: handle.host_name.clone(),
                     summaries: handle.summaries.clone(),
+                    state,
                 })
             } else {
                 None
@@ -3635,14 +3661,46 @@ pub async fn update_port_forward_rule(
     Ok(())
 }
 
+/// Cancel and remove every running port forward whose handle matches `pred`,
+/// returning how many were stopped. Cancelling makes each supervisor drop its
+/// sessions/forwards (freeing the local ports) and exit. Used so deleting a
+/// rule or host can't leave an orphan supervisor running — which, with
+/// auto-reconnect, would otherwise keep re-establishing a tunnel for something
+/// the user just deleted. `cancel()` is non-blocking, so it's safe to call
+/// while holding the map lock.
+fn stop_port_forwards_where(
+    state: &AppState,
+    pred: impl Fn(&PortForwardHandle) -> bool,
+) -> usize {
+    let mut map = state.port_forwards.lock().unwrap();
+    let ids: Vec<u64> = map
+        .iter()
+        .filter(|(_, h)| pred(h))
+        .map(|(id, _)| *id)
+        .collect();
+    for id in &ids {
+        if let Some(handle) = map.remove(id) {
+            handle.cancel.cancel();
+        }
+    }
+    ids.len()
+}
+
 #[tauri::command]
 pub async fn delete_port_forward_rule(
     state: State<'_, AppState>,
+    app_handle: AppHandle,
     id: String,
 ) -> Result<(), String> {
+    // Stop a running tunnel for this rule first, so deleting it can't leave an
+    // orphan supervisor auto-reconnecting in the background.
+    let stopped = stop_port_forwards_where(&state, |h| h.rule_id == id);
     let (app, manager) = clone_app_and_sync(&state)?;
     app.delete_port_forward(&id).map_err(|e| e.to_string())?;
     manager.schedule_debounced_sync_for_all(app);
+    if stopped > 0 {
+        let _ = app_handle.emit("port-forward:changed", ());
+    }
     Ok(())
 }
 
@@ -3654,6 +3712,109 @@ pub async fn migrate_port_forward_rules(state: State<'_, AppState>) -> Result<us
         manager.schedule_debounced_sync_for_all(app);
     }
     Ok(migrated)
+}
+
+/// Long-lived supervisor for one running port forward.
+///
+/// Owns the live SSH session(s) and forward handles. It polls the session for
+/// a passive disconnect (NAT/firewall reap, transport error, or keepalive
+/// timeout); on death it flips the shared state to `PF_RECONNECTING`, releases
+/// the old local listen ports, and reconnects with exponential backoff —
+/// rebuilding the connect chain from the vault each attempt, so host edits are
+/// picked up. A user stop cancels `cancel`, which drops everything (freeing the
+/// local ports) and ends the task. Every transition emits `port-forward:changed`
+/// so the UI reflects active / reconnecting / stopped live.
+fn spawn_port_forward_supervisor(
+    app_handle: AppHandle,
+    id: u64,
+    host_id: String,
+    spec: zeroterm_app::ForwardSpec,
+    pf_state: Arc<std::sync::atomic::AtomicU8>,
+    cancel: tokio_util::sync::CancellationToken,
+    mut jump: Option<Session>,
+    mut session: Session,
+    mut forwards: Vec<zeroterm_ssh::ForwardHandle>,
+) {
+    tokio::spawn(async move {
+        loop {
+            // --- monitor: tunnel is up; watch for death or user stop ---
+            loop {
+                tokio::select! {
+                    _ = cancel.cancelled() => return,
+                    _ = tokio::time::sleep(Duration::from_secs(3)) => {
+                        let jump_dead = jump.as_ref().map(|j| j.is_closed()).unwrap_or(false);
+                        if session.is_closed() || jump_dead {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // --- died: enter reconnecting and free the old local ports ---
+            pf_state.store(PF_RECONNECTING, Ordering::Relaxed);
+            let _ = app_handle.emit("port-forward:changed", ());
+            warn!(id, "port forward disconnected; reconnecting");
+            forwards.clear();
+
+            let mut backoff = Duration::from_secs(1);
+            loop {
+                tokio::select! {
+                    _ = cancel.cancelled() => return,
+                    _ = tokio::time::sleep(backoff) => {}
+                }
+
+                // Re-read host config from the vault each attempt (scoped so the
+                // AppState guard never spans an await).
+                let chain = {
+                    let st = app_handle.state::<AppState>();
+                    build_connect_chain_for_host(st.inner(), &app_handle, &host_id)
+                };
+                let (cfg, jump_cfg) = match chain {
+                    Ok((_host, cfg, jump_cfg)) => (cfg, jump_cfg),
+                    Err(e) => {
+                        warn!(id, error = %e, "port forward reconnect: build chain failed");
+                        backoff = (backoff * 2).min(Duration::from_secs(30));
+                        continue;
+                    }
+                };
+
+                let connected = tokio::select! {
+                    _ = cancel.cancelled() => return,
+                    r = connect_host_sessions(cfg, jump_cfg) => r,
+                };
+                let (new_jump, mut new_session) = match connected {
+                    Ok(v) => v,
+                    Err(e) => {
+                        warn!(id, error = %e, "port forward reconnect: connect failed");
+                        backoff = (backoff * 2).min(Duration::from_secs(30));
+                        continue;
+                    }
+                };
+
+                let forwarded = tokio::select! {
+                    _ = cancel.cancelled() => return,
+                    r = start_host_forwards(&mut new_session, std::slice::from_ref(&spec)) => r,
+                };
+                let (new_forwards, _summaries) = match forwarded {
+                    Ok(v) => v,
+                    Err(e) => {
+                        warn!(id, error = %e, "port forward reconnect: rebind failed");
+                        backoff = (backoff * 2).min(Duration::from_secs(30));
+                        continue;
+                    }
+                };
+
+                // Reconnected — swap in the new tunnel and resume monitoring.
+                jump = new_jump;
+                session = new_session;
+                forwards = new_forwards;
+                pf_state.store(PF_ACTIVE, Ordering::Relaxed);
+                let _ = app_handle.emit("port-forward:changed", ());
+                info!(id, "port forward reconnected");
+                break;
+            }
+        }
+    });
 }
 
 #[tauri::command]
@@ -3688,27 +3849,57 @@ pub async fn start_port_forward(
     }
 
     let (jump_session, mut session) = connect_host_sessions(cfg, jump_cfg).await?;
-    let (forwards, summaries) = start_host_forwards(&mut session, &[spec]).await?;
+    let (forwards, summaries) =
+        start_host_forwards(&mut session, std::slice::from_ref(&spec)).await?;
     let id = state.next_port_forward_id.fetch_add(1, Ordering::SeqCst);
+    let pf_state = Arc::new(std::sync::atomic::AtomicU8::new(PF_ACTIVE));
+    let cancel = tokio_util::sync::CancellationToken::new();
     state.port_forwards.lock().unwrap().insert(
         id,
         PortForwardHandle {
-            host_id: host.id,
+            host_id: host_id.clone(),
             rule_id,
             host_name: host.name,
-            _session: session,
-            _jump_session: jump_session,
-            _forwards: forwards,
             summaries,
+            state: Arc::clone(&pf_state),
+            cancel: cancel.clone(),
         },
     );
+    // Hand the live sessions/forwards to a supervisor that watches for a
+    // passive disconnect and auto-reconnects. The handle above only carries
+    // state + the cancel signal; the supervisor owns the actual tunnel.
+    spawn_port_forward_supervisor(
+        app_handle.clone(),
+        id,
+        host_id,
+        spec,
+        pf_state,
+        cancel,
+        jump_session,
+        session,
+        forwards,
+    );
+    let _ = app_handle.emit("port-forward:changed", ());
     Ok(id)
 }
 
 #[tauri::command]
-pub async fn stop_port_forward(state: State<'_, AppState>, id: u64) -> Result<(), String> {
+pub async fn stop_port_forward(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+    id: u64,
+) -> Result<(), String> {
     let removed = state.port_forwards.lock().unwrap().remove(&id);
-    removed.map(|_| ()).ok_or_else(|| format!("no port forward with id {id}"))
+    match removed {
+        Some(handle) => {
+            // Cancelling makes the supervisor drop its sessions and forwards
+            // (releasing the local listen ports) and exit.
+            handle.cancel.cancel();
+            let _ = app_handle.emit("port-forward:changed", ());
+            Ok(())
+        }
+        None => Err(format!("no port forward with id {id}")),
+    }
 }
 
 #[derive(Debug, Deserialize)]

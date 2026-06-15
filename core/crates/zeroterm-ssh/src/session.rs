@@ -137,6 +137,26 @@ pub struct Session {
     remote_forward_rx: Arc<Mutex<mpsc::UnboundedReceiver<RemoteForwardIncoming>>>,
 }
 
+/// Shared russh client config for both direct and jump-host connections.
+///
+/// We enable SSH-level keepalive (`keepalive@openssh.com`, sent every 30s).
+/// Without it russh sends nothing on an idle connection, so NAT/firewall idle
+/// timeouts silently reap long-lived sessions — most visibly standalone port
+/// forwards, which can sit idle for minutes and then "randomly" drop. After
+/// `keepalive_max` consecutive unanswered probes the link is declared dead and
+/// torn down promptly instead of hanging, matching OpenSSH's
+/// `ServerAliveInterval=30` / `ServerAliveCountMax=3`.
+///
+/// We still leave `inactivity_timeout` unset on purpose (see `connect`): that
+/// is russh's idle-*kill* timer and would defeat the whole point.
+fn client_config() -> client::Config {
+    client::Config {
+        keepalive_interval: Some(Duration::from_secs(30)),
+        keepalive_max: 3,
+        ..Default::default()
+    }
+}
+
 impl Session {
     pub async fn connect(cfg: ConnectConfig) -> Result<Self, SshError> {
         if cfg.auth_methods.is_empty() {
@@ -150,7 +170,7 @@ impl Session {
         // user thinks) becomes unusable. The caller's `connect_timeout`
         // is enforced as a real wall-clock timeout around the initial
         // TCP + handshake below instead.
-        let config = Arc::new(client::Config::default());
+        let config = Arc::new(client_config());
 
         let (remote_forward_tx, remote_forward_rx) = mpsc::unbounded_channel();
         let handler = ZeroTermHandler {
@@ -192,7 +212,7 @@ impl Session {
             .await?;
         let stream = channel.into_stream();
 
-        let config = Arc::new(client::Config::default());
+        let config = Arc::new(client_config());
         let (remote_forward_tx, remote_forward_rx) = mpsc::unbounded_channel();
         let handler = ZeroTermHandler {
             policy: cfg.host_key_policy.clone(),
@@ -223,6 +243,14 @@ impl Session {
     /// channels without exclusive access to the `Session`.
     pub(crate) fn handle_clone(&self) -> Arc<Handle<ZeroTermHandler>> {
         Arc::clone(&self.handle)
+    }
+
+    /// True once the underlying russh client loop has ended — i.e. the
+    /// connection is gone (disconnect, transport error, or keepalive
+    /// timeout). Long-lived supervisors (e.g. port forwards) poll this to
+    /// notice a passive disconnect and reconnect.
+    pub fn is_closed(&self) -> bool {
+        self.handle.is_closed()
     }
 
     pub(crate) async fn tcpip_forward(&mut self, address: &str, port: u32) -> Result<u32, SshError> {

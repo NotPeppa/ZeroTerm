@@ -1080,6 +1080,10 @@ body[data-app-theme="light"]:not(.has-app-bg) .settings-page-head {
   border-color: rgba(72, 220, 165, 0.28);
 }
 
+.port-forward-card.reconnecting {
+  border-color: rgba(245, 180, 80, 0.38);
+}
+
 .port-forward-card-head {
   display: flex;
   align-items: center;

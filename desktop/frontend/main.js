@@ -480,6 +480,7 @@ const I18N = {
     "port_forward.detail.local": "Open local {bindAddr}:{bindPort} to connect to {targetHost}:{targetPort} on the server",
     "port_forward.detail.remote": "Open server {bindAddr}:{bindPort} to connect back to local {targetHost}:{targetPort}",
     "port_forward.status.running": "running",
+    "port_forward.status.reconnecting": "reconnecting…",
     "port_forward.status.stopped": "stopped",
     "port_forward.action.start": "Start",
     "port_forward.action.stop": "Stop",
@@ -1262,6 +1263,7 @@ const I18N = {
     "port_forward.detail.local": "访问本机 {bindAddr}:{bindPort}，会连接到服务器上的 {targetHost}:{targetPort}",
     "port_forward.detail.remote": "访问服务器 {bindAddr}:{bindPort}，会反连到本机 {targetHost}:{targetPort}",
     "port_forward.status.running": "运行中",
+    "port_forward.status.reconnecting": "重连中…",
     "port_forward.status.stopped": "未启动",
     "port_forward.action.start": "启动",
     "port_forward.action.stop": "停止",
@@ -6492,15 +6494,22 @@ function renderPortForwardRows() {
   }
 
   for (const row of rows) {
+    const reconnecting = row.active?.state === "reconnecting";
     const card = document.createElement("article");
-    card.className = "port-forward-card" + (row.active ? " active" : "");
+    card.className =
+      "port-forward-card" + (row.active ? (reconnecting ? " reconnecting" : " active") : "");
 
     const head = document.createElement("div");
     head.className = "port-forward-card-head";
     const title = document.createElement("div");
     title.innerHTML = `<strong></strong><span></span>`;
     title.querySelector("strong").textContent = friendlyForwardTitle(row.forward);
-    title.querySelector("span").textContent = `${row.hostName} · ${row.active ? t("port_forward.status.running") : t("port_forward.status.stopped")}`;
+    const statusKey = row.active
+      ? reconnecting
+        ? "port_forward.status.reconnecting"
+        : "port_forward.status.running"
+      : "port_forward.status.stopped";
+    title.querySelector("span").textContent = `${row.hostName} · ${t(statusKey)}`;
 
     const action = document.createElement("button");
     action.type = "button";
@@ -11760,6 +11769,14 @@ listen("host-key-prompt", (ev) => {
 
 listen("host:os_type_updated", () => {
   refreshHostsCacheFromVault({ silent: true }).catch(() => {});
+});
+
+// A port forward changed state on the backend (started, stopped, passively
+// disconnected, or auto-reconnected). Refresh the page live if it's showing.
+listen("port-forward:changed", () => {
+  if (workspaceMode === "port-forward") {
+    loadPortForwardPage().catch((e) => console.warn("port-forward refresh failed", e));
+  }
 });
 
 hkAccept.addEventListener("click", () => {
