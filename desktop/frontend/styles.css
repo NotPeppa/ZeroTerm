@@ -3185,6 +3185,32 @@ body[data-app-theme="light"] .terminal-side-btn.active::before {
   color: #ffb8c4;
 }
 
+.ai-message-retry {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.ai-retry-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 107, 126, 0.36);
+  background: rgba(255, 107, 126, 0.12);
+  color: #ffd1d8;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.ai-retry-button:hover {
+  background: rgba(255, 107, 126, 0.22);
+  border-color: rgba(255, 107, 126, 0.55);
+}
+
 .ai-error-card strong {
   display: block;
   color: #ffd1d8;

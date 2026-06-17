@@ -656,6 +656,7 @@ const I18N = {
     "settings.winsize.status.reset": "Cleared the saved layout; defaults apply on next launch.",
     "settings.winsize.status.failed": "Could not save the layout: {error}",
     "ai.assistant.title": "AI Assistant",
+    "ai.retry": "Retry",
     "ai.assistant.subtitle": "Current SSH session",
     "ai.model.unconfigured": "No model configured",
     "ai.model.current": "Current AI model: {label}",
@@ -1437,6 +1438,7 @@ const I18N = {
     "settings.winsize.status.reset": "已清除保存的布局，下次启动使用默认值。",
     "settings.winsize.status.failed": "保存布局失败：{error}",
     "ai.assistant.title": "AI 助手",
+    "ai.retry": "重试",
     "ai.assistant.subtitle": "当前 SSH 会话",
     "ai.model.unconfigured": "未配置模型",
     "ai.model.current": "当前 AI 模型：{label}",
@@ -4073,13 +4075,13 @@ async function streamAiMessages(messages, pendingText = "正在思考...") {
   const requestId = `ai-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   aiActiveRequestId = requestId;
   updateAiSendButton();
-  window.__ztAiStreams.set(requestId, { node: pendingNode, content: "" });
+  window.__ztAiStreams.set(requestId, { node: pendingNode, content: "", messages, pendingText });
   const timeoutId = window.setTimeout(() => {
     const state = window.__ztAiStreams?.get?.(requestId);
     if (!state) return;
-    state.node.classList.remove("pending");
-    state.node.className = "ai-message ai-message-error";
-    setAiMessageContent(state.node, "AI 响应超时，请重试。");
+    showAiTurnError(state.node, "AI 响应超时，请重试。", state.messages, state.pendingText);
+    if (aiActiveRequestId === requestId) aiActiveRequestId = "";
+    updateAiSendButton();
     window.__ztAiStreams.delete(requestId);
   }, 45000);
   window.__ztAiStreams.get(requestId).timeoutId = timeoutId;
@@ -4107,14 +4109,10 @@ async function streamAiMessages(messages, pendingText = "正在思考...") {
         aiMessageByNode.set(state.node, assistantMessage);
         storeAiConversationForActivePane();
       } else {
-        state.node.classList.remove("pending");
-        state.node.className = "ai-message ai-message-error";
-        setAiMessageContent(state.node, "AI 流式响应失败，且非流式重试没有返回内容。");
+        showAiTurnError(state.node, "AI 流式响应失败，且非流式重试没有返回内容。", messages, pendingText);
       }
     } catch (fallbackError) {
-      state.node.classList.remove("pending");
-      state.node.className = "ai-message ai-message-error";
-      setAiMessageContent(state.node, `AI 响应失败：${String(fallbackError || e)}`);
+      showAiTurnError(state.node, `AI 响应失败：${String(fallbackError || e)}`, messages, pendingText);
     } finally {
       if (aiActiveRequestId === requestId) aiActiveRequestId = "";
       window.__ztAiStreams.delete(requestId);
@@ -4473,6 +4471,39 @@ function setAiPendingMessage(node, content, kind = "assistant") {
   setAiMessageContent(node, content);
 }
 
+/// Mark an AI turn's message node as failed and attach a Retry button that
+/// re-runs the exact same request. All AI failure paths funnel through here so
+/// a network/timeout/empty failure is always recoverable with one click.
+function showAiTurnError(node, text, messages, pendingText) {
+  if (!node) return;
+  node.classList.remove("pending");
+  node.className = "ai-message ai-message-error";
+  setAiMessageContent(node, text);
+  attachAiRetryButton(node, messages, pendingText);
+}
+
+/// Append a Retry control to a failed AI message node. Clicking it removes the
+/// failed node and re-issues the same turn with the original messages. The
+/// button is a sibling of `.ai-message-body`, which `setAiMessageContent` only
+/// rewrites — so it won't be clobbered.
+function attachAiRetryButton(node, messages, pendingText) {
+  if (!node || !Array.isArray(messages) || messages.length === 0) return;
+  node.querySelector(".ai-message-retry")?.remove();
+  const bar = document.createElement("div");
+  bar.className = "ai-message-retry";
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "ai-retry-button";
+  btn.textContent = t("ai.retry");
+  btn.addEventListener("click", () => {
+    if (aiActiveRequestId) return; // a turn is already in flight
+    node.remove();
+    streamAiMessages(messages, pendingText).catch((e) => console.warn("ai retry failed", e));
+  });
+  bar.appendChild(btn);
+  node.appendChild(bar);
+}
+
 async function ensureAiStreamListener() {
   if (aiStreamUnlistenPromise) return;
   aiStreamUnlistenPromise = listen("ai:stream", (ev) => {
@@ -4484,11 +4515,10 @@ async function ensureAiStreamListener() {
       if (payload.error === "canceled") {
         state.node.remove();
       } else {
-        state.node.classList.remove("pending");
-        state.node.className = "ai-message ai-message-error";
-        setAiMessageContent(state.node, payload.error);
+        showAiTurnError(state.node, payload.error, state.messages, state.pendingText);
       }
       if (aiActiveRequestId === payload.requestId) aiActiveRequestId = "";
+      updateAiSendButton();
       window.__ztAiStreams.delete(payload.requestId);
       return;
     }
@@ -4503,8 +4533,8 @@ async function ensureAiStreamListener() {
       state.node.classList.remove("pending");
       if (aiActiveRequestId === payload.requestId) aiActiveRequestId = "";
       if (!state.content.trim()) {
-        state.node.className = "ai-message ai-message-error";
-        setAiMessageContent(state.node, "AI 没有返回内容，请重试。");
+        showAiTurnError(state.node, "AI 没有返回内容，请重试。", state.messages, state.pendingText);
+        updateAiSendButton();
         window.__ztAiStreams.delete(payload.requestId);
         return;
       }
