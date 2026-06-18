@@ -4182,7 +4182,7 @@ function commandWaitMaxMs(command) {
 async function continueAiAfterCommand(command, output) {
   const userGoal = [...aiMessages].reverse().find((m) => m.role === "user")?.content || "";
   const includeCommandOutput = aiContextMode !== "off";
-  await streamAiMessages([
+  await runAiTurn([
     {
       role: "system",
       content: [
@@ -4242,7 +4242,7 @@ async function continueAiAfterCommands(results, { totalCommands = 0 } = {}) {
       blocks.push("```");
     }
   });
-  await streamAiMessages([
+  await runAiTurn([
     {
       role: "system",
       content: [
@@ -4270,6 +4270,23 @@ async function continueAiAfterCommands(results, { totalCommands = 0 } = {}) {
       ].join("\n"),
     },
   ], "正在分析已执行命令...");
+}
+
+/// Run a single AI turn (initial send or retry) under shared "sending" state
+/// so the compose button reflects in-flight/cancelable status and concurrent
+/// turns are prevented uniformly. Returns once the request hands off to the
+/// stream listener or fails.
+async function runAiTurn(messages, pendingText = "正在思考...") {
+  if (aiSending) return;
+  aiSending = true;
+  updateAiSendButton();
+  try {
+    await streamAiMessages(messages, pendingText);
+  } finally {
+    aiSending = false;
+    aiActiveRequestId = "";
+    updateAiSendButton();
+  }
 }
 
 async function streamAiMessages(messages, pendingText = "正在思考...") {
@@ -4700,9 +4717,9 @@ function attachAiRetryButton(node, messages, pendingText) {
   btn.className = "ai-retry-button";
   btn.textContent = t("ai.retry");
   btn.addEventListener("click", () => {
-    if (aiActiveRequestId) return; // a turn is already in flight
+    if (aiSending) return; // a turn is already in flight
     node.remove();
-    streamAiMessages(messages, pendingText).catch((e) => console.warn("ai retry failed", e));
+    runAiTurn(messages, pendingText).catch((e) => console.warn("ai retry failed", e));
   });
   bar.appendChild(btn);
   node.appendChild(bar);
@@ -4829,27 +4846,28 @@ async function maybeAutoRefreshAiModels() {
 async function sendAiMessage(text) {
   if (aiSending) return;
   syncAiConversationToActivePane();
-  aiSending = true;
-  await ensureAiStreamListener();
-  if (!window.__ztAiStreams) window.__ztAiStreams = new Map();
-  updateAiSendButton();
+  // A fresh turn supersedes any earlier failed turn: drop stale Retry buttons
+  // so a later click can't replay an out-of-date conversation snapshot.
+  clearAiRetryButtons();
+  aiMessages.push({ role: "user", content: text, commandResults: [] });
+  storeAiConversationForActivePane();
+  appendAiMessage("user", text);
+  const system = "你是 ZeroTerm 的 AI 助手。用户是普通用户，不一定懂命令。请先用人话解释和规划，不要假装已经执行命令。需要用户执行命令时，一次只建议下一条最有用的命令；每个 bash/shell fenced code block 只能包含一条命令。引用终端输出、报错或日志时必须使用 ```terminal 代码块，不要使用 bash。";
+  const terminalContext = shouldAttachTerminalContext(text) ? buildAiTerminalContext() : "";
+  const messages = [{ role: "system", content: system }];
+  if (terminalContext) messages.push({ role: "system", content: terminalContext });
+  messages.push(...redactAiMessagesForRequest(aiMessages.slice(-10), { includeTerminalContent: aiContextMode !== "off" }));
   try {
-    aiMessages.push({ role: "user", content: text, commandResults: [] });
-    storeAiConversationForActivePane();
-    appendAiMessage("user", text);
-    const system = "你是 ZeroTerm 的 AI 助手。用户是普通用户，不一定懂命令。请先用人话解释和规划，不要假装已经执行命令。需要用户执行命令时，一次只建议下一条最有用的命令；每个 bash/shell fenced code block 只能包含一条命令。引用终端输出、报错或日志时必须使用 ```terminal 代码块，不要使用 bash。";
-    const terminalContext = shouldAttachTerminalContext(text) ? buildAiTerminalContext() : "";
-    const messages = [{ role: "system", content: system }];
-    if (terminalContext) messages.push({ role: "system", content: terminalContext });
-    messages.push(...redactAiMessagesForRequest(aiMessages.slice(-10), { includeTerminalContent: aiContextMode !== "off" }));
-    await streamAiMessages(messages);
+    await runAiTurn(messages);
   } catch (e) {
     appendAiMessage("error", String(e));
-  } finally {
-    aiSending = false;
-    aiActiveRequestId = "";
-    updateAiSendButton();
   }
+}
+
+/// Remove Retry buttons from all currently-displayed failed AI messages.
+/// Called when a new turn begins so an obsolete failed turn can't be replayed.
+function clearAiRetryButtons() {
+  aiChatLog?.querySelectorAll(".ai-message-retry").forEach((el) => el.remove());
 }
 
 async function runSyncButtonAction(button, busyLabel, task) {
@@ -11510,6 +11528,17 @@ function ensurePaneTerminal(pane) {
         });
         pane.term.loadAddon(webgl);
         pane.webglAddon = webgl;
+        // The WebGL renderer bakes each glyph into a GPU texture atlas at the
+        // DPR/font in effect when the addon loads. Here that's *before* the
+        // custom font has finished loading and before the macOS window's
+        // devicePixelRatio has settled, so the atlas is built from fallback
+        // glyphs at the wrong scale and every glyph renders blurry for the rest
+        // of the session. Rebuild the atlas once fonts are ready, and again
+        // whenever the DPR changes (e.g. dragging between a Retina and an
+        // external display), so glyphs are always rasterised at native
+        // resolution.
+        rebuildWebglAtlasWhenReady(pane);
+        observePaneDevicePixelRatio(pane);
       }
     } catch (e) {
       console.warn("webgl renderer unavailable, falling back to DOM renderer", e);
@@ -11916,6 +11945,58 @@ function nextFrame() {
 
 let terminalFontsReadyPromise = null;
 
+/// Force the WebGL renderer to re-rasterise its glyph texture atlas once the
+/// custom terminal font is actually loaded. Without this the atlas keeps the
+/// fallback-font glyphs baked in at load time and text stays blurry.
+function rebuildWebglAtlasWhenReady(pane) {
+  waitForTerminalFonts()
+    .then(() => {
+      // The pane may have been torn down / the GPU context lost meanwhile.
+      if (!pane.term || !pane.webglAddon) return;
+      try {
+        pane.webglAddon.clearTextureAtlas();
+      } catch (e) {
+        console.warn("webgl atlas rebuild failed", e);
+      }
+    })
+    .catch(() => {});
+}
+
+/// Watch for devicePixelRatio changes (display switch, OS zoom) and rebuild the
+/// WebGL atlas each time so glyphs are re-rasterised at the new native
+/// resolution instead of being scaled up blurry. `matchMedia` resolution
+/// queries fire once per change, so we re-arm a fresh listener after each hit.
+function observePaneDevicePixelRatio(pane) {
+  if (typeof window.matchMedia !== "function") return;
+  const arm = () => {
+    if (!pane.term || !pane.webglAddon) return;
+    const dpr = window.devicePixelRatio || 1;
+    const mql = window.matchMedia(`(resolution: ${dpr}dppx)`);
+    const onChange = () => {
+      if (pane.term && pane.webglAddon) {
+        try {
+          pane.webglAddon.clearTextureAtlas();
+        } catch (e) {
+          console.warn("webgl atlas rebuild on dpr change failed", e);
+        }
+      }
+      arm(); // re-arm for the next DPR value
+    };
+    try {
+      mql.addEventListener("change", onChange, { once: true });
+    } catch {
+      // Safari/WebKit fallback: older addListener signature.
+      const legacy = () => {
+        mql.removeListener(legacy);
+        onChange();
+      };
+      mql.addListener(legacy);
+    }
+    pane.dprMediaQuery = mql;
+  };
+  arm();
+}
+
 async function waitForTerminalFonts() {
   if (terminalFontsReadyPromise) return terminalFontsReadyPromise;
   terminalFontsReadyPromise = (async () => {
@@ -12105,6 +12186,13 @@ async function disconnectPaneSession(pane, { dispose }) {
     if (pane.term) pane.term.dispose();
     pane.term = null;
     pane.fitAddon = null;
+    pane.webglAddon = null;
+    if (pane.dprMediaQuery) {
+      // Listener was added with { once: true } / addListener; drop our
+      // reference so a pending (not-yet-fired) listener can't rebuild an atlas
+      // on a disposed pane. The once-listener itself also guards on pane.term.
+      pane.dprMediaQuery = null;
+    }
     if (pane.ipLinkProviderDispose) {
       try {
         pane.ipLinkProviderDispose.dispose();

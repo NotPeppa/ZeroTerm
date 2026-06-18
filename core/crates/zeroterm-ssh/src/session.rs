@@ -161,7 +161,10 @@ pub fn set_global_http_proxy(proxy_url: Option<String>) {
         .filter(|url| !url.is_empty());
 }
 
-fn current_http_proxy() -> Option<String> {
+/// The currently-configured global HTTP proxy URL, if any. Returned to
+/// consumers (e.g. the S3 sync adapter) that build their own HTTP clients
+/// and must route them through the same proxy the SSH transport uses.
+pub fn current_http_proxy() -> Option<String> {
     global_http_proxy().read().unwrap().clone()
 }
 

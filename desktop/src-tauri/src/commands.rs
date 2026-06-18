@@ -75,6 +75,17 @@ const AI_KEYCHAIN_PROFILE: &str = "default";
 const AI_SESSION_MAX_ITEMS: usize = 80;
 const AI_STORE_VERSION: u32 = 2;
 
+/// Number of files downloaded concurrently when recursively pulling a remote
+/// directory to local. Bounds round-trip stacking for many-small-files trees
+/// without overwhelming the server's `MaxSessions` or local disk.
+const DIR_DOWNLOAD_CONCURRENCY: usize = 4;
+
+/// Number of files uploaded concurrently when recursively pushing a directory
+/// to a remote (local→remote or remote→remote). Symmetric with the download
+/// path; bounds round-trip stacking without exhausting the server's
+/// `MaxSessions` or piling too many in-flight transfers into memory.
+const DIR_UPLOAD_CONCURRENCY: usize = 4;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NetworkProxyConfig {
@@ -447,10 +458,11 @@ async fn download_remote_file_to_local(
                 destination,
                 move |progress_cb| async move {
                     source_sftp
-                        .download_to_writer(
+                        .download_to_writer_parallel(
                             &source,
                             &mut file,
                             zeroterm_ssh::DEFAULT_CHUNK,
+                            zeroterm_ssh::DEFAULT_DOWNLOAD_PARALLELISM,
                             cancel,
                             progress_cb,
                         )
@@ -467,10 +479,11 @@ async fn download_remote_file_to_local(
                 .map_err(|e| format!("opening {}: {e}", temp_path.display()))?;
             let mut file = tokio::io::BufWriter::new(file);
             source_sftp
-                .download_to_writer(
+                .download_to_writer_parallel(
                     &source,
                     &mut file,
                     zeroterm_ssh::DEFAULT_CHUNK,
+                    zeroterm_ssh::DEFAULT_DOWNLOAD_PARALLELISM,
                     tokio_util::sync::CancellationToken::new(),
                     |_| {},
                 )
@@ -5015,30 +5028,30 @@ fn copy_local_tree_to_local(
 
 async fn copy_local_tree_to_remote(
     source: &Path,
-    target_sftp: &zeroterm_ssh::Sftp,
+    target_sftp: &Arc<zeroterm_ssh::Sftp>,
     target: &str,
     root_kind: CopyNodeKind,
     overwrite: bool,
 ) -> Result<(), String> {
     match root_kind {
         CopyNodeKind::File => {
-            if target_sftp.stat(target).await.is_ok() && !overwrite {
-                return Err(format!("destination already exists: {target}"));
-            }
-            let data = tokio::fs::read(source)
-                .await
-                .map_err(|e| format!("reading {}: {e}", source.display()))?;
-            target_sftp
-                .upload_from_slice(target, &data)
-                .await
-                .map_err(|e| e.to_string())?;
-            Ok(())
+            stream_local_file_to_remote(
+                Arc::clone(target_sftp),
+                source.to_path_buf(),
+                target.to_string(),
+                overwrite,
+            )
+            .await
         }
         CopyNodeKind::Dir => {
             if target_sftp.create_dir(target).await.is_err() {
                 target_sftp.stat(target).await.map_err(|e| e.to_string())?;
             }
 
+            // Walk first, creating directories eagerly, then upload files with
+            // bounded concurrency so many small files don't serialize a full
+            // round-trip each.
+            let mut file_jobs: Vec<(PathBuf, String)> = Vec::new();
             let mut stack: Vec<(PathBuf, String)> =
                 vec![(source.to_path_buf(), target.to_string())];
             while let Some((src_dir, dst_dir)) = stack.pop() {
@@ -5053,16 +5066,7 @@ async fn copy_local_tree_to_remote(
                     let kind = detect_local_kind(&child_src)?;
                     match kind {
                         CopyNodeKind::File => {
-                            if target_sftp.stat(&child_dst).await.is_ok() && !overwrite {
-                                return Err(format!("destination already exists: {child_dst}"));
-                            }
-                            let data = tokio::fs::read(&child_src)
-                                .await
-                                .map_err(|e| format!("reading {}: {e}", child_src.display()))?;
-                            target_sftp
-                                .upload_from_slice(&child_dst, &data)
-                                .await
-                                .map_err(|e| e.to_string())?;
+                            file_jobs.push((child_src, child_dst));
                         }
                         CopyNodeKind::Dir => {
                             if target_sftp.create_dir(&child_dst).await.is_err() {
@@ -5076,9 +5080,59 @@ async fn copy_local_tree_to_remote(
                     }
                 }
             }
+
+            use futures_util::stream::StreamExt;
+            let mut stream = futures_util::stream::iter(file_jobs.into_iter().map(
+                |(child_src, child_dst)| {
+                    stream_local_file_to_remote(
+                        Arc::clone(target_sftp),
+                        child_src,
+                        child_dst,
+                        overwrite,
+                    )
+                },
+            ))
+            .buffer_unordered(DIR_UPLOAD_CONCURRENCY);
+
+            while let Some(res) = stream.next().await {
+                res?;
+            }
             Ok(())
         }
     }
+}
+
+/// Stream a single local file to a remote path, replacing any existing file
+/// when `overwrite`. Uses a streaming reader so large files don't load wholly
+/// into memory.
+async fn stream_local_file_to_remote(
+    target_sftp: Arc<zeroterm_ssh::Sftp>,
+    source: PathBuf,
+    target: String,
+    overwrite: bool,
+) -> Result<(), String> {
+    if !overwrite && target_sftp.stat(&target).await.is_ok() {
+        return Err(format!("destination already exists: {target}"));
+    }
+    let metadata = tokio::fs::metadata(&source)
+        .await
+        .map_err(|e| format!("stating {}: {e}", source.display()))?;
+    let size_hint = Some(metadata.len());
+    let mut file = tokio::fs::File::open(&source)
+        .await
+        .map_err(|e| format!("reading {}: {e}", source.display()))?;
+    target_sftp
+        .upload_from_reader(
+            &target,
+            &mut file,
+            zeroterm_ssh::DEFAULT_CHUNK,
+            size_hint,
+            tokio_util::sync::CancellationToken::new(),
+            |_| {},
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 async fn copy_remote_tree_to_local(
@@ -5118,6 +5172,11 @@ async fn copy_remote_tree_to_local(
                     .await
                     .map_err(|e| format!("mkdir {}: {e}", target.display()))?;
             }
+            // Walk the tree first, creating directories eagerly (parents before
+            // children) and collecting the flat list of file transfers. Then
+            // run those transfers with bounded concurrency so many small files
+            // don't each pay a full round-trip serially.
+            let mut file_jobs: Vec<(String, PathBuf)> = Vec::new();
             let mut stack: Vec<(String, PathBuf)> =
                 vec![(source.to_string(), target.to_path_buf())];
             while let Some((src_dir, dst_dir)) = stack.pop() {
@@ -5134,14 +5193,7 @@ async fn copy_remote_tree_to_local(
                     let kind = detect_remote_kind(&child_src, entry.kind)?;
                     match kind {
                         CopyNodeKind::File => {
-                            stream_one_remote_file_to_local(
-                                Arc::clone(source_sftp),
-                                child_src,
-                                child_dst,
-                                overwrite,
-                                progress_ctx,
-                            )
-                            .await?;
+                            file_jobs.push((child_src, child_dst));
                         }
                         CopyNodeKind::Dir => {
                             if tokio::fs::metadata(&child_dst).await.is_err() {
@@ -5154,38 +5206,55 @@ async fn copy_remote_tree_to_local(
                     }
                 }
             }
+
+            use futures_util::stream::StreamExt;
+            let mut stream = futures_util::stream::iter(file_jobs.into_iter().map(
+                |(child_src, child_dst)| {
+                    stream_one_remote_file_to_local(
+                        Arc::clone(source_sftp),
+                        child_src,
+                        child_dst,
+                        overwrite,
+                        progress_ctx,
+                    )
+                },
+            ))
+            .buffer_unordered(DIR_DOWNLOAD_CONCURRENCY);
+
+            while let Some(res) = stream.next().await {
+                res?;
+            }
             Ok(())
         }
     }
 }
 
 async fn copy_remote_tree_to_remote(
-    source_sftp: &zeroterm_ssh::Sftp,
+    source_sftp: &Arc<zeroterm_ssh::Sftp>,
     source: &str,
-    target_sftp: &zeroterm_ssh::Sftp,
+    target_sftp: &Arc<zeroterm_ssh::Sftp>,
     target: &str,
     root_kind: CopyNodeKind,
     overwrite: bool,
 ) -> Result<(), String> {
     match root_kind {
         CopyNodeKind::File => {
-            if target_sftp.stat(target).await.is_ok() && !overwrite {
-                return Err(format!("destination already exists: {target}"));
-            }
-            let data = source_sftp
-                .download_to_vec(source)
-                .await
-                .map_err(|e| e.to_string())?;
-            target_sftp
-                .upload_from_slice(target, &data)
-                .await
-                .map_err(|e| e.to_string())?;
-            Ok(())
+            stream_remote_file_to_remote(
+                Arc::clone(source_sftp),
+                source.to_string(),
+                Arc::clone(target_sftp),
+                target.to_string(),
+                overwrite,
+            )
+            .await
         }
         CopyNodeKind::Dir => {
             if target_sftp.create_dir(target).await.is_err() {
                 target_sftp.stat(target).await.map_err(|e| e.to_string())?;
             }
+            // Walk first, creating directories eagerly, then transfer files with
+            // bounded concurrency.
+            let mut file_jobs: Vec<(String, String)> = Vec::new();
             let mut stack: Vec<(String, String)> = vec![(source.to_string(), target.to_string())];
             while let Some((src_dir, dst_dir)) = stack.pop() {
                 let entries = source_sftp
@@ -5201,17 +5270,7 @@ async fn copy_remote_tree_to_remote(
                     let kind = detect_remote_kind(&child_src, entry.kind)?;
                     match kind {
                         CopyNodeKind::File => {
-                            if target_sftp.stat(&child_dst).await.is_ok() && !overwrite {
-                                return Err(format!("destination already exists: {child_dst}"));
-                            }
-                            let data = source_sftp
-                                .download_to_vec(&child_src)
-                                .await
-                                .map_err(|e| e.to_string())?;
-                            target_sftp
-                                .upload_from_slice(&child_dst, &data)
-                                .await
-                                .map_err(|e| e.to_string())?;
+                            file_jobs.push((child_src, child_dst));
                         }
                         CopyNodeKind::Dir => {
                             if target_sftp.create_dir(&child_dst).await.is_err() {
@@ -5225,9 +5284,82 @@ async fn copy_remote_tree_to_remote(
                     }
                 }
             }
+
+            use futures_util::stream::StreamExt;
+            let mut stream = futures_util::stream::iter(file_jobs.into_iter().map(
+                |(child_src, child_dst)| {
+                    stream_remote_file_to_remote(
+                        Arc::clone(source_sftp),
+                        child_src,
+                        Arc::clone(target_sftp),
+                        child_dst,
+                        overwrite,
+                    )
+                },
+            ))
+            .buffer_unordered(DIR_UPLOAD_CONCURRENCY);
+
+            while let Some(res) = stream.next().await {
+                res?;
+            }
             Ok(())
         }
     }
+}
+
+/// Stream one remote file straight into another remote (across SFTP sessions)
+/// without buffering the whole file in memory: the download writes into one end
+/// of an in-memory pipe while the upload reads the other end concurrently.
+async fn stream_remote_file_to_remote(
+    source_sftp: Arc<zeroterm_ssh::Sftp>,
+    source: String,
+    target_sftp: Arc<zeroterm_ssh::Sftp>,
+    target: String,
+    overwrite: bool,
+) -> Result<(), String> {
+    if !overwrite && target_sftp.stat(&target).await.is_ok() {
+        return Err(format!("destination already exists: {target}"));
+    }
+
+    let (mut writer, mut reader) = tokio::io::duplex(zeroterm_ssh::DEFAULT_CHUNK * 2);
+
+    let dl_source = source.clone();
+    let download = async move {
+        let res = source_sftp
+            .download_to_writer_parallel(
+                &dl_source,
+                &mut writer,
+                zeroterm_ssh::DEFAULT_CHUNK,
+                zeroterm_ssh::DEFAULT_DOWNLOAD_PARALLELISM,
+                tokio_util::sync::CancellationToken::new(),
+                |_| {},
+            )
+            .await
+            .map_err(|e| e.to_string());
+        // Drop the writer so the reader sees EOF regardless of outcome.
+        drop(writer);
+        res.map(|_| ())
+    };
+
+    let upload = async move {
+        target_sftp
+            .upload_from_reader(
+                &target,
+                &mut reader,
+                zeroterm_ssh::DEFAULT_CHUNK,
+                None,
+                tokio_util::sync::CancellationToken::new(),
+                |_| {},
+            )
+            .await
+            .map_err(|e| e.to_string())
+            .map(|_| ())
+    };
+
+    let (dl, ul) = tokio::join!(download, upload);
+    dl?;
+    ul?;
+    Ok(())
 }
 
 #[tauri::command]

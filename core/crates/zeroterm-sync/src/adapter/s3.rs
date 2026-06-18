@@ -25,6 +25,7 @@
 //!     original lingers as garbage — acceptable for compact's
 //!     events→trash flow because the trash prune later cleans up.
 
+use std::sync::Mutex;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -61,6 +62,10 @@ pub struct S3Adapter {
     cfg: S3Config,
     bucket: String,
     paths: S3Paths,
+    /// Cached client plus the proxy URL it was built for. Rebuilt only when
+    /// the app's global proxy changes; otherwise every call clones the cached
+    /// client (cheap — `S3Client` is `Arc`-backed).
+    cached: Mutex<Option<(Option<String>, S3Client)>>,
 }
 
 /// Pure key math. Lives outside the adapter so the path layout is
@@ -129,10 +134,27 @@ impl S3Adapter {
             bucket: cfg.bucket.clone(),
             paths: S3Paths::new(&cfg.prefix),
             cfg,
+            cached: Mutex::new(None),
         })
     }
 
+    /// Return a client for the current proxy state, reusing the cached one
+    /// when the proxy URL is unchanged. Only a proxy change (or first use)
+    /// pays the build cost.
     fn client(&self) -> Result<S3Client, Error> {
+        let proxy = zeroterm_ssh::current_http_proxy();
+        let mut cached = self.cached.lock().unwrap();
+        if let Some((cached_proxy, client)) = cached.as_ref() {
+            if *cached_proxy == proxy {
+                return Ok(client.clone());
+            }
+        }
+        let client = self.build_client(proxy.as_deref())?;
+        *cached = Some((proxy, client.clone()));
+        Ok(client)
+    }
+
+    fn build_client(&self, proxy: Option<&str>) -> Result<S3Client, Error> {
         let creds = Credentials::new(
             self.cfg.access_key_id.clone(),
             self.cfg.secret_access_key.clone(),
@@ -156,8 +178,39 @@ impl S3Adapter {
         if self.cfg.force_path_style {
             builder = builder.force_path_style(true);
         }
+        // Route S3 traffic through the app's global HTTP proxy when one is set.
+        // The aws-sdk default connector ignores HTTP_PROXY env vars, so we build
+        // a hyper-based client with explicit proxy config and inject it.
+        if let Some(proxy_url) = proxy {
+            builder = builder.http_client(http_client_via_proxy(proxy_url)?);
+        }
         Ok(S3Client::from_conf(builder.build()))
     }
+}
+
+/// Build an HTTP client that tunnels every request through `proxy_url`.
+/// Uses the SDK's own TLS backend (aws-lc rustls) so no extra crypto provider
+/// is pulled in, and threads the proxy config into the connector each time the
+/// runtime asks for one.
+fn http_client_via_proxy(
+    proxy_url: &str,
+) -> Result<impl aws_sdk_s3::config::HttpClient + 'static, Error> {
+    use aws_smithy_http_client::{
+        proxy::ProxyConfig, tls, tls::rustls_provider::CryptoMode, Builder, Connector,
+    };
+
+    let proxy_config = ProxyConfig::http(proxy_url.to_string()).map_err(err_str)?;
+    let client = Builder::new().build_with_connector_fn(move |settings, components| {
+        let mut conn = Connector::builder()
+            .tls_provider(tls::Provider::Rustls(CryptoMode::AwsLc))
+            .proxy_config(proxy_config.clone());
+        conn.set_connector_settings(settings.cloned());
+        if let Some(components) = components {
+            conn.set_sleep_impl(components.sleep_impl());
+        }
+        conn.build()
+    });
+    Ok(client)
 }
 
 fn is_not_found_str(s: &str) -> bool {

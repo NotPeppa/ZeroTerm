@@ -16,9 +16,14 @@
 //! Default chunk size is 32 KiB — large enough to amortise per-packet
 //! overhead, small enough that progress updates feel responsive.
 
+use std::collections::HashMap;
+use std::io::SeekFrom;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::FileType;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
 
 use crate::error::SshError;
@@ -80,6 +85,13 @@ pub struct ProgressTick {
 /// reads spend less time paying round-trip overhead on higher-latency
 /// links while still remaining responsive to cancel / progress updates.
 pub const DEFAULT_CHUNK: usize = 512 * 1024;
+
+/// Default number of READ requests kept in flight against a single file
+/// during a parallel download. A single-flight SFTP read is bounded by
+/// `chunk / RTT`; keeping N requests pipelined lifts that to roughly
+/// `N * chunk / RTT`, which is what saturates a high-latency link. 8 is a
+/// balance between throughput and server load (`MaxSessions`, memory).
+pub const DEFAULT_DOWNLOAD_PARALLELISM: usize = 8;
 
 /// Live SFTP channel. Drop closes the underlying SSH channel.
 pub struct Sftp {
@@ -177,7 +189,159 @@ impl Sftp {
         Ok(bytes_done)
     }
 
-    /// Stream `src` into `remote`, replacing any existing file. Same
+    /// Parallel variant of [`Self::download_to_writer`]. Opens `parallelism`
+    /// independent file handles and keeps that many `READ` requests in flight
+    /// against the same remote file, each fetching a distinct `chunk_size`
+    /// slice by offset. A single-flight SFTP read is bounded by
+    /// `chunk / RTT`; pipelining N reads lifts the ceiling toward
+    /// `N * chunk / RTT`, which is what actually saturates a high-latency
+    /// link.
+    ///
+    /// Completed slices are reordered and written to `dest` strictly in
+    /// offset order, so `dest` only needs to be a plain sequential writer.
+    /// Falls back to the serial path when the file can't be sized (work can't
+    /// be divided) or is small enough that pipelining wouldn't pay off.
+    ///
+    /// Each non-final slice must come back fully read; a short read there means
+    /// the file changed underneath us and the transfer aborts rather than
+    /// silently writing a corrupt result.
+    pub async fn download_to_writer_parallel<W, F>(
+        &self,
+        remote: &str,
+        dest: &mut W,
+        chunk_size: usize,
+        parallelism: usize,
+        cancel: CancellationToken,
+        mut on_progress: F,
+    ) -> Result<u64, SshError>
+    where
+        W: tokio::io::AsyncWrite + Unpin,
+        F: FnMut(ProgressTick),
+    {
+        let chunk = chunk_size.max(1024);
+        let total = self.stat(remote).await.ok().map(|m| m.size);
+
+        // Divide-and-pipeline only helps with a known size larger than one
+        // chunk. Otherwise defer to the serial streamer (same semantics).
+        let total = match total {
+            Some(t) if parallelism > 1 && t > chunk as u64 => t,
+            _ => {
+                return self
+                    .download_to_writer(remote, dest, chunk, cancel, on_progress)
+                    .await
+            }
+        };
+
+        let total_chunks = total.div_ceil(chunk as u64);
+        let workers = parallelism.min(total_chunks as usize).max(1);
+
+        // One handle per worker: each carries an independent cursor, so they
+        // can seek + read concurrently against the same path.
+        let mut files = Vec::with_capacity(workers);
+        for _ in 0..workers {
+            let f = self
+                .inner
+                .open(remote.to_string())
+                .await
+                .map_err(map_sftp_err)?;
+            files.push(f);
+        }
+
+        // Shared monotonically-increasing chunk cursor; workers claim slices
+        // via fetch_add so no two read the same offset.
+        let next = Arc::new(AtomicU64::new(0));
+        let (tx, mut rx) =
+            tokio::sync::mpsc::channel::<Result<(u64, Vec<u8>), SshError>>(workers * 2);
+
+        let mut join = tokio::task::JoinSet::new();
+        for mut f in files {
+            let next = Arc::clone(&next);
+            let tx = tx.clone();
+            let cancel = cancel.clone();
+            join.spawn(async move {
+                loop {
+                    if cancel.is_cancelled() {
+                        break;
+                    }
+                    let offset = next.fetch_add(chunk as u64, Ordering::Relaxed);
+                    if offset >= total {
+                        break;
+                    }
+                    let want = (total - offset).min(chunk as u64) as usize;
+                    if let Err(e) = f.seek(SeekFrom::Start(offset)).await {
+                        let _ = tx.send(Err(SshError::Io(e))).await;
+                        break;
+                    }
+                    let mut buf = vec![0u8; want];
+                    match read_fully(&mut f, &mut buf).await {
+                        Ok(n) if n == want => {
+                            if tx.send(Ok((offset, buf))).await.is_err() {
+                                break;
+                            }
+                        }
+                        Ok(_) => {
+                            let _ = tx
+                                .send(Err(SshError::Io(io_other(
+                                    "remote file shrank during download",
+                                ))))
+                                .await;
+                            break;
+                        }
+                        Err(e) => {
+                            let _ = tx.send(Err(SshError::Io(e))).await;
+                            break;
+                        }
+                    }
+                }
+            });
+        }
+        // Drop our extra sender so `rx` closes once every worker is done.
+        drop(tx);
+
+        // Reorder buffer: hold out-of-order slices until their predecessor has
+        // been written, then flush the contiguous run.
+        let mut pending: HashMap<u64, Vec<u8>> = HashMap::new();
+        let mut write_pos: u64 = 0;
+        let mut bytes_done: u64 = 0;
+
+        on_progress(ProgressTick {
+            bytes_done: 0,
+            total: Some(total),
+        });
+
+        loop {
+            tokio::select! {
+                _ = cancel.cancelled() => {
+                    join.shutdown().await;
+                    return Err(SshError::Cancelled);
+                }
+                msg = rx.recv() => match msg {
+                    None => break,
+                    Some(Err(e)) => {
+                        join.shutdown().await;
+                        return Err(e);
+                    }
+                    Some(Ok((offset, data))) => {
+                        bytes_done += data.len() as u64;
+                        pending.insert(offset, data);
+                        while let Some(d) = pending.remove(&write_pos) {
+                            dest.write_all(&d).await?;
+                            write_pos += d.len() as u64;
+                        }
+                        on_progress(ProgressTick { bytes_done, total: Some(total) });
+                    }
+                }
+            }
+        }
+
+        // Any contiguous tail still buffered (normally already flushed above).
+        while let Some(d) = pending.remove(&write_pos) {
+            dest.write_all(&d).await?;
+            write_pos += d.len() as u64;
+        }
+        dest.flush().await?;
+        Ok(bytes_done)
+    }
     /// shape as [`Self::download_to_writer`]; supply `size_hint` if you
     /// know how many bytes are coming so the progress UI can show a
     /// percentage.
@@ -318,4 +482,25 @@ impl Sftp {
 
 fn map_sftp_err(e: russh_sftp::client::error::Error) -> SshError {
     SshError::Sftp(e.to_string())
+}
+
+fn io_other(msg: &str) -> std::io::Error {
+    std::io::Error::other(msg.to_string())
+}
+
+/// Read until `buf` is full or EOF. Returns the number of bytes actually
+/// read; a value less than `buf.len()` means EOF was hit early.
+async fn read_fully<R>(reader: &mut R, buf: &mut [u8]) -> std::io::Result<usize>
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    let mut filled = 0;
+    while filled < buf.len() {
+        let n = reader.read(&mut buf[filled..]).await?;
+        if n == 0 {
+            break;
+        }
+        filled += n;
+    }
+    Ok(filled)
 }
