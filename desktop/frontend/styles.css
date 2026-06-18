@@ -723,7 +723,7 @@ body.has-app-bg[data-app-theme="light"] #unlock-path {
 }
 
 .workspace-icon-btn:hover {
-  border-color: transparent;
+  border-color: rgba(59, 130, 246, 0.25);
   background: rgba(255, 255, 255, 0.05);
 }
 
