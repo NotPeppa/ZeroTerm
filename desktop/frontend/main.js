@@ -11454,14 +11454,17 @@ function ensurePaneTerminal(pane) {
     fontWeightBold: "700",
     theme: getTerminalThemeConfig(),
     allowTransparency: true,
-    // The WebGL renderer (macOS) draws dim / low-contrast text — e.g. the
+    // The WebGL renderer (macOS) draws very dim text — e.g. the
     // zsh-autosuggestions ghost suggestion (default fg=8) — with reduced
-    // alpha, which looks washed-out/"发虚". Forcing a minimum fg/bg contrast
-    // ratio lifts only the too-faint text to a readable solid color; normal
-    // high-contrast text already exceeds the ratio and is untouched. Left at
-    // the default (1 = off) on Windows/Linux, whose DOM renderer shows faint
-    // text fine.
-    minimumContrastRatio: isMacPlatform ? 10 : 1,
+    // alpha, looking washed-out/"发虚". A *minimum* fg/bg contrast ratio lifts
+    // only the too-faint text to a readable colour. Keep this LOW (3 ≈ WCAG AA
+    // large-text): high values (e.g. 10) also recolour ordinary mid-contrast
+    // coloured output (ls colours, syntax highlighting), which then renders
+    // washed-out — the opposite of the intent. 3 catches genuine ghost text
+    // (contrast ~1.5–2.5) while leaving normal coloured text (contrast >5)
+    // untouched. Left at 1 (off) on Windows/Linux, whose DOM renderer shows
+    // faint text fine.
+    minimumContrastRatio: isMacPlatform ? 3 : 1,
     cursorBlink: true,
     allowProposedApi: true,
     customGlyphs: true,
