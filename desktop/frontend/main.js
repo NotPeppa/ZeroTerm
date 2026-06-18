@@ -5868,9 +5868,10 @@ function applyTerminalThemeToAllPanes() {
   const isDarkTerminal = themeGroup !== "light";
   const hasAppBg = document.body.classList.contains("has-app-bg");
   // With a background image set, force the terminal background transparent so
-  // the image shows through (glass mode). Without one, use the theme's own
-  // background colour so each theme paints its proper backdrop and text
-  // contrast holds even when the theme's light/dark doesn't match the app.
+  // the image shows through (glass mode). The Canvas renderer composites glyphs
+  // crisply over the transparent backdrop (unlike WebGL, whose alpha halo made
+  // text look washed-out over bright parts of the image), so no scrim is
+  // needed. Without an image, use the theme's own background colour.
   const xtermTheme = hasAppBg ? { ...theme, background: "#00000000" } : theme;
 
   for (const tab of termState.tabs) {
@@ -11454,17 +11455,12 @@ function ensurePaneTerminal(pane) {
     fontWeightBold: "700",
     theme: getTerminalThemeConfig(),
     allowTransparency: true,
-    // The WebGL renderer (macOS) draws very dim text — e.g. the
-    // zsh-autosuggestions ghost suggestion (default fg=8) — with reduced
-    // alpha, looking washed-out/"发虚". A *minimum* fg/bg contrast ratio lifts
-    // only the too-faint text to a readable colour. Keep this LOW (3 ≈ WCAG AA
-    // large-text): high values (e.g. 10) also recolour ordinary mid-contrast
-    // coloured output (ls colours, syntax highlighting), which then renders
-    // washed-out — the opposite of the intent. 3 catches genuine ghost text
-    // (contrast ~1.5–2.5) while leaving normal coloured text (contrast >5)
-    // untouched. Left at 1 (off) on Windows/Linux, whose DOM renderer shows
-    // faint text fine.
-    minimumContrastRatio: isMacPlatform ? 3 : 1,
+    // Off (1). This was once raised on macOS to compensate for the WebGL
+    // renderer drawing dim text (e.g. zsh-autosuggestions) with reduced alpha,
+    // but it also recoloured ordinary mid-contrast output and looked worse. The
+    // Canvas renderer (used on macOS now) composites faint text correctly, like
+    // the DOM renderer, so no contrast boosting is needed on any platform.
+    minimumContrastRatio: 1,
     cursorBlink: true,
     allowProposedApi: true,
     customGlyphs: true,
@@ -11513,39 +11509,33 @@ function ensurePaneTerminal(pane) {
   }
   try {
     pane.term.open(pane.bodyEl);
-    // Use the WebGL renderer when available. It draws each glyph at an
-    // absolute cell position, which fixes the cumulative left-to-right
-    // character drift the DOM renderer exhibits on Retina/macOS with a custom
-    // monospace font — the drift shows up as garbled lines when zsh redraws
-    // the whole input line on history recall (up-arrow). Gated to macOS so the
-    // confirmed-good Windows DOM rendering is left untouched. If the GPU
-    // context is unavailable or later lost, dispose the addon so xterm falls
-    // back to the DOM renderer automatically.
+    // Use the Canvas renderer on macOS. Like WebGL it draws each glyph at an
+    // absolute cell position, fixing the cumulative left-to-right character
+    // drift the DOM renderer exhibits on Retina/macOS with a custom monospace
+    // font (garbled lines when zsh redraws the input line on history recall).
+    // Unlike WebGL it composites glyphs through a 2D context, so over a
+    // transparent backdrop (glass mode, background image) text stays crisp
+    // instead of developing the washed-out alpha halo WebGL produces — which
+    // was the reported "blurry over bright parts of the wallpaper" problem.
+    // Gated to macOS so the confirmed-good Windows DOM rendering is untouched.
     try {
-      const WebglAddonCtor = window.WebglAddon?.WebglAddon;
-      if (isMacPlatform && WebglAddonCtor) {
-        const webgl = new WebglAddonCtor();
-        webgl.onContextLoss(() => {
-          try { webgl.dispose(); } catch {}
-          pane.webglAddon = null;
-        });
-        pane.term.loadAddon(webgl);
-        pane.webglAddon = webgl;
-        // The WebGL renderer bakes each glyph into a GPU texture atlas at the
-        // DPR/font in effect when the addon loads. Here that's *before* the
-        // custom font has finished loading and before the macOS window's
-        // devicePixelRatio has settled, so the atlas is built from fallback
-        // glyphs at the wrong scale and every glyph renders blurry for the rest
-        // of the session. Rebuild the atlas once fonts are ready, and again
-        // whenever the DPR changes (e.g. dragging between a Retina and an
-        // external display), so glyphs are always rasterised at native
-        // resolution.
-        rebuildWebglAtlasWhenReady(pane);
+      const CanvasAddonCtor = window.CanvasAddon?.CanvasAddon;
+      if (isMacPlatform && CanvasAddonCtor) {
+        const canvas = new CanvasAddonCtor();
+        pane.term.loadAddon(canvas);
+        pane.rendererAddon = canvas;
+        // The renderer caches glyphs in a texture atlas built at the DPR/font
+        // in effect when the addon loads — here, before the custom font has
+        // finished loading and before the macOS window's devicePixelRatio has
+        // settled. Rebuild the atlas once fonts are ready, and again on DPR
+        // changes (dragging between Retina and an external display), so glyphs
+        // are always rasterised at native resolution.
+        rebuildRendererAtlasWhenReady(pane);
         observePaneDevicePixelRatio(pane);
       }
     } catch (e) {
-      console.warn("webgl renderer unavailable, falling back to DOM renderer", e);
-      pane.webglAddon = null;
+      console.warn("canvas renderer unavailable, falling back to DOM renderer", e);
+      pane.rendererAddon = null;
     }
     pane.bodyEl.addEventListener("wheel", (ev) => {
       if (!pane.term) return;
@@ -11948,39 +11938,44 @@ function nextFrame() {
 
 let terminalFontsReadyPromise = null;
 
-/// Force the WebGL renderer to re-rasterise its glyph texture atlas once the
-/// custom terminal font is actually loaded. Without this the atlas keeps the
-/// fallback-font glyphs baked in at load time and text stays blurry.
-function rebuildWebglAtlasWhenReady(pane) {
+/// Force the active renderer (Canvas/WebGL) to re-rasterise its glyph texture
+/// atlas once the custom terminal font is actually loaded. Without this the
+/// atlas keeps the fallback-font glyphs baked in at load time and text stays
+/// blurry.
+function rebuildRendererAtlasWhenReady(pane) {
   waitForTerminalFonts()
     .then(() => {
-      // The pane may have been torn down / the GPU context lost meanwhile.
-      if (!pane.term || !pane.webglAddon) return;
+      // The pane may have been torn down meanwhile.
+      if (!pane.term || !pane.rendererAddon) return;
       try {
-        pane.webglAddon.clearTextureAtlas();
+        pane.rendererAddon.clearTextureAtlas();
+        // Canvas's clearTextureAtlas only drops the cache; force a redraw so
+        // the now-correct glyphs are repainted (WebGL self-requests one).
+        refreshPaneTerminal(pane);
       } catch (e) {
-        console.warn("webgl atlas rebuild failed", e);
+        console.warn("renderer atlas rebuild failed", e);
       }
     })
     .catch(() => {});
 }
 
 /// Watch for devicePixelRatio changes (display switch, OS zoom) and rebuild the
-/// WebGL atlas each time so glyphs are re-rasterised at the new native
+/// renderer atlas each time so glyphs are re-rasterised at the new native
 /// resolution instead of being scaled up blurry. `matchMedia` resolution
 /// queries fire once per change, so we re-arm a fresh listener after each hit.
 function observePaneDevicePixelRatio(pane) {
   if (typeof window.matchMedia !== "function") return;
   const arm = () => {
-    if (!pane.term || !pane.webglAddon) return;
+    if (!pane.term || !pane.rendererAddon) return;
     const dpr = window.devicePixelRatio || 1;
     const mql = window.matchMedia(`(resolution: ${dpr}dppx)`);
     const onChange = () => {
-      if (pane.term && pane.webglAddon) {
+      if (pane.term && pane.rendererAddon) {
         try {
-          pane.webglAddon.clearTextureAtlas();
+          pane.rendererAddon.clearTextureAtlas();
+          refreshPaneTerminal(pane);
         } catch (e) {
-          console.warn("webgl atlas rebuild on dpr change failed", e);
+          console.warn("renderer atlas rebuild on dpr change failed", e);
         }
       }
       arm(); // re-arm for the next DPR value
@@ -12189,7 +12184,7 @@ async function disconnectPaneSession(pane, { dispose }) {
     if (pane.term) pane.term.dispose();
     pane.term = null;
     pane.fitAddon = null;
-    pane.webglAddon = null;
+    pane.rendererAddon = null;
     if (pane.dprMediaQuery) {
       // Listener was added with { once: true } / addListener; drop our
       // reference so a pending (not-yet-fired) listener can't rebuild an atlas
