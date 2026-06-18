@@ -1188,7 +1188,7 @@ const I18N = {
     "snippets.dialog.cancel": "取消",
     "snippets.dialog.save": "保存",
     "snippets.action.run": "执行",
-    "snippets.action.insert": "填入终端",
+    "snippets.action.insert": "填入",
     "snippets.toast.ran": "已执行命令片段",
     "snippets.toast.inserted": "已填入当前终端",
     "snippets.toast.migrated": "已迁移 {count} 条命令片段到同步库",
@@ -2767,7 +2767,7 @@ async function sendSnippetToActiveTerminal(command) {
     alert(t("snippets.error.no_terminal"));
     return;
   }
-  await sendTextToPane(pane, String(command || ""), { submit: true });
+  await sendTextToPane(pane, String(command || ""), { fill: true });
   pane.term?.focus?.();
 }
 
@@ -4128,9 +4128,12 @@ function wait(ms) {
 // 2. Windows local snippets: single-click snippet executes immediately.
 // 3. SSH/Linux shell: AI click-to-run still submits exactly once.
 // 4. Manual keyboard typing/paste: Enter and paste behavior remain unchanged.
-async function sendTextToPane(pane, text, { submit = false } = {}) {
+async function sendTextToPane(pane, text, { submit = false, fill = false } = {}) {
   if (!pane?.sessionId) throw new Error("pane session is not available");
-  const payload = submit ? buildApprovedCommandPayload(text, pane) : String(text || "");
+  let payload;
+  if (submit) payload = buildApprovedCommandPayload(text, pane);
+  else if (fill) payload = buildFillCommandPayload(text, pane);
+  else payload = String(text || "");
   const bytes = Array.from(new TextEncoder().encode(payload));
   await invoke("send_input", { sessionId: pane.sessionId, data: bytes });
 }
@@ -4139,6 +4142,15 @@ function buildApprovedCommandPayload(command, pane) {
   const text = String(command || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const enter = isWindowsPlatform && pane?.isLocal ? "\r" : "\n";
   return text.endsWith("\n") ? text.slice(0, -1) + enter : `${text}${enter}`;
+}
+
+// Fill (插入但不执行): normalize internal newlines to the pane's Enter char so
+// multi-line snippets advance correctly on Windows-local shells, but strip any
+// trailing newline so the final line is left unexecuted for the user to confirm.
+function buildFillCommandPayload(command, pane) {
+  const text = String(command || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\n+$/, "");
+  const enter = isWindowsPlatform && pane?.isLocal ? "\r" : "\n";
+  return text.replace(/\n/g, enter);
 }
 
 async function waitForTerminalOutputSettle(before, { quietMs = 900, maxMs = 15000 } = {}) {
