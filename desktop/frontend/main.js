@@ -326,7 +326,8 @@ const I18N = {
     "sftp.filter.placeholder": "e.g. log, conf, docker",
     "sftp.path.placeholder": "Enter path and press Enter (e.g. /var/log)",
     "hosts.search.placeholder": "Find a host or ssh user@hostname...",
-    "hosts.new_host": "+ New host",
+    "hosts.new_host": "New host",
+    "hosts.new_group": "New group",
     "hosts.empty.search": "No host matched your search.",
     "hosts.empty.title": "No saved hosts yet",
     "hosts.empty.default": "Click the button below to add your first host.",
@@ -1127,7 +1128,8 @@ const I18N = {
     "sftp.filter.placeholder": "例如 log、conf、docker",
     "sftp.path.placeholder": "输入路径后按回车跳转（例如 /var/log）",
     "hosts.search.placeholder": "搜索主机或 ssh user@hostname...",
-    "hosts.new_host": "+ 新建主机",
+    "hosts.new_host": "新建主机",
+    "hosts.new_group": "新建分组",
     "hosts.empty.search": "没有匹配搜索条件的主机。",
     "hosts.empty.title": "还没有保存的主机",
     "hosts.empty.default": "点击下面的按钮添加第一台主机。",
@@ -8930,6 +8932,7 @@ function applyI18n() {
 
   setPlaceholder("host-search", "hosts.search.placeholder");
   setAttr("add-host-button", "title", "hosts.new_host");
+  setAttr("add-group-button", "title", "hosts.new_group");
   setText("hosts-empty-title", "hosts.empty.title");
   setText("hosts-empty-desc", "hosts.empty.default");
   setText("hosts-empty-add", "hosts.new_host");
