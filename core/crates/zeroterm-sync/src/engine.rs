@@ -669,11 +669,7 @@ impl SyncEngine {
         Ok(pushed)
     }
 
-    async fn apply_snapshot_if_new(
-        &self,
-        snap_path: &str,
-        vault_id: &str,
-    ) -> Result<(), Error> {
+    async fn apply_snapshot_if_new(&self, snap_path: &str, vault_id: &str) -> Result<(), Error> {
         let last_seen = self
             .store
             .get_sync_state(KEY_LAST_SEEN_SNAPSHOT)?
@@ -927,8 +923,7 @@ impl SyncEngine {
         // ones. The snapshot we just wrote covers everything either way,
         // so freshness only matters for joiners who want a cheap replay.
         let now = now_ms();
-        let event_retention_ms: i64 =
-            (self.retention.event_retention_days as i64) * 86_400_000;
+        let event_retention_ms: i64 = (self.retention.event_retention_days as i64) * 86_400_000;
         let trash_dir = format!("trash/{now}");
         let mut trashed = 0;
         let mut retained = 0;
@@ -992,11 +987,7 @@ impl SyncEngine {
         })
     }
 
-    async fn prune_old_snapshots(
-        &self,
-        keep_recent: usize,
-        current: &str,
-    ) -> Result<usize, Error> {
+    async fn prune_old_snapshots(&self, keep_recent: usize, current: &str) -> Result<usize, Error> {
         let listed = self.adapter.list(RepoPaths::snapshots_dir(), false).await?;
         let mut snaps: Vec<_> = listed
             .into_iter()
@@ -1023,9 +1014,7 @@ impl SyncEngine {
         let cutoff = now_ms().saturating_sub((max_age_days as i64) * 86_400_000);
         let mut pruned = 0;
         for entry in listed {
-            if entry.modified_unix_ms < cutoff
-                && self.adapter.delete(&entry.path).await.is_ok()
-            {
+            if entry.modified_unix_ms < cutoff && self.adapter.delete(&entry.path).await.is_ok() {
                 pruned += 1;
             }
         }
@@ -1075,7 +1064,8 @@ impl SyncEngine {
             };
             if let Ok(mut device) = serde_json::from_slice::<DeviceInfo>(&bytes) {
                 if device.device_id.is_empty() {
-                    device.device_id = entry.path
+                    device.device_id = entry
+                        .path
                         .rsplit('/')
                         .next()
                         .unwrap_or_default()
@@ -1088,7 +1078,11 @@ impl SyncEngine {
                 out.push(device);
             }
         }
-        out.sort_by(|a, b| b.last_seen_at.cmp(&a.last_seen_at).then_with(|| a.device_id.cmp(&b.device_id)));
+        out.sort_by(|a, b| {
+            b.last_seen_at
+                .cmp(&a.last_seen_at)
+                .then_with(|| a.device_id.cmp(&b.device_id))
+        });
         Ok(out)
     }
 
@@ -1225,7 +1219,6 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-
 fn is_syncable_kind(kind: &str) -> bool {
     matches!(kind, "host" | "host_group" | "snippet")
 }
@@ -1270,7 +1263,10 @@ mod tests {
         let d = tempdir().unwrap();
         let store = Arc::new(InMemoryStore::new()) as Arc<dyn LocalRecordStore>;
         let engine = SyncEngine::new(LocalAdapter::new(d.path()), store, "dev-A");
-        engine.create_repo("pw", "vlt", fast_params()).await.unwrap();
+        engine
+            .create_repo("pw", "vlt", fast_params())
+            .await
+            .unwrap();
         let err = engine.create_repo("pw", "vlt", fast_params()).await;
         assert!(matches!(err, Err(Error::AlreadyExists)));
     }

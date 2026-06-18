@@ -212,7 +212,13 @@ impl Vault {
         if rec.deleted {
             return Err(VaultError::NotFound(id.to_string()));
         }
-        decrypt_record(&self.master, &rec.id, rec.version, &rec.nonce, &rec.ciphertext)
+        decrypt_record(
+            &self.master,
+            &rec.id,
+            rec.version,
+            &rec.nonce,
+            &rec.ciphertext,
+        )
     }
 
     /// Decrypt all live records of a given kind. Tombstones are skipped.
@@ -220,8 +226,13 @@ impl Vault {
         let recs = self.store.list_records(kind)?;
         let mut out = Vec::with_capacity(recs.len());
         for rec in recs {
-            let pt =
-                decrypt_record(&self.master, &rec.id, rec.version, &rec.nonce, &rec.ciphertext)?;
+            let pt = decrypt_record(
+                &self.master,
+                &rec.id,
+                rec.version,
+                &rec.nonce,
+                &rec.ciphertext,
+            )?;
             out.push((rec.id, pt));
         }
         Ok(out)
@@ -442,11 +453,7 @@ impl Vault {
     /// "keep-local" on a conflict: we bump base to the remote's
     /// revision so the next push references the remote's lineage and
     /// other devices accept the override cleanly.
-    pub fn bump_base_server_rev(
-        &self,
-        id: &str,
-        base_rev: &str,
-    ) -> Result<(), VaultError> {
+    pub fn bump_base_server_rev(&self, id: &str, base_rev: &str) -> Result<(), VaultError> {
         let mut rec = self
             .store
             .get_record(id)?
@@ -628,13 +635,15 @@ mod tests {
         let path = dir.path().join("v.sqlite");
 
         let v = Vault::create_with_params(&path, "pw", fast_params()).unwrap();
-        v.apply_remote_upsert("remote-id-1", "host", b"from-remote", "srv-1").unwrap();
+        v.apply_remote_upsert("remote-id-1", "host", b"from-remote", "srv-1")
+            .unwrap();
         let pt = v.get("remote-id-1").unwrap();
         assert_eq!(pt, b"from-remote");
 
         // Calling apply_remote_upsert again with the same id and a new
         // server_rev replaces.
-        v.apply_remote_upsert("remote-id-1", "host", b"updated", "srv-2").unwrap();
+        v.apply_remote_upsert("remote-id-1", "host", b"updated", "srv-2")
+            .unwrap();
         let pt = v.get("remote-id-1").unwrap();
         assert_eq!(pt, b"updated");
 
@@ -679,7 +688,8 @@ mod tests {
         let path = dir.path().join("v.sqlite");
 
         let v = Vault::create_with_params(&path, "pw", fast_params()).unwrap();
-        v.apply_remote_upsert("rec-1", "host", b"a", "srv-1").unwrap();
+        v.apply_remote_upsert("rec-1", "host", b"a", "srv-1")
+            .unwrap();
         v.apply_remote_delete("rec-1", "srv-2").unwrap();
         assert!(matches!(v.get("rec-1"), Err(VaultError::NotFound(_))));
 

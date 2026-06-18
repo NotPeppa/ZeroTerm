@@ -4284,6 +4284,14 @@ body[data-app-theme="light"] .sftp-host-selector .zt-select-trigger-caret {
   color: var(--muted);
 }
 
+body[data-app-theme="light"] .zt-select-menu-sftp-host .zt-select-option-meta {
+  color: rgba(71, 85, 105, 0.82);
+}
+
+body[data-app-theme="light"] .zt-select-menu-sftp-host .zt-select-option-next {
+  color: rgba(37, 99, 235, 0.65);
+}
+
 body[data-app-theme="light"] .sftp-empty-icon {
   background: radial-gradient(circle at center, rgba(37, 99, 235, 0.06) 0%, rgba(37, 99, 235, 0.01) 100%);
   border-color: rgba(37, 99, 235, 0.15);
@@ -5385,6 +5393,10 @@ body.has-app-bg .pane-body .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover
   min-width: 0;
 }
 
+.sftp-host-selector .zt-select-wrap-sftp-host .zt-select-trigger-input {
+  cursor: pointer;
+}
+
 .sftp-host-selector .zt-select-trigger {
   min-height: 30px;
   padding: 0 24px 0 10px;
@@ -5427,6 +5439,53 @@ body.has-app-bg .pane-body .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover
   border-radius: 10px !important;
   backdrop-filter: blur(25px);
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+}
+
+.zt-select-menu-sftp-host .zt-select-options {
+  gap: 4px;
+}
+
+.zt-select-menu-sftp-host .zt-select-option {
+  min-height: 42px;
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.zt-select-menu-sftp-host .zt-select-option-text {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: grid;
+  gap: 2px;
+}
+
+.zt-select-menu-sftp-host .zt-select-option-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zt-select-menu-sftp-host .zt-select-option-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: rgba(165, 181, 214, 0.72);
+}
+
+.zt-select-menu-sftp-host .zt-select-option-group .zt-select-option-label,
+.zt-select-menu-sftp-host .zt-select-option-back .zt-select-option-label {
+  font-weight: 650;
+}
+
+.zt-select-menu-sftp-host .zt-select-option-next {
+  flex: 0 0 auto;
+  color: rgba(143, 185, 255, 0.7);
+  font-size: 16px;
+  line-height: 1;
 }
 
 .sftp-pane-tools {
@@ -7846,6 +7905,147 @@ body[data-app-theme="light"] .settings-sync-method-row .zt-select-trigger:hover 
   box-shadow: 0 10px 30px rgba(239, 68, 68, 0.15);
 }
 
+.sftp-transfer-dock {
+  flex: 0 0 auto;
+  padding: 12px 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background:
+    linear-gradient(180deg, rgba(23, 30, 52, 0.88) 0%, rgba(16, 22, 40, 0.98) 100%),
+    rgba(9, 16, 30, 0.96);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.2);
+  color: #eaf2ff;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.sftp-transfer-dock.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.sftp-transfer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.sftp-transfer-leading {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sftp-transfer-icon {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(244, 248, 255, 0.96);
+}
+
+.sftp-transfer-icon .zt-icon {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.7;
+}
+
+.sftp-transfer-copy {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sftp-transfer-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sftp-transfer-rail {
+  flex: 0 1 320px;
+  width: min(28vw, 320px);
+  min-width: 180px;
+}
+
+.sftp-transfer-cancel {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: #f87171;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  cursor: pointer;
+  line-height: 0;
+}
+
+.sftp-transfer-cancel .zt-icon {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+.sftp-transfer-cancel:hover {
+  color: #ef4444;
+}
+
+.sftp-transfer-progress {
+  position: relative;
+  overflow: hidden;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(168, 186, 224, 0.22);
+}
+
+.sftp-transfer-progress-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #79b8ff 0%, #9fd0ff 100%);
+  transition: width 120ms linear;
+}
+
+.sftp-transfer-progress.indeterminate .sftp-transfer-progress-bar {
+  animation: sftp-transfer-indeterminate 1.15s ease-in-out infinite;
+}
+
+.sftp-transfer-meta {
+  font-size: 13px;
+  color: rgba(214, 227, 255, 0.72);
+  white-space: nowrap;
+}
+
+@keyframes sftp-transfer-indeterminate {
+  0% {
+    left: -40%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
 .settings-row > :first-child {
   flex: 1 1 auto;
   min-width: 0;
@@ -7928,6 +8128,43 @@ body[data-app-theme="light"] .settings-sync-method-row .zt-select-trigger:hover 
   flex: 0 0 520px;
   min-width: 360px;
   max-width: 620px;
+}
+
+.settings-proxy-row {
+  align-items: flex-start;
+}
+
+.settings-proxy-inputs {
+  flex-wrap: wrap;
+}
+
+.settings-proxy-inputs input {
+  flex: 1 1 280px;
+  min-width: 280px;
+  height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  color: #ffffff;
+  padding: 0 12px;
+  font-size: 13.5px;
+  backdrop-filter: blur(5px);
+  transition: all 0.25s ease;
+}
+
+.settings-proxy-inputs input:focus {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: #68a8ff;
+  box-shadow: 0 0 12px rgba(104, 168, 255, 0.25), inset 0 1px 1px rgba(0, 0, 0, 0.08);
+  outline: none;
+}
+
+.settings-proxy-inputs input::placeholder {
+  color: rgba(165, 181, 214, 0.5);
+}
+
+.settings-proxy-inputs button {
+  flex: 0 0 auto;
 }
 
 .terminal-theme-grid {
@@ -9906,7 +10143,8 @@ fieldset.advanced legend {
 
 /* 1. Sync Panel Card Inputs, Selects & Placeholders */
 body[data-app-theme="light"] .settings-sync-password-block input,
-body[data-app-theme="light"] .settings-sync-grid input {
+body[data-app-theme="light"] .settings-sync-grid input,
+body[data-app-theme="light"] .settings-proxy-inputs input {
   background: #ffffff !important;
   border-color: rgba(203, 213, 225, 0.8) !important;
   color: var(--text) !important;
@@ -9914,12 +10152,14 @@ body[data-app-theme="light"] .settings-sync-grid input {
 }
 
 body[data-app-theme="light"] .settings-sync-password-block input::placeholder,
-body[data-app-theme="light"] .settings-sync-grid input::placeholder {
+body[data-app-theme="light"] .settings-sync-grid input::placeholder,
+body[data-app-theme="light"] .settings-proxy-inputs input::placeholder {
   color: var(--muted) !important;
 }
 
 body[data-app-theme="light"] .settings-sync-password-block input:focus,
-body[data-app-theme="light"] .settings-sync-grid input:focus {
+body[data-app-theme="light"] .settings-sync-grid input:focus,
+body[data-app-theme="light"] .settings-proxy-inputs input:focus {
   background: #ffffff !important;
   border-color: var(--accent) !important;
   box-shadow: 0 0 8px rgba(37, 99, 235, 0.2) !important;
@@ -9932,6 +10172,51 @@ body[data-app-theme="light"] .settings-sync-bootstrap-row #settings-sync-bootstr
 
 body[data-app-theme="light"] .settings-item-title {
   color: var(--text) !important;
+}
+
+body[data-app-theme="light"] .sftp-transfer-dock {
+  border-top-color: rgba(148, 163, 184, 0.24);
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 -10px 24px rgba(15, 23, 42, 0.1);
+  color: #1f2937;
+}
+
+body[data-app-theme="light"] .sftp-transfer-icon {
+  background: rgba(148, 163, 184, 0.14);
+  color: #334155;
+}
+
+body[data-app-theme="light"] .sftp-transfer-name {
+  color: #0f172a;
+}
+
+body[data-app-theme="light"] .sftp-transfer-cancel {
+  color: #dc2626;
+}
+
+body[data-app-theme="light"] .sftp-transfer-cancel:hover {
+  color: #b91c1c;
+}
+
+body[data-app-theme="light"] .sftp-transfer-progress {
+  background: rgba(148, 163, 184, 0.18);
+}
+
+body[data-app-theme="light"] .sftp-transfer-meta {
+  color: rgba(71, 85, 105, 0.86);
+}
+
+@media (max-width: 980px) {
+  .sftp-transfer-row {
+    flex-wrap: wrap;
+  }
+
+  .sftp-transfer-rail {
+    order: 3;
+    width: 100%;
+    min-width: 0;
+    flex-basis: 100%;
+  }
 }
 
 body[data-app-theme="light"] .settings-switch em,

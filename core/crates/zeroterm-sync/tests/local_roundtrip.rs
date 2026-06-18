@@ -22,10 +22,7 @@ fn fast_kdf() -> Argon2Params {
     }
 }
 
-fn make_engine(
-    root: &std::path::Path,
-    device_id: &str,
-) -> (Arc<InMemoryStore>, SyncEngine) {
+fn make_engine(root: &std::path::Path, device_id: &str) -> (Arc<InMemoryStore>, SyncEngine) {
     let store = Arc::new(InMemoryStore::new());
     let trait_store: Arc<dyn LocalRecordStore> = store.clone();
     let engine = SyncEngine::new(LocalAdapter::new(root), trait_store, device_id);
@@ -61,7 +58,10 @@ async fn two_devices_share_records_through_events() {
         .await
         .expect("join_repo");
     assert_eq!(vault_id, "vlt-1");
-    assert_eq!(live_value(&store_b, "rec-1").as_deref(), Some(&b"hello-from-A"[..]));
+    assert_eq!(
+        live_value(&store_b, "rec-1").as_deref(),
+        Some(&b"hello-from-A"[..])
+    );
 
     // B writes its own record and pushes it.
     store_b.put_local("rec-2", "host", b"hello-from-B".to_vec());
@@ -74,7 +74,10 @@ async fn two_devices_share_records_through_events() {
         r_a.upserts_applied >= 1,
         "expected A to apply B's upsert, got {r_a:?}"
     );
-    assert_eq!(live_value(&store_a, "rec-2").as_deref(), Some(&b"hello-from-B"[..]));
+    assert_eq!(
+        live_value(&store_a, "rec-2").as_deref(),
+        Some(&b"hello-from-B"[..])
+    );
 
     // Update an existing record on A; B should adopt the new value.
     store_a.put_local("rec-1", "host", b"hello-from-A-v2".to_vec());
@@ -101,10 +104,7 @@ async fn concurrent_local_and_remote_edit_records_conflict() {
     let (store_a, engine_a) = make_engine(d.path(), "dev-A");
     let (store_b, engine_b) = make_engine(d.path(), "dev-B");
 
-    engine_a
-        .create_repo("pw", "vlt", fast_kdf())
-        .await
-        .unwrap();
+    engine_a.create_repo("pw", "vlt", fast_kdf()).await.unwrap();
     store_a.put_local("rec-1", "host", b"a-v1".to_vec());
     engine_a.sync_once().await.unwrap();
 
@@ -120,10 +120,7 @@ async fn concurrent_local_and_remote_edit_records_conflict() {
 
     // B sees A's edit but already has its own pending edit → conflict.
     let r = engine_b.sync_once().await.unwrap();
-    assert!(
-        r.conflicts_detected >= 1,
-        "expected a conflict, got {r:?}"
-    );
+    assert!(r.conflicts_detected >= 1, "expected a conflict, got {r:?}");
     let cs = store_b.conflicts();
     assert_eq!(cs.len(), 1);
     assert_eq!(cs[0].record_id, "rec-1");
@@ -277,7 +274,10 @@ async fn snippets_sync_across_devices_and_non_whitelisted_kinds_are_skipped() {
     engine_b.join_repo("pw").await.unwrap();
 
     // Snippet crossed the wire intact...
-    assert_eq!(live_value(&store_b, "snip-1").as_deref(), Some(&snip_v1[..]));
+    assert_eq!(
+        live_value(&store_b, "snip-1").as_deref(),
+        Some(&snip_v1[..])
+    );
     // ...the non-whitelisted kind did not.
     assert!(
         live_value(&store_b, "log-1").is_none(),
@@ -285,12 +285,14 @@ async fn snippets_sync_across_devices_and_non_whitelisted_kinds_are_skipped() {
     );
 
     // Edits propagate too: rename the group field on A, B converges.
-    let snip_v2 =
-        br#"{"title":"docker ps","command":"docker ps -a","group":"ops","sort_order":0}"#;
+    let snip_v2 = br#"{"title":"docker ps","command":"docker ps -a","group":"ops","sort_order":0}"#;
     store_a.put_local("snip-1", "snippet", snip_v2.to_vec());
     engine_a.sync_once().await.unwrap();
     engine_b.sync_once().await.unwrap();
-    assert_eq!(live_value(&store_b, "snip-1").as_deref(), Some(&snip_v2[..]));
+    assert_eq!(
+        live_value(&store_b, "snip-1").as_deref(),
+        Some(&snip_v2[..])
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -325,7 +327,10 @@ async fn unsupported_kind_event_is_not_marked_applied() {
 
     // First pass skips it (unsupported kind).
     let r1 = engine.sync_once().await.unwrap();
-    assert!(r1.skipped >= 1, "unsupported kind should be skipped, got {r1:?}");
+    assert!(
+        r1.skipped >= 1,
+        "unsupported kind should be skipped, got {r1:?}"
+    );
 
     // Second pass must skip it AGAIN rather than collapse it into
     // already_seen — proving it wasn't marked applied. This is what lets

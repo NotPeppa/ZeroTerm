@@ -51,6 +51,44 @@ function parentPath(path) {
   return normalized.slice(0, idx);
 }
 
+function localPaneHasEntryAtPath(pane, directoryPath, entryName) {
+  if (!pane || !isLocalPane(pane) || !entryName) return false;
+  return normalizeLocalPath(pane.path) === normalizeLocalPath(directoryPath)
+    && pane.entries.some((entry) => entry.name === entryName);
+}
+
+async function showNativeConfirm(message, title = null) {
+  try {
+    const result = await invoke("plugin:dialog|message", {
+      title,
+      message,
+      kind: "warning",
+      buttons: "OkCancel",
+    });
+    return result === "Ok" || result === "Yes";
+  } catch {
+    return confirm(message);
+  }
+}
+
+async function planOverwriteForLocalPath(path, options = {}) {
+  const directoryPath = String(options.directoryPath || parentPath(path));
+  const entryName = String(options.entryName || basename(path));
+  let exists = false;
+  if (localPaneHasEntryAtPath(options.pane, directoryPath, entryName)) {
+    exists = true;
+  } else {
+    try {
+      exists = await invoke("local_path_exists", { path });
+    } catch {
+      exists = false;
+    }
+  }
+  if (!exists) return { proceed: true, overwrite: false };
+  const ok = await showNativeConfirm(t("files.confirm.overwrite", { path }));
+  return { proceed: ok, overwrite: ok };
+}
+
 function isWindowsLocalPath(path) {
   const raw = String(path || "");
   return /^[A-Za-z]:([\\/]|$)/.test(raw) || raw.startsWith("\\\\") || raw.includes("\\");
@@ -269,6 +307,8 @@ const I18N = {
     "sftp.side.right": "Right",
     "sftp.host.placeholder": "Select host...",
     "sftp.host.local": "Local",
+    "sftp.host.group.empty": "No hosts in this group",
+    "sftp.host.group.folder": "Group",
     "sftp.button.connect": "Connect",
     "sftp.button.disconnect": "Disconnect",
     "sftp.button.filter": "Filter",
@@ -584,6 +624,7 @@ const I18N = {
     "files.progress.uploading": "Uploading",
     "files.progress.downloading": "Downloading",
     "files.progress.eta": "ETA {eta}",
+    "files.progress.preparing": "Preparing transfer...",
     "files.button.cancel": "Cancel",
     "editor.title": "Edit Remote File",
     "editor.title.dirty": "Edit Remote File *",
@@ -625,7 +666,7 @@ const I18N = {
     "sftp.error.connect_failed": "connect failed: {error}",
     "settings.title": "Settings",
     "settings.general.title": "General",
-    "settings.general.desc": "Configure language, session history, and SFTP-related options.",
+    "settings.general.desc": "Configure language, network proxy, session history, and SFTP-related options.",
     "settings.nav.pref": "Preferences",
     "settings.nav.general": "General",
     "settings.nav.terminal": "Terminal",
@@ -635,6 +676,19 @@ const I18N = {
     "settings.nav.about": "About",
     "settings.general.subtab.basic": "Basic",
     "settings.general.subtab.sftp": "SFTP",
+    "settings.proxy.label": "Network Proxy",
+    "settings.proxy.hint": "Route built-in app traffic through one HTTP proxy URL. Example: http://127.0.0.1:7890",
+    "settings.proxy.url_label": "Proxy URL",
+    "settings.proxy.note": "New requests apply immediately. Existing SSH/SFTP sessions need reconnecting.",
+    "settings.proxy.save": "Save",
+    "settings.proxy.clear": "Clear",
+    "settings.proxy.placeholder": "http://127.0.0.1:7890",
+    "settings.proxy.error.required": "Proxy URL is required.",
+    "settings.proxy.status.current": "Current proxy: {url}",
+    "settings.proxy.status.saved": "Proxy saved. New network requests will use it right away.",
+    "settings.proxy.status.cleared": "Proxy cleared. New network requests now connect directly.",
+    "settings.proxy.status.disabled": "No proxy is configured.",
+    "settings.proxy.status.failed": "Could not save proxy: {error}",
     "settings.bg.label": "Background Image",
     "settings.bg.hint": "Use a custom image as the app background.",
     "settings.bg.empty": "No image",
@@ -1054,6 +1108,8 @@ const I18N = {
     "sftp.side.right": "右侧",
     "sftp.host.placeholder": "选择主机...",
     "sftp.host.local": "本地",
+    "sftp.host.group.empty": "该分组下暂无主机",
+    "sftp.host.group.folder": "分组",
     "sftp.button.connect": "连接",
     "sftp.button.disconnect": "断开",
     "sftp.button.filter": "筛选",
@@ -1367,6 +1423,7 @@ const I18N = {
     "files.progress.uploading": "上传中",
     "files.progress.downloading": "下载中",
     "files.progress.eta": "剩余 {eta}",
+    "files.progress.preparing": "正在准备传输...",
     "files.button.cancel": "取消",
     "editor.title": "编辑远程文件",
     "editor.title.dirty": "编辑远程文件 *",
@@ -1407,7 +1464,7 @@ const I18N = {
     "sftp.error.connect_failed": "连接失败：{error}",
     "settings.title": "设置",
     "settings.general.title": "常规",
-    "settings.general.desc": "配置界面语言、会话历史和 SFTP 相关选项",
+    "settings.general.desc": "配置界面语言、网络代理、会话历史和 SFTP 相关选项",
     "settings.nav.pref": "偏好",
     "settings.nav.general": "常规",
     "settings.nav.terminal": "终端",
@@ -1417,6 +1474,19 @@ const I18N = {
     "settings.nav.about": "关于",
     "settings.general.subtab.basic": "基础",
     "settings.general.subtab.sftp": "SFTP",
+    "settings.proxy.label": "网络代理",
+    "settings.proxy.hint": "为应用内置网络请求统一配置一个 HTTP 代理地址，例如：http://127.0.0.1:7890",
+    "settings.proxy.url_label": "代理地址",
+    "settings.proxy.note": "新的网络请求会立即生效；已建立的 SSH/SFTP 会话需要重连。",
+    "settings.proxy.save": "保存",
+    "settings.proxy.clear": "清除",
+    "settings.proxy.placeholder": "http://127.0.0.1:7890",
+    "settings.proxy.error.required": "请输入代理地址。",
+    "settings.proxy.status.current": "当前代理：{url}",
+    "settings.proxy.status.saved": "代理已保存，新的网络请求会立即走代理。",
+    "settings.proxy.status.cleared": "代理已清除，新的网络请求将直接连接。",
+    "settings.proxy.status.disabled": "当前未配置代理。",
+    "settings.proxy.status.failed": "保存代理失败：{error}",
     "settings.bg.label": "背景图片",
     "settings.bg.hint": "使用自定义图片作为软件背景。",
     "settings.bg.empty": "暂无图片",
@@ -2178,6 +2248,12 @@ const appShell = document.querySelector("#view-hosts .app-shell");
 const panelVaults = document.getElementById("panel-vaults");
 const panelTerminal = document.getElementById("panel-terminal");
 const panelSftp = document.getElementById("panel-sftp");
+const sftpTransferDock = document.getElementById("sftp-transfer-dock");
+const sftpTransferName = document.getElementById("sftp-transfer-name");
+const sftpTransferProgress = document.getElementById("sftp-transfer-progress");
+const sftpTransferProgressBar = document.getElementById("sftp-transfer-progress-bar");
+const sftpTransferMeta = document.getElementById("sftp-transfer-meta");
+const sftpTransferCancel = document.getElementById("sftp-transfer-cancel");
 const settingsPage = document.getElementById("settings-page");
 const vaultWelcome = document.getElementById("vault-welcome");
 const terminalSessionLayout = document.getElementById("terminal-session-layout");
@@ -2356,6 +2432,134 @@ function showToast(message, kind = "info", timeoutMs = 2600) {
     window.setTimeout(() => node.remove(), 180);
   }, timeoutMs);
 }
+
+let sftpTransferHideTimer = null;
+const sftpTransferItems = new Map();
+let sftpTransferCurrentId = null;
+
+sftpTransferCancel?.addEventListener("click", async () => {
+  if (sftpTransferCurrentId == null) return;
+  try {
+    await invoke("sftp_cancel_transfer", { transferId: sftpTransferCurrentId });
+  } catch (e) {
+    showToast(String(e), "error", 3200);
+  }
+});
+
+function formatTransferEta(seconds) {
+  const secs = Math.max(0, Math.round(Number(seconds) || 0));
+  if (secs < 60) return `${secs}s`;
+  const mins = Math.floor(secs / 60);
+  const rem = secs % 60;
+  if (mins < 60) return rem > 0 ? `${mins}m ${rem}s` : `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  const remMin = mins % 60;
+  return remMin > 0 ? `${hours}h ${remMin}m` : `${hours}h`;
+}
+
+function summarizeSftpTransfer(item) {
+  const bits = [];
+  if (Number.isFinite(item.total) && item.total > 0) {
+    bits.push(`${formatSize(item.bytesDone)} / ${formatSize(item.total)}`);
+  } else {
+    bits.push(formatSize(item.bytesDone));
+  }
+  if (Number.isFinite(item.bytesPerSec) && item.bytesPerSec > 0) {
+    bits.push(`${formatSize(item.bytesPerSec)}/s`);
+  }
+  if (Number.isFinite(item.etaSeconds) && item.etaSeconds >= 0) {
+    bits.push(t("files.progress.eta", { eta: formatTransferEta(item.etaSeconds) }));
+  }
+  return bits.join(", ") || t("files.progress.preparing");
+}
+
+function pickActiveSftpTransfer(preferredId = null) {
+  if (preferredId != null && sftpTransferItems.has(preferredId)) {
+    return sftpTransferItems.get(preferredId);
+  }
+  let latest = null;
+  for (const item of sftpTransferItems.values()) {
+    if (!latest || item.updatedAt > latest.updatedAt) latest = item;
+  }
+  return latest;
+}
+
+function hideSftpTransferDockSoon(delay = 350) {
+  if (sftpTransferHideTimer) {
+    window.clearTimeout(sftpTransferHideTimer);
+    sftpTransferHideTimer = null;
+  }
+  sftpTransferHideTimer = window.setTimeout(() => {
+    if (!sftpTransferDock || sftpTransferItems.size > 0) return;
+    sftpTransferDock.classList.remove("show");
+    sftpTransferDock.hidden = true;
+    sftpTransferCurrentId = null;
+  }, delay);
+}
+
+function renderSftpTransferDock(preferredId = null) {
+  if (!sftpTransferDock) return;
+  const item = pickActiveSftpTransfer(preferredId);
+  if (!item) {
+    hideSftpTransferDockSoon();
+    return;
+  }
+  if (sftpTransferHideTimer) {
+    window.clearTimeout(sftpTransferHideTimer);
+    sftpTransferHideTimer = null;
+  }
+  sftpTransferCurrentId = item.transferId;
+
+  const activeCount = sftpTransferItems.size;
+  if (sftpTransferName) {
+    const baseName = basename(item.source || item.destination || "");
+    sftpTransferName.textContent = activeCount > 1 ? `${baseName} +${activeCount - 1}` : baseName;
+    sftpTransferName.title = `${item.source || ""} -> ${item.destination || ""}`;
+  }
+  if (sftpTransferMeta) sftpTransferMeta.textContent = summarizeSftpTransfer(item);
+  if (sftpTransferCancel) {
+    const cancelLabel = t("files.button.cancel");
+    sftpTransferCancel.setAttribute("aria-label", cancelLabel);
+    sftpTransferCancel.title = cancelLabel;
+  }
+
+  if (sftpTransferProgress && sftpTransferProgressBar && Number.isFinite(item.total) && item.total > 0) {
+    const percent = Math.max(0, Math.min(100, (item.bytesDone / item.total) * 100));
+    sftpTransferProgress.classList.remove("indeterminate");
+    sftpTransferProgressBar.style.width = `${percent}%`;
+  } else {
+    sftpTransferProgress?.classList.add("indeterminate");
+    if (sftpTransferProgressBar) sftpTransferProgressBar.style.width = "42%";
+  }
+
+  sftpTransferDock.hidden = false;
+  requestAnimationFrame(() => sftpTransferDock.classList.add("show"));
+}
+
+listen("sftp:progress", (ev) => {
+  const payload = ev?.payload || {};
+  const transferId = Number(payload.transferId);
+  if (!Number.isFinite(transferId)) return;
+
+  if (payload.finished) {
+    sftpTransferItems.delete(transferId);
+    renderSftpTransferDock();
+    return;
+  }
+
+  sftpTransferItems.set(transferId, {
+    transferId,
+    kind: payload.kind === "upload" ? "upload" : "download",
+    source: String(payload.source || ""),
+    destination: String(payload.destination || ""),
+    bytesDone: Number(payload.bytesDone) || 0,
+    total: Number.isFinite(payload.total) ? Number(payload.total) : null,
+    bytesPerSec: Number.isFinite(payload.bytesPerSec) ? Number(payload.bytesPerSec) : null,
+    etaSeconds: Number.isFinite(payload.etaSeconds) ? Number(payload.etaSeconds) : null,
+    updatedAt: Date.now(),
+  });
+  renderSftpTransferDock(transferId);
+});
 
 let aiMessages = [];
 let aiSending = false;
@@ -4718,6 +4922,10 @@ const settingsGeneralSftpSection = document.getElementById("settings-general-sft
 const settingsGeneralTitle = document.getElementById("settings-general-title");
 const settingsGeneralDesc = document.getElementById("settings-general-desc");
 const settingsLanguageSelect = document.getElementById("settings-language-select");
+const settingsProxyUrl = document.getElementById("settings-proxy-url");
+const settingsProxySave = document.getElementById("settings-proxy-save");
+const settingsProxyClear = document.getElementById("settings-proxy-clear");
+const settingsProxyStatus = document.getElementById("settings-proxy-status");
 const settingsBgPreview = document.getElementById("settings-bg-preview");
 const settingsBgChoose = document.getElementById("settings-bg-choose");
 const settingsBgClear = document.getElementById("settings-bg-clear");
@@ -5156,6 +5364,51 @@ function setAppThemeMode(mode) {
 // URL is held in memory for the session.
 
 let appBackgroundDataUrl = null;
+let appNetworkProxyConfig = null;
+
+function applyNetworkProxySettingsUI(cfg) {
+  appNetworkProxyConfig = cfg && cfg.enabled && String(cfg.url || "").trim()
+    ? { enabled: true, url: String(cfg.url).trim() }
+    : null;
+  if (settingsProxyUrl) settingsProxyUrl.value = appNetworkProxyConfig?.url || "";
+  if (settingsProxyClear) settingsProxyClear.hidden = !appNetworkProxyConfig;
+}
+
+async function loadNetworkProxyConfig(options = {}) {
+  const quiet = options?.quiet === true;
+  try {
+    const cfg = await invoke("get_network_proxy_config");
+    applyNetworkProxySettingsUI(cfg);
+    if (settingsProxyStatus && !quiet) {
+      settingsProxyStatus.textContent = cfg?.url
+        ? t("settings.proxy.status.current", { url: cfg.url })
+        : t("settings.proxy.status.disabled");
+    }
+  } catch (e) {
+    if (settingsProxyStatus) settingsProxyStatus.textContent = String(e);
+  }
+}
+
+async function saveNetworkProxyConfigFromForm() {
+  const url = String(settingsProxyUrl?.value || "").trim();
+  if (!url) {
+    if (settingsProxyStatus) settingsProxyStatus.textContent = t("settings.proxy.error.required");
+    return;
+  }
+  const cfg = await invoke("save_network_proxy_config", {
+    input: { enabled: true, url },
+  });
+  applyNetworkProxySettingsUI(cfg);
+  if (settingsProxyStatus) settingsProxyStatus.textContent = t("settings.proxy.status.saved");
+  showToast(t("settings.proxy.status.saved"), "success");
+}
+
+async function clearNetworkProxyConfigFromForm() {
+  await invoke("clear_network_proxy_config");
+  applyNetworkProxySettingsUI(null);
+  if (settingsProxyStatus) settingsProxyStatus.textContent = t("settings.proxy.status.cleared");
+  showToast(t("settings.proxy.status.cleared"), "success");
+}
 
 function getAppBgOpacity() {
   const n = Number(localStorage.getItem(SETTINGS_KEY_APP_BG_OPACITY));
@@ -8077,6 +8330,7 @@ function setSettingsGeneralSubtab(subtab) {
   if (settingsGeneralBasicSection) settingsGeneralBasicSection.hidden = settingsGeneralSubtab !== "basic";
   if (settingsGeneralSftpSection) settingsGeneralSftpSection.hidden = settingsGeneralSubtab !== "sftp";
   if (settingsGeneralSubtab === "basic" && typeof syncBackgroundSettingsUI === "function") {
+    loadNetworkProxyConfig({ quiet: true }).catch(() => {});
     syncBackgroundSettingsUI();
     syncWindowLayoutSettingsUI();
   }
@@ -8215,6 +8469,8 @@ function fuzzyMatchSelectOption(label, query) {
 
 function buildCustomSelect(selectEl) {
   if (!selectEl || selectEl.dataset.customSelectBound === "1") return;
+  const isSftpHostSelectMenu = selectEl.id === "sftp-left-host" || selectEl.id === "sftp-right-host";
+  const localHostValue = "__local__";
   const wrap = document.createElement("div");
   wrap.className = "zt-select-wrap";
   const trigger = document.createElement("div");
@@ -8252,6 +8508,14 @@ function buildCustomSelect(selectEl) {
   let selectedLabel = "";
   let customValue = "";
   let menuPortaled = false;
+  let sftpHostBrowseGroupId = "";
+
+  if (isSftpHostSelectMenu) {
+    wrap.classList.add("zt-select-wrap-sftp-host");
+    menu.classList.add("zt-select-menu-sftp-host");
+    triggerInput.readOnly = true;
+    triggerInput.setAttribute("aria-readonly", "true");
+  }
 
   const usesPortalMenu = () => Boolean(wrap.closest("#host-edit-overlay") || wrap.closest("#ai-config-overlay"));
   const resetPortalMenu = () => {
@@ -8300,6 +8564,7 @@ function buildCustomSelect(selectEl) {
     menu.hidden = true;
     trigger.setAttribute("aria-expanded", "false");
     triggerInput.value = customValue || selectedLabel;
+    if (isSftpHostSelectMenu) sftpHostBrowseGroupId = "";
     if (customSelectState.openId === selectEl.id) {
       customSelectState.openId = null;
     }
@@ -8327,7 +8592,12 @@ function buildCustomSelect(selectEl) {
     menu.hidden = false;
     trigger.setAttribute("aria-expanded", "true");
     customSelectState.openId = selectEl.id;
-    if (!preserveQuery) triggerInput.value = "";
+    if (isSftpHostSelectMenu) {
+      sftpHostBrowseGroupId = "";
+      triggerInput.value = customValue || selectedLabel;
+    } else if (!preserveQuery) {
+      triggerInput.value = "";
+    }
     suppressLabelRestore = true;
     sync();
     suppressLabelRestore = false;
@@ -8337,6 +8607,125 @@ function buildCustomSelect(selectEl) {
       window.addEventListener("resize", onPortalViewportChange);
       window.addEventListener("scroll", onPortalViewportChange, true);
     }
+  };
+
+  const compareSelectMenuLabels = (a, b) =>
+    String(a || "").localeCompare(String(b || ""), undefined, {
+      sensitivity: "base",
+      numeric: true,
+    });
+
+  const renderSftpHostMenu = () => {
+    const groupsById = new Map(hostGroups.map((group) => [group.id, group]));
+    const currentGroup = sftpHostBrowseGroupId ? groupsById.get(sftpHostBrowseGroupId) || null : null;
+    const currentGroupId = currentGroup?.id || "";
+    const groupChildren = hostGroups
+      .filter((group) => (group.parentId || "") === currentGroupId)
+      .sort((a, b) =>
+        Number(a.sortOrder || 0) - Number(b.sortOrder || 0) || compareSelectMenuLabels(a.name, b.name));
+    const hostRows = hostsCache
+      .filter((host) => {
+        const gid = String(host.groupId || "");
+        if (!currentGroup) return !gid || !groupsById.has(gid);
+        return gid === currentGroup.id;
+      })
+      .sort((a, b) =>
+        compareSelectMenuLabels(a.name, b.name)
+        || compareSelectMenuLabels(`${a.user}@${a.host}:${a.port}`, `${b.user}@${b.host}:${b.port}`));
+
+    empty.textContent = currentGroup ? t("sftp.host.group.empty") : t("select.search.empty");
+    optionsBox.innerHTML = "";
+
+    const buildOption = ({ label, meta = "", active = false, kind = "host", onClick }) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = `zt-select-option zt-select-option-${kind}` + (active ? " active" : "");
+
+      const text = document.createElement("span");
+      text.className = "zt-select-option-text";
+      const title = document.createElement("span");
+      title.className = "zt-select-option-label";
+      title.textContent = label;
+      text.appendChild(title);
+      if (meta) {
+        const sub = document.createElement("span");
+        sub.className = "zt-select-option-meta";
+        sub.textContent = meta;
+        text.appendChild(sub);
+      }
+      item.appendChild(text);
+
+      if (kind === "group") {
+        const next = document.createElement("span");
+        next.className = "zt-select-option-next";
+        next.textContent = "›";
+        item.appendChild(next);
+      }
+
+      item.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        onClick();
+      });
+      optionsBox.appendChild(item);
+    };
+
+    if (currentGroup) {
+      buildOption({
+        label: t("files.button.back"),
+        meta: currentGroup.name,
+        kind: "back",
+        onClick: () => {
+          sftpHostBrowseGroupId = currentGroup.parentId || "";
+          renderSftpHostMenu();
+          positionPortalMenu();
+        },
+      });
+    } else {
+      buildOption({
+        label: t("sftp.host.local"),
+        active: selectEl.value === localHostValue,
+        kind: "host",
+        onClick: () => {
+          selectEl.value = localHostValue;
+          selectEl.dataset.customValue = "";
+          selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+          sync();
+          close();
+        },
+      });
+    }
+
+    for (const group of groupChildren) {
+      buildOption({
+        label: group.name,
+        meta: "",
+        kind: "group",
+        onClick: () => {
+          sftpHostBrowseGroupId = group.id;
+          renderSftpHostMenu();
+          positionPortalMenu();
+        },
+      });
+    }
+
+    for (const host of hostRows) {
+      buildOption({
+        label: host.name,
+        meta: `${host.user}@${host.host}:${host.port}`,
+        active: selectEl.value === host.id,
+        kind: "host",
+        onClick: () => {
+          selectEl.value = host.id;
+          selectEl.dataset.customValue = "";
+          selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+          sync();
+          close();
+        },
+      });
+    }
+
+    empty.hidden = optionsBox.childElementCount > 0;
   };
 
   const sync = () => {
@@ -8351,6 +8740,10 @@ function buildCustomSelect(selectEl) {
       if (!suppressLabelRestore) {
         triggerInput.value = customValue || selectedLabel;
       }
+    }
+    if (isSftpHostSelectMenu) {
+      renderSftpHostMenu();
+      return;
     }
     empty.textContent = t("select.search.empty");
     optionsBox.innerHTML = "";
@@ -8388,7 +8781,7 @@ function buildCustomSelect(selectEl) {
   });
   triggerInput.addEventListener("focus", () => {
     open();
-    triggerInput.select();
+    if (!isSftpHostSelectMenu) triggerInput.select();
     sync();
   });
   triggerInput.addEventListener("click", () => {
@@ -8657,6 +9050,13 @@ function applyI18n() {
   setText("settings-nav-about", "settings.nav.about");
   setText("settings-general-subtab-basic", "settings.general.subtab.basic");
   setText("settings-general-subtab-sftp", "settings.general.subtab.sftp");
+  setText("settings-proxy-label", "settings.proxy.label");
+  setText("settings-proxy-hint", "settings.proxy.hint");
+  setText("settings-proxy-url-label", "settings.proxy.url_label");
+  setText("settings-proxy-note", "settings.proxy.note");
+  setText("settings-proxy-save", "settings.proxy.save");
+  setText("settings-proxy-clear", "settings.proxy.clear");
+  setPlaceholder("settings-proxy-url", "settings.proxy.placeholder");
   setText("settings-bg-label", "settings.bg.label");
   setText("settings-bg-hint", "settings.bg.hint");
   setText("settings-bg-preview-empty", "settings.bg.empty");
@@ -9359,6 +9759,34 @@ vaultBottomSettingsRow?.addEventListener("keydown", (ev) => {
 });
 settingsLanguageSelect.addEventListener("change", () => {
   setLocale(settingsLanguageSelect.value);
+});
+settingsProxySave?.addEventListener("click", async () => {
+  settingsProxySave.disabled = true;
+  if (settingsProxyClear) settingsProxyClear.disabled = true;
+  try {
+    await saveNetworkProxyConfigFromForm();
+  } catch (e) {
+    if (settingsProxyStatus) {
+      settingsProxyStatus.textContent = t("settings.proxy.status.failed", { error: String(e) });
+    }
+  } finally {
+    settingsProxySave.disabled = false;
+    if (settingsProxyClear) settingsProxyClear.disabled = false;
+  }
+});
+settingsProxyClear?.addEventListener("click", async () => {
+  settingsProxySave && (settingsProxySave.disabled = true);
+  settingsProxyClear.disabled = true;
+  try {
+    await clearNetworkProxyConfigFromForm();
+  } catch (e) {
+    if (settingsProxyStatus) {
+      settingsProxyStatus.textContent = t("settings.proxy.status.failed", { error: String(e) });
+    }
+  } finally {
+    settingsProxySave && (settingsProxySave.disabled = false);
+    settingsProxyClear.disabled = false;
+  }
 });
 settingsSyncBackend?.addEventListener("change", () => {
   syncFormToggleBackendFields(settingsSyncBackend.value || "local_folder");
@@ -12755,35 +13183,64 @@ async function copyDraggedEntriesToPane(sourcePane, targetPane, targetDir) {
   if (!isLocalPane(targetPane) && destinationSftpId === null) return;
 
   const destinationDir = String(targetDir || targetPane.path || "").trim() || targetPane.path;
+  const copyQueue = [];
+
+  for (const name of names) {
+    const destinationPath = joinPath(destinationDir, name);
+    if (destinationSftpId === null) {
+      const plan = await planOverwriteForLocalPath(destinationPath, {
+        pane: targetPane,
+        directoryPath: destinationDir,
+        entryName: name,
+      });
+      if (!plan.proceed) {
+        continue;
+      }
+      copyQueue.push({
+        name,
+        sourcePath: joinPanePath(sourcePane, name),
+        destinationPath,
+        overwrite: plan.overwrite,
+      });
+      continue;
+    }
+    copyQueue.push({
+      name,
+      sourcePath: joinPanePath(sourcePane, name),
+      destinationPath,
+      overwrite: false,
+    });
+  }
+
+  if (copyQueue.length === 0) return;
+
   targetPane.statusEl.textContent = t("files.status.copying_many", {
-    count: names.length,
+    count: copyQueue.length,
     path: destinationDir,
   });
 
   let copied = 0;
   const errors = [];
 
-  for (const name of names) {
-    const sourcePath = joinPanePath(sourcePane, name);
-    const destinationPath = joinPath(destinationDir, name);
+  for (const item of copyQueue) {
     try {
       await invoke("sftp_copy_entry_between_panes", {
         sourceSftpId,
-        sourcePath,
+        sourcePath: item.sourcePath,
         destinationSftpId,
         destinationDir,
-        overwrite: false,
+        overwrite: item.overwrite,
       });
       copied += 1;
     } catch (e) {
       const err = String(e || "");
-      if (err.includes("destination already exists")) {
-        const ok = confirm(t("files.confirm.overwrite", { path: destinationPath }));
+      if (!item.overwrite && err.includes("destination already exists")) {
+        const ok = await showNativeConfirm(t("files.confirm.overwrite", { path: item.destinationPath }));
         if (ok) {
           try {
             await invoke("sftp_copy_entry_between_panes", {
               sourceSftpId,
-              sourcePath,
+              sourcePath: item.sourcePath,
               destinationSftpId,
               destinationDir,
               overwrite: true,
@@ -12791,12 +13248,13 @@ async function copyDraggedEntriesToPane(sourcePane, targetPane, targetDir) {
             copied += 1;
             continue;
           } catch (e2) {
-            errors.push({ name, error: String(e2) });
+            errors.push({ name: item.name, error: String(e2) });
             continue;
           }
         }
+        continue;
       }
-      errors.push({ name, error: err });
+      errors.push({ name: item.name, error: err });
     }
   }
 
@@ -12823,7 +13281,7 @@ async function copyDraggedEntriesToPane(sourcePane, targetPane, targetDir) {
 
   targetPane.statusEl.textContent = t("files.error.copy_partial", {
     ok: copied,
-    total: names.length,
+    total: copyQueue.length,
     error: `${errors[0].name}: ${errors[0].error}`,
   });
 }
@@ -13633,18 +14091,51 @@ async function sftpDownloadFile(pane, entry) {
     if (!destination) return;
     const destinationDir = Array.isArray(destination) ? String(destination[0] || "") : String(destination);
     if (!destinationDir) return;
+    const destinationPath = joinPath(destinationDir, entry.name);
+    const plan = await planOverwriteForLocalPath(destinationPath, {
+      directoryPath: destinationDir,
+      entryName: entry.name,
+    });
+    if (!plan.proceed) return;
     try {
+      pane.statusEl.textContent = t("files.progress.downloading");
       await invoke("sftp_copy_entry_between_panes", {
         sourceSftpId: pane.sftpId,
         sourcePath: joinPanePath(pane, entry.name),
         destinationSftpId: null,
         destinationDir,
+        overwrite: plan.overwrite,
       });
       pane.statusEl.textContent = t("files.status.downloaded_dir_to", {
         name: entry.name,
         folder: destinationDir,
       });
     } catch (e) {
+      const err = String(e || "");
+      if (!plan.overwrite && err.includes("destination already exists")) {
+        const ok = await showNativeConfirm(t("files.confirm.overwrite", { path: destinationPath }));
+        if (ok) {
+          try {
+            pane.statusEl.textContent = t("files.progress.downloading");
+            await invoke("sftp_copy_entry_between_panes", {
+              sourceSftpId: pane.sftpId,
+              sourcePath: joinPanePath(pane, entry.name),
+              destinationSftpId: null,
+              destinationDir,
+              overwrite: true,
+            });
+            pane.statusEl.textContent = t("files.status.downloaded_dir_to", {
+              name: entry.name,
+              folder: destinationDir,
+            });
+            return;
+          } catch (e2) {
+            pane.statusEl.textContent = t("files.error.download_failed", { error: e2 });
+            return;
+          }
+        }
+        return;
+      }
       pane.statusEl.textContent = t("files.error.download_failed", { error: e });
     }
     return;
@@ -13654,14 +14145,41 @@ async function sftpDownloadFile(pane, entry) {
     options: { defaultPath: entry.name },
   });
   if (!local) return;
+  const plan = await planOverwriteForLocalPath(String(local), {
+    entryName: entry.name,
+  });
+  if (!plan.proceed) return;
   try {
+    pane.statusEl.textContent = t("files.progress.downloading");
     const n = await invoke("sftp_download", {
       sftpId: pane.sftpId,
       remote: joinPanePath(pane, entry.name),
       local,
+      overwrite: plan.overwrite,
     });
     pane.statusEl.textContent = t("files.status.downloaded_one", { name: entry.name, size: formatSize(n) });
   } catch (e) {
+    const err = String(e || "");
+    if (!plan.overwrite && err.includes("destination already exists")) {
+      const ok = await showNativeConfirm(t("files.confirm.overwrite", { path: local }));
+      if (ok) {
+        try {
+          pane.statusEl.textContent = t("files.progress.downloading");
+          const n = await invoke("sftp_download", {
+            sftpId: pane.sftpId,
+            remote: joinPanePath(pane, entry.name),
+            local,
+            overwrite: true,
+          });
+          pane.statusEl.textContent = t("files.status.downloaded_one", { name: entry.name, size: formatSize(n) });
+          return;
+        } catch (e2) {
+          pane.statusEl.textContent = t("files.error.download_failed", { error: e2 });
+          return;
+        }
+      }
+      return;
+    }
     pane.statusEl.textContent = t("files.error.download_failed", { error: e });
   }
 }
@@ -13692,6 +14210,7 @@ async function openEntryWithLocalApp(pane, entry) {
       sftpId: pane.sftpId,
       remote: joinPanePath(pane, entry.name),
       local: localPath,
+      overwrite: true,
     });
   }
 
@@ -14746,6 +15265,7 @@ window.addEventListener("resize", () => {
 applyI18n();
 loadAiConfig().catch(() => {});
 loadAiSessions({ render: true }).catch(() => {});
+loadNetworkProxyConfig({ quiet: true }).catch(() => {});
 refreshVaultStatus();
 function openSettingsPage() {
   setWorkspaceMode("settings");

@@ -87,7 +87,10 @@ mod tests {
         let bytes = m.to_json().unwrap();
         let back = Manifest::from_json(&bytes).unwrap();
         assert_eq!(back.head_clock, 42);
-        assert_eq!(back.latest_snapshot.as_deref(), Some("snapshots/snapshot-42-x.bin"));
+        assert_eq!(
+            back.latest_snapshot.as_deref(),
+            Some("snapshots/snapshot-42-x.bin")
+        );
         assert_eq!(back.keyring_version, 3);
         assert_eq!(back.updated_by_device, "dev-A");
     }

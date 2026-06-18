@@ -76,9 +76,10 @@ pub struct ProgressTick {
     pub total: Option<u64>,
 }
 
-/// Default streaming chunk size. Tuned for SFTP packet overhead vs
-/// progress responsiveness.
-pub const DEFAULT_CHUNK: usize = 32 * 1024;
+/// Default streaming chunk size. Kept fairly large so single-flight SFTP
+/// reads spend less time paying round-trip overhead on higher-latency
+/// links while still remaining responsive to cancel / progress updates.
+pub const DEFAULT_CHUNK: usize = 512 * 1024;
 
 /// Live SFTP channel. Drop closes the underlying SSH channel.
 pub struct Sftp {
@@ -170,10 +171,7 @@ impl Sftp {
             }
             dest.write_all(&buf[..n]).await?;
             bytes_done += n as u64;
-            on_progress(ProgressTick {
-                bytes_done,
-                total,
-            });
+            on_progress(ProgressTick { bytes_done, total });
         }
         dest.flush().await?;
         Ok(bytes_done)
@@ -303,7 +301,11 @@ impl Sftp {
     }
 
     pub async fn chmod(&self, path: &str, mode: u32) -> Result<(), SshError> {
-        let mut attrs = self.inner.metadata(path.to_string()).await.map_err(map_sftp_err)?;
+        let mut attrs = self
+            .inner
+            .metadata(path.to_string())
+            .await
+            .map_err(map_sftp_err)?;
         let file_type_bits = attrs.permissions.unwrap_or_default() & 0o170000;
         attrs.permissions = Some(file_type_bits | (mode & 0o7777));
         self.inner

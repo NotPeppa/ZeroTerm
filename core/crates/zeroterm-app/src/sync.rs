@@ -249,11 +249,7 @@ impl SyncManager {
     /// the actual sync only fires `debounce` after the last call. The
     /// caller must hold an Arc to the manager so the timer can pull
     /// the engine out at fire time.
-    pub fn schedule_debounced_sync(
-        self: &Arc<Self>,
-        app: Arc<App>,
-        profile_id: String,
-    ) {
+    pub fn schedule_debounced_sync(self: &Arc<Self>, app: Arc<App>, profile_id: String) {
         let manager = self.clone();
         let delay = self.debounce_duration();
         let app = app;
@@ -288,10 +284,7 @@ impl SyncManager {
     /// Convenience wrapper that arms a timer for every bootstrapped
     /// profile. The mutation-side commands call this — they don't need
     /// to know which profile is "active".
-    pub fn schedule_debounced_sync_for_all(
-        self: &Arc<Self>,
-        app: Arc<App>,
-    ) {
+    pub fn schedule_debounced_sync_for_all(self: &Arc<Self>, app: Arc<App>) {
         let manager = self.clone();
         tokio::spawn(async move {
             let ids = manager.bootstrapped_ids().await;
@@ -424,8 +417,7 @@ impl App {
         self: &Arc<Self>,
         profile: &SyncProfile,
     ) -> Result<Arc<SyncEngine>, AppError> {
-        let store: Arc<dyn LocalRecordStore> =
-            Arc::new(VaultBackedStore::new(self.clone()));
+        let store: Arc<dyn LocalRecordStore> = Arc::new(VaultBackedStore::new(self.clone()));
         let device_id = local_device_id();
         let device_name = local_device_name();
         match &profile.backend {
@@ -437,7 +429,9 @@ impl App {
                     )));
                 }
                 let adapter = LocalAdapter::new(p);
-                Ok(Arc::new(SyncEngine::new(adapter, store, device_id).with_device_name(device_name)))
+                Ok(Arc::new(
+                    SyncEngine::new(adapter, store, device_id).with_device_name(device_name),
+                ))
             }
             SyncBackend::Sftp {
                 host_ref,
@@ -499,9 +493,10 @@ impl App {
                     .sftp()
                     .await
                     .map_err(|e| AppError::SyncConfig(e.to_string()))?;
-                let adapter =
-                    SftpAdapter::new(Arc::new(sftp), session, jump_session, remote_dir);
-                Ok(Arc::new(SyncEngine::new(adapter, store, device_id).with_device_name(device_name)))
+                let adapter = SftpAdapter::new(Arc::new(sftp), session, jump_session, remote_dir);
+                Ok(Arc::new(
+                    SyncEngine::new(adapter, store, device_id).with_device_name(device_name),
+                ))
             }
             #[cfg(feature = "webdav-backend")]
             SyncBackend::WebDav {
@@ -512,9 +507,7 @@ impl App {
                 use zeroterm_sync::adapter::{WebDavAdapter, WebDavConfig};
 
                 if url.trim().is_empty() {
-                    return Err(AppError::SyncConfig(
-                        "webdav url is required".to_string(),
-                    ));
+                    return Err(AppError::SyncConfig("webdav url is required".to_string()));
                 }
                 if username.trim().is_empty() {
                     return Err(AppError::SyncConfig(
@@ -537,7 +530,9 @@ impl App {
                     timeout: None,
                 })
                 .map_err(|e| AppError::SyncConfig(e.to_string()))?;
-                Ok(Arc::new(SyncEngine::new(adapter, store, device_id).with_device_name(device_name)))
+                Ok(Arc::new(
+                    SyncEngine::new(adapter, store, device_id).with_device_name(device_name),
+                ))
             }
             #[cfg(not(feature = "webdav-backend"))]
             SyncBackend::WebDav { .. } => Err(AppError::SyncConfig(
@@ -561,9 +556,7 @@ impl App {
                     return Err(AppError::SyncConfig("s3 bucket is required".into()));
                 }
                 if access_key_id.trim().is_empty() {
-                    return Err(AppError::SyncConfig(
-                        "s3 access_key_id is required".into(),
-                    ));
+                    return Err(AppError::SyncConfig("s3 access_key_id is required".into()));
                 }
                 let secret = crate::keychain::get_sync_backend_credential(&profile.id)
                     .map_err(|e| AppError::SyncConfig(format!("keychain: {e}")))?
@@ -591,7 +584,9 @@ impl App {
                 })
                 .await
                 .map_err(|e| AppError::SyncConfig(e.to_string()))?;
-                Ok(Arc::new(SyncEngine::new(adapter, store, device_id).with_device_name(device_name)))
+                Ok(Arc::new(
+                    SyncEngine::new(adapter, store, device_id).with_device_name(device_name),
+                ))
             }
             #[cfg(not(feature = "s3-backend"))]
             SyncBackend::S3 { .. } => Err(AppError::SyncConfig(
@@ -668,12 +663,10 @@ impl App {
         let (profile_valid, profile_issue) = match self.find_sync_profile(profile_id) {
             Ok(profile) => match &profile.backend {
                 SyncBackend::LocalFolder { .. } => (true, None),
-                SyncBackend::Sftp { host_ref, .. } => {
-                    match self.find_host_by_id(host_ref)? {
-                        Some(_) => (true, None),
-                        None => (false, Some("host_record_missing".to_string())),
-                    }
-                }
+                SyncBackend::Sftp { host_ref, .. } => match self.find_host_by_id(host_ref)? {
+                    Some(_) => (true, None),
+                    None => (false, Some("host_record_missing".to_string())),
+                },
                 SyncBackend::WebDav { .. } => {
                     // The password lives in the OS keychain. If it's
                     // missing the engine_for_profile call will surface
@@ -689,9 +682,7 @@ impl App {
                     (true, None)
                 }
             },
-            Err(AppError::SyncProfileNotFound(_)) => {
-                (false, Some("profile_missing".to_string()))
-            }
+            Err(AppError::SyncProfileNotFound(_)) => (false, Some("profile_missing".to_string())),
             Err(e) => return Err(e),
         };
 

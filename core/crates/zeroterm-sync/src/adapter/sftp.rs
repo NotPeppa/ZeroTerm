@@ -158,7 +158,11 @@ impl SftpAdapter {
         }
     }
 
-    async fn list_recursive(&self, abs_path: &str, recursive: bool) -> Result<Vec<RemoteEntry>, Error> {
+    async fn list_recursive(
+        &self,
+        abs_path: &str,
+        recursive: bool,
+    ) -> Result<Vec<RemoteEntry>, Error> {
         // Bail early if root doesn't exist — adapter contract is empty list, not error.
         match self.sftp.stat(abs_path).await {
             Ok(m) if matches!(m.kind, FileKind::Dir) => {}
@@ -432,7 +436,10 @@ mod tests {
     #[test]
     fn full_strips_trailing_slashes_from_base_dir() {
         let p = SftpPaths::new("/home/me/zeroterm///");
-        assert_eq!(p.full("manifest.json"), "/home/me/zeroterm/zeroterm-sync/manifest.json");
+        assert_eq!(
+            p.full("manifest.json"),
+            "/home/me/zeroterm/zeroterm-sync/manifest.json"
+        );
     }
 
     #[test]
@@ -444,14 +451,23 @@ mod tests {
     #[test]
     fn full_strips_leading_slash_from_key() {
         let p = SftpPaths::new("/var/lib");
-        assert_eq!(p.full("/manifest.json"), "/var/lib/zeroterm-sync/manifest.json");
+        assert_eq!(
+            p.full("/manifest.json"),
+            "/var/lib/zeroterm-sync/manifest.json"
+        );
     }
 
     #[test]
     fn dir_never_emits_trailing_slash() {
         let p = SftpPaths::new("/var/lib");
-        assert_eq!(p.dir("events/2024-03/"), "/var/lib/zeroterm-sync/events/2024-03");
-        assert_eq!(p.dir("events/2024-03"), "/var/lib/zeroterm-sync/events/2024-03");
+        assert_eq!(
+            p.dir("events/2024-03/"),
+            "/var/lib/zeroterm-sync/events/2024-03"
+        );
+        assert_eq!(
+            p.dir("events/2024-03"),
+            "/var/lib/zeroterm-sync/events/2024-03"
+        );
     }
 
     #[test]

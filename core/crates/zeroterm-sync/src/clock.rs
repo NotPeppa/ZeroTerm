@@ -49,12 +49,10 @@ impl LogicalClock {
             if remote <= current {
                 return;
             }
-            match self.value.compare_exchange(
-                current,
-                remote,
-                Ordering::SeqCst,
-                Ordering::SeqCst,
-            ) {
+            match self
+                .value
+                .compare_exchange(current, remote, Ordering::SeqCst, Ordering::SeqCst)
+            {
                 Ok(_) => return,
                 Err(actual) => current = actual,
             }

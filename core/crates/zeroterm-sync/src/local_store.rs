@@ -160,10 +160,7 @@ impl InMemoryStore {
     pub fn put_local(&self, id: &str, kind: &str, plaintext: Vec<u8>) {
         let mut g = self.inner.lock().unwrap();
         let rev = uuid::Uuid::now_v7().to_string();
-        let base = g
-            .records
-            .get(id)
-            .and_then(|r| r.server_rev.clone());
+        let base = g.records.get(id).and_then(|r| r.server_rev.clone());
         g.records.insert(
             id.to_string(),
             InMemoryRecord {
@@ -275,10 +272,13 @@ impl LocalRecordStore for InMemoryStore {
 
     fn apply_delete(&self, id: &str, server_rev: &str) -> Result<(), Error> {
         let mut g = self.inner.lock().unwrap();
-        let entry = g.records.entry(id.to_string()).or_insert_with(|| InMemoryRecord {
-            kind: "tombstone".to_string(),
-            ..Default::default()
-        });
+        let entry = g
+            .records
+            .entry(id.to_string())
+            .or_insert_with(|| InMemoryRecord {
+                kind: "tombstone".to_string(),
+                ..Default::default()
+            });
         entry.deleted = true;
         entry.plaintext.clear();
         entry.local_rev = server_rev.to_string();
@@ -356,9 +356,7 @@ impl LocalRecordStore for InMemoryStore {
         let mut g = self.inner.lock().unwrap();
         let before = g.records.len();
         g.records.retain(|_, r| {
-            !(r.deleted
-                && !r.dirty
-                && r.deleted_at_ms.map(|t| t < cutoff).unwrap_or(false))
+            !(r.deleted && !r.dirty && r.deleted_at_ms.map(|t| t < cutoff).unwrap_or(false))
         });
         Ok(before - g.records.len())
     }

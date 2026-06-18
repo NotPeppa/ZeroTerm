@@ -636,6 +636,22 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
                             </p>
                             </section>
                             <section class="settings-section">
+                              <h4 id="settings-proxy-label">Network Proxy</h4>
+                              <p id="settings-proxy-hint" class="muted tiny">Route built-in app traffic through one HTTP proxy URL.</p>
+                              <div class="settings-row settings-row-dir settings-proxy-row">
+                                <div>
+                                  <div id="settings-proxy-url-label" class="settings-item-title">Proxy URL</div>
+                                  <p id="settings-proxy-note" class="muted tiny">Existing SSH/SFTP sessions need reconnecting to switch over.</p>
+                                </div>
+                                <div class="settings-dir-inputs settings-proxy-inputs">
+                                  <input id="settings-proxy-url" type="text" placeholder="http://127.0.0.1:7890" autocomplete="off" spellcheck="false" />
+                                  <button id="settings-proxy-save" type="button" class="primary">Save</button>
+                                  <button id="settings-proxy-clear" type="button" hidden>Clear</button>
+                                </div>
+                              </div>
+                              <p id="settings-proxy-status" class="muted tiny"></p>
+                            </section>
+                            <section class="settings-section">
                               <h4 id="settings-bg-label">Background Image</h4>
                               <p id="settings-bg-hint" class="muted tiny">Use a custom image as the app background.</p>
                               <div class="settings-bg-row">
@@ -1099,6 +1115,33 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
                           </div>
                         </article>
                       </div>
+                      <section id="sftp-transfer-dock" class="sftp-transfer-dock" hidden aria-live="polite">
+                        <div class="sftp-transfer-row">
+                          <div class="sftp-transfer-leading">
+                            <div class="sftp-transfer-icon" aria-hidden="true">
+                              <svg class="zt-icon" viewBox="0 0 24 24">
+                                <path d="M7 3.5h6l4 4V20a.5.5 0 0 1-.5.5h-9A1.5 1.5 0 0 1 6 19V5a1.5 1.5 0 0 1 1-1.5z"></path>
+                                <path d="M13 3.5V8h4.5"></path>
+                              </svg>
+                            </div>
+                            <div class="sftp-transfer-copy">
+                              <div id="sftp-transfer-name" class="sftp-transfer-name"></div>
+                              <div id="sftp-transfer-meta" class="sftp-transfer-meta"></div>
+                            </div>
+                          </div>
+                          <div class="sftp-transfer-rail">
+                            <div id="sftp-transfer-progress" class="sftp-transfer-progress">
+                              <div id="sftp-transfer-progress-bar" class="sftp-transfer-progress-bar"></div>
+                            </div>
+                          </div>
+                          <button id="sftp-transfer-cancel" type="button" class="sftp-transfer-cancel">
+                            <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                              <path d="M7 7l10 10"></path>
+                              <path d="M17 7 7 17"></path>
+                            </svg>
+                          </button>
+                        </div>
+                      </section>
                       <div id="files-context-menu" class="files-context-menu" hidden>
                         <button id="files-menu-open" type="button">Open</button>
                         <button id="files-menu-open-with" type="button">Open with...</button>

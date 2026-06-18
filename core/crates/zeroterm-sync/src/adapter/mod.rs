@@ -79,14 +79,14 @@ pub trait SyncAdapter: Send + Sync {
 }
 
 pub mod local;
+#[cfg(feature = "s3-backend")]
+pub mod s3;
 pub mod sftp;
 #[cfg(feature = "webdav-backend")]
 pub mod webdav;
-#[cfg(feature = "s3-backend")]
-pub mod s3;
 pub use local::LocalAdapter;
+#[cfg(feature = "s3-backend")]
+pub use s3::{S3Adapter, S3Config};
 pub use sftp::SftpAdapter;
 #[cfg(feature = "webdav-backend")]
 pub use webdav::{WebDavAdapter, WebDavConfig};
-#[cfg(feature = "s3-backend")]
-pub use s3::{S3Adapter, S3Config};

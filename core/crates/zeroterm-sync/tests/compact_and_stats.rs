@@ -20,10 +20,7 @@ fn fast_kdf() -> Argon2Params {
     }
 }
 
-fn make_engine(
-    root: &std::path::Path,
-    device_id: &str,
-) -> (Arc<InMemoryStore>, SyncEngine) {
+fn make_engine(root: &std::path::Path, device_id: &str) -> (Arc<InMemoryStore>, SyncEngine) {
     let store = Arc::new(InMemoryStore::new());
     let trait_store: Arc<dyn LocalRecordStore> = store.clone();
     let engine = SyncEngine::new(LocalAdapter::new(root), trait_store, device_id);
@@ -39,11 +36,12 @@ fn make_engine_no_retention(
 ) -> (Arc<InMemoryStore>, SyncEngine) {
     let store = Arc::new(InMemoryStore::new());
     let trait_store: Arc<dyn LocalRecordStore> = store.clone();
-    let engine = SyncEngine::new(LocalAdapter::new(root), trait_store, device_id)
-        .with_retention(RetentionPolicy {
+    let engine = SyncEngine::new(LocalAdapter::new(root), trait_store, device_id).with_retention(
+        RetentionPolicy {
             event_retention_days: 0,
             ..RetentionPolicy::default()
-        });
+        },
+    );
     (store, engine)
 }
 
@@ -60,10 +58,7 @@ async fn compact_folds_events_into_snapshot_and_moves_them_to_trash() {
     let d = tempdir().unwrap();
     let (store_a, engine_a) = make_engine_no_retention(d.path(), "dev-A");
 
-    engine_a
-        .create_repo("pw", "vlt", fast_kdf())
-        .await
-        .unwrap();
+    engine_a.create_repo("pw", "vlt", fast_kdf()).await.unwrap();
 
     // Push a few records and updates, generating a handful of events.
     store_a.put_local("r1", "host", b"v1".to_vec());
@@ -102,10 +97,7 @@ async fn compact_retains_recent_events_in_place() {
     // feet.
     let d = tempdir().unwrap();
     let (store_a, engine_a) = make_engine(d.path(), "dev-A");
-    engine_a
-        .create_repo("pw", "vlt", fast_kdf())
-        .await
-        .unwrap();
+    engine_a.create_repo("pw", "vlt", fast_kdf()).await.unwrap();
 
     store_a.put_local("r1", "host", b"v1".to_vec());
     store_a.put_local("r2", "host", b"v2".to_vec());
@@ -181,10 +173,7 @@ async fn compact_prunes_old_tombstones_via_store_hook() {
 async fn fresh_device_can_join_via_snapshot_after_compact() {
     let d = tempdir().unwrap();
     let (store_a, engine_a) = make_engine_no_retention(d.path(), "dev-A");
-    engine_a
-        .create_repo("pw", "vlt", fast_kdf())
-        .await
-        .unwrap();
+    engine_a.create_repo("pw", "vlt", fast_kdf()).await.unwrap();
     store_a.put_local("r1", "host", b"v1".to_vec());
     store_a.put_local("r2", "host", b"v2".to_vec());
     engine_a.sync_once().await.unwrap();

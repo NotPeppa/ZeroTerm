@@ -715,8 +715,9 @@ mod tests {
 
         // Now run migrations as Store::open would.
         run_migrations(&mut conn).unwrap();
-        let version: u32 =
-            conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap() as u32;
+        let version: u32 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+            .unwrap() as u32;
         assert_eq!(version, 2);
 
         let got: Option<String> = conn
@@ -729,7 +730,10 @@ mod tests {
         assert!(got.is_none(), "legacy row should have NULL local_rev");
 
         // sync_state must now exist.
-        conn.execute("INSERT INTO sync_state (key, value) VALUES ('k', x'00')", [])
-            .unwrap();
+        conn.execute(
+            "INSERT INTO sync_state (key, value) VALUES ('k', x'00')",
+            [],
+        )
+        .unwrap();
     }
 }

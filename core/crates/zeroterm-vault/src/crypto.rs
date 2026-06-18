@@ -160,7 +160,8 @@ pub(crate) fn decrypt_record(
 /// Encrypt the verifier constant. Stored at vault creation; the unlock
 /// path tries to decrypt it back to confirm the password is right.
 pub(crate) fn encrypt_verifier(master: &MasterKey) -> Result<(Vec<u8>, Vec<u8>), VaultError> {
-    let (nonce, ct) = aead_seal(master, VERIFIER_PLAINTEXT, VERIFIER_AAD).map_err(map_crypto_err)?;
+    let (nonce, ct) =
+        aead_seal(master, VERIFIER_PLAINTEXT, VERIFIER_AAD).map_err(map_crypto_err)?;
     Ok((nonce.to_vec(), ct))
 }
 

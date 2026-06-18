@@ -6,34 +6,33 @@
 //!   - Sync mutexes are acquired in tight blocks; `await` happens after
 //!     the lock is dropped.
 
-use std::sync::atomic::Ordering;
 use std::collections::{BTreeSet, HashMap, HashSet};
+#[cfg(target_os = "windows")]
+use std::process::Command;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Duration;
-#[cfg(target_os = "windows")]
-use std::process::Command;
-#[cfg(not(target_os = "windows"))]
-use tokio::process::Command;
 use std::{
-    env,
-    fs,
+    env, fs,
     path::{Path, PathBuf},
 };
+#[cfg(not(target_os = "windows"))]
+use tokio::process::Command;
 
+use futures_util::StreamExt;
+use portable_pty::{CommandBuilder, PtySize as LocalPtySize};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tauri::{AppHandle, Emitter, Manager, State};
-use futures_util::StreamExt;
-use tokio::sync::mpsc;
-use tracing::{debug, info, warn};
-use portable_pty::{CommandBuilder, PtySize as LocalPtySize};
 use std::io::{Read, Write};
 use std::sync::Mutex as StdMutex;
+use tauri::{AppHandle, Emitter, Manager, State};
+use tokio::sync::mpsc;
+use tracing::{debug, info, warn};
 
+use tauri_plugin_updater::UpdaterExt;
 use zeroterm_app::{App, HostAuth, SyncBackend, SyncProfile};
 use zeroterm_ssh::{FileKind, HostKeyPolicy, KnownHosts, PtySize, Session};
-use tauri_plugin_updater::UpdaterExt;
 
 use crate::host_key::TauriHostKeyPrompt;
 use crate::session::{run as run_session, ClosedEvent};
@@ -71,9 +70,19 @@ pub struct SystemFontDto {
 
 const AI_CONFIG_FILE: &str = "ai-config.json";
 const AI_SESSION_FILE: &str = "ai-sessions.json";
+const NETWORK_PROXY_FILE: &str = "network-proxy.json";
 const AI_KEYCHAIN_PROFILE: &str = "default";
 const AI_SESSION_MAX_ITEMS: usize = 80;
 const AI_STORE_VERSION: u32 = 2;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkProxyConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub url: String,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -341,12 +350,149 @@ fn default_ai_store() -> AiConfigStore {
     }
 }
 
+fn zeroterm_config_dir() -> Result<PathBuf, String> {
+    dirs::config_dir()
+        .ok_or_else(|| "no config directory on this OS".to_string())
+        .map(|d| d.join("ZeroTerm"))
+}
+
 fn generate_profile_id() -> String {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
     format!("prof-{nanos:x}")
+}
+
+fn unique_sibling_path(target: &Path, tag: &str) -> PathBuf {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let pid = std::process::id();
+    let file_name = target
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or("download");
+    let parent = target.parent().unwrap_or_else(|| Path::new("."));
+    parent.join(format!(".{file_name}.zeroterm-{tag}-{pid}-{nanos:x}.part"))
+}
+
+async fn finalize_download_target(
+    temp_path: &Path,
+    target: &Path,
+    overwrite: bool,
+) -> Result<(), String> {
+    if !overwrite || !target.exists() {
+        return tokio::fs::rename(temp_path, target).await.map_err(|e| {
+            format!(
+                "rename {} -> {}: {e}",
+                temp_path.display(),
+                target.display()
+            )
+        });
+    }
+
+    let backup_path = unique_sibling_path(target, "backup");
+    tokio::fs::rename(target, &backup_path).await.map_err(|e| {
+        format!(
+            "rename {} -> {}: {e}",
+            target.display(),
+            backup_path.display()
+        )
+    })?;
+
+    match tokio::fs::rename(temp_path, target).await {
+        Ok(()) => {
+            let _ = tokio::fs::remove_file(&backup_path).await;
+            Ok(())
+        }
+        Err(e) => {
+            let _ = tokio::fs::rename(&backup_path, target).await;
+            Err(format!(
+                "rename {} -> {}: {e}",
+                temp_path.display(),
+                target.display()
+            ))
+        }
+    }
+}
+
+async fn download_remote_file_to_local(
+    source_sftp: Arc<zeroterm_ssh::Sftp>,
+    source: String,
+    target: PathBuf,
+    overwrite: bool,
+    progress_ctx: Option<(&AppHandle, &AppState)>,
+) -> Result<u64, String> {
+    if target.exists() && !overwrite {
+        return Err(format!("destination already exists: {}", target.display()));
+    }
+
+    let temp_path = unique_sibling_path(&target, "download");
+    let result = match progress_ctx {
+        Some((app_handle, state)) => {
+            let file = tokio::fs::File::create(&temp_path)
+                .await
+                .map_err(|e| format!("opening {}: {e}", temp_path.display()))?;
+            let mut file = tokio::io::BufWriter::new(file);
+            let (transfer_id, cancel) = register_transfer(state);
+            let destination = target.display().to_string();
+            let result = run_with_progress(
+                app_handle,
+                transfer_id,
+                "download",
+                source.clone(),
+                destination,
+                move |progress_cb| async move {
+                    source_sftp
+                        .download_to_writer(
+                            &source,
+                            &mut file,
+                            zeroterm_ssh::DEFAULT_CHUNK,
+                            cancel,
+                            progress_cb,
+                        )
+                        .await
+                },
+            )
+            .await;
+            forget_transfer(state, transfer_id);
+            result.map_err(|e| e.to_string())
+        }
+        None => {
+            let file = tokio::fs::File::create(&temp_path)
+                .await
+                .map_err(|e| format!("opening {}: {e}", temp_path.display()))?;
+            let mut file = tokio::io::BufWriter::new(file);
+            source_sftp
+                .download_to_writer(
+                    &source,
+                    &mut file,
+                    zeroterm_ssh::DEFAULT_CHUNK,
+                    tokio_util::sync::CancellationToken::new(),
+                    |_| {},
+                )
+                .await
+                .map_err(|e| e.to_string())
+        }
+    };
+
+    let bytes = match result {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            let _ = tokio::fs::remove_file(&temp_path).await;
+            return Err(err);
+        }
+    };
+
+    if let Err(err) = finalize_download_target(&temp_path, &target, overwrite).await {
+        let _ = tokio::fs::remove_file(&temp_path).await;
+        return Err(err);
+    }
+
+    Ok(bytes)
 }
 
 fn legacy_profile_name(cfg: &AiConfig) -> String {
@@ -388,7 +534,11 @@ fn normalize_ai_store(mut store: AiConfigStore) -> AiConfigStore {
         .map(normalize_ai_profile)
         .filter(|p| !p.id.is_empty())
         .collect();
-    if !store.profiles.iter().any(|p| p.id == store.active_profile_id) {
+    if !store
+        .profiles
+        .iter()
+        .any(|p| p.id == store.active_profile_id)
+    {
         store.active_profile_id = store
             .profiles
             .first()
@@ -399,17 +549,131 @@ fn normalize_ai_store(mut store: AiConfigStore) -> AiConfigStore {
 }
 
 fn ai_config_path() -> Result<PathBuf, String> {
-    let base = dirs::config_dir()
-        .ok_or_else(|| "no config directory on this OS".to_string())?
-        .join("ZeroTerm");
-    Ok(base.join(AI_CONFIG_FILE))
+    Ok(zeroterm_config_dir()?.join(AI_CONFIG_FILE))
 }
 
 fn ai_session_path() -> Result<PathBuf, String> {
-    let base = dirs::config_dir()
-        .ok_or_else(|| "no config directory on this OS".to_string())?
-        .join("ZeroTerm");
-    Ok(base.join(AI_SESSION_FILE))
+    Ok(zeroterm_config_dir()?.join(AI_SESSION_FILE))
+}
+
+fn network_proxy_path() -> Result<PathBuf, String> {
+    Ok(zeroterm_config_dir()?.join(NETWORK_PROXY_FILE))
+}
+
+fn validate_network_proxy_url(url: &str) -> Result<String, String> {
+    let raw = url.trim();
+    if raw.is_empty() {
+        return Err("Proxy URL cannot be empty.".to_string());
+    }
+    let parsed = reqwest::Url::parse(raw).map_err(|e| format!("Invalid proxy URL: {e}"))?;
+    if parsed.scheme() != "http" {
+        return Err("Only http:// proxy URLs are supported right now.".to_string());
+    }
+    if parsed.host_str().is_none() {
+        return Err("Proxy URL must include a host.".to_string());
+    }
+    if parsed.port_or_known_default().is_none() {
+        return Err("Proxy URL must include a valid port.".to_string());
+    }
+    if parsed.path() != "/" || parsed.query().is_some() || parsed.fragment().is_some() {
+        return Err(
+            "Proxy URL should only include scheme, host, port, and optional username/password."
+                .to_string(),
+        );
+    }
+    Ok(parsed.to_string())
+}
+
+fn normalize_network_proxy_config(
+    mut cfg: NetworkProxyConfig,
+) -> Result<NetworkProxyConfig, String> {
+    cfg.enabled = true;
+    cfg.url = validate_network_proxy_url(&cfg.url)?;
+    Ok(cfg)
+}
+
+fn read_network_proxy_from_disk() -> Result<Option<NetworkProxyConfig>, String> {
+    let path = network_proxy_path()?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = fs::read_to_string(&path).map_err(|e| format!("reading {}: {e}", path.display()))?;
+    let raw: NetworkProxyConfig =
+        serde_json::from_str(&text).map_err(|e| format!("parsing {}: {e}", path.display()))?;
+    if !raw.enabled || raw.url.trim().is_empty() {
+        return Ok(None);
+    }
+    normalize_network_proxy_config(raw).map(Some)
+}
+
+fn write_network_proxy_to_disk(cfg: &NetworkProxyConfig) -> Result<(), String> {
+    let path = network_proxy_path()?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("creating {}: {e}", parent.display()))?;
+    }
+    let text = serde_json::to_string_pretty(cfg).map_err(|e| e.to_string())?;
+    fs::write(&path, text).map_err(|e| format!("writing {}: {e}", path.display()))
+}
+
+fn set_proxy_env_var(key: &str, value: Option<&str>) {
+    if let Some(v) = value {
+        env::set_var(key, v);
+    } else {
+        env::remove_var(key);
+    }
+}
+
+fn apply_network_proxy_config(cfg: Option<&NetworkProxyConfig>) {
+    let url = cfg.and_then(|v| {
+        let trimmed = v.url.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    });
+    for key in [
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+    ] {
+        set_proxy_env_var(key, url);
+    }
+    zeroterm_ssh::set_global_http_proxy(url.map(|v| v.to_string()));
+}
+
+pub fn apply_saved_network_proxy_config() -> Result<Option<NetworkProxyConfig>, String> {
+    let cfg = read_network_proxy_from_disk()?;
+    apply_network_proxy_config(cfg.as_ref());
+    Ok(cfg)
+}
+
+#[tauri::command]
+pub async fn get_network_proxy_config() -> Result<Option<NetworkProxyConfig>, String> {
+    read_network_proxy_from_disk()
+}
+
+#[tauri::command]
+pub async fn save_network_proxy_config(
+    input: NetworkProxyConfig,
+) -> Result<NetworkProxyConfig, String> {
+    let cfg = normalize_network_proxy_config(input)?;
+    write_network_proxy_to_disk(&cfg)?;
+    apply_network_proxy_config(Some(&cfg));
+    Ok(cfg)
+}
+
+#[tauri::command]
+pub async fn clear_network_proxy_config() -> Result<(), String> {
+    let path = network_proxy_path()?;
+    if path.exists() {
+        fs::remove_file(&path).map_err(|e| format!("removing {}: {e}", path.display()))?;
+    }
+    apply_network_proxy_config(None);
+    Ok(())
 }
 
 fn normalize_ai_config(mut cfg: AiConfig) -> AiConfig {
@@ -602,9 +866,12 @@ fn read_ai_sessions_from_disk() -> Result<Vec<AiSessionItem>, String> {
         return Ok(Vec::new());
     }
     let text = fs::read_to_string(&path).map_err(|e| format!("reading {}: {e}", path.display()))?;
-    let raw: Vec<AiSessionItem> = serde_json::from_str(&text)
-        .map_err(|e| format!("parsing {}: {e}", path.display()))?;
-    let mut items: Vec<_> = raw.into_iter().filter_map(normalize_ai_session_item).collect();
+    let raw: Vec<AiSessionItem> =
+        serde_json::from_str(&text).map_err(|e| format!("parsing {}: {e}", path.display()))?;
+    let mut items: Vec<_> = raw
+        .into_iter()
+        .filter_map(normalize_ai_session_item)
+        .collect();
     items.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
     items.truncate(AI_SESSION_MAX_ITEMS);
     Ok(items)
@@ -682,8 +949,7 @@ pub async fn set_background_image(path: String) -> Result<String, String> {
         .filter(|e| matches!(e.as_str(), "png" | "jpg" | "jpeg" | "webp" | "gif"))
         .ok_or_else(|| "unsupported image type (use PNG, JPG, WEBP or GIF)".to_string())?;
 
-    let metadata =
-        fs::metadata(&src).map_err(|e| format!("reading {}: {e}", src.display()))?;
+    let metadata = fs::metadata(&src).map_err(|e| format!("reading {}: {e}", src.display()))?;
     if metadata.len() > BACKGROUND_IMAGE_MAX_BYTES {
         return Err(format!(
             "image is {:.1} MB, above the {} MB limit",
@@ -890,12 +1156,15 @@ fn emit_ai_stream(app: &AppHandle, event: AiStreamEvent) {
 }
 
 fn emit_ai_stream_error(app: &AppHandle, request_id: &str, error: String) {
-    emit_ai_stream(app, AiStreamEvent {
-        request_id: request_id.to_string(),
-        delta: String::new(),
-        done: true,
-        error: Some(error),
-    });
+    emit_ai_stream(
+        app,
+        AiStreamEvent {
+            request_id: request_id.to_string(),
+            delta: String::new(),
+            done: true,
+            error: Some(error),
+        },
+    );
 }
 
 fn take_ai_request_canceled(request_id: &str) -> bool {
@@ -1072,7 +1341,9 @@ pub async fn clear_ai_sessions() -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn clear_ai_sessions_for_scope(input: ClearAiSessionsForScopeInput) -> Result<(), String> {
+pub async fn clear_ai_sessions_for_scope(
+    input: ClearAiSessionsForScopeInput,
+) -> Result<(), String> {
     let scope_type = input.scope_type.trim();
     let scope_id = input.scope_id.trim();
     if scope_type.is_empty() || scope_id.is_empty() {
@@ -1148,7 +1419,10 @@ pub async fn ai_chat(
     profile_id: Option<String>,
 ) -> Result<AiChatResponse, String> {
     let (profile, api_key, payload_messages) = prepare_ai_request(messages, profile_id)?;
-    let endpoint = format!("{}/chat/completions", profile.base_url.trim_end_matches('/'));
+    let endpoint = format!(
+        "{}/chat/completions",
+        profile.base_url.trim_end_matches('/')
+    );
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(90))
         .build()
@@ -1174,8 +1448,8 @@ pub async fn ai_chat(
         return Err(format!("AI request failed ({status}): {body}"));
     }
 
-    let parsed: OpenAiChatResponse = serde_json::from_str(&body)
-        .map_err(|e| format!("parsing AI response failed: {e}"))?;
+    let parsed: OpenAiChatResponse =
+        serde_json::from_str(&body).map_err(|e| format!("parsing AI response failed: {e}"))?;
     let content = parsed
         .choices
         .into_iter()
@@ -1197,14 +1471,18 @@ pub async fn ai_chat_stream(app: AppHandle, input: AiChatStreamInput) -> Result<
     }
     take_ai_request_canceled(&request_id);
 
-    let (profile, api_key, payload_messages) = match prepare_ai_request(input.messages, input.profile_id) {
-        Ok(v) => v,
-        Err(e) => {
-            emit_ai_stream_error(&app, &request_id, e.clone());
-            return Err(e);
-        }
-    };
-    let endpoint = format!("{}/chat/completions", profile.base_url.trim_end_matches('/'));
+    let (profile, api_key, payload_messages) =
+        match prepare_ai_request(input.messages, input.profile_id) {
+            Ok(v) => v,
+            Err(e) => {
+                emit_ai_stream_error(&app, &request_id, e.clone());
+                return Err(e);
+            }
+        };
+    let endpoint = format!(
+        "{}/chat/completions",
+        profile.base_url.trim_end_matches('/')
+    );
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(120))
         .build()
@@ -1241,12 +1519,15 @@ pub async fn ai_chat_stream(app: AppHandle, input: AiChatStreamInput) -> Result<
     let mut buffer = String::new();
     while let Some(item) = stream.next().await {
         if take_ai_request_canceled(&request_id) {
-            emit_ai_stream(&app, AiStreamEvent {
-                request_id,
-                delta: String::new(),
-                done: true,
-                error: Some("canceled".to_string()),
-            });
+            emit_ai_stream(
+                &app,
+                AiStreamEvent {
+                    request_id,
+                    delta: String::new(),
+                    done: true,
+                    error: Some("canceled".to_string()),
+                },
+            );
             return Ok(());
         }
         let bytes = match item {
@@ -1266,21 +1547,27 @@ pub async fn ai_chat_stream(app: AppHandle, input: AiChatStreamInput) -> Result<
                 }
                 let data = line.trim_start_matches("data:").trim();
                 if data == "[DONE]" {
-                    emit_ai_stream(&app, AiStreamEvent {
-                        request_id: request_id.clone(),
-                        delta: String::new(),
-                        done: true,
-                        error: None,
-                    });
+                    emit_ai_stream(
+                        &app,
+                        AiStreamEvent {
+                            request_id: request_id.clone(),
+                            delta: String::new(),
+                            done: true,
+                            error: None,
+                        },
+                    );
                     return Ok(());
                 }
                 if take_ai_request_canceled(&request_id) {
-                    emit_ai_stream(&app, AiStreamEvent {
-                        request_id,
-                        delta: String::new(),
-                        done: true,
-                        error: Some("canceled".to_string()),
-                    });
+                    emit_ai_stream(
+                        &app,
+                        AiStreamEvent {
+                            request_id,
+                            delta: String::new(),
+                            done: true,
+                            error: Some("canceled".to_string()),
+                        },
+                    );
                     return Ok(());
                 }
                 let parsed: OpenAiStreamChunk = match serde_json::from_str(data) {
@@ -1290,24 +1577,30 @@ pub async fn ai_chat_stream(app: AppHandle, input: AiChatStreamInput) -> Result<
                 for choice in parsed.choices {
                     if let Some(delta) = choice.delta.content {
                         if !delta.is_empty() {
-                            emit_ai_stream(&app, AiStreamEvent {
-                                request_id: request_id.clone(),
-                                delta,
-                                done: false,
-                                error: None,
-                            });
+                            emit_ai_stream(
+                                &app,
+                                AiStreamEvent {
+                                    request_id: request_id.clone(),
+                                    delta,
+                                    done: false,
+                                    error: None,
+                                },
+                            );
                         }
                     }
                 }
             }
         }
     }
-    emit_ai_stream(&app, AiStreamEvent {
-        request_id,
-        delta: String::new(),
-        done: true,
-        error: None,
-    });
+    emit_ai_stream(
+        &app,
+        AiStreamEvent {
+            request_id,
+            delta: String::new(),
+            done: true,
+            error: None,
+        },
+    );
     Ok(())
 }
 
@@ -1317,7 +1610,10 @@ pub async fn cancel_ai_chat_stream(request_id: String) -> Result<(), String> {
     if id.is_empty() {
         return Err("request id is empty".into());
     }
-    canceled_ai_requests().lock().unwrap().insert(id.to_string());
+    canceled_ai_requests()
+        .lock()
+        .unwrap()
+        .insert(id.to_string());
     Ok(())
 }
 
@@ -1564,10 +1860,7 @@ pub async fn install_update(app_handle: AppHandle) -> Result<String, String> {
     };
 
     update
-        .download_and_install(
-            |_, _| {},
-            || {},
-        )
+        .download_and_install(|_, _| {}, || {})
         .await
         .map_err(|e| {
             // Common case: the release manifest on the server has a
@@ -1635,7 +1928,9 @@ pub async fn list_hosts(state: State<'_, AppState>) -> Result<Vec<HostSummary>, 
 }
 
 #[tauri::command]
-pub async fn host_sync_diagnostics(state: State<'_, AppState>) -> Result<HostSyncDiagnostics, String> {
+pub async fn host_sync_diagnostics(
+    state: State<'_, AppState>,
+) -> Result<HostSyncDiagnostics, String> {
     let app_lock = state.app.lock().unwrap();
     let app = app_lock.as_ref().ok_or("vault is locked")?;
     let d = app.host_diagnostics().map_err(|e| e.to_string())?;
@@ -1727,12 +2022,19 @@ fn profile_to_io(p: SyncProfile) -> SyncProfileIO {
             io.backend = "local_folder".into();
             io.root = Some(root);
         }
-        SyncBackend::Sftp { host_ref, remote_dir } => {
+        SyncBackend::Sftp {
+            host_ref,
+            remote_dir,
+        } => {
             io.backend = "sftp".into();
             io.host_ref = Some(host_ref);
             io.remote_dir = Some(remote_dir);
         }
-        SyncBackend::WebDav { url, root_path, username } => {
+        SyncBackend::WebDav {
+            url,
+            root_path,
+            username,
+        } => {
             io.backend = "webdav".into();
             io.url = Some(url);
             io.root_path = Some(root_path);
@@ -1837,10 +2139,7 @@ fn profile_from_input(id: String, input: SyncProfileInput) -> Result<SyncProfile
                 region,
                 bucket,
                 prefix: input.prefix.clone().unwrap_or_default(),
-                endpoint: input
-                    .endpoint
-                    .clone()
-                    .filter(|s| !s.trim().is_empty()),
+                endpoint: input.endpoint.clone().filter(|s| !s.trim().is_empty()),
                 force_path_style: input.force_path_style.unwrap_or(false),
                 access_key_id,
             }
@@ -2192,7 +2491,8 @@ pub async fn sync_resolve_conflict(
         SyncResolutionInput::KeepLocal => zeroterm_app::ConflictResolution::KeepLocal,
         SyncResolutionInput::KeepRemote => zeroterm_app::ConflictResolution::KeepRemote,
     };
-    app.resolve_conflict(&conflict_id, r).map_err(|e| e.to_string())
+    app.resolve_conflict(&conflict_id, r)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -2258,7 +2558,9 @@ pub struct HostInput {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum HostAuthInput {
-    Password { value: String },
+    Password {
+        value: String,
+    },
     PrivateKey {
         key_pem: String,
         passphrase: Option<String>,
@@ -2511,10 +2813,7 @@ impl PortForwardRuleInput {
 }
 
 #[tauri::command]
-pub async fn save_host(
-    state: State<'_, AppState>,
-    input: HostInput,
-) -> Result<String, String> {
+pub async fn save_host(state: State<'_, AppState>, input: HostInput) -> Result<String, String> {
     let (app, manager) = clone_app_and_sync(&state)?;
     let h = input.into_app_host(String::new());
     let id = app.save_host(&h).map_err(|e| e.to_string())?;
@@ -2836,7 +3135,9 @@ pub async fn local_read_text(
         ));
     }
     if bytes.contains(&0) {
-        return Err(format!("`{path}` looks like binary data (contains NUL bytes)"));
+        return Err(format!(
+            "`{path}` looks like binary data (contains NUL bytes)"
+        ));
     }
     let content =
         String::from_utf8(bytes).map_err(|_| format!("`{path}` is not valid UTF-8 text"))?;
@@ -2877,9 +3178,7 @@ pub async fn get_host(state: State<'_, AppState>, id: String) -> Result<HostFull
 
     let (auth_type, password, key_passphrase) = match &h.auth {
         zeroterm_app::HostAuth::Password { value } => ("password", Some(value.clone()), None),
-        zeroterm_app::HostAuth::PrivateKey { passphrase, .. } => {
-            ("key", None, passphrase.clone())
-        }
+        zeroterm_app::HostAuth::PrivateKey { passphrase, .. } => ("key", None, passphrase.clone()),
         zeroterm_app::HostAuth::Agent => ("agent", None, None),
     };
 
@@ -3008,7 +3307,9 @@ async fn connect_host_sessions(
     match jump_cfg {
         Some(jcfg) => {
             let j = Session::connect(jcfg).await.map_err(|e| e.to_string())?;
-            let s = Session::connect_via(cfg, &j).await.map_err(|e| e.to_string())?;
+            let s = Session::connect_via(cfg, &j)
+                .await
+                .map_err(|e| e.to_string())?;
             Ok((Some(j), s))
         }
         None => {
@@ -3157,7 +3458,11 @@ fn parse_metrics_output(text: &str) -> Result<SystemMetricsDto, String> {
     let (t2, i2) = parse_cpu(lines.next().unwrap_or("0 0"));
     let dt = t2.saturating_sub(t1);
     let di = i2.saturating_sub(i1);
-    let cpu_usage = if dt > 0 { ((dt.saturating_sub(di)) as f64 / dt as f64) * 100.0 } else { 0.0 };
+    let cpu_usage = if dt > 0 {
+        ((dt.saturating_sub(di)) as f64 / dt as f64) * 100.0
+    } else {
+        0.0
+    };
     let mut mem = lines.next().unwrap_or("0 0 0 0").split_whitespace();
     let memory_total = parse_metric_u64(mem.next());
     let memory_used = parse_metric_u64(mem.next());
@@ -3173,8 +3478,17 @@ fn parse_metrics_output(text: &str) -> Result<SystemMetricsDto, String> {
                 let mount = parts.next().unwrap_or("").to_string();
                 let total = parse_metric_u64(parts.next());
                 let used = parse_metric_u64(parts.next());
-                let usage = if total > 0 { used as f64 / total as f64 * 100.0 } else { 0.0 };
-                disks.push(SystemDiskDto { mount, total, used, usage });
+                let usage = if total > 0 {
+                    used as f64 / total as f64 * 100.0
+                } else {
+                    0.0
+                };
+                disks.push(SystemDiskDto {
+                    mount,
+                    total,
+                    used,
+                    usage,
+                });
             }
             Some("A") => {
                 let name = parts.next().unwrap_or("").to_string();
@@ -3196,14 +3510,33 @@ fn parse_metrics_output(text: &str) -> Result<SystemMetricsDto, String> {
             _ => {}
         }
     }
-    Ok(SystemMetricsDto { host, os, arch, uptime_seconds, cpu_cores, cpu_usage, memory_total, memory_used, swap_total, swap_used, disks, networks })
+    Ok(SystemMetricsDto {
+        host,
+        os,
+        arch,
+        uptime_seconds,
+        cpu_cores,
+        cpu_usage,
+        memory_total,
+        memory_used,
+        swap_total,
+        swap_used,
+        disks,
+        networks,
+    })
 }
 
 async fn local_metrics() -> Result<SystemMetricsDto, String> {
     #[cfg(target_os = "windows")]
     let output = tokio::process::Command::new("powershell")
         .creation_flags(CREATE_NO_WINDOW)
-        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", WINDOWS_METRICS_SCRIPT])
+        .args([
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            WINDOWS_METRICS_SCRIPT,
+        ])
         .output()
         .await
         .map_err(|e| format!("local metrics failed: {e}"))?;
@@ -3236,7 +3569,10 @@ pub async fn collect_system_metrics(
     }
     let (_host, cfg, jump_cfg) = build_connect_chain_for_host(&state, &app_handle, &host_id)?;
     let (jump_session, mut session) = connect_host_sessions(cfg, jump_cfg).await?;
-    let (_code, stdout, stderr) = session.exec(METRICS_SCRIPT).await.map_err(|e| e.to_string())?;
+    let (_code, stdout, stderr) = session
+        .exec(METRICS_SCRIPT)
+        .await
+        .map_err(|e| e.to_string())?;
     drop(session);
     drop(jump_session);
     if stdout.is_empty() && !stderr.is_empty() {
@@ -3470,10 +3806,7 @@ async fn detect_and_persist_host_os_type(app_handle: AppHandle, host_id: String)
 
     let _ = app_handle.emit(
         "host:os_type_updated",
-        HostOsTypeUpdatedEvent {
-            host_id,
-            os_type,
-        },
+        HostOsTypeUpdatedEvent { host_id, os_type },
     );
     info!(host = %host.name, "detected and persisted host os type");
 }
@@ -3488,7 +3821,9 @@ pub async fn connect_host(
 ) -> Result<u64, String> {
     let (host, cfg, jump_cfg) = build_connect_chain_for_host(&state, &app_handle, &host_id)?;
 
-    let jump_summary = jump_cfg.as_ref().map(|j| format!("{}@{}:{}", j.username, j.host, j.port));
+    let jump_summary = jump_cfg
+        .as_ref()
+        .map(|j| format!("{}@{}:{}", j.username, j.host, j.port));
 
     info!(host = %host.host, port = host.port, jump = ?jump_summary, "connecting");
 
@@ -3668,10 +4003,7 @@ pub async fn update_port_forward_rule(
 /// auto-reconnect, would otherwise keep re-establishing a tunnel for something
 /// the user just deleted. `cancel()` is non-blocking, so it's safe to call
 /// while holding the map lock.
-fn stop_port_forwards_where(
-    state: &AppState,
-    pred: impl Fn(&PortForwardHandle) -> bool,
-) -> usize {
+fn stop_port_forwards_where(state: &AppState, pred: impl Fn(&PortForwardHandle) -> bool) -> usize {
     let mut map = state.port_forwards.lock().unwrap();
     let ids: Vec<u64> = map
         .iter()
@@ -3707,7 +4039,9 @@ pub async fn delete_port_forward_rule(
 #[tauri::command]
 pub async fn migrate_port_forward_rules(state: State<'_, AppState>) -> Result<usize, String> {
     let (app, manager) = clone_app_and_sync(&state)?;
-    let migrated = app.migrate_embedded_port_forwards().map_err(|e| e.to_string())?;
+    let migrated = app
+        .migrate_embedded_port_forwards()
+        .map_err(|e| e.to_string())?;
     if migrated > 0 {
         manager.schedule_debounced_sync_for_all(app);
     }
@@ -3914,7 +4248,9 @@ pub struct QuickConnectInput {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum QuickConnectAuthInput {
-    Password { value: String },
+    Password {
+        value: String,
+    },
     PrivateKey {
         key_pem: String,
         passphrase: Option<String>,
@@ -4043,7 +4379,6 @@ pub async fn open_local_terminal() -> Result<(), String> {
     }
 }
 
-
 #[tauri::command]
 pub async fn create_local_terminal_session(
     state: State<'_, AppState>,
@@ -4161,7 +4496,11 @@ pub async fn create_local_terminal_session(
         }
         let _ = app_for_close.emit(
             "session:closed",
-            ClosedEvent { session_id, exit_code: None, message: None },
+            ClosedEvent {
+                session_id,
+                exit_code: None,
+                message: None,
+            },
         );
     });
 
@@ -4307,13 +4646,7 @@ pub async fn respond_host_key(
     accept: bool,
     mode: Option<String>,
 ) -> Result<(), String> {
-    let tx = {
-        state
-            .pending_host_key
-            .lock()
-            .unwrap()
-            .remove(&request_id)
-    };
+    let tx = { state.pending_host_key.lock().unwrap().remove(&request_id) };
     if let Some(tx) = tx {
         let response = if accept {
             match mode.as_deref() {
@@ -4412,9 +4745,20 @@ pub async fn local_list(path: String) -> Result<Vec<DirEntryDto>, String> {
 
     out.sort_by(|a, b| {
         let order = |k: &str| if k == "dir" { 0 } else { 1 };
-        order(a.kind).cmp(&order(b.kind)).then_with(|| a.name.cmp(&b.name))
+        order(a.kind)
+            .cmp(&order(b.kind))
+            .then_with(|| a.name.cmp(&b.name))
     });
     Ok(out)
+}
+
+#[tauri::command]
+pub async fn local_path_exists(path: String) -> Result<bool, String> {
+    match fs::symlink_metadata(&path) {
+        Ok(_) => Ok(true),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(err) => Err(format!("stat {}: {err}", path)),
+    }
 }
 
 #[tauri::command]
@@ -4557,7 +4901,11 @@ fn normalize_remote_path(path: &str) -> String {
         first = false;
         out.push_str(seg);
     }
-    if out.is_empty() { "/".to_string() } else { out }
+    if out.is_empty() {
+        "/".to_string()
+    } else {
+        out
+    }
 }
 
 fn is_remote_path_within(path: &str, parent: &str) -> bool {
@@ -4608,7 +4956,11 @@ fn copy_local_tree_to_local(
                 return Err(format!("destination already exists: {}", target.display()));
             }
             fs::copy(source, target).map_err(|e| {
-                format!("copy file {} -> {}: {e}", source.display(), target.display())
+                format!(
+                    "copy file {} -> {}: {e}",
+                    source.display(),
+                    target.display()
+                )
             })?;
             Ok(())
         }
@@ -4618,13 +4970,14 @@ fn copy_local_tree_to_local(
                     .map_err(|e| format!("mkdir {}: {e}", target.display()))?;
             }
 
-            let mut stack: Vec<(PathBuf, PathBuf)> = vec![(source.to_path_buf(), target.to_path_buf())];
+            let mut stack: Vec<(PathBuf, PathBuf)> =
+                vec![(source.to_path_buf(), target.to_path_buf())];
             while let Some((src_dir, dst_dir)) = stack.pop() {
                 let rd = fs::read_dir(&src_dir)
                     .map_err(|e| format!("read_dir {}: {e}", src_dir.display()))?;
                 for item in rd {
-                    let entry = item
-                        .map_err(|e| format!("read_dir entry {}: {e}", src_dir.display()))?;
+                    let entry =
+                        item.map_err(|e| format!("read_dir entry {}: {e}", src_dir.display()))?;
                     let name = entry.file_name();
                     let child_src = entry.path();
                     let child_dst = dst_dir.join(&name);
@@ -4632,7 +4985,10 @@ fn copy_local_tree_to_local(
                     match kind {
                         CopyNodeKind::File => {
                             if child_dst.exists() && !overwrite {
-                                return Err(format!("destination already exists: {}", child_dst.display()));
+                                return Err(format!(
+                                    "destination already exists: {}",
+                                    child_dst.display()
+                                ));
                             }
                             fs::copy(&child_src, &child_dst).map_err(|e| {
                                 format!(
@@ -4683,13 +5039,14 @@ async fn copy_local_tree_to_remote(
                 target_sftp.stat(target).await.map_err(|e| e.to_string())?;
             }
 
-            let mut stack: Vec<(PathBuf, String)> = vec![(source.to_path_buf(), target.to_string())];
+            let mut stack: Vec<(PathBuf, String)> =
+                vec![(source.to_path_buf(), target.to_string())];
             while let Some((src_dir, dst_dir)) = stack.pop() {
                 let rd = fs::read_dir(&src_dir)
                     .map_err(|e| format!("read_dir {}: {e}", src_dir.display()))?;
                 for item in rd {
-                    let entry = item
-                        .map_err(|e| format!("read_dir entry {}: {e}", src_dir.display()))?;
+                    let entry =
+                        item.map_err(|e| format!("read_dir entry {}: {e}", src_dir.display()))?;
                     let name = entry.file_name().to_string_lossy().to_string();
                     let child_src = entry.path();
                     let child_dst = remote_join_path(&dst_dir, &name);
@@ -4699,9 +5056,9 @@ async fn copy_local_tree_to_remote(
                             if target_sftp.stat(&child_dst).await.is_ok() && !overwrite {
                                 return Err(format!("destination already exists: {child_dst}"));
                             }
-                            let data = tokio::fs::read(&child_src).await.map_err(|e| {
-                                format!("reading {}: {e}", child_src.display())
-                            })?;
+                            let data = tokio::fs::read(&child_src)
+                                .await
+                                .map_err(|e| format!("reading {}: {e}", child_src.display()))?;
                             target_sftp
                                 .upload_from_slice(&child_dst, &data)
                                 .await
@@ -4709,7 +5066,10 @@ async fn copy_local_tree_to_remote(
                         }
                         CopyNodeKind::Dir => {
                             if target_sftp.create_dir(&child_dst).await.is_err() {
-                                target_sftp.stat(&child_dst).await.map_err(|e| e.to_string())?;
+                                target_sftp
+                                    .stat(&child_dst)
+                                    .await
+                                    .map_err(|e| e.to_string())?;
                             }
                             stack.push((child_src, child_dst));
                         }
@@ -4722,25 +5082,35 @@ async fn copy_local_tree_to_remote(
 }
 
 async fn copy_remote_tree_to_local(
-    source_sftp: &zeroterm_ssh::Sftp,
+    source_sftp: &Arc<zeroterm_ssh::Sftp>,
     source: &str,
     target: &Path,
     root_kind: CopyNodeKind,
     overwrite: bool,
+    progress_ctx: Option<(&AppHandle, &AppState)>,
 ) -> Result<(), String> {
+    async fn stream_one_remote_file_to_local(
+        source_sftp: Arc<zeroterm_ssh::Sftp>,
+        source: String,
+        target: PathBuf,
+        overwrite: bool,
+        progress_ctx: Option<(&AppHandle, &AppState)>,
+    ) -> Result<(), String> {
+        download_remote_file_to_local(source_sftp, source, target, overwrite, progress_ctx)
+            .await
+            .map(|_| ())
+    }
+
     match root_kind {
         CopyNodeKind::File => {
-            if target.exists() && !overwrite {
-                return Err(format!("destination already exists: {}", target.display()));
-            }
-            let bytes = source_sftp
-                .download_to_vec(source)
-                .await
-                .map_err(|e| e.to_string())?;
-            tokio::fs::write(target, &bytes)
-                .await
-                .map_err(|e| format!("writing {}: {e}", target.display()))?;
-            Ok(())
+            stream_one_remote_file_to_local(
+                Arc::clone(source_sftp),
+                source.to_string(),
+                target.to_path_buf(),
+                overwrite,
+                progress_ctx,
+            )
+            .await
         }
         CopyNodeKind::Dir => {
             if tokio::fs::metadata(target).await.is_err() {
@@ -4764,16 +5134,14 @@ async fn copy_remote_tree_to_local(
                     let kind = detect_remote_kind(&child_src, entry.kind)?;
                     match kind {
                         CopyNodeKind::File => {
-                            if child_dst.exists() && !overwrite {
-                                return Err(format!("destination already exists: {}", child_dst.display()));
-                            }
-                            let bytes = source_sftp
-                                .download_to_vec(&child_src)
-                                .await
-                                .map_err(|e| e.to_string())?;
-                            tokio::fs::write(&child_dst, &bytes)
-                                .await
-                                .map_err(|e| format!("writing {}: {e}", child_dst.display()))?;
+                            stream_one_remote_file_to_local(
+                                Arc::clone(source_sftp),
+                                child_src,
+                                child_dst,
+                                overwrite,
+                                progress_ctx,
+                            )
+                            .await?;
                         }
                         CopyNodeKind::Dir => {
                             if tokio::fs::metadata(&child_dst).await.is_err() {
@@ -4847,7 +5215,10 @@ async fn copy_remote_tree_to_remote(
                         }
                         CopyNodeKind::Dir => {
                             if target_sftp.create_dir(&child_dst).await.is_err() {
-                                target_sftp.stat(&child_dst).await.map_err(|e| e.to_string())?;
+                                target_sftp
+                                    .stat(&child_dst)
+                                    .await
+                                    .map_err(|e| e.to_string())?;
                             }
                             stack.push((child_src, child_dst));
                         }
@@ -4862,6 +5233,7 @@ async fn copy_remote_tree_to_remote(
 #[tauri::command]
 pub async fn sftp_copy_entry_between_panes(
     state: State<'_, AppState>,
+    app_handle: AppHandle,
     source_sftp_id: Option<u64>,
     source_path: String,
     destination_sftp_id: Option<u64>,
@@ -4908,7 +5280,15 @@ pub async fn sftp_copy_entry_between_panes(
                 .await
                 .map_err(|e| e.to_string())?;
             let root_kind = detect_remote_kind(&source_path, meta.kind)?;
-            copy_remote_tree_to_local(&src_sftp, &source_path, &dst, root_kind, overwrite).await
+            copy_remote_tree_to_local(
+                &src_sftp,
+                &source_path,
+                &dst,
+                root_kind,
+                overwrite,
+                Some((&app_handle, &state)),
+            )
+            .await
         }
         (Some(src_id), Some(dst_id)) => {
             let src_sftp = lookup_sftp(&state, src_id)?;
@@ -4921,10 +5301,21 @@ pub async fn sftp_copy_entry_between_panes(
                 .map_err(|e| e.to_string())?;
             let root_kind = detect_remote_kind(&source_path, meta.kind)?;
 
-            if root_kind == CopyNodeKind::Dir && src_id == dst_id && is_remote_path_within(&dst, &source_path) {
+            if root_kind == CopyNodeKind::Dir
+                && src_id == dst_id
+                && is_remote_path_within(&dst, &source_path)
+            {
                 return Err("cannot copy a directory into itself".to_string());
             }
-            copy_remote_tree_to_remote(&src_sftp, &source_path, &dst_sftp, &dst, root_kind, overwrite).await
+            copy_remote_tree_to_remote(
+                &src_sftp,
+                &source_path,
+                &dst_sftp,
+                &dst,
+                root_kind,
+                overwrite,
+            )
+            .await
         }
     }
 }
@@ -4990,7 +5381,9 @@ pub async fn sftp_open(
     let (jump_session, mut session) = match jump_cfg {
         Some(jcfg) => {
             let j = Session::connect(jcfg).await.map_err(|e| e.to_string())?;
-            let t = Session::connect_via(cfg, &j).await.map_err(|e| e.to_string())?;
+            let t = Session::connect_via(cfg, &j)
+                .await
+                .map_err(|e| e.to_string())?;
             (Some(j), t)
         }
         None => {
@@ -5035,13 +5428,13 @@ pub async fn sftp_install_dir_helper(
 ) -> Result<SftpDirHelperStatusDto, String> {
     let sftp = lookup_sftp(&state, sftp_id)?;
     let marker = SFTP_FOLLOW_MARKER.to_string();
-    let marker_content = b"# ZeroTerm SFTP directory follow marker\n# Created by ZeroTerm on first-run setup\n";
+    let marker_content =
+        b"# ZeroTerm SFTP directory follow marker\n# Created by ZeroTerm on first-run setup\n";
     sftp.upload_from_slice(&marker, marker_content)
         .await
         .map_err(|e| e.to_string())?;
 
-    sftp
-        .upload_from_slice(SFTP_FOLLOW_CWD_FILE, b"/\n")
+    sftp.upload_from_slice(SFTP_FOLLOW_CWD_FILE, b"/\n")
         .await
         .map_err(|e| e.to_string())?;
 
@@ -5122,35 +5515,17 @@ pub async fn sftp_download(
     sftp_id: u64,
     remote: String,
     local: String,
+    overwrite: Option<bool>,
 ) -> Result<u64, String> {
     let sftp = lookup_sftp(&state, sftp_id)?;
-    let (transfer_id, cancel) = register_transfer(&state);
-
-    let mut file = tokio::fs::File::create(&local)
-        .await
-        .map_err(|e| format!("opening {local}: {e}"))?;
-
-    let result = run_with_progress(
-        &app_handle,
-        transfer_id,
-        "download",
-        remote.clone(),
-        local.clone(),
-        move |progress_cb| async move {
-            sftp.download_to_writer(
-                &remote,
-                &mut file,
-                zeroterm_ssh::DEFAULT_CHUNK,
-                cancel,
-                progress_cb,
-            )
-            .await
-        },
+    download_remote_file_to_local(
+        sftp,
+        remote,
+        PathBuf::from(local),
+        overwrite.unwrap_or(false),
+        Some((&app_handle, &state)),
     )
-    .await;
-
-    forget_transfer(&state, transfer_id);
-    result.map_err(|e| e.to_string())
+    .await
 }
 
 #[tauri::command]
@@ -5259,7 +5634,10 @@ pub async fn sftp_read_text(
         ));
     }
 
-    let bytes = sftp.download_to_vec(&path).await.map_err(|e| e.to_string())?;
+    let bytes = sftp
+        .download_to_vec(&path)
+        .await
+        .map_err(|e| e.to_string())?;
     if bytes.len() as u64 > max_len {
         return Err(format!(
             "`{path}` expanded to {} bytes, above editor limit {} bytes",
@@ -5268,7 +5646,9 @@ pub async fn sftp_read_text(
         ));
     }
     if bytes.contains(&0) {
-        return Err(format!("`{path}` looks like binary data (contains NUL bytes)"));
+        return Err(format!(
+            "`{path}` looks like binary data (contains NUL bytes)"
+        ));
     }
 
     let content =
@@ -5361,15 +5741,9 @@ pub struct TransferProgressEvent {
 }
 
 fn register_transfer(state: &AppState) -> (u64, tokio_util::sync::CancellationToken) {
-    let id = state
-        .next_transfer_id
-        .fetch_add(1, Ordering::SeqCst);
+    let id = state.next_transfer_id.fetch_add(1, Ordering::SeqCst);
     let token = tokio_util::sync::CancellationToken::new();
-    state
-        .transfers
-        .lock()
-        .unwrap()
-        .insert(id, token.clone());
+    state.transfers.lock().unwrap().insert(id, token.clone());
     (id, token)
 }
 
@@ -5377,10 +5751,7 @@ fn forget_transfer(state: &AppState, id: u64) {
     state.transfers.lock().unwrap().remove(&id);
 }
 
-async fn sftp_remove_dir_recursive(
-    sftp: &zeroterm_ssh::Sftp,
-    path: &str,
-) -> Result<(), String> {
+async fn sftp_remove_dir_recursive(sftp: &zeroterm_ssh::Sftp, path: &str) -> Result<(), String> {
     let root = normalize_remote_path(path);
     if root == "/" {
         return Err("refusing to delete remote root directory `/`".to_string());
@@ -5427,9 +5798,7 @@ async fn run_with_progress<F, Fut>(
     body: F,
 ) -> Result<u64, zeroterm_ssh::SshError>
 where
-    F: FnOnce(
-        Box<dyn FnMut(zeroterm_ssh::ProgressTick) + Send>,
-    ) -> Fut,
+    F: FnOnce(Box<dyn FnMut(zeroterm_ssh::ProgressTick) + Send>) -> Fut,
     Fut: std::future::Future<Output = Result<u64, zeroterm_ssh::SshError>>,
 {
     use std::sync::Mutex;

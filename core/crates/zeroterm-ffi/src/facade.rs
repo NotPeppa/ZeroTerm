@@ -16,12 +16,8 @@ use tracing::{debug, info, warn};
 use zeroterm_ssh::{ChannelEvent, HostKeyPolicy, KnownHosts, PtySize, Session, ShellChannel};
 
 use crate::error::{map_app_error, other, FfiError};
-use crate::listener::{
-    ForeignHostKeyPrompt, HostKeyPromptCallback, PendingMap, SessionListener,
-};
-use crate::types::{
-    host_input_to_host, host_to_summary, HostInput, HostSummary, VaultStatus,
-};
+use crate::listener::{ForeignHostKeyPrompt, HostKeyPromptCallback, PendingMap, SessionListener};
+use crate::types::{host_input_to_host, host_to_summary, HostInput, HostSummary, VaultStatus};
 
 /// Entry point for the FFI surface. Construct one per app process,
 /// store it in a long-lived holder on the host (a singleton, an

@@ -150,10 +150,7 @@ impl RemoteEvent {
         out.push(nonce.len() as u8);
         out.extend_from_slice(&nonce);
 
-        let ct_len: u32 = ct
-            .len()
-            .try_into()
-            .map_err(|_| Error::Corrupt)?;
+        let ct_len: u32 = ct.len().try_into().map_err(|_| Error::Corrupt)?;
         out.extend_from_slice(&ct_len.to_le_bytes());
         out.extend_from_slice(&ct);
 

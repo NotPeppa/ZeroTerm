@@ -8,10 +8,10 @@ mod app;
 mod error;
 mod host;
 mod host_group;
+pub mod keychain;
 mod port_forward;
 mod snippet;
 mod sync;
-pub mod keychain;
 
 pub use app::{App, HostDiagnostics};
 pub use error::AppError;
@@ -20,8 +20,8 @@ pub use host_group::HostGroup;
 pub use port_forward::PortForwardRule;
 pub use snippet::Snippet;
 pub use sync::{
-    local_device_id, ConflictResolution, ConflictView, SyncBackend, SyncManager, SyncOutcome,
-    SyncJoinOutcome, SyncProfile, SyncStatus,
+    local_device_id, ConflictResolution, ConflictView, SyncBackend, SyncJoinOutcome, SyncManager,
+    SyncOutcome, SyncProfile, SyncStatus,
 };
 
 // Re-exported so consumers can pattern-match on the inner vault error

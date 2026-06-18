@@ -102,8 +102,8 @@ pub fn derive_key_argon2id(
     salt: &[u8],
     params: Argon2Params,
 ) -> Result<SymmetricKey, CryptoError> {
-    let argon_params =
-        Params::new(params.m_cost, params.t_cost, params.p_cost, Some(KEY_LEN)).map_err(|e| {
+    let argon_params = Params::new(params.m_cost, params.t_cost, params.p_cost, Some(KEY_LEN))
+        .map_err(|e| {
             tracing::error!(error = ?e, "invalid Argon2 params");
             CryptoError::InvalidParams
         })?;

@@ -58,7 +58,7 @@ pub struct S3Config {
 }
 
 pub struct S3Adapter {
-    client: S3Client,
+    cfg: S3Config,
     bucket: String,
     paths: S3Paths,
 }
@@ -125,10 +125,18 @@ impl S3Paths {
 
 impl S3Adapter {
     pub async fn new(cfg: S3Config) -> Result<Self, Error> {
+        Ok(Self {
+            bucket: cfg.bucket.clone(),
+            paths: S3Paths::new(&cfg.prefix),
+            cfg,
+        })
+    }
+
+    fn client(&self) -> Result<S3Client, Error> {
         let creds = Credentials::new(
-            cfg.access_key_id,
-            cfg.secret_access_key,
-            cfg.session_token,
+            self.cfg.access_key_id.clone(),
+            self.cfg.secret_access_key.clone(),
+            self.cfg.session_token.clone(),
             None,
             "zeroterm-sync",
         );
@@ -138,22 +146,17 @@ impl S3Adapter {
         // is the only source of truth.
         let mut builder = S3ConfigBuilder::new()
             .behavior_version(aws_sdk_s3::config::BehaviorVersion::latest())
-            .region(Region::new(cfg.region))
+            .region(Region::new(self.cfg.region.clone()))
             .credentials_provider(creds);
-        if let Some(ep) = cfg.endpoint.as_deref() {
+        if let Some(ep) = self.cfg.endpoint.as_deref() {
             if !ep.trim().is_empty() {
                 builder = builder.endpoint_url(ep);
             }
         }
-        if cfg.force_path_style {
+        if self.cfg.force_path_style {
             builder = builder.force_path_style(true);
         }
-        let client = S3Client::from_conf(builder.build());
-        Ok(Self {
-            client,
-            bucket: cfg.bucket,
-            paths: S3Paths::new(&cfg.prefix),
-        })
+        Ok(S3Client::from_conf(builder.build()))
     }
 }
 
@@ -179,8 +182,8 @@ impl SyncAdapter for S3Adapter {
 
     async fn read(&self, key: &str) -> Result<Option<Vec<u8>>, Error> {
         let object_key = self.paths.object_key(key);
-        match self
-            .client
+        let client = self.client()?;
+        match client
             .get_object()
             .bucket(&self.bucket)
             .key(&object_key)
@@ -204,8 +207,8 @@ impl SyncAdapter for S3Adapter {
 
     async fn stat(&self, key: &str) -> Result<Option<ObjectMeta>, Error> {
         let object_key = self.paths.object_key(key);
-        match self
-            .client
+        let client = self.client()?;
+        match client
             .head_object()
             .bucket(&self.bucket)
             .key(&object_key)
@@ -213,10 +216,7 @@ impl SyncAdapter for S3Adapter {
             .await
         {
             Ok(out) => {
-                let size = out
-                    .content_length
-                    .unwrap_or_default()
-                    .max(0) as u64;
+                let size = out.content_length.unwrap_or_default().max(0) as u64;
                 let modified_unix_ms = out
                     .last_modified
                     .map(|t| t.to_millis().unwrap_or(0))
@@ -246,8 +246,8 @@ impl SyncAdapter for S3Adapter {
         let mut out = Vec::new();
         let mut continuation: Option<String> = None;
         loop {
-            let mut req = self
-                .client
+            let client = self.client()?;
+            let mut req = client
                 .list_objects_v2()
                 .bucket(&self.bucket)
                 .prefix(&list_prefix);
@@ -289,8 +289,8 @@ impl SyncAdapter for S3Adapter {
 
     async fn write_new(&self, key: &str, bytes: &[u8]) -> Result<ObjectMeta, Error> {
         let object_key = self.paths.object_key(key);
-        let res = self
-            .client
+        let client = self.client()?;
+        let res = client
             .put_object()
             .bucket(&self.bucket)
             .key(&object_key)
@@ -313,7 +313,8 @@ impl SyncAdapter for S3Adapter {
 
     async fn write_atomic(&self, key: &str, bytes: &[u8]) -> Result<ObjectMeta, Error> {
         let object_key = self.paths.object_key(key);
-        self.client
+        let client = self.client()?;
+        client
             .put_object()
             .bucket(&self.bucket)
             .key(&object_key)
@@ -330,7 +331,8 @@ impl SyncAdapter for S3Adapter {
         let from_key = self.paths.object_key(from);
         let to_key = self.paths.object_key(to);
         let copy_source = format!("{}/{}", self.bucket, url_encode_path(&from_key));
-        self.client
+        let client = self.client()?;
+        client
             .copy_object()
             .bucket(&self.bucket)
             .key(&to_key)
@@ -340,8 +342,7 @@ impl SyncAdapter for S3Adapter {
             .map_err(err_str)?;
         // Best-effort delete: a leftover source object would only ever
         // be picked up by the next compact's trash sweep.
-        let _ = self
-            .client
+        let _ = client
             .delete_object()
             .bucket(&self.bucket)
             .key(&from_key)
@@ -352,10 +353,10 @@ impl SyncAdapter for S3Adapter {
 
     async fn delete(&self, key: &str) -> Result<(), Error> {
         let object_key = self.paths.object_key(key);
+        let client = self.client()?;
         // DeleteObject is idempotent — S3 returns 204 whether the key
         // existed or not. Map any error other than transport to Ok().
-        match self
-            .client
+        match client
             .delete_object()
             .bucket(&self.bucket)
             .key(&object_key)
@@ -384,8 +385,8 @@ impl SyncAdapter for S3Adapter {
         let prefix = self.paths.repo_prefix();
         let mut token: Option<String> = None;
         loop {
-            let mut req = self
-                .client
+            let client = self.client()?;
+            let mut req = client
                 .list_objects_v2()
                 .bucket(&self.bucket)
                 .prefix(&prefix);
@@ -395,7 +396,7 @@ impl SyncAdapter for S3Adapter {
             let out = req.send().await.map_err(err_str)?;
             for obj in out.contents() {
                 if let Some(k) = obj.key() {
-                    self.client
+                    client
                         .delete_object()
                         .bucket(&self.bucket)
                         .key(k)
@@ -482,7 +483,10 @@ mod tests {
     #[test]
     fn object_key_strips_leading_key_slash() {
         let p = S3Paths::new("z");
-        assert_eq!(p.object_key("/manifest.json"), "z/zeroterm-sync/manifest.json");
+        assert_eq!(
+            p.object_key("/manifest.json"),
+            "z/zeroterm-sync/manifest.json"
+        );
     }
 
     #[test]
@@ -510,7 +514,8 @@ mod tests {
     fn key_to_rel_strips_repo_prefix() {
         let p = S3Paths::new("zeroterm");
         assert_eq!(
-            p.key_to_rel("zeroterm/zeroterm-sync/manifest.json").as_deref(),
+            p.key_to_rel("zeroterm/zeroterm-sync/manifest.json")
+                .as_deref(),
             Some("manifest.json")
         );
         assert_eq!(
@@ -534,9 +539,6 @@ mod tests {
             url_encode_path("zeroterm/zeroterm-sync/events/foo bar.json"),
             "zeroterm/zeroterm-sync/events/foo%20bar.json"
         );
-        assert_eq!(
-            url_encode_path("a/b/c+d&e.txt"),
-            "a/b/c%2Bd%26e.txt"
-        );
+        assert_eq!(url_encode_path("a/b/c+d&e.txt"), "a/b/c%2Bd%26e.txt");
     }
 }

@@ -226,9 +226,12 @@ async fn main() -> Result<()> {
 
     match &args.command {
         Some(Command::List) => cmd_list(&args, &vault_path),
-        Some(Command::Add { name, target, identity, port }) => {
-            cmd_add(&args, &vault_path, name, target, identity.clone(), *port)
-        }
+        Some(Command::Add {
+            name,
+            target,
+            identity,
+            port,
+        }) => cmd_add(&args, &vault_path, name, target, identity.clone(), *port),
         Some(Command::Remove { name }) => cmd_remove(&args, &vault_path, name),
         Some(Command::Forget) => cmd_forget(&vault_path),
         Some(Command::Sftp { action }) => cmd_sftp(&args, &vault_path, action).await,
@@ -290,9 +293,7 @@ async fn connect_via_picker(vault_path: &Path, args: &Args) -> Result<()> {
     let app = open_app(args, vault_path, false)?;
     let hosts = app.list_hosts()?;
     if hosts.is_empty() {
-        eprintln!(
-            "Vault is empty. Add a host with: zeroterm add <name> user@host"
-        );
+        eprintln!("Vault is empty. Add a host with: zeroterm add <name> user@host");
         return Ok(());
     }
 
@@ -321,11 +322,7 @@ async fn connect_via_picker(vault_path: &Path, args: &Args) -> Result<()> {
 /// `None` when the host has no jump configured. The CLI `--jump` flag
 /// takes precedence over this; we only resolve a saved jump when no
 /// explicit one was given on the command line.
-fn resolve_saved_jump(
-    app: &App,
-    host: &Host,
-    args: &Args,
-) -> Result<Option<ConnectConfig>> {
+fn resolve_saved_jump(app: &App, host: &Host, args: &Args) -> Result<Option<ConnectConfig>> {
     if args.jump.is_some() {
         return Ok(None);
     }
@@ -378,7 +375,10 @@ async fn run_session(
                 .context("failed to connect to target via jump")?;
             (Some(j), t)
         }
-        None => (None, Session::connect(cfg).await.context("failed to connect")?),
+        None => (
+            None,
+            Session::connect(cfg).await.context("failed to connect")?,
+        ),
     };
     let mut session = session;
     info!("authenticated");
@@ -563,7 +563,10 @@ async fn cmd_sftp(args: &Args, vault_path: &Path, action: &SftpAction) -> Result
                 .context("target via jump")?;
             (Some(j), t)
         }
-        None => (None, Session::connect(cfg).await.context("failed to connect")?),
+        None => (
+            None,
+            Session::connect(cfg).await.context("failed to connect")?,
+        ),
     };
     let sftp = session.sftp().await.context("open sftp subsystem")?;
 
@@ -630,11 +633,7 @@ async fn sftp_ls(sftp: &zeroterm_ssh::Sftp, path: &str) -> Result<()> {
     Ok(())
 }
 
-async fn sftp_get(
-    sftp: &zeroterm_ssh::Sftp,
-    remote: &str,
-    local: Option<&Path>,
-) -> Result<()> {
+async fn sftp_get(sftp: &zeroterm_ssh::Sftp, remote: &str, local: Option<&Path>) -> Result<()> {
     let local_owned: PathBuf = match local {
         Some(p) => p.to_path_buf(),
         None => {
@@ -666,13 +665,18 @@ async fn sftp_get(
         )
         .await?;
     eprintln!();
-    println!("downloaded {} → {} ({} bytes)", remote, local_owned.display(), n);
+    println!(
+        "downloaded {} → {} ({} bytes)",
+        remote,
+        local_owned.display(),
+        n
+    );
     Ok(())
 }
 
 async fn sftp_put(sftp: &zeroterm_ssh::Sftp, local: &Path, remote: &str) -> Result<()> {
-    let metadata = std::fs::metadata(local)
-        .with_context(|| format!("stating {}", local.display()))?;
+    let metadata =
+        std::fs::metadata(local).with_context(|| format!("stating {}", local.display()))?;
     let size_hint = Some(metadata.len());
 
     let mut file = tokio::fs::File::open(local)
@@ -942,7 +946,10 @@ fn cmd_forward(args: &Args, vault_path: &Path, action: &ForwardAction) -> Result
                 .find_host_by_name(host)?
                 .ok_or_else(|| anyhow!("no host named '{host}'"))?;
             if *index >= h.forwards.len() {
-                bail!("index {index} out of range (have {} forwards)", h.forwards.len());
+                bail!(
+                    "index {index} out of range (have {} forwards)",
+                    h.forwards.len()
+                );
             }
             let removed = h.forwards.remove(*index);
             app.update_host(&h)?;
@@ -992,11 +999,7 @@ fn open_app(args: &Args, path: &Path, create_if_missing: bool) -> Result<App> {
     open_app_with_remember(path, create_if_missing, args.remember)
 }
 
-fn open_app_with_remember(
-    path: &Path,
-    create_if_missing: bool,
-    remember: bool,
-) -> Result<App> {
+fn open_app_with_remember(path: &Path, create_if_missing: bool, remember: bool) -> Result<App> {
     if App::vault_exists(path) {
         // Preload master password from keychain in one burst (single
         // macOS Touch ID / password prompt).
@@ -1111,16 +1114,18 @@ fn build_direct_auth_methods(args: &Args, target: &Target) -> Result<Vec<AuthMet
         });
     }
     if methods.is_empty() {
-        let password = rpassword::prompt_password(format!(
-            "{}@{}'s password: ",
-            target.user, target.host
-        ))?;
+        let password =
+            rpassword::prompt_password(format!("{}@{}'s password: ", target.user, target.host))?;
         methods.push(AuthMethod::Password(password));
     }
     Ok(methods)
 }
 
-fn build_host_auth(target: &Target, identity: Option<PathBuf>, use_agent: bool) -> Result<HostAuth> {
+fn build_host_auth(
+    target: &Target,
+    identity: Option<PathBuf>,
+    use_agent: bool,
+) -> Result<HostAuth> {
     if use_agent {
         if identity.is_some() {
             bail!("`add` accepts either --agent or --identity, not both");
@@ -1145,10 +1150,8 @@ fn build_host_auth(target: &Target, identity: Option<PathBuf>, use_agent: bool) 
             passphrase,
         })
     } else {
-        let value = rpassword::prompt_password(format!(
-            "Password for {}@{}: ",
-            target.user, target.host
-        ))?;
+        let value =
+            rpassword::prompt_password(format!("Password for {}@{}: ", target.user, target.host))?;
         Ok(HostAuth::Password { value })
     }
 }

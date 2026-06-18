@@ -76,14 +76,22 @@ fn main() -> Result<()> {
 
     println!("\n[5] Final state");
     for (id, plaintext) in vault.list("host")? {
-        println!("  host    {}  →  {}", id, String::from_utf8_lossy(&plaintext));
+        println!(
+            "  host    {}  →  {}",
+            id,
+            String::from_utf8_lossy(&plaintext)
+        );
     }
     let live_snippets = vault.list("snippet")?;
     if live_snippets.is_empty() {
         println!("  snippets: <empty> (tombstoned)");
     } else {
         for (id, plaintext) in live_snippets {
-            println!("  snippet {}  →  {}", id, String::from_utf8_lossy(&plaintext));
+            println!(
+                "  snippet {}  →  {}",
+                id,
+                String::from_utf8_lossy(&plaintext)
+            );
         }
     }
     println!("  current local version: {}", vault.current_version()?);

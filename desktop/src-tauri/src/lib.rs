@@ -39,6 +39,10 @@ pub fn run() {
         )
         .init();
 
+    if let Err(e) = commands::apply_saved_network_proxy_config() {
+        tracing::warn!(error = %e, "failed to apply saved network proxy config");
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -95,6 +99,9 @@ pub fn run() {
             commands::set_background_image,
             commands::get_background_image,
             commands::clear_background_image,
+            commands::get_network_proxy_config,
+            commands::save_network_proxy_config,
+            commands::clear_network_proxy_config,
             commands::save_window_size,
             commands::get_window_size_setting,
             commands::clear_window_size_setting,
@@ -166,6 +173,7 @@ pub fn run() {
             commands::respond_host_key,
             commands::local_home_path,
             commands::local_list,
+            commands::local_path_exists,
             commands::local_mkdir,
             commands::local_remove,
             commands::local_remove_dir,

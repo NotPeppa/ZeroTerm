@@ -84,14 +84,10 @@ impl ForeignHostKeyPrompt {
         let request_id = uuid::Uuid::now_v7().to_string();
         let (tx, rx) = oneshot::channel::<bool>();
 
-        self.pending
-            .lock()
-            .unwrap()
-            .insert(request_id.clone(), tx);
+        self.pending.lock().unwrap().insert(request_id.clone(), tx);
 
         let ffi_info: HostKeyInfo = info.into();
-        self.foreign
-            .on_prompt(request_id.clone(), ffi_info, stored);
+        self.foreign.on_prompt(request_id.clone(), ffi_info, stored);
 
         match rx.await {
             Ok(accept) => accept,

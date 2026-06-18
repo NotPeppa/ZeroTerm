@@ -53,7 +53,8 @@ pub struct WebDavConfig {
 
 pub struct WebDavAdapter {
     paths: WebDavPaths,
-    client: reqwest::Client,
+    default_headers: HeaderMap,
+    timeout: Duration,
 }
 
 /// Pure URL math. Lives outside the adapter so the path layout is
@@ -80,10 +81,7 @@ impl WebDavPaths {
         if self.root_path.is_empty() {
             format!("{}/{}/{}", self.base_url, REPO_DIR, key)
         } else {
-            format!(
-                "{}/{}/{}/{}",
-                self.base_url, self.root_path, REPO_DIR, key
-            )
+            format!("{}/{}/{}/{}", self.base_url, self.root_path, REPO_DIR, key)
         }
     }
 
@@ -124,30 +122,32 @@ impl WebDavAdapter {
         let mut headers = HeaderMap::new();
         let auth = format!("{}:{}", cfg.username, cfg.password);
         let token = B64.encode(auth.as_bytes());
-        let value = HeaderValue::from_str(&format!("Basic {token}"))
-            .map_err(|_| Error::Corrupt)?;
+        let value = HeaderValue::from_str(&format!("Basic {token}")).map_err(|_| Error::Corrupt)?;
         headers.insert("Authorization", value);
-
-        let client = reqwest::Client::builder()
-            .default_headers(headers)
-            .timeout(cfg.timeout.unwrap_or_else(|| Duration::from_secs(30)))
-            .build()
-            .map_err(|e| Error::Io(std::io::Error::other(e.to_string())))?;
 
         Ok(Self {
             paths: WebDavPaths::new(&cfg.base_url, &cfg.root_path),
-            client,
+            default_headers: headers,
+            timeout: cfg.timeout.unwrap_or_else(|| Duration::from_secs(30)),
         })
     }
 
+    fn client(&self) -> Result<reqwest::Client, Error> {
+        reqwest::Client::builder()
+            .default_headers(self.default_headers.clone())
+            .timeout(self.timeout)
+            .build()
+            .map_err(|e| Error::Io(std::io::Error::other(e.to_string())))
+    }
+
     async fn mkcol_one(&self, url: &str) -> Result<(), Error> {
+        let client = self.client()?;
         let mkcol_url = if url.ends_with('/') {
             url.to_string()
         } else {
             format!("{url}/")
         };
-        let res = self
-            .client
+        let res = client
             .request(Method::from_bytes(b"MKCOL").unwrap(), &mkcol_url)
             .send()
             .await
@@ -164,8 +164,7 @@ impl WebDavAdapter {
             StatusCode::METHOD_NOT_ALLOWED => Ok(()),
             StatusCode::CONFLICT => {
                 let mkcol_body = res.text().await.unwrap_or_default();
-                let probe = self
-                    .client
+                let probe = client
                     .head(&mkcol_url)
                     .send()
                     .await
@@ -226,7 +225,8 @@ impl SyncAdapter for WebDavAdapter {
 
     async fn read(&self, key: &str) -> Result<Option<Vec<u8>>, Error> {
         let url = self.paths.url_of(key);
-        let res = self.client.get(&url).send().await.map_err(transport_err)?;
+        let client = self.client()?;
+        let res = client.get(&url).send().await.map_err(transport_err)?;
         match res.status() {
             StatusCode::NOT_FOUND => Ok(None),
             s if s.is_success() => {
@@ -239,7 +239,8 @@ impl SyncAdapter for WebDavAdapter {
 
     async fn stat(&self, key: &str) -> Result<Option<ObjectMeta>, Error> {
         let url = self.paths.url_of(key);
-        let res = self.client.head(&url).send().await.map_err(transport_err)?;
+        let client = self.client()?;
+        let res = client.head(&url).send().await.map_err(transport_err)?;
         match res.status() {
             StatusCode::NOT_FOUND => Ok(None),
             s if s.is_success() => {
@@ -267,6 +268,7 @@ impl SyncAdapter for WebDavAdapter {
 
     async fn list(&self, prefix: &str, recursive: bool) -> Result<Vec<ObjectMeta>, Error> {
         let url = self.paths.url_of(prefix);
+        let client = self.client()?;
         let depth = if recursive { "infinity" } else { "1" };
         let body = r#"<?xml version="1.0" encoding="utf-8" ?>
 <propfind xmlns="DAV:">
@@ -276,8 +278,7 @@ impl SyncAdapter for WebDavAdapter {
     <resourcetype/>
   </prop>
 </propfind>"#;
-        let res = self
-            .client
+        let res = client
             .request(Method::from_bytes(b"PROPFIND").unwrap(), &url)
             .header("Depth", depth)
             .header("Content-Type", "application/xml; charset=utf-8")
@@ -302,8 +303,8 @@ impl SyncAdapter for WebDavAdapter {
     async fn write_new(&self, key: &str, bytes: &[u8]) -> Result<ObjectMeta, Error> {
         self.ensure_parent_dirs(key).await?;
         let url = self.paths.url_of(key);
-        let res = self
-            .client
+        let client = self.client()?;
+        let res = client
             .put(&url)
             .header("If-None-Match", "*")
             .body(bytes.to_vec())
@@ -328,8 +329,8 @@ impl SyncAdapter for WebDavAdapter {
         // they're single-blob.
         self.ensure_parent_dirs(key).await?;
         let url = self.paths.url_of(key);
-        let res = self
-            .client
+        let client = self.client()?;
+        let res = client
             .put(&url)
             .body(bytes.to_vec())
             .send()
@@ -345,8 +346,8 @@ impl SyncAdapter for WebDavAdapter {
         self.ensure_parent_dirs(to).await?;
         let from_url = self.paths.url_of(from);
         let to_url = self.paths.url_of(to);
-        let res = self
-            .client
+        let client = self.client()?;
+        let res = client
             .request(Method::from_bytes(b"MOVE").unwrap(), &from_url)
             .header("Destination", &to_url)
             .header("Overwrite", "T")
@@ -361,12 +362,8 @@ impl SyncAdapter for WebDavAdapter {
 
     async fn delete(&self, key: &str) -> Result<(), Error> {
         let url = self.paths.url_of(key);
-        let res = self
-            .client
-            .delete(&url)
-            .send()
-            .await
-            .map_err(transport_err)?;
+        let client = self.client()?;
+        let res = client.delete(&url).send().await.map_err(transport_err)?;
         match res.status() {
             StatusCode::NOT_FOUND => Ok(()),
             s if s.is_success() => Ok(()),
@@ -403,7 +400,8 @@ impl SyncAdapter for WebDavAdapter {
 
     async fn delete_repo_root_dir(&self) -> Result<(), Error> {
         let url = self.paths.repo_root_url();
-        let res = self.client.delete(&url).send().await.map_err(transport_err)?;
+        let client = self.client()?;
+        let res = client.delete(&url).send().await.map_err(transport_err)?;
         match res.status() {
             StatusCode::NOT_FOUND => Ok(()),
             s if s.is_success() => Ok(()),
@@ -415,7 +413,7 @@ impl SyncAdapter for WebDavAdapter {
                 listed.sort_by(|a, b| b.path.len().cmp(&a.path.len()));
                 for entry in listed {
                     let u = self.paths.url_of(&entry.path);
-                    let rr = self.client.delete(&u).send().await.map_err(transport_err)?;
+                    let rr = client.delete(&u).send().await.map_err(transport_err)?;
                     if rr.status() == StatusCode::NOT_FOUND || rr.status().is_success() {
                         continue;
                     }
@@ -427,20 +425,19 @@ impl SyncAdapter for WebDavAdapter {
                 // top-level entries as a best-effort pass.
                 for file in ["manifest.json", "keyring.json"] {
                     let u = self.paths.url_of(file);
-                    let rr = self.client.delete(&u).send().await.map_err(transport_err)?;
+                    let rr = client.delete(&u).send().await.map_err(transport_err)?;
                     if rr.status() == StatusCode::NOT_FOUND || rr.status().is_success() {
                         continue;
                     }
                 }
                 for dir in ["events", "snapshots", "trash", "devices", "locks"] {
                     let u = self.paths.url_of(dir);
-                    let rr = self.client.delete(&u).send().await.map_err(transport_err)?;
+                    let rr = client.delete(&u).send().await.map_err(transport_err)?;
                     if rr.status() == StatusCode::NOT_FOUND || rr.status().is_success() {
                         continue;
                     }
                     let u_slash = format!("{u}/");
-                    let rr2 = self
-                        .client
+                    let rr2 = client
                         .delete(&u_slash)
                         .send()
                         .await
@@ -452,7 +449,7 @@ impl SyncAdapter for WebDavAdapter {
 
                 // Try deleting the root once more; if still forbidden, we've
                 // already wiped what the backend lets us wipe.
-                let _ = self.client.delete(&url).send().await;
+                let _ = client.delete(&url).send().await;
                 Ok(())
             }
             other => Err(http_err("DELETE", &url, other)),
@@ -508,9 +505,7 @@ fn parse_propfind(xml: &str, server_prefix: &str) -> Result<Vec<ObjectMeta>, Err
                 let text = t
                     .xml_content()
                     .map_err(|e| {
-                        Error::Io(std::io::Error::other(format!(
-                            "propfind text decode: {e}"
-                        )))
+                        Error::Io(std::io::Error::other(format!("propfind text decode: {e}")))
                     })?
                     .to_string();
                 let tag = tag_stack.last().cloned().unwrap_or_default();
@@ -615,9 +610,7 @@ fn percent_decode(s: &str) -> String {
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let (Some(h), Some(l)) =
-                (hex_val(bytes[i + 1]), hex_val(bytes[i + 2]))
-            {
+            if let (Some(h), Some(l)) = (hex_val(bytes[i + 1]), hex_val(bytes[i + 2])) {
                 out.push((h << 4) | l);
                 i += 3;
                 continue;
@@ -696,7 +689,10 @@ mod tests {
 
     #[test]
     fn url_of_joins_base_root_repo_and_key() {
-        let p = WebDavPaths::new("https://dav.example.com/remote.php/dav/files/alice", "zeroterm");
+        let p = WebDavPaths::new(
+            "https://dav.example.com/remote.php/dav/files/alice",
+            "zeroterm",
+        );
         assert_eq!(
             p.url_of("manifest.json"),
             "https://dav.example.com/remote.php/dav/files/alice/zeroterm/zeroterm-sync/manifest.json"
@@ -732,7 +728,10 @@ mod tests {
 
     #[test]
     fn server_path_prefix_drops_scheme_and_host() {
-        let p = WebDavPaths::new("https://dav.example.com/remote.php/dav/files/alice", "zeroterm");
+        let p = WebDavPaths::new(
+            "https://dav.example.com/remote.php/dav/files/alice",
+            "zeroterm",
+        );
         assert_eq!(
             p.server_path_prefix(),
             "/remote.php/dav/files/alice/zeroterm/zeroterm-sync/"
@@ -742,10 +741,7 @@ mod tests {
     #[test]
     fn server_path_prefix_handles_empty_root_path() {
         let p = WebDavPaths::new("https://dav.example.com/files/alice", "");
-        assert_eq!(
-            p.server_path_prefix(),
-            "/files/alice/zeroterm-sync/"
-        );
+        assert_eq!(p.server_path_prefix(), "/files/alice/zeroterm-sync/");
     }
 
     #[test]

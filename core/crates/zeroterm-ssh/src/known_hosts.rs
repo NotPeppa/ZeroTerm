@@ -91,7 +91,12 @@ impl KnownHosts {
             let mut parts = line.splitn(3, char::is_whitespace);
             let host_field = parts.next().unwrap_or("");
             let keytype = parts.next().unwrap_or("");
-            let b64 = parts.next().unwrap_or("").split_whitespace().next().unwrap_or("");
+            let b64 = parts
+                .next()
+                .unwrap_or("")
+                .split_whitespace()
+                .next()
+                .unwrap_or("");
 
             if !host_field_matches(host_field, host, port) {
                 continue;
@@ -170,7 +175,12 @@ impl KnownHosts {
         } else {
             format!("[{}]:{}", host, port)
         };
-        out.push_str(&format!("{} {} {}\n", host_part, key.name(), key.public_key_base64()));
+        out.push_str(&format!(
+            "{} {} {}\n",
+            host_part,
+            key.name(),
+            key.public_key_base64()
+        ));
         std::fs::write(&self.path, out)
     }
 }
@@ -214,7 +224,11 @@ mod tests {
 
     #[test]
     fn matches_bracketed_host_with_port() {
-        assert!(host_field_matches("[example.com]:2222", "example.com", 2222));
+        assert!(host_field_matches(
+            "[example.com]:2222",
+            "example.com",
+            2222
+        ));
         assert!(!host_field_matches("[example.com]:2222", "example.com", 22));
     }
 

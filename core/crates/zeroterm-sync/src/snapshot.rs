@@ -57,7 +57,12 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
-    pub fn new(snapshot_id: impl Into<String>, vault_id: impl Into<String>, head_clock: u64, created_at: i64) -> Self {
+    pub fn new(
+        snapshot_id: impl Into<String>,
+        vault_id: impl Into<String>,
+        head_clock: u64,
+        created_at: i64,
+    ) -> Self {
         Self {
             schema_version: SNAPSHOT_SCHEMA,
             snapshot_id: snapshot_id.into(),

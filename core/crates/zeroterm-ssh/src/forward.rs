@@ -189,11 +189,15 @@ pub async fn forward_remote(
     target_host: String,
     target_port: u16,
 ) -> Result<ForwardHandle, SshError> {
-    let allocated_port = session
-        .tcpip_forward(bind_addr, bind_port as u32)
-        .await?;
-    let remote_port = if bind_port == 0 { allocated_port } else { bind_port as u32 };
-    let local: SocketAddr = "0.0.0.0:0".parse().map_err(|e| SshError::Io(io_err(format!("remote addr parse failed: {e}"))))?;
+    let allocated_port = session.tcpip_forward(bind_addr, bind_port as u32).await?;
+    let remote_port = if bind_port == 0 {
+        allocated_port
+    } else {
+        bind_port as u32
+    };
+    let local: SocketAddr = "0.0.0.0:0"
+        .parse()
+        .map_err(|e| SshError::Io(io_err(format!("remote addr parse failed: {e}"))))?;
     let cancel = CancellationToken::new();
     let cancel_for_task = cancel.clone();
     let incoming = session.remote_forward_receiver();
@@ -212,7 +216,11 @@ pub async fn forward_remote(
 }
 
 async fn remote_loop(
-    incoming: Arc<tokio::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<crate::session::RemoteForwardIncoming>>>,
+    incoming: Arc<
+        tokio::sync::Mutex<
+            tokio::sync::mpsc::UnboundedReceiver<crate::session::RemoteForwardIncoming>,
+        >,
+    >,
     bind_addr: String,
     bind_port: u32,
     target_host: String,
@@ -243,7 +251,9 @@ async fn remote_loop(
                         item.originator_address,
                         item.originator_port,
                         cancel,
-                    ).await {
+                    )
+                    .await
+                    {
                         warn!(error = %e, "remote forward bridge ended with error");
                     }
                 });

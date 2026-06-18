@@ -22,5 +22,7 @@ pub use error::SshError;
 pub use forward::{forward_dynamic, forward_local, forward_remote, ForwardHandle};
 pub use host_key::{HostKeyInfo, HostKeyPolicy, HostKeyPrompt, MismatchAction};
 pub use known_hosts::{KnownHostStatus, KnownHosts};
-pub use session::{AuthMethod, ChannelEvent, ConnectConfig, PtySize, Session, ShellChannel};
+pub use session::{
+    set_global_http_proxy, AuthMethod, ChannelEvent, ConnectConfig, PtySize, Session, ShellChannel,
+};
 pub use sftp::{DirEntry, FileKind, FileMetadata, ProgressTick, Sftp, DEFAULT_CHUNK};

@@ -152,10 +152,7 @@ pub fn wrap_root_key(
 
 /// Unwrap the sync root key for `device_id` using the given passphrase.
 /// Wrong passphrase ⇒ [`Error::AuthenticationFailed`].
-pub fn unwrap_root_key(
-    entry: &KeyringEntry,
-    passphrase: &str,
-) -> Result<SyncRootKey, Error> {
+pub fn unwrap_root_key(entry: &KeyringEntry, passphrase: &str) -> Result<SyncRootKey, Error> {
     let salt = B64
         .decode(entry.kdf_salt_b64.as_bytes())
         .map_err(|_| Error::Base64)?;
@@ -171,8 +168,8 @@ pub fn unwrap_root_key(
 
     let wrap_key = derive_key_argon2id(passphrase.as_bytes(), &salt, entry.kdf_params.into())?;
     let aad = wrap_aad(&entry.device_id);
-    let plain = aead_decrypt(&wrap_key, &nonce, &ct, &aad)
-        .map_err(|_| Error::AuthenticationFailed)?;
+    let plain =
+        aead_decrypt(&wrap_key, &nonce, &ct, &aad).map_err(|_| Error::AuthenticationFailed)?;
 
     if plain.len() != KEY_LEN {
         return Err(Error::Corrupt);

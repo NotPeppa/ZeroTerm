@@ -260,7 +260,9 @@ mod tests {
     #[tokio::test]
     async fn write_new_collides_loudly() {
         let (_d, a) = adapter();
-        a.write_new("events/2024-03/ev-1.json", b"first").await.unwrap();
+        a.write_new("events/2024-03/ev-1.json", b"first")
+            .await
+            .unwrap();
         let err = a.write_new("events/2024-03/ev-1.json", b"again").await;
         assert!(matches!(err, Err(Error::AlreadyExists)));
     }

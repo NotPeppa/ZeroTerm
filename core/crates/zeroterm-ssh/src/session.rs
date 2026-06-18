@@ -1,13 +1,18 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::{OnceLock, RwLock};
 use std::time::Duration;
 use std::time::Instant;
 
 use async_trait::async_trait;
+use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use russh::client::{self, Handle, Handler, Msg};
 use russh::{Channel, ChannelId, ChannelMsg, Disconnect};
 use russh_keys::key;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 use tokio::sync::{mpsc, Mutex};
+use url::Url;
 
 use crate::error::SshError;
 use crate::host_key::HostKeyPolicy;
@@ -54,7 +59,10 @@ impl std::fmt::Debug for ConnectConfig {
             .field("host", &self.host)
             .field("port", &self.port)
             .field("username", &self.username)
-            .field("auth_methods", &format!("{} method(s)", self.auth_methods.len()))
+            .field(
+                "auth_methods",
+                &format!("{} method(s)", self.auth_methods.len()),
+            )
             .field("connect_timeout", &self.connect_timeout)
             .field("host_key_policy", &self.host_key_policy)
             .finish()
@@ -105,7 +113,11 @@ impl Handler for ZeroTermHandler {
         &mut self,
         server_public_key: &key::PublicKey,
     ) -> Result<bool, Self::Error> {
-        match self.policy.evaluate(&self.host, self.port, server_public_key).await {
+        match self
+            .policy
+            .evaluate(&self.host, self.port, server_public_key)
+            .await
+        {
             Ok(accept) => Ok(accept),
             Err(e) => Err(russh::Error::IO(e)),
         }
@@ -135,6 +147,160 @@ impl Handler for ZeroTermHandler {
 pub struct Session {
     handle: Arc<Handle<ZeroTermHandler>>,
     remote_forward_rx: Arc<Mutex<mpsc::UnboundedReceiver<RemoteForwardIncoming>>>,
+}
+
+static GLOBAL_HTTP_PROXY: OnceLock<RwLock<Option<String>>> = OnceLock::new();
+
+fn global_http_proxy() -> &'static RwLock<Option<String>> {
+    GLOBAL_HTTP_PROXY.get_or_init(|| RwLock::new(None))
+}
+
+pub fn set_global_http_proxy(proxy_url: Option<String>) {
+    *global_http_proxy().write().unwrap() = proxy_url
+        .map(|url| url.trim().to_string())
+        .filter(|url| !url.is_empty());
+}
+
+fn current_http_proxy() -> Option<String> {
+    global_http_proxy().read().unwrap().clone()
+}
+
+#[derive(Debug, Clone)]
+struct HttpProxyConfig {
+    host: String,
+    port: u16,
+    auth_header: Option<String>,
+}
+
+fn parse_http_proxy_url(proxy_url: &str) -> Result<HttpProxyConfig, SshError> {
+    let parsed = Url::parse(proxy_url).map_err(|e| {
+        SshError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("invalid proxy url: {e}"),
+        ))
+    })?;
+    if parsed.scheme() != "http" {
+        return Err(SshError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "only http:// proxies are supported for SSH transports",
+        )));
+    }
+    let host = parsed.host_str().ok_or_else(|| {
+        SshError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "proxy url is missing a host",
+        ))
+    })?;
+    let port = parsed.port_or_known_default().ok_or_else(|| {
+        SshError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "proxy url is missing a port",
+        ))
+    })?;
+    let auth_header = if parsed.username().is_empty() {
+        None
+    } else {
+        let raw = format!(
+            "{}:{}",
+            parsed.username(),
+            parsed.password().unwrap_or_default()
+        );
+        Some(format!("Basic {}", B64.encode(raw.as_bytes())))
+    };
+    Ok(HttpProxyConfig {
+        host: host.to_string(),
+        port,
+        auth_header,
+    })
+}
+
+fn format_connect_target(host: &str, port: u16) -> String {
+    if host.contains(':') && !host.starts_with('[') && !host.ends_with(']') {
+        format!("[{host}]:{port}")
+    } else {
+        format!("{host}:{port}")
+    }
+}
+
+async fn connect_tcp_via_http_proxy(
+    cfg: &ConnectConfig,
+    proxy_url: &str,
+) -> Result<TcpStream, SshError> {
+    let proxy = parse_http_proxy_url(proxy_url)?;
+    let connect_fut = TcpStream::connect((proxy.host.as_str(), proxy.port));
+    let mut stream = match cfg.connect_timeout {
+        Some(t) => match tokio::time::timeout(t, connect_fut).await {
+            Ok(res) => res?,
+            Err(_) => {
+                return Err(SshError::Io(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    format!("proxy connect timed out after {t:?}"),
+                )));
+            }
+        },
+        None => connect_fut.await?,
+    };
+
+    let target = format_connect_target(&cfg.host, cfg.port);
+    let mut request =
+        format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\nProxy-Connection: Keep-Alive\r\n");
+    if let Some(auth) = proxy.auth_header.as_deref() {
+        request.push_str(&format!("Proxy-Authorization: {auth}\r\n"));
+    }
+    request.push_str("\r\n");
+    stream.write_all(request.as_bytes()).await?;
+
+    let mut response = Vec::with_capacity(1024);
+    let mut byte = [0_u8; 1];
+    loop {
+        let n = stream.read(&mut byte).await?;
+        if n == 0 {
+            return Err(SshError::Io(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "proxy closed the CONNECT tunnel before responding",
+            )));
+        }
+        response.push(byte[0]);
+        if response.windows(4).any(|w| w == b"\r\n\r\n") {
+            break;
+        }
+        if response.len() > 16 * 1024 {
+            return Err(SshError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "proxy CONNECT response headers are too large",
+            )));
+        }
+    }
+
+    let header_end = response
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .map(|idx| idx + 4)
+        .ok_or_else(|| {
+            SshError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "proxy CONNECT response was malformed",
+            ))
+        })?;
+    let headers = String::from_utf8_lossy(&response[..header_end]);
+    let status_line = headers.lines().next().unwrap_or_default();
+    let status_code = status_line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|code| code.parse::<u16>().ok())
+        .ok_or_else(|| {
+            SshError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("proxy CONNECT response missing status code: {status_line}"),
+            ))
+        })?;
+    if status_code != 200 {
+        return Err(SshError::Io(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!("proxy CONNECT failed: {status_line}"),
+        )));
+    }
+    Ok(stream)
 }
 
 /// Shared russh client config for both direct and jump-host connections.
@@ -180,19 +346,36 @@ impl Session {
             remote_forward_tx,
         };
 
-        let addr = (cfg.host.as_str(), cfg.port);
-        let connect_fut = client::connect(config, addr, handler);
-        let handle = match cfg.connect_timeout {
-            Some(t) => match tokio::time::timeout(t, connect_fut).await {
-                Ok(res) => res?,
-                Err(_) => {
-                    return Err(SshError::Io(std::io::Error::new(
-                        std::io::ErrorKind::TimedOut,
-                        format!("connect timed out after {t:?}"),
-                    )));
-                }
-            },
-            None => connect_fut.await?,
+        let handle = if let Some(proxy_url) = current_http_proxy() {
+            let stream = connect_tcp_via_http_proxy(&cfg, &proxy_url).await?;
+            let connect_fut = client::connect_stream(config, stream, handler);
+            match cfg.connect_timeout {
+                Some(t) => match tokio::time::timeout(t, connect_fut).await {
+                    Ok(res) => res?,
+                    Err(_) => {
+                        return Err(SshError::Io(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            format!("connect timed out after {t:?}"),
+                        )));
+                    }
+                },
+                None => connect_fut.await?,
+            }
+        } else {
+            let addr = (cfg.host.as_str(), cfg.port);
+            let connect_fut = client::connect(config, addr, handler);
+            match cfg.connect_timeout {
+                Some(t) => match tokio::time::timeout(t, connect_fut).await {
+                    Ok(res) => res?,
+                    Err(_) => {
+                        return Err(SshError::Io(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            format!("connect timed out after {t:?}"),
+                        )));
+                    }
+                },
+                None => connect_fut.await?,
+            }
         };
 
         authenticate(handle, &cfg, remote_forward_rx).await
@@ -253,7 +436,11 @@ impl Session {
         self.handle.is_closed()
     }
 
-    pub(crate) async fn tcpip_forward(&mut self, address: &str, port: u32) -> Result<u32, SshError> {
+    pub(crate) async fn tcpip_forward(
+        &mut self,
+        address: &str,
+        port: u32,
+    ) -> Result<u32, SshError> {
         let handle = Arc::get_mut(&mut self.handle).ok_or_else(|| {
             SshError::Io(std::io::Error::new(
                 std::io::ErrorKind::Other,
@@ -263,7 +450,9 @@ impl Session {
         Ok(handle.tcpip_forward(address.to_string(), port).await?)
     }
 
-    pub(crate) fn remote_forward_receiver(&self) -> Arc<Mutex<mpsc::UnboundedReceiver<RemoteForwardIncoming>>> {
+    pub(crate) fn remote_forward_receiver(
+        &self,
+    ) -> Arc<Mutex<mpsc::UnboundedReceiver<RemoteForwardIncoming>>> {
         Arc::clone(&self.remote_forward_rx)
     }
 
@@ -293,9 +482,16 @@ impl Session {
     pub async fn sftp(&mut self) -> Result<crate::sftp::Sftp, SshError> {
         let channel = self.handle.channel_open_session().await?;
         channel.request_subsystem(true, "sftp").await?;
-        let session = russh_sftp::client::SftpSession::new(channel.into_stream())
-            .await
-            .map_err(|e| SshError::Sftp(e.to_string()))?;
+        let session = russh_sftp::client::SftpSession::new_with_config(
+            channel.into_stream(),
+            russh_sftp::client::Config {
+                max_packet_len: 1024 * 1024,
+                max_concurrent_writes: 16,
+                request_timeout_secs: 30,
+            },
+        )
+        .await
+        .map_err(|e| SshError::Sftp(e.to_string()))?;
         Ok(crate::sftp::Sftp::from_session(session))
     }
 
@@ -310,7 +506,9 @@ impl Session {
         while let Some(msg) = channel.wait().await {
             match msg {
                 ChannelMsg::Data { data } => stdout.extend_from_slice(&data),
-                ChannelMsg::ExtendedData { data, ext } if ext == 1 => stderr.extend_from_slice(&data),
+                ChannelMsg::ExtendedData { data, ext } if ext == 1 => {
+                    stderr.extend_from_slice(&data)
+                }
                 ChannelMsg::ExitStatus { exit_status } => code = exit_status,
                 ChannelMsg::Close | ChannelMsg::Eof => break,
                 _ => {}
@@ -350,7 +548,12 @@ async fn authenticate(
     let mut last_error: Option<SshError> = None;
     for method in &cfg.auth_methods {
         match try_authenticate(&mut handle, &cfg.username, method).await {
-            Ok(true) => return Ok(Session { handle: Arc::new(handle), remote_forward_rx: Arc::new(Mutex::new(remote_forward_rx)) }),
+            Ok(true) => {
+                return Ok(Session {
+                    handle: Arc::new(handle),
+                    remote_forward_rx: Arc::new(Mutex::new(remote_forward_rx)),
+                })
+            }
             Ok(false) => {
                 tracing::debug!(method = method_name(method), "auth method rejected");
             }
