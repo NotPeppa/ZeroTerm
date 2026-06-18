@@ -1671,6 +1671,7 @@ body.has-app-bg[data-app-theme="light"] .port-forward-head p {
 
 .terminal-side-btn:hover {
   background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(59, 130, 246, 0.25);
   color: #ffffff;
 }
 
@@ -1716,7 +1717,6 @@ body.has-app-bg[data-app-theme="light"] .terminal-side-btn {
   color: rgba(15, 23, 42, 0.82) !important;
 }
 
-body.has-app-bg[data-app-theme="light"] .terminal-side-btn:hover,
 body.has-app-bg[data-app-theme="light"] .terminal-side-btn.active {
   color: #2563eb !important;
 }
@@ -2907,7 +2907,7 @@ body[data-app-theme="light"] .terminal-side-btn {
 
 body[data-app-theme="light"] .terminal-side-btn:hover {
   background: rgba(15, 23, 42, 0.05);
-  color: #0f172a;
+  border-color: rgba(59, 130, 246, 0.25);
 }
 
 body[data-app-theme="light"] .terminal-side-btn.active {
@@ -4113,7 +4113,6 @@ body[data-app-theme="light"] .workspace-icon-btn {
 
 body[data-app-theme="light"] .workspace-icon-btn:hover {
   background: rgba(37, 99, 235, 0.05);
-  color: var(--accent);
 }
 
 body[data-app-theme="light"] .workspace-nav-btn.active {
@@ -10652,11 +10651,6 @@ body[data-app-theme="light"] .workspace-icon-btn {
   color: var(--muted) !important;
 }
 
-body[data-app-theme="light"] .workspace-icon-btn:hover .zt-icon,
-body[data-app-theme="light"] .workspace-icon-btn:hover {
-  color: var(--accent) !important;
-}
-
 body[data-app-theme="light"] .workspace-nav-btn.active .zt-icon,
 body[data-app-theme="light"] .workspace-nav-btn.active {
   color: var(--accent) !important;
@@ -10665,11 +10659,6 @@ body[data-app-theme="light"] .workspace-nav-btn.active {
 body.has-app-bg[data-app-theme="light"] .workspace-icon-btn .zt-icon,
 body.has-app-bg[data-app-theme="light"] .workspace-icon-btn {
   color: rgba(15, 23, 42, 0.78) !important;
-}
-
-body.has-app-bg[data-app-theme="light"] .workspace-icon-btn:hover .zt-icon,
-body.has-app-bg[data-app-theme="light"] .workspace-icon-btn:hover {
-  color: #2563eb !important;
 }
 
 /* 7. Settings Page Light Theme & Subtabs Contrast Overrides */
@@ -11219,6 +11208,12 @@ body[data-app-theme="light"] #groups-context-menu button {
   background: transparent !important;
   border-color: transparent !important;
   color: var(--text) !important;
+}
+
+body[data-app-theme="light"] #theme-mode-menu button.active {
+  background: rgba(37, 99, 235, 0.14) !important;
+  color: var(--accent) !important;
+  font-weight: 600;
 }
 
 body[data-app-theme="light"] .files-context-menu button:hover:not(:disabled),
