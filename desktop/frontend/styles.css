@@ -729,7 +729,7 @@ body.has-app-bg[data-app-theme="light"] #unlock-path {
 
 .workspace-nav-btn.active {
   border: none;
-  background: #333948;
+  background: rgba(59, 130, 246, 0.2);
   color: #f1f5ff;
 }
 
