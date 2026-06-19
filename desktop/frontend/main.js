@@ -2374,6 +2374,7 @@ const settingsAiStatus = document.getElementById("settings-ai-status");
 const settingsAiAdd = document.getElementById("settings-ai-add");
 const settingsAiProfiles = document.getElementById("settings-ai-profiles");
 const settingsAiEmpty = document.getElementById("settings-ai-empty");
+const settingsAiSystemPrompt = document.getElementById("settings-ai-system-prompt");
 const aiConfigOverlay = document.getElementById("ai-config-overlay");
 const aiConfigTitle = document.getElementById("ai-config-title");
 const settingsAiName = document.getElementById("settings-ai-name");
@@ -4199,7 +4200,7 @@ async function continueAiAfterCommand(command, output) {
   await runAiTurn([
     {
       role: "system",
-      content: [
+      content: withGlobalAiPrompt([
         "你是 ZeroTerm 的 AI 助手。用户刚批准执行了一条命令。",
         "你的任务是根据这次命令输出继续推进用户目标，但不要为了推进而反复检查。",
         "先判断当前输出是否已经回答了用户的问题，或者已经暴露了明确异常。",
@@ -4210,7 +4211,7 @@ async function continueAiAfterCommand(command, output) {
         "引用终端输出、报错或日志时必须使用 ```terminal 代码块；只有真正需要用户批准执行的命令才使用 ```bash。",
         "不要重复建议已经执行过或等价的检查命令。",
         "不要假装执行未执行的命令。",
-      ].join("\n"),
+      ].join("\n")),
     },
     ...redactAiMessagesForRequest(aiMessages.slice(-6), { includeTerminalContent: includeCommandOutput }),
     { role: "user", content: userGoal },
@@ -4259,7 +4260,7 @@ async function continueAiAfterCommands(results, { totalCommands = 0 } = {}) {
   await runAiTurn([
     {
       role: "system",
-      content: [
+      content: withGlobalAiPrompt([
         "你是 ZeroTerm 的 AI 助手。用户刚在同一条 AI 回复里批准执行了多条命令。",
         "你的任务是综合这些已执行命令的结果继续推进用户目标，但不要假装未执行的命令已经执行。",
         "如果证据已经足够，必须停止继续排查，直接给出：结论、依据、影响、建议下一步。",
@@ -4271,7 +4272,7 @@ async function continueAiAfterCommands(results, { totalCommands = 0 } = {}) {
         includeCommandOutput
           ? "用户允许附带这些已执行命令的输出，你可以基于下面的输出继续分析。"
           : "用户当前选择了“不附带终端内容”，因此下面只提供已执行命令名称；不要基于终端输出做判断，也不要声称看到了命令输出。",
-      ].join("\n"),
+      ].join("\n")),
     },
     ...redactAiMessagesForRequest(aiMessages.slice(-6), { includeTerminalContent: includeCommandOutput }),
     { role: "user", content: userGoal },
@@ -4782,6 +4783,21 @@ async function ensureAiStreamListener() {
   });
 }
 
+const SETTINGS_KEY_AI_SYSTEM_PROMPT = "zeroterm.settings.ai.system_prompt";
+
+function getAiGlobalSystemPrompt() {
+  try {
+    return (localStorage.getItem(SETTINGS_KEY_AI_SYSTEM_PROMPT) || "").trim();
+  } catch (e) {
+    return "";
+  }
+}
+
+function withGlobalAiPrompt(system) {
+  const extra = getAiGlobalSystemPrompt();
+  return extra ? `${system}\n\n用户的自定义全局要求（请优先遵守）：\n${extra}` : system;
+}
+
 async function loadAiConfig() {
   try {
     const store = await invoke("get_ai_config");
@@ -4868,7 +4884,7 @@ async function sendAiMessage(text) {
   appendAiMessage("user", text);
   const system = "你是 ZeroTerm 的 AI 助手。用户是普通用户，不一定懂命令。请先用人话解释和规划，不要假装已经执行命令。需要用户执行命令时，一次只建议下一条最有用的命令；每个 bash/shell fenced code block 只能包含一条命令。引用终端输出、报错或日志时必须使用 ```terminal 代码块，不要使用 bash。";
   const terminalContext = shouldAttachTerminalContext(text) ? buildAiTerminalContext() : "";
-  const messages = [{ role: "system", content: system }];
+  const messages = [{ role: "system", content: withGlobalAiPrompt(system) }];
   if (terminalContext) messages.push({ role: "system", content: terminalContext });
   messages.push(...redactAiMessagesForRequest(aiMessages.slice(-10), { includeTerminalContent: aiContextMode !== "off" }));
   try {
@@ -9694,6 +9710,14 @@ settingsAiSave?.addEventListener("click", async () => {
   });
 });
 settingsAiAdd?.addEventListener("click", () => startNewAiProfile());
+if (settingsAiSystemPrompt) {
+  settingsAiSystemPrompt.value = getAiGlobalSystemPrompt();
+  settingsAiSystemPrompt.addEventListener("input", () => {
+    try {
+      localStorage.setItem(SETTINGS_KEY_AI_SYSTEM_PROMPT, settingsAiSystemPrompt.value);
+    } catch (e) {}
+  });
+}
 settingsAiCancel?.addEventListener("click", () => cancelAiEditor());
 aiConfigOverlay?.addEventListener("click", (ev) => {
   if (ev.target === aiConfigOverlay) cancelAiEditor();

@@ -13,7 +13,7 @@ members = [
 version = "0.0.1"
 edition = "2021"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/your-org/zeroterm"
+repository = "https://github.com/NotPeppa/ZeroTerm"
 
 [workspace.dependencies]
 # Async runtime

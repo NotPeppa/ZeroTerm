@@ -636,22 +636,6 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
                             </p>
                             </section>
                             <section class="settings-section">
-                              <h4 id="settings-proxy-label">Network Proxy</h4>
-                              <p id="settings-proxy-hint" class="muted tiny">Route built-in app traffic through one HTTP proxy URL.</p>
-                              <div class="settings-row settings-row-dir settings-proxy-row">
-                                <div>
-                                  <div id="settings-proxy-url-label" class="settings-item-title">Proxy URL</div>
-                                  <p id="settings-proxy-note" class="muted tiny">Existing SSH/SFTP sessions need reconnecting to switch over.</p>
-                                </div>
-                                <div class="settings-dir-inputs settings-proxy-inputs">
-                                  <input id="settings-proxy-url" type="text" placeholder="http://127.0.0.1:7890" autocomplete="off" spellcheck="false" />
-                                  <button id="settings-proxy-save" type="button" class="primary">Save</button>
-                                  <button id="settings-proxy-clear" type="button" hidden>Clear</button>
-                                </div>
-                              </div>
-                              <p id="settings-proxy-status" class="muted tiny"></p>
-                            </section>
-                            <section class="settings-section">
                               <h4 id="settings-bg-label">Background Image</h4>
                               <p id="settings-bg-hint" class="muted tiny">Use a custom image as the app background.</p>
                               <div class="settings-bg-row">
@@ -686,6 +670,22 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
                                 </div>
                               </div>
                               <p id="settings-winsize-status" class="muted tiny"></p>
+                            </section>
+                            <section class="settings-section">
+                              <h4 id="settings-proxy-label">Network Proxy</h4>
+                              <p id="settings-proxy-hint" class="muted tiny">Route built-in app traffic through one HTTP proxy URL.</p>
+                              <div class="settings-row settings-row-dir settings-proxy-row">
+                                <div>
+                                  <div id="settings-proxy-url-label" class="settings-item-title">Proxy URL</div>
+                                  <p id="settings-proxy-note" class="muted tiny">Existing SSH/SFTP sessions need reconnecting to switch over.</p>
+                                </div>
+                                <div class="settings-dir-inputs settings-proxy-inputs">
+                                  <input id="settings-proxy-url" type="text" placeholder="http://127.0.0.1:7890" autocomplete="off" spellcheck="false" />
+                                  <button id="settings-proxy-save" type="button" class="primary">Save</button>
+                                  <button id="settings-proxy-clear" type="button" hidden>Clear</button>
+                                </div>
+                              </div>
+                              <p id="settings-proxy-status" class="muted tiny"></p>
                             </section>
                             </div>
 
@@ -744,6 +744,18 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
 
                               <div id="settings-ai-profiles" class="settings-ai-profiles"></div>
                               <p id="settings-ai-empty" class="muted tiny settings-ai-empty" hidden>还没有任何 AI 配置，点击「新建配置」添加一个。</p>
+                            </section>
+
+                            <section class="settings-section ai-settings-card">
+                              <div class="ai-settings-head">
+                                <div>
+                                  <h4 id="settings-ai-system-prompt-title">全局提示词</h4>
+                                  <p id="settings-ai-system-prompt-desc" class="muted tiny">这里填写的内容会追加到 AI 的系统提示词中，对所有 AI 配置生效；修改后自动保存。</p>
+                                </div>
+                              </div>
+                              <label class="settings-field settings-grid-span-2">
+                                <textarea id="settings-ai-system-prompt" rows="5" placeholder="例如：请始终使用简体中文回答；优先考虑命令的安全性。"></textarea>
+                              </label>
                             </section>
                           </section>
 

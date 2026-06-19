@@ -7415,6 +7415,29 @@ body.has-app-bg[data-app-theme="light"] .settings-ai-profile-actions button.dang
   color: rgba(165, 181, 214, 0.5);
 }
 
+#settings-ai-system-prompt {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  border: 1px solid var(--stroke);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--text);
+  padding: 10px 12px;
+  font: inherit;
+  line-height: 1.55;
+}
+
+#settings-ai-system-prompt:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 12px rgba(104, 168, 255, 0.25);
+}
+
+#settings-ai-system-prompt::placeholder {
+  color: var(--muted);
+}
+
 .settings-actions-row {
   margin-top: 16px;
   display: flex;
