@@ -3626,10 +3626,11 @@ pub async fn docker_exec(
     let host_id = host_id.unwrap_or_default();
     if host_id.is_empty() || host_id.starts_with("local-") {
         #[cfg(target_os = "windows")]
-        let output = Command::new("docker")
+        let output = tokio::process::Command::new("docker")
             .creation_flags(CREATE_NO_WINDOW)
             .args(&args)
             .output()
+            .await
             .map_err(|e| format!("docker not available: {e}"))?;
         #[cfg(not(target_os = "windows"))]
         let output = Command::new("docker")
