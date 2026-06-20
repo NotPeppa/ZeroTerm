@@ -4,7 +4,7 @@
 
 ZeroTerm 是一款面向开发者和运维的严肃终端工具。SSH/SFTP 协议栈、加密 vault、同步引擎全部用 Rust 写一遍，桌面端用 Tauri 2 + xterm.js 承载，移动端通过 uniffi 复用同一套核心。
 
-当前版本：**v0.1.5**（桌面端 macOS / Windows 已可用；移动端 FFI 绑定就绪，App 待实现）。
+当前版本：**v0.1.6**（桌面端 macOS / Windows 已可用；移动端 FFI 绑定就绪，App 待实现）。
 
 ---
 
