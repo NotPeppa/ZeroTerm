@@ -170,6 +170,7 @@ pub fn run() {
             commands::disconnect_session,
             commands::session_info,
             commands::collect_system_metrics,
+            commands::docker_exec,
             commands::respond_host_key,
             commands::local_home_path,
             commands::local_list,

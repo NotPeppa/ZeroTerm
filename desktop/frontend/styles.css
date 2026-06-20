@@ -12,6 +12,13 @@
   --ok: #48dca5;
   --warn: #f6c461;
   --danger: #ff6b7e;
+  --danger-hover: #ff5168;
+  --ok-hover: #34c794;
+  --btn-bg: #2a3555;
+  --btn-bg-2: #24304d;
+  --btn-bg-hover: #32416a;
+  --btn-bg-hover-2: #2a385e;
+  --btn-border-hover: #4f6397;
   --shadow: 0 20px 60px rgba(3, 8, 20, 0.45);
   --scrollbar-thumb: rgba(147, 197, 253, 0.56);
   --scrollbar-thumb-hover: rgba(191, 219, 254, 0.82);
@@ -35,6 +42,13 @@ body[data-app-theme="light"] {
   --ok: #10b981;
   --warn: #f59e0b;
   --danger: #ef4444;
+  --danger-hover: #dc2626;
+  --ok-hover: #059669;
+  --btn-bg: #ffffff;
+  --btn-bg-2: #f1f5f9;
+  --btn-bg-hover: #f8fafc;
+  --btn-bg-hover-2: #eef2f7;
+  --btn-border-hover: #cbd5e1;
   --shadow: 0 15px 45px rgba(15, 23, 42, 0.08);
   --scrollbar-thumb: rgba(37, 99, 235, 0.34);
   --scrollbar-thumb-hover: rgba(37, 99, 235, 0.52);
@@ -345,32 +359,70 @@ button {
 
 button {
   border: 1px solid var(--stroke);
-  background: linear-gradient(180deg, #2a3555 0%, #24304d 100%);
+  background: linear-gradient(180deg, var(--btn-bg) 0%, var(--btn-bg-2) 100%);
+  color: var(--text);
   border-radius: 10px;
   padding: 8px 12px;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+  transition: border-color 0.15s ease, transform 0.12s ease;
 }
 
 button:hover {
-  border-color: #4f6397;
-  background: linear-gradient(180deg, #32416a 0%, #2a385e 100%);
+  border-color: var(--btn-border-hover);
+  background: linear-gradient(180deg, var(--btn-bg-hover) 0%, var(--btn-bg-hover-2) 100%);
 }
 
 button:active {
   transform: translateY(1px);
 }
 
+button:disabled,
+button[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+button:disabled:hover,
+button[disabled]:hover {
+  border-color: var(--stroke);
+  background: linear-gradient(180deg, var(--btn-bg) 0%, var(--btn-bg-2) 100%);
+}
+
 button.primary {
-  border-color: #5fa2ff;
-  background: linear-gradient(180deg, #72b2ff 0%, #4f8cff 100%);
-  color: #091325;
+  border-color: var(--accent);
+  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-2) 100%);
+  color: #fff;
   font-weight: 700;
 }
 
+button.primary:hover {
+  border-color: var(--accent);
+  background: linear-gradient(180deg, var(--accent-2) 0%, var(--accent-2) 100%);
+}
+
+button.success {
+  border-color: var(--ok);
+  background: linear-gradient(180deg, var(--ok) 0%, var(--ok-hover) 100%);
+  color: #06251a;
+  font-weight: 650;
+}
+
+button.success:hover {
+  border-color: var(--ok-hover);
+  background: linear-gradient(180deg, var(--ok-hover) 0%, var(--ok-hover) 100%);
+}
+
 button.danger {
-  border-color: #8f4756;
-  background: linear-gradient(180deg, #5e2c36 0%, #4f2530 100%);
+  border-color: var(--danger);
+  background: linear-gradient(180deg, var(--danger) 0%, var(--danger-hover) 100%);
+  color: #fff;
+  font-weight: 650;
+}
+
+button.danger:hover {
+  border-color: var(--danger-hover);
+  background: linear-gradient(180deg, var(--danger-hover) 0%, var(--danger-hover) 100%);
 }
 
 input[type="text"],
@@ -2161,7 +2213,7 @@ body.has-app-bg[data-app-theme="light"] .terminal-snippet-group-chevron {
 }
 
 .terminal-snippet-actions button.danger {
-  color: #fca5a5;
+  color: var(--danger);
 }
 
 /* Light Theme Overrides for Snippet Cards */
@@ -4726,7 +4778,11 @@ body[data-app-theme="light"] .pane-ai-toggle.active {
 }
 
 .hosts-context-menu button.danger {
-  color: #f27272;
+  color: var(--danger);
+}
+
+.hosts-context-menu button.success {
+  color: var(--ok);
 }
 
 #groups-context-menu {
@@ -5813,6 +5869,288 @@ body.has-app-bg .pane-body .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover
   display: none;
 }
 
+.docker-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scrollbar-width: none;
+}
+
+.docker-body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.docker-card {
+  border: 1px solid var(--stroke);
+  border-radius: 12px;
+  background: var(--panel-2);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.docker-card-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  width: 100%;
+}
+
+.docker-card-toggle:hover,
+.docker-card-toggle:active {
+  background: none;
+  border: 0;
+  transform: none;
+}
+
+.docker-state {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--muted);
+}
+
+.docker-state-ok {
+  background: var(--ok);
+  box-shadow: 0 0 6px rgba(72, 220, 165, 0.6);
+}
+
+.docker-state-warn {
+  background: var(--warn);
+}
+
+.docker-state-muted {
+  background: rgba(156, 170, 208, 0.5);
+}
+
+.docker-name {
+  font-weight: 680;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.docker-caret {
+  color: var(--muted);
+  transition: transform 0.15s ease;
+  flex: 0 0 auto;
+}
+
+.docker-caret.open {
+  transform: rotate(90deg);
+}
+
+.docker-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.docker-image {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.docker-ports {
+  font-size: 11px;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.docker-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.docker-btn {
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  background: rgba(104, 168, 255, 0.08);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 640;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.docker-btn:hover {
+  border-color: var(--accent);
+}
+
+.docker-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.docker-btn-danger {
+  color: var(--danger);
+}
+
+.docker-btn-danger:hover {
+  border-color: var(--danger);
+  background: rgba(255, 107, 126, 0.12);
+}
+
+.docker-btn-success {
+  color: var(--ok);
+}
+
+.docker-btn-success:hover {
+  border-color: var(--ok);
+  background: rgba(72, 220, 165, 0.12);
+}
+
+.docker-detail {
+  border-top: 1px solid var(--stroke);
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.docker-detail-row {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  align-items: baseline;
+}
+
+.docker-detail-row > span {
+  color: var(--muted);
+  flex: 0 0 56px;
+}
+
+.docker-detail-row > b {
+  color: var(--text);
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.docker-detail-mounts > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.docker-detail-mounts code {
+  font-size: 10px;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.docker-logs-dialog {
+  width: min(760px, calc(100vw - 32px));
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.docker-logs-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.docker-logs-close {
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
+.docker-logs-body {
+  flex: 1;
+  overflow: auto;
+  background: var(--bg-2);
+  border: 1px solid var(--stroke);
+  border-radius: 10px;
+  padding: 12px;
+  margin: 0;
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.update-dialog {
+  width: min(520px, calc(100vw - 32px));
+}
+
+.update-dialog-notes {
+  max-height: 320px;
+  overflow: auto;
+  margin: 12px 0 4px;
+  padding: 12px 14px;
+  background: var(--bg-2);
+  border: 1px solid var(--stroke);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.update-dialog-notes p,
+.update-dialog-notes ul,
+.update-dialog-notes ol {
+  margin: 0 0 8px;
+}
+
+.update-dialog-notes ul,
+.update-dialog-notes ol {
+  padding-left: 20px;
+}
+
+.update-dialog-notes h2,
+.update-dialog-notes h3,
+.update-dialog-notes h4,
+.update-dialog-notes h5 {
+  margin: 10px 0 6px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.update-dialog-notes code {
+  background: rgba(127, 127, 127, 0.16);
+  padding: 1px 5px;
+  border-radius: 5px;
+  font-size: 12px;
+}
+
+.update-dialog-notes a {
+  color: var(--accent);
+}
+
+.update-dialog-notes > *:last-child {
+  margin-bottom: 0;
+}
+
 .metrics-note,
 .metrics-card {
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -6513,7 +6851,7 @@ body.has-app-bg[data-app-theme="light"] .terminal-sftp-body .sftp-status {
 }
 
 .files-context-menu button.danger {
-  color: #ff8ea1;
+  color: var(--danger);
 }
 
 .files-context-menu button.danger:hover:not(:disabled) {
@@ -9581,7 +9919,7 @@ fieldset.advanced legend {
   min-width: 90px;
   cursor: pointer;
   outline: none;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1), color 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   transform: none;
 }
 
@@ -9618,7 +9956,6 @@ fieldset.advanced legend {
   background: linear-gradient(135deg, #60a5fa 0%, #2563eb 100%) !important;
   border-color: rgba(255, 255, 255, 0.2) !important;
   box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.25) !important;
-  transform: translateY(-1px);
 }
 
 .dialog-actions button.primary:active {
@@ -10384,6 +10721,21 @@ body[data-app-theme="light"] .settings-sync-actions button.danger:hover {
   color: #ffffff !important;
 }
 
+body[data-app-theme="light"] button.success:not(.window-control-btn) {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+  border: 1px solid rgba(5, 150, 105, 0.45) !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+body[data-app-theme="light"] button.success:not(.window-control-btn):hover {
+  background: #059669 !important;
+  border-color: #047857 !important;
+  box-shadow: 0 6px 16px rgba(5, 150, 105, 0.35) !important;
+  color: #ffffff !important;
+}
+
 body[data-app-theme="light"] .settings-ai-profile-actions button.danger,
 body.has-app-bg[data-app-theme="light"] .settings-ai-profile-actions button.danger {
   background: transparent !important;
@@ -10576,26 +10928,26 @@ body[data-app-theme="light"] .unlock-card {
 
 body[data-app-theme="light"] .tab-item {
   background: transparent !important;
-  border-color: rgba(100, 116, 139, 0.22) !important;
+  border-color: rgba(71, 85, 105, 0.75) !important;
   color: rgba(15, 23, 42, 0.72) !important;
   box-shadow: none !important;
 }
 
 body[data-app-theme="light"] .tab-item:hover {
-  background: rgba(255, 255, 255, 0.54) !important;
-  border-color: rgba(100, 116, 139, 0.34) !important;
+  background: transparent !important;
+  border-color: rgba(71, 85, 105, 0.95) !important;
   color: #0f172a !important;
 }
 
 body.has-app-bg[data-app-theme="light"] .tab-item {
   background: transparent !important;
-  border-color: rgba(100, 116, 139, 0.2) !important;
+  border-color: rgba(71, 85, 105, 0.7) !important;
   box-shadow: none !important;
 }
 
 body.has-app-bg[data-app-theme="light"] .tab-item:hover {
-  background: rgba(255, 255, 255, 0.42) !important;
-  border-color: rgba(100, 116, 139, 0.32) !important;
+  background: transparent !important;
+  border-color: rgba(71, 85, 105, 0.9) !important;
 }
 
 body.has-app-bg[data-app-theme="light"] .unlock-card {
@@ -11242,9 +11594,8 @@ body[data-app-theme="light"] #theme-mode-menu button.active {
 body[data-app-theme="light"] .files-context-menu button:hover:not(:disabled),
 body[data-app-theme="light"] .hosts-context-menu button:hover:not(:disabled),
 body[data-app-theme="light"] #groups-context-menu button:hover:not(:disabled) {
-  background: rgba(37, 99, 235, 0.08) !important;
-  border-color: rgba(37, 99, 235, 0.15) !important;
-  color: var(--accent) !important;
+  background: rgba(15, 23, 42, 0.06) !important;
+  border-color: rgba(15, 23, 42, 0.1) !important;
 }
 
 body[data-app-theme="light"] .files-context-menu button:disabled,
@@ -11273,6 +11624,7 @@ body[data-app-theme="light"] #groups-context-menu button.danger {
   background: transparent !important;
   border-color: transparent !important;
   box-shadow: none !important;
+  text-shadow: none !important;
 }
 
 body[data-app-theme="light"] .files-context-menu button.danger:hover:not(:disabled),
@@ -11281,6 +11633,28 @@ body[data-app-theme="light"] #groups-context-menu button.danger:hover:not(:disab
   background: rgba(239, 68, 68, 0.08) !important;
   border-color: rgba(239, 68, 68, 0.15) !important;
   color: var(--danger) !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+
+body[data-app-theme="light"] .files-context-menu button.success,
+body[data-app-theme="light"] .hosts-context-menu button.success,
+body[data-app-theme="light"] #groups-context-menu button.success {
+  color: var(--ok) !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+
+body[data-app-theme="light"] .files-context-menu button.success:hover:not(:disabled),
+body[data-app-theme="light"] .hosts-context-menu button.success:hover:not(:disabled),
+body[data-app-theme="light"] #groups-context-menu button.success:hover:not(:disabled) {
+  background: rgba(16, 185, 129, 0.08) !important;
+  border-color: rgba(16, 185, 129, 0.15) !important;
+  color: var(--ok) !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
 }
 
 body[data-app-theme="light"] .files-context-menu .menu-separator,

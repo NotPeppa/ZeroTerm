@@ -3594,6 +3594,72 @@ pub async fn collect_system_metrics(
     parse_metrics_output(&String::from_utf8_lossy(&stdout))
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DockerExecResult {
+    pub code: i32,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+fn shell_quote(arg: &str) -> String {
+    let mut out = String::with_capacity(arg.len() + 2);
+    out.push('\'');
+    for ch in arg.chars() {
+        if ch == '\'' {
+            out.push_str("'\\''");
+        } else {
+            out.push(ch);
+        }
+    }
+    out.push('\'');
+    out
+}
+
+#[tauri::command]
+pub async fn docker_exec(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+    host_id: Option<String>,
+    args: Vec<String>,
+) -> Result<DockerExecResult, String> {
+    let host_id = host_id.unwrap_or_default();
+    if host_id.is_empty() || host_id.starts_with("local-") {
+        #[cfg(target_os = "windows")]
+        let output = Command::new("docker")
+            .creation_flags(CREATE_NO_WINDOW)
+            .args(&args)
+            .output()
+            .map_err(|e| format!("docker not available: {e}"))?;
+        #[cfg(not(target_os = "windows"))]
+        let output = Command::new("docker")
+            .args(&args)
+            .output()
+            .await
+            .map_err(|e| format!("docker not available: {e}"))?;
+        return Ok(DockerExecResult {
+            code: output.status.code().unwrap_or(-1),
+            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+        });
+    }
+    let (_host, cfg, jump_cfg) = build_connect_chain_for_host(&state, &app_handle, &host_id)?;
+    let (jump_session, mut session) = connect_host_sessions(cfg, jump_cfg).await?;
+    let mut cmd = String::from("docker");
+    for a in &args {
+        cmd.push(' ');
+        cmd.push_str(&shell_quote(a));
+    }
+    let (code, stdout, stderr) = session.exec(&cmd).await.map_err(|e| e.to_string())?;
+    drop(session);
+    drop(jump_session);
+    Ok(DockerExecResult {
+        code: code as i32,
+        stdout: String::from_utf8_lossy(&stdout).to_string(),
+        stderr: String::from_utf8_lossy(&stderr).to_string(),
+    })
+}
+
 async fn start_host_forwards(
     session: &mut Session,
     specs: &[zeroterm_app::ForwardSpec],

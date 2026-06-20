@@ -1006,13 +1006,18 @@ const I18N = {
     "settings.about.author": "Author",
     "settings.about.repo": "GitHub Repository",
     "settings.about.tagline": "Next-gen, blazing-fast, modern cross-platform SSH terminal.",
-    "settings.update.install": "Install & Restart",
+    "settings.update.install": "Update",
     "settings.update.title": "System Update",
     "settings.update.checking": "Checking for updates or already up to date...",
     "settings.update.signature_invalid": "Update unavailable: the release server's signature isn't ready yet. Try again later.",
     "settings.update.latest": "You are on the latest version ({version}).",
     "settings.update.available": "Update available: {current} -> {latest}",
     "settings.update.failed": "Update failed: {error}",
+    "settings.update.dialog.title": "What's New",
+    "settings.update.dialog.version": "New version: {version}",
+    "settings.update.dialog.cancel": "Cancel",
+    "settings.update.dialog.confirm": "Update",
+    "settings.update.dialog.no_notes": "No release notes are available for this update.",
     "settings.terminal_theme.title": "Theme",
     "settings.terminal_theme.subtitle": "Preview and tune terminal colors live",
     "settings.terminal_theme.light_title": "Light Terminal Themes",
@@ -1805,13 +1810,18 @@ const I18N = {
     "settings.about.author": "作者",
     "settings.about.repo": "GitHub 仓库",
     "settings.about.tagline": "下一代极速、现代的跨平台 SSH 终端工具",
-    "settings.update.install": "安装并重启",
+    "settings.update.install": "更新",
     "settings.update.title": "系统升级",
     "settings.update.checking": "正在检查更新或已经是最新版本...",
     "settings.update.signature_invalid": "暂时无法更新：发布服务器还没准备好签名，请稍后再试。",
-    "settings.update.latest": "当前已是最新版本（{version}）。",
+    "settings.update.latest": "当前已是最新版本（{version}）",
     "settings.update.available": "发现新版本：{current} -> {latest}",
     "settings.update.failed": "更新失败：{error}",
+    "settings.update.dialog.title": "更新内容",
+    "settings.update.dialog.version": "新版本：{version}",
+    "settings.update.dialog.cancel": "取消",
+    "settings.update.dialog.confirm": "更新",
+    "settings.update.dialog.no_notes": "本次更新暂无更新说明。",
     "settings.terminal_theme.title": "主题",
     "settings.terminal_theme.subtitle": "实时预览并调整终端配色",
     "settings.terminal_theme.light_title": "亮色终端主题",
@@ -2273,6 +2283,10 @@ const terminalSftpPanel = document.getElementById("terminal-sftp-panel");
 const terminalSidebarSftpToggle = document.getElementById("terminal-sidebar-sftp-toggle");
 const terminalThemePanel = document.getElementById("terminal-theme-panel");
 const terminalSidebarThemeToggle = document.getElementById("terminal-sidebar-theme-toggle");
+const terminalDockerPanel = document.getElementById("terminal-docker-panel");
+const terminalSidebarDockerToggle = document.getElementById("terminal-sidebar-docker-toggle");
+const terminalDockerBody = document.getElementById("terminal-docker-body");
+const terminalDockerRefresh = document.getElementById("terminal-docker-refresh");
 const terminalSftpRefresh = document.getElementById("terminal-sftp-refresh");
 const terminalSftpTitle = document.getElementById("terminal-sftp-title");
 const terminalSftpSubtitle = document.getElementById("terminal-sftp-subtitle");
@@ -2899,6 +2913,244 @@ function stopMetricsAutoRefresh() {
   metricsRefreshToken += 1;
 }
 
+// ---------- Docker panel ----------
+let dockerRefreshToken = 0;
+const dockerExpanded = new Set();
+
+async function dockerExec(args) {
+  const pane = getActivePane();
+  return invoke("docker_exec", { hostId: pane?.host?.id || null, args });
+}
+
+function parseDockerPsLines(stdout) {
+  const rows = [];
+  String(stdout || "").split("\n").forEach((line) => {
+    const s = line.trim();
+    if (!s) return;
+    try {
+      const o = JSON.parse(s);
+      rows.push({
+        id: o.ID || o.Id || "",
+        name: o.Names || o.Name || "",
+        image: o.Image || "",
+        state: String(o.State || "").toLowerCase(),
+        status: o.Status || "",
+        ports: o.Ports || "",
+      });
+    } catch (e) {}
+  });
+  return rows;
+}
+
+function dockerStateTone(state) {
+  if (state === "running") return "ok";
+  if (state === "paused" || state === "restarting" || state === "created") return "warn";
+  return "muted";
+}
+
+async function renderDockerPanel(options = {}) {
+  if (!terminalDockerBody) return;
+  const silent = Boolean(options.silent);
+  const token = ++dockerRefreshToken;
+  const pane = getActivePane();
+  if (!pane) {
+    terminalDockerBody.innerHTML = `<div class="terminal-side-empty"><strong>没有可用的终端会话</strong><p>请先连接或聚焦一个终端标签页。</p></div>`;
+    return;
+  }
+  if (!silent || !terminalDockerBody.querySelector(".docker-card")) {
+    terminalDockerBody.innerHTML = `<div class="terminal-side-empty"><strong>正在读取容器…</strong><p>${escapeMetricText(pane.host?.name || pane.host?.host || "本地")}</p></div>`;
+  }
+  try {
+    const res = await dockerExec(["ps", "-a", "--no-trunc", "--format", "{{json .}}"]);
+    if (token !== dockerRefreshToken || terminalActiveSidePanel !== "docker") return;
+    if (res.code !== 0) {
+      const msg = String(res.stderr || res.stdout || "").trim();
+      const friendly = /not found|command not found|not recognized|docker daemon|Cannot connect|permission denied/i.test(msg)
+        ? "未检测到 Docker，或守护进程未运行 / 权限不足。" : (msg || "执行失败。");
+      terminalDockerBody.innerHTML = `<div class="terminal-side-empty"><strong>无法获取容器列表</strong><p>${escapeMetricText(friendly)}</p></div>`;
+      return;
+    }
+    renderDockerList(parseDockerPsLines(res.stdout));
+  } catch (e) {
+    if (token !== dockerRefreshToken || terminalActiveSidePanel !== "docker") return;
+    terminalDockerBody.innerHTML = `<div class="terminal-side-empty"><strong>无法获取容器列表</strong><p>${escapeMetricText(String(e))}</p></div>`;
+  }
+}
+
+function renderDockerList(rows) {
+  if (!terminalDockerBody) return;
+  if (!rows.length) {
+    terminalDockerBody.innerHTML = `<div class="terminal-side-empty"><strong>没有容器</strong><p>该主机上未发现任何 Docker 容器。</p></div>`;
+    return;
+  }
+  terminalDockerBody.innerHTML = rows.map((c) => {
+    const tone = dockerStateTone(c.state);
+    const running = c.state === "running";
+    const expanded = dockerExpanded.has(c.id);
+    const idAttr = escapeMetricText(c.id);
+    return `
+    <section class="docker-card" data-id="${idAttr}">
+      <button type="button" class="docker-card-toggle" data-act="detail" data-id="${idAttr}">
+        <span class="docker-state docker-state-${tone}"></span>
+        <span class="docker-name">${escapeMetricText(c.name || c.id.slice(0, 12))}</span>
+        <span class="docker-caret ${expanded ? "open" : ""}">›</span>
+      </button>
+      <div class="docker-meta">
+        <span class="docker-image" title="${escapeMetricText(c.image)}">${escapeMetricText(c.image)}</span>
+        <span class="docker-status">${escapeMetricText(c.status)}</span>
+      </div>
+      ${c.ports ? `<div class="docker-ports">${escapeMetricText(c.ports)}</div>` : ""}
+      <div class="docker-actions">
+        ${running
+          ? `<button type="button" class="docker-btn" data-act="stop" data-id="${idAttr}">停止</button><button type="button" class="docker-btn" data-act="restart" data-id="${idAttr}">重启</button><button type="button" class="docker-btn" data-act="terminal" data-id="${idAttr}">终端</button>`
+          : `<button type="button" class="docker-btn docker-btn-success" data-act="start" data-id="${idAttr}">启动</button>`}
+        <button type="button" class="docker-btn" data-act="logs" data-id="${idAttr}">日志</button>
+        <button type="button" class="docker-btn docker-btn-danger" data-act="remove" data-id="${idAttr}" data-name="${escapeMetricText(c.name)}">删除</button>
+      </div>
+      <div class="docker-detail" data-id="${idAttr}" ${expanded ? "" : "hidden"}></div>
+    </section>`;
+  }).join("");
+  dockerExpanded.forEach((id) => {
+    if (rows.some((r) => r.id === id)) loadDockerDetail(id);
+  });
+}
+
+function dockerDetailEl(id) {
+  return terminalDockerBody?.querySelector(`.docker-detail[data-id="${id}"]`) || null;
+}
+
+function toggleDockerDetail(id) {
+  const el = dockerDetailEl(id);
+  const caret = terminalDockerBody?.querySelector(`.docker-card-toggle[data-id="${id}"] .docker-caret`);
+  if (dockerExpanded.has(id)) {
+    dockerExpanded.delete(id);
+    if (el) { el.hidden = true; el.innerHTML = ""; }
+    caret?.classList.remove("open");
+  } else {
+    dockerExpanded.add(id);
+    if (el) { el.hidden = false; el.innerHTML = `<p class="muted tiny">加载中…</p>`; }
+    caret?.classList.add("open");
+    loadDockerDetail(id);
+  }
+}
+
+async function loadDockerDetail(id) {
+  const el = dockerDetailEl(id);
+  if (!el) return;
+  try {
+    const res = await dockerExec(["inspect", "--format", "{{json .}}", id]);
+    if (!dockerExpanded.has(id)) return;
+    if (res.code !== 0) {
+      el.innerHTML = `<p class="muted tiny">${escapeMetricText(String(res.stderr || res.stdout || "无法读取详情").trim())}</p>`;
+      return;
+    }
+    let info;
+    try { info = JSON.parse(res.stdout.trim()); } catch (e) { el.innerHTML = `<p class="muted tiny">详情解析失败</p>`; return; }
+    el.innerHTML = renderDockerDetail(info);
+  } catch (e) {
+    el.innerHTML = `<p class="muted tiny">${escapeMetricText(String(e))}</p>`;
+  }
+}
+
+function renderDockerDetail(info) {
+  const net = info?.NetworkSettings?.Networks || {};
+  const ips = [];
+  Object.entries(net).forEach(([name, n]) => { if (n?.IPAddress) ips.push(`${name}: ${n.IPAddress}`); });
+  const topIp = info?.NetworkSettings?.IPAddress;
+  if (topIp && !ips.length) ips.push(topIp);
+  const created = info?.Created ? String(info.Created).replace("T", " ").slice(0, 19) : "";
+  const cmd = Array.isArray(info?.Config?.Cmd) ? info.Config.Cmd.join(" ") : "";
+  const restart = info?.HostConfig?.RestartPolicy?.Name || "";
+  const mounts = Array.isArray(info?.Mounts)
+    ? info.Mounts.map((m) => `${m.Source || m.Name || ""} → ${m.Destination || ""}`)
+    : [];
+  const rows = [["IP", ips.length ? ips.join("、") : "—"]];
+  if (created) rows.push(["创建", created]);
+  if (info?.Config?.Image) rows.push(["镜像", info.Config.Image]);
+  if (restart) rows.push(["重启策略", restart]);
+  if (cmd) rows.push(["命令", cmd]);
+  const lines = rows.map(([k, v]) => `<div class="docker-detail-row"><span>${escapeMetricText(k)}</span><b>${escapeMetricText(v)}</b></div>`).join("");
+  const mountLines = mounts.length
+    ? `<div class="docker-detail-row docker-detail-mounts"><span>挂载</span><div>${mounts.map((m) => `<code>${escapeMetricText(m)}</code>`).join("")}</div></div>`
+    : "";
+  return lines + mountLines;
+}
+
+async function dockerAction(args, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const res = await dockerExec(args);
+    if (res.code !== 0) {
+      showToast(String(res.stderr || res.stdout || "操作失败。").trim(), "error", 4200);
+    }
+  } catch (e) {
+    showToast(String(e), "error", 4200);
+  } finally {
+    renderDockerPanel({ silent: true });
+  }
+}
+
+async function dockerRemove(id, name) {
+  if (!confirm(`确定删除容器 ${name || id}？此操作不可恢复。`)) return;
+  dockerExpanded.delete(id);
+  await dockerAction(["rm", "-f", id]);
+}
+
+async function dockerEnterTerminal(id) {
+  const pane = getActivePane();
+  if (!pane || pane.sessionId == null) { showToast("没有可用的终端会话", "error"); return; }
+  setTerminalSidePanel(null);
+  try {
+    await sendTextToPane(pane, `docker exec -it ${id} sh`, { submit: true });
+    pane.term?.focus?.();
+  } catch (e) {
+    showToast(String(e), "error");
+  }
+}
+
+async function dockerShowLogs(id, name) {
+  const overlay = ensureDockerLogsOverlay();
+  const titleEl = overlay.querySelector(".docker-logs-title");
+  const bodyEl = overlay.querySelector(".docker-logs-body");
+  titleEl.textContent = `日志 · ${name || id}`;
+  bodyEl.textContent = "加载中…";
+  overlay.hidden = false;
+  try {
+    const res = await dockerExec(["logs", "--tail", "300", id]);
+    const text = `${res.stdout || ""}${res.stderr ? `\n${res.stderr}` : ""}`.trim() || "(无日志输出)";
+    bodyEl.textContent = text;
+    bodyEl.scrollTop = bodyEl.scrollHeight;
+  } catch (e) {
+    bodyEl.textContent = String(e);
+  }
+}
+
+function ensureDockerLogsOverlay() {
+  let overlay = document.getElementById("docker-logs-overlay");
+  if (overlay) return overlay;
+  overlay = document.createElement("div");
+  overlay.id = "docker-logs-overlay";
+  overlay.className = "overlay";
+  overlay.hidden = true;
+  overlay.innerHTML = `
+    <section class="dialog docker-logs-dialog" role="dialog" aria-modal="true">
+      <header class="docker-logs-head">
+        <strong class="docker-logs-title">日志</strong>
+        <button type="button" class="docker-logs-close">关闭</button>
+      </header>
+      <pre class="docker-logs-body"></pre>
+    </section>`;
+  document.body.appendChild(overlay);
+  const close = () => { overlay.hidden = true; };
+  overlay.addEventListener("click", (ev) => { if (ev.target === overlay) close(); });
+  overlay.querySelector(".docker-logs-close").addEventListener("click", close);
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" && !overlay.hidden) { ev.stopPropagation(); close(); }
+  });
+  return overlay;
+}
+
+
 function setTerminalSidePanel(panel) {
   terminalActiveSidePanel = panel || null;
   const paneKey = getAiPaneKey();
@@ -2913,6 +3165,7 @@ function setTerminalSidePanel(panel) {
   if (terminalMetricsPanel) terminalMetricsPanel.hidden = terminalActiveSidePanel !== "metrics";
   if (terminalSftpPanel) terminalSftpPanel.hidden = terminalActiveSidePanel !== "sftp";
   if (terminalThemePanel) terminalThemePanel.hidden = terminalActiveSidePanel !== "theme";
+  if (terminalDockerPanel) terminalDockerPanel.hidden = terminalActiveSidePanel !== "docker";
   terminalSidebarAiToggle?.classList.toggle("active", terminalActiveSidePanel === "ai");
   if (terminalSidebarAiToggle) {
     const label = terminalActiveSidePanel === "ai" ? t("ai.panel.collapse") : t("ai.panel.expand");
@@ -2923,6 +3176,7 @@ function setTerminalSidePanel(panel) {
   terminalSidebarMetricsToggle?.classList.toggle("active", terminalActiveSidePanel === "metrics");
   terminalSidebarSftpToggle?.classList.toggle("active", terminalActiveSidePanel === "sftp");
   terminalSidebarThemeToggle?.classList.toggle("active", terminalActiveSidePanel === "theme");
+  terminalSidebarDockerToggle?.classList.toggle("active", terminalActiveSidePanel === "docker");
   if (terminalActiveSidePanel === "ai") refreshAiModelsOnFirstPanelOpen();
   if (terminalActiveSidePanel === "metrics") {
     renderMetricsPanel();
@@ -2944,6 +3198,7 @@ function setTerminalSidePanel(panel) {
     if (settingsTerminalLineHeight) settingsTerminalLineHeight.value = String(getTerminalLineHeight());
     syncTerminalFontPreview();
   }
+  if (terminalActiveSidePanel === "docker") renderDockerPanel();
 }
 
 function applyTerminalSidePanelForActivePane() {
@@ -4990,6 +5245,12 @@ const settingsAboutVersionLabel = document.getElementById("settings-about-versio
 const settingsAboutVersionValue = document.getElementById("settings-about-version-value");
 const settingsUpdateInstall = document.getElementById("settings-update-install");
 const settingsUpdateStatus = document.getElementById("settings-update-status");
+const updateDialogOverlay = document.getElementById("update-dialog-overlay");
+const updateDialogVersion = document.getElementById("update-dialog-version");
+const updateDialogNotes = document.getElementById("update-dialog-notes");
+const updateDialogCancel = document.getElementById("update-dialog-cancel");
+const updateDialogConfirm = document.getElementById("update-dialog-confirm");
+let latestUpdateInfo = null;
 const settingsTerminalTheme = document.getElementById("settings-terminal-theme");
 const settingsTerminalSubtabTheme = document.getElementById("settings-terminal-subtab-theme");
 const settingsTerminalSubtabFont = document.getElementById("settings-terminal-subtab-font");
@@ -8353,6 +8614,7 @@ async function loadAppVersion() {
 async function refreshUpdateStatus() {
   try {
     const info = await invoke("check_for_update");
+    latestUpdateInfo = info;
     if (settingsUpdateInstall) settingsUpdateInstall.disabled = !info.available;
     if (!info.available) {
       if (settingsUpdateStatus) {
@@ -8367,6 +8629,7 @@ async function refreshUpdateStatus() {
       });
     }
   } catch (e) {
+    latestUpdateInfo = null;
     if (settingsUpdateInstall) settingsUpdateInstall.disabled = true;
     if (settingsUpdateStatus) settingsUpdateStatus.textContent = t("settings.update.failed", { error: String(e) });
   }
@@ -8562,8 +8825,6 @@ function buildCustomSelect(selectEl) {
   if (isSftpHostSelectMenu) {
     wrap.classList.add("zt-select-wrap-sftp-host");
     menu.classList.add("zt-select-menu-sftp-host");
-    triggerInput.readOnly = true;
-    triggerInput.setAttribute("aria-readonly", "true");
   }
 
   const usesPortalMenu = () => Boolean(wrap.closest("#host-edit-overlay") || wrap.closest("#ai-config-overlay"));
@@ -8642,8 +8903,10 @@ function buildCustomSelect(selectEl) {
     trigger.setAttribute("aria-expanded", "true");
     customSelectState.openId = selectEl.id;
     if (isSftpHostSelectMenu) {
-      sftpHostBrowseGroupId = "";
-      triggerInput.value = customValue || selectedLabel;
+      if (!preserveQuery) {
+        sftpHostBrowseGroupId = "";
+        triggerInput.value = "";
+      }
     } else if (!preserveQuery) {
       triggerInput.value = "";
     }
@@ -8665,25 +8928,8 @@ function buildCustomSelect(selectEl) {
     });
 
   const renderSftpHostMenu = () => {
+    const query = (triggerInput.value || "").trim();
     const groupsById = new Map(hostGroups.map((group) => [group.id, group]));
-    const currentGroup = sftpHostBrowseGroupId ? groupsById.get(sftpHostBrowseGroupId) || null : null;
-    const currentGroupId = currentGroup?.id || "";
-    const groupChildren = hostGroups
-      .filter((group) => (group.parentId || "") === currentGroupId)
-      .sort((a, b) =>
-        Number(a.sortOrder || 0) - Number(b.sortOrder || 0) || compareSelectMenuLabels(a.name, b.name));
-    const hostRows = hostsCache
-      .filter((host) => {
-        const gid = String(host.groupId || "");
-        if (!currentGroup) return !gid || !groupsById.has(gid);
-        return gid === currentGroup.id;
-      })
-      .sort((a, b) =>
-        compareSelectMenuLabels(a.name, b.name)
-        || compareSelectMenuLabels(`${a.user}@${a.host}:${a.port}`, `${b.user}@${b.host}:${b.port}`));
-
-    empty.textContent = currentGroup ? t("sftp.host.group.empty") : t("select.search.empty");
-    optionsBox.innerHTML = "";
 
     const buildOption = ({ label, meta = "", active = false, kind = "host", onClick }) => {
       const item = document.createElement("button");
@@ -8718,6 +8964,69 @@ function buildCustomSelect(selectEl) {
       });
       optionsBox.appendChild(item);
     };
+
+    // When the user types, search hosts across all groups (flat fuzzy match)
+    // instead of the hierarchical group browser.
+    if (query) {
+      optionsBox.innerHTML = "";
+      empty.textContent = t("select.search.empty");
+      const localLabel = t("sftp.host.local");
+      if (fuzzyMatchSelectOption(localLabel, query)) {
+        buildOption({
+          label: localLabel,
+          active: selectEl.value === localHostValue,
+          kind: "host",
+          onClick: () => {
+            selectEl.value = localHostValue;
+            selectEl.dataset.customValue = "";
+            selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+            sync();
+            close();
+          },
+        });
+      }
+      const matches = hostsCache
+        .filter((host) => fuzzyMatchSelectOption(`${host.name} ${host.user}@${host.host}:${host.port}`, query))
+        .sort((a, b) =>
+          compareSelectMenuLabels(a.name, b.name)
+          || compareSelectMenuLabels(`${a.user}@${a.host}:${a.port}`, `${b.user}@${b.host}:${b.port}`));
+      for (const host of matches) {
+        buildOption({
+          label: host.name,
+          meta: `${host.user}@${host.host}:${host.port}`,
+          active: selectEl.value === host.id,
+          kind: "host",
+          onClick: () => {
+            selectEl.value = host.id;
+            selectEl.dataset.customValue = "";
+            selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+            sync();
+            close();
+          },
+        });
+      }
+      empty.hidden = optionsBox.childElementCount > 0;
+      return;
+    }
+
+    const currentGroup = sftpHostBrowseGroupId ? groupsById.get(sftpHostBrowseGroupId) || null : null;
+    const currentGroupId = currentGroup?.id || "";
+    const groupChildren = hostGroups
+      .filter((group) => (group.parentId || "") === currentGroupId)
+      .sort((a, b) =>
+        Number(a.sortOrder || 0) - Number(b.sortOrder || 0) || compareSelectMenuLabels(a.name, b.name));
+    const hostRows = hostsCache
+      .filter((host) => {
+        const gid = String(host.groupId || "");
+        if (!currentGroup) return !gid || !groupsById.has(gid);
+        return gid === currentGroup.id;
+      })
+      .sort((a, b) =>
+        compareSelectMenuLabels(a.name, b.name)
+        || compareSelectMenuLabels(`${a.user}@${a.host}:${a.port}`, `${b.user}@${b.host}:${b.port}`));
+
+    empty.textContent = currentGroup ? t("sftp.host.group.empty") : t("select.search.empty");
+    optionsBox.innerHTML = "";
 
     if (currentGroup) {
       buildOption({
@@ -8830,7 +9139,7 @@ function buildCustomSelect(selectEl) {
   });
   triggerInput.addEventListener("focus", () => {
     open();
-    if (!isSftpHostSelectMenu) triggerInput.select();
+    triggerInput.select();
     sync();
   });
   triggerInput.addEventListener("click", () => {
@@ -9181,6 +9490,9 @@ function applyI18n() {
   setText("settings-about-tagline", "settings.about.tagline");
   setText("settings-update-title", "settings.update.title");
   setText("settings-update-install", "settings.update.install");
+  setText("update-dialog-title", "settings.update.dialog.title");
+  setText("update-dialog-cancel", "settings.update.dialog.cancel");
+  setText("update-dialog-confirm", "settings.update.dialog.confirm");
   // Note: settings-update-status is owned by refreshUpdateStatus() which
   // re-applies the localized message whenever the About section opens; we
   // don't reset it here to avoid stomping on a real "Update available" line.
@@ -9763,8 +10075,48 @@ settingsDataClearVault?.addEventListener("click", async () => {
     }
   });
 });
-settingsUpdateInstall?.addEventListener("click", async () => {
-  await runSyncButtonAction(settingsUpdateInstall, t("settings.update.status.installing"), async () => {
+function openUpdateDialog() {
+  if (!updateDialogOverlay) return;
+  const info = latestUpdateInfo;
+  if (updateDialogVersion) {
+    updateDialogVersion.textContent = info?.version
+      ? t("settings.update.dialog.version", { version: info.version })
+      : "";
+  }
+  if (updateDialogNotes) {
+    const notes = String(info?.notes || "").trim();
+    updateDialogNotes.textContent = "";
+    if (notes) {
+      updateDialogNotes.appendChild(renderAiMarkdown(notes));
+    } else {
+      updateDialogNotes.textContent = t("settings.update.dialog.no_notes");
+    }
+  }
+  if (updateDialogConfirm) updateDialogConfirm.disabled = false;
+  updateDialogOverlay.hidden = false;
+}
+
+function closeUpdateDialog() {
+  if (updateDialogOverlay) updateDialogOverlay.hidden = true;
+}
+
+settingsUpdateInstall?.addEventListener("click", () => {
+  openUpdateDialog();
+});
+
+updateDialogCancel?.addEventListener("click", closeUpdateDialog);
+updateDialogOverlay?.addEventListener("click", (ev) => {
+  if (ev.target === updateDialogOverlay) closeUpdateDialog();
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && updateDialogOverlay && !updateDialogOverlay.hidden) {
+    ev.stopPropagation();
+    closeUpdateDialog();
+  }
+});
+
+updateDialogConfirm?.addEventListener("click", async () => {
+  await runSyncButtonAction(updateDialogConfirm, t("settings.update.status.installing"), async () => {
     try {
       if (settingsUpdateStatus) settingsUpdateStatus.textContent = t("settings.update.status.installing");
       await invoke("install_update");
@@ -9778,6 +10130,7 @@ settingsUpdateInstall?.addEventListener("click", async () => {
         : t("settings.update.failed", { error: raw });
       if (settingsUpdateStatus) settingsUpdateStatus.textContent = friendly;
       showToast(friendly, "error", 4200);
+      closeUpdateDialog();
     }
   });
 });
@@ -11038,6 +11391,7 @@ function renderTerminalWorkspace() {
   applyTerminalSidePanelForActivePane();
   renderTerminalCommandSnippets();
   if (terminalActiveSidePanel === "metrics") renderMetricsPanel();
+  if (terminalActiveSidePanel === "docker") renderDockerPanel();
   if (terminalActiveSidePanel === "sftp") connectTerminalSftpToActivePane().catch((e) => console.warn("terminal sftp sync failed", e));
 
   terminalWorkspace.innerHTML = "";
@@ -11129,6 +11483,27 @@ terminalSidebarMetricsToggle?.addEventListener("click", () => {
 });
 
 terminalMetricsRefresh?.addEventListener("click", renderMetricsPanel);
+
+terminalSidebarDockerToggle?.addEventListener("click", () => {
+  setTerminalSidePanel(terminalActiveSidePanel === "docker" ? null : "docker");
+});
+
+terminalDockerRefresh?.addEventListener("click", () => renderDockerPanel());
+
+terminalDockerBody?.addEventListener("click", (ev) => {
+  const btn = ev.target.closest("[data-act]");
+  if (!btn) return;
+  const id = btn.getAttribute("data-id");
+  const act = btn.getAttribute("data-act");
+  if (!id) return;
+  if (act === "detail") return toggleDockerDetail(id);
+  if (act === "start") return dockerAction(["start", id], btn);
+  if (act === "stop") return dockerAction(["stop", id], btn);
+  if (act === "restart") return dockerAction(["restart", id], btn);
+  if (act === "remove") return dockerRemove(id, btn.getAttribute("data-name") || id);
+  if (act === "logs") return dockerShowLogs(id, btn.getAttribute("data-name") || id);
+  if (act === "terminal") return dockerEnterTerminal(id);
+});
 
 terminalSidebarSftpToggle?.addEventListener("click", () => {
   setTerminalSidePanel(terminalActiveSidePanel === "sftp" ? null : "sftp");
