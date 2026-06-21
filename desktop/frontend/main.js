@@ -11204,6 +11204,7 @@ function createPane(host) {
     findBarEl: null,
     findInputEl: null,
     findCountEl: null,
+    savedStatus: null,
     dataUnlisten: null,
     latencyUnlisten: null,
     closedUnlisten: null,
@@ -12103,6 +12104,9 @@ function installIpLinkProvider(pane) {
 
 function showPaneFindBar(pane) {
   if (!pane?.findBarEl || !pane?.findInputEl) return;
+  if (pane.findBarEl.hidden && pane.statusEl) {
+    pane.savedStatus = pane.statusEl.textContent;
+  }
   pane.findBarEl.hidden = false;
   pane.findInputEl.value = pane.searchQuery || "";
   pane.findInputEl.focus();
@@ -12115,6 +12119,10 @@ function hidePaneFindBar(pane) {
   pane.searchMatches = [];
   pane.searchIndex = -1;
   if (pane.findCountEl) pane.findCountEl.textContent = "0/0";
+  if (pane.statusEl && pane.savedStatus != null) {
+    pane.statusEl.textContent = pane.savedStatus;
+    pane.savedStatus = null;
+  }
   try {
     pane.term?.clearSelection?.();
   } catch {}

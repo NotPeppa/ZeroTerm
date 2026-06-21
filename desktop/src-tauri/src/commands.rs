@@ -5024,25 +5024,22 @@ fn detect_remote_kind(path: &str, kind: FileKind) -> Result<CopyNodeKind, String
     }
 }
 
-fn copy_local_tree_to_local(
+async fn copy_local_tree_to_local(
     source: &Path,
     target: &Path,
     root_kind: CopyNodeKind,
     overwrite: bool,
+    progress_ctx: Option<(&AppHandle, &AppState)>,
 ) -> Result<(), String> {
     match root_kind {
         CopyNodeKind::File => {
-            if target.exists() && !overwrite {
-                return Err(format!("destination already exists: {}", target.display()));
-            }
-            fs::copy(source, target).map_err(|e| {
-                format!(
-                    "copy file {} -> {}: {e}",
-                    source.display(),
-                    target.display()
-                )
-            })?;
-            Ok(())
+            stream_local_file_to_local(
+                source.to_path_buf(),
+                target.to_path_buf(),
+                overwrite,
+                progress_ctx,
+            )
+            .await
         }
         CopyNodeKind::Dir => {
             if !target.exists() {
@@ -5064,19 +5061,13 @@ fn copy_local_tree_to_local(
                     let kind = detect_local_kind(&child_src)?;
                     match kind {
                         CopyNodeKind::File => {
-                            if child_dst.exists() && !overwrite {
-                                return Err(format!(
-                                    "destination already exists: {}",
-                                    child_dst.display()
-                                ));
-                            }
-                            fs::copy(&child_src, &child_dst).map_err(|e| {
-                                format!(
-                                    "copy file {} -> {}: {e}",
-                                    child_src.display(),
-                                    child_dst.display()
-                                )
-                            })?;
+                            stream_local_file_to_local(
+                                child_src,
+                                child_dst,
+                                overwrite,
+                                progress_ctx,
+                            )
+                            .await?;
                         }
                         CopyNodeKind::Dir => {
                             if !child_dst.exists() {
@@ -5093,12 +5084,91 @@ fn copy_local_tree_to_local(
     }
 }
 
+/// Copy a single local file. With `progress_ctx` it streams in chunks and emits
+/// throttled `sftp:progress` events (so the transfer dock shows a bar); without
+/// it, a plain `fs::copy` is used.
+async fn stream_local_file_to_local(
+    source: PathBuf,
+    target: PathBuf,
+    overwrite: bool,
+    progress_ctx: Option<(&AppHandle, &AppState)>,
+) -> Result<(), String> {
+    if target.exists() && !overwrite {
+        return Err(format!("destination already exists: {}", target.display()));
+    }
+    let to_err = |e: std::io::Error| {
+        format!("copy file {} -> {}: {e}", source.display(), target.display())
+    };
+    match progress_ctx {
+        Some((app_handle, state)) => {
+            let total = tokio::fs::metadata(&source).await.ok().map(|m| m.len());
+            let (transfer_id, cancel) = register_transfer(state);
+            let src = source.clone();
+            let dst = target.clone();
+            let result = run_with_progress(
+                app_handle,
+                transfer_id,
+                "copy",
+                source.display().to_string(),
+                target.display().to_string(),
+                move |progress_cb| async move {
+                    copy_local_file_chunked(&src, &dst, total, cancel, progress_cb).await
+                },
+            )
+            .await;
+            forget_transfer(state, transfer_id);
+            result.map(|_| ()).map_err(to_err)
+        }
+        None => tokio::fs::copy(&source, &target).await.map(|_| ()).map_err(to_err),
+    }
+}
+
+/// Chunked local file copy that reports progress and honors cancellation.
+async fn copy_local_file_chunked<P>(
+    source: &Path,
+    target: &Path,
+    total: Option<u64>,
+    cancel: tokio_util::sync::CancellationToken,
+    mut progress_cb: P,
+) -> Result<u64, std::io::Error>
+where
+    P: FnMut(zeroterm_ssh::ProgressTick) + Send,
+{
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut reader = tokio::fs::File::open(source).await?;
+    let mut writer = tokio::fs::File::create(target).await?;
+    let mut buf = vec![0u8; zeroterm_ssh::DEFAULT_CHUNK];
+    let mut done: u64 = 0;
+    progress_cb(zeroterm_ssh::ProgressTick { bytes_done: 0, total });
+    loop {
+        if cancel.is_cancelled() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "transfer cancelled",
+            ));
+        }
+        let n = reader.read(&mut buf).await?;
+        if n == 0 {
+            break;
+        }
+        writer.write_all(&buf[..n]).await?;
+        done += n as u64;
+        progress_cb(zeroterm_ssh::ProgressTick {
+            bytes_done: done,
+            total,
+        });
+    }
+    writer.flush().await?;
+    Ok(done)
+}
+
 async fn copy_local_tree_to_remote(
     source: &Path,
     target_sftp: &Arc<zeroterm_ssh::Sftp>,
     target: &str,
     root_kind: CopyNodeKind,
     overwrite: bool,
+    progress_ctx: Option<(&AppHandle, &AppState)>,
 ) -> Result<(), String> {
     match root_kind {
         CopyNodeKind::File => {
@@ -5107,6 +5177,7 @@ async fn copy_local_tree_to_remote(
                 source.to_path_buf(),
                 target.to_string(),
                 overwrite,
+                progress_ctx,
             )
             .await
         }
@@ -5156,6 +5227,7 @@ async fn copy_local_tree_to_remote(
                         child_src,
                         child_dst,
                         overwrite,
+                        progress_ctx,
                     )
                 },
             ))
@@ -5177,6 +5249,7 @@ async fn stream_local_file_to_remote(
     source: PathBuf,
     target: String,
     overwrite: bool,
+    progress_ctx: Option<(&AppHandle, &AppState)>,
 ) -> Result<(), String> {
     if !overwrite && target_sftp.stat(&target).await.is_ok() {
         return Err(format!("destination already exists: {target}"));
@@ -5188,18 +5261,47 @@ async fn stream_local_file_to_remote(
     let mut file = tokio::fs::File::open(&source)
         .await
         .map_err(|e| format!("reading {}: {e}", source.display()))?;
-    target_sftp
-        .upload_from_reader(
-            &target,
-            &mut file,
-            zeroterm_ssh::DEFAULT_CHUNK,
-            size_hint,
-            tokio_util::sync::CancellationToken::new(),
-            |_| {},
-        )
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    match progress_ctx {
+        Some((app_handle, state)) => {
+            let (transfer_id, cancel) = register_transfer(state);
+            let result = run_with_progress(
+                app_handle,
+                transfer_id,
+                "copy",
+                source.display().to_string(),
+                target.clone(),
+                move |progress_cb| async move {
+                    target_sftp
+                        .upload_from_reader(
+                            &target,
+                            &mut file,
+                            zeroterm_ssh::DEFAULT_CHUNK,
+                            size_hint,
+                            cancel,
+                            progress_cb,
+                        )
+                        .await
+                },
+            )
+            .await;
+            forget_transfer(state, transfer_id);
+            result.map(|_| ()).map_err(|e| e.to_string())
+        }
+        None => {
+            target_sftp
+                .upload_from_reader(
+                    &target,
+                    &mut file,
+                    zeroterm_ssh::DEFAULT_CHUNK,
+                    size_hint,
+                    tokio_util::sync::CancellationToken::new(),
+                    |_| {},
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        }
+    }
 }
 
 async fn copy_remote_tree_to_local(
@@ -5303,6 +5405,7 @@ async fn copy_remote_tree_to_remote(
     target: &str,
     root_kind: CopyNodeKind,
     overwrite: bool,
+    progress_ctx: Option<(&AppHandle, &AppState)>,
 ) -> Result<(), String> {
     match root_kind {
         CopyNodeKind::File => {
@@ -5312,6 +5415,7 @@ async fn copy_remote_tree_to_remote(
                 Arc::clone(target_sftp),
                 target.to_string(),
                 overwrite,
+                progress_ctx,
             )
             .await
         }
@@ -5361,6 +5465,7 @@ async fn copy_remote_tree_to_remote(
                         Arc::clone(target_sftp),
                         child_dst,
                         overwrite,
+                        progress_ctx,
                     )
                 },
             ))
@@ -5383,14 +5488,73 @@ async fn stream_remote_file_to_remote(
     target_sftp: Arc<zeroterm_ssh::Sftp>,
     target: String,
     overwrite: bool,
+    progress_ctx: Option<(&AppHandle, &AppState)>,
 ) -> Result<(), String> {
     if !overwrite && target_sftp.stat(&target).await.is_ok() {
         return Err(format!("destination already exists: {target}"));
     }
 
+    match progress_ctx {
+        Some((app_handle, state)) => {
+            // Knowing the source size lets the UI show a real percentage.
+            let size_hint = source_sftp.stat(&source).await.ok().map(|m| m.size);
+            let (transfer_id, cancel) = register_transfer(state);
+            let result = run_with_progress(
+                app_handle,
+                transfer_id,
+                "copy",
+                source.clone(),
+                target.clone(),
+                move |progress_cb| async move {
+                    pipe_remote_file_to_remote(
+                        source_sftp,
+                        source,
+                        target_sftp,
+                        target,
+                        size_hint,
+                        cancel,
+                        progress_cb,
+                    )
+                    .await
+                },
+            )
+            .await;
+            forget_transfer(state, transfer_id);
+            result.map(|_| ()).map_err(|e| e.to_string())
+        }
+        None => pipe_remote_file_to_remote(
+            source_sftp,
+            source,
+            target_sftp,
+            target,
+            None,
+            tokio_util::sync::CancellationToken::new(),
+            |_| {},
+        )
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string()),
+    }
+}
+
+/// The actual download->pipe->upload plumbing for a remote-to-remote copy.
+/// `progress_cb` is invoked from the upload side (bytes written to the target).
+async fn pipe_remote_file_to_remote<P>(
+    source_sftp: Arc<zeroterm_ssh::Sftp>,
+    source: String,
+    target_sftp: Arc<zeroterm_ssh::Sftp>,
+    target: String,
+    size_hint: Option<u64>,
+    cancel: tokio_util::sync::CancellationToken,
+    progress_cb: P,
+) -> Result<u64, zeroterm_ssh::SshError>
+where
+    P: FnMut(zeroterm_ssh::ProgressTick) + Send,
+{
     let (mut writer, mut reader) = tokio::io::duplex(zeroterm_ssh::DEFAULT_CHUNK * 2);
 
     let dl_source = source.clone();
+    let dl_cancel = cancel.clone();
     let download = async move {
         let res = source_sftp
             .download_to_writer_parallel(
@@ -5398,14 +5562,13 @@ async fn stream_remote_file_to_remote(
                 &mut writer,
                 zeroterm_ssh::DEFAULT_CHUNK,
                 zeroterm_ssh::DEFAULT_DOWNLOAD_PARALLELISM,
-                tokio_util::sync::CancellationToken::new(),
+                dl_cancel,
                 |_| {},
             )
-            .await
-            .map_err(|e| e.to_string());
+            .await;
         // Drop the writer so the reader sees EOF regardless of outcome.
         drop(writer);
-        res.map(|_| ())
+        res
     };
 
     let upload = async move {
@@ -5414,19 +5577,16 @@ async fn stream_remote_file_to_remote(
                 &target,
                 &mut reader,
                 zeroterm_ssh::DEFAULT_CHUNK,
-                None,
-                tokio_util::sync::CancellationToken::new(),
-                |_| {},
+                size_hint,
+                cancel,
+                progress_cb,
             )
             .await
-            .map_err(|e| e.to_string())
-            .map(|_| ())
     };
 
     let (dl, ul) = tokio::join!(download, upload);
     dl?;
-    ul?;
-    Ok(())
+    ul
 }
 
 #[tauri::command]
@@ -5461,14 +5621,29 @@ pub async fn sftp_copy_entry_between_panes(
             if root_kind == CopyNodeKind::Dir && dst.starts_with(&src) {
                 return Err("cannot copy a directory into itself".to_string());
             }
-            copy_local_tree_to_local(&src, &dst, root_kind, overwrite)
+            copy_local_tree_to_local(
+                &src,
+                &dst,
+                root_kind,
+                overwrite,
+                Some((&app_handle, &state)),
+            )
+            .await
         }
         (None, Some(dst_id)) => {
             let src = PathBuf::from(&source_path);
             let dst_sftp = lookup_sftp(&state, dst_id)?;
             let dst = remote_join_path(&destination_dir, &source_name);
             let root_kind = detect_local_kind(&src)?;
-            copy_local_tree_to_remote(&src, &dst_sftp, &dst, root_kind, overwrite).await
+            copy_local_tree_to_remote(
+                &src,
+                &dst_sftp,
+                &dst,
+                root_kind,
+                overwrite,
+                Some((&app_handle, &state)),
+            )
+            .await
         }
         (Some(src_id), None) => {
             let src_sftp = lookup_sftp(&state, src_id)?;
@@ -5513,6 +5688,7 @@ pub async fn sftp_copy_entry_between_panes(
                 &dst,
                 root_kind,
                 overwrite,
+                Some((&app_handle, &state)),
             )
             .await
         }
@@ -5988,17 +6164,17 @@ async fn sftp_remove_dir_recursive(sftp: &zeroterm_ssh::Sftp, path: &str) -> Res
 /// `sftp:progress` events, throttled to ~10 per second so we don't
 /// drown the IPC bus on big files. Always emits a final `finished`
 /// event regardless of success / failure.
-async fn run_with_progress<F, Fut>(
+async fn run_with_progress<F, Fut, E>(
     app_handle: &AppHandle,
     transfer_id: u64,
     kind: &'static str,
     source: String,
     destination: String,
     body: F,
-) -> Result<u64, zeroterm_ssh::SshError>
+) -> Result<u64, E>
 where
     F: FnOnce(Box<dyn FnMut(zeroterm_ssh::ProgressTick) + Send>) -> Fut,
-    Fut: std::future::Future<Output = Result<u64, zeroterm_ssh::SshError>>,
+    Fut: std::future::Future<Output = Result<u64, E>>,
 {
     use std::sync::Mutex;
     use std::time::{Duration, Instant};
