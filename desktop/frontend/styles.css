@@ -1362,6 +1362,11 @@ body[data-app-theme="light"]:not(.has-app-bg) .settings-page-head {
   font-weight: 700;
 }
 
+.port-forward-field > span {
+  font-size: 11.5px;
+  font-weight: 650;
+}
+
 .port-forward-field.wide {
   max-width: none;
 }

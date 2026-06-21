@@ -542,9 +542,15 @@ const I18N = {
     "port_forward.editor.bind": "Bind address",
     "port_forward.editor.bind_port": "Bind port",
     "port_forward.editor.target_host": "Remote address",
-    "port_forward.editor.target_port": "Remote port",
-    "port_forward.editor.hint.local": "Local forwards listen on a local port and access the remote service over SSH.",
-    "port_forward.editor.hint.remote": "Remote forwards listen on the SSH server and connect back to a local service on this computer.",
+    "port_forward.editor.target_port": "Target port",
+    "port_forward.editor.bind_local": "Listen address (this computer)",
+    "port_forward.editor.bind_remote": "Listen address (SSH server)",
+    "port_forward.editor.bind_port_local": "Listen port (this computer)",
+    "port_forward.editor.bind_port_remote": "Listen port (SSH server)",
+    "port_forward.editor.target_local": "Target address (reached from the server)",
+    "port_forward.editor.target_remote": "Target address (reached from this computer)",
+    "port_forward.editor.hint.local": "Listen on THIS computer, then forward over SSH to a target the SERVER can reach. e.g. 127.0.0.1:3000 → (server) localhost:3000",
+    "port_forward.editor.hint.remote": "Listen on the SSH SERVER, then forward back to a target THIS computer can reach. e.g. (server) 0.0.0.0:8080 → localhost:80",
     "port_forward.editor.hint.dynamic": "SOCKS5 listens on a local proxy port; the target address is chosen by the client request.",
     "port_forward.editor.error.host_required": "Please choose a host",
     "port_forward.editor.close": "Close",
@@ -1348,9 +1354,15 @@ const I18N = {
     "port_forward.editor.bind": "监听地址",
     "port_forward.editor.bind_port": "监听端口",
     "port_forward.editor.target_host": "远端地址",
-    "port_forward.editor.target_port": "远端端口",
-    "port_forward.editor.hint.local": "本地转发会监听本机端口，并通过 SSH 连接访问远端服务。",
-    "port_forward.editor.hint.remote": "远程转发会监听服务器端口，并通过 SSH 反连到本机服务。",
+    "port_forward.editor.target_port": "目标端口",
+    "port_forward.editor.bind_local": "监听地址（本机）",
+    "port_forward.editor.bind_remote": "监听地址（服务器）",
+    "port_forward.editor.bind_port_local": "监听端口（本机）",
+    "port_forward.editor.bind_port_remote": "监听端口（服务器）",
+    "port_forward.editor.target_local": "目标地址（服务器可达）",
+    "port_forward.editor.target_remote": "目标地址（本机可达）",
+    "port_forward.editor.hint.local": "在【本机】监听，经 SSH 转发到【服务器能访问】的目标。例：本机 127.0.0.1:3000 →（服务器）localhost:3000",
+    "port_forward.editor.hint.remote": "在【服务器】监听，经 SSH 反向转发到【本机能访问】的目标。例：（服务器）0.0.0.0:8080 → 本机 localhost:80",
     "port_forward.editor.hint.dynamic": "SOCKS5 会在本机监听一个代理端口，目标地址由客户端请求决定。",
     "port_forward.editor.error.host_required": "请选择主机",
     "port_forward.editor.close": "关闭",
@@ -2784,8 +2796,26 @@ async function sendSnippetToActiveTerminal(command) {
     alert(t("snippets.error.no_terminal"));
     return;
   }
-  await sendTextToPane(pane, String(command || ""), { fill: true });
+  await sendTextToPane(pane, joinSnippetForInsert(command), { fill: true });
   pane.term?.focus?.();
+}
+
+// Flatten a multi-line snippet into one line for "Insert": join non-empty,
+// non-comment lines with "; " so the whole thing fills the prompt as a single
+// unexecuted command (the user presses Enter to run). Comment-only lines (#...)
+// are dropped so they don't swallow the rest of the joined line. Note: this
+// intentionally does not preserve multi-line shell blocks (for/if/heredoc) —
+// use "Run" for those.
+function joinSnippetForInsert(command) {
+  return String(command || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith("#"))
+    .map((line) => line.replace(/;+\s*$/, "").trim())
+    .filter((line) => line.length > 0)
+    .join("; ");
 }
 
 function escapeMetricText(value) {
@@ -3372,7 +3402,7 @@ function renderTerminalCommandSnippets() {
     runBtn.textContent = t("snippets.action.run");
     runBtn.addEventListener("click", async () => {
       try {
-        await executeAiCommand(snippet.command, { autoContinue: false });
+        await runSnippetInActiveTerminal(snippet.command);
         showToast(t("snippets.toast.ran"), "success", 1800);
       } catch (e) {
         alert(t("snippets.error.run_failed", { error: e }));
@@ -4379,6 +4409,28 @@ async function executeAiCommand(command, { autoContinue = true } = {}) {
 
 function wait(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+// Run a (possibly multi-line) command snippet line by line: each non-trailing
+// line is submitted on its own so the shell executes them sequentially, exactly
+// as if typed. Internal blank lines are preserved (heredocs / multi-line blocks
+// rely on them); only trailing blank lines are dropped.
+async function runSnippetInActiveTerminal(command) {
+  const pane = getActivePane();
+  if (!pane?.sessionId) {
+    showToast("当前没有可执行命令的终端会话。", "error", 3600);
+    throw new Error("no terminal session");
+  }
+  const normalized = String(command || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const lines = normalized.split("\n");
+  while (lines.length && lines[lines.length - 1].trim() === "") lines.pop();
+  if (lines.length === 0) return;
+  for (let i = 0; i < lines.length; i += 1) {
+    await sendTextToPane(pane, lines[i], { submit: true });
+    if (i < lines.length - 1) await wait(80);
+  }
+  keepPaneTerminalAtBottom(pane, { force: true });
+  pane.term?.focus?.();
 }
 
 // Terminal input regression checklist:
@@ -7264,6 +7316,14 @@ function syncPortForwardEditorKind() {
   if (portForwardEditorTargetHostWrap) portForwardEditorTargetHostWrap.hidden = isDynamic;
   if (portForwardEditorTargetPortWrap) portForwardEditorTargetPortWrap.hidden = isDynamic;
   if (portForwardEditorArrow) portForwardEditorArrow.hidden = isDynamic;
+  // Bind/target labels flip meaning between -L and -R (which machine listens vs
+  // which side the target is reachable from), so name the machine explicitly.
+  setText("port-forward-editor-bind-label", isRemote ? "port_forward.editor.bind_remote" : "port_forward.editor.bind_local");
+  setText("port-forward-editor-bind-port-label", isRemote ? "port_forward.editor.bind_port_remote" : "port_forward.editor.bind_port_local");
+  if (!isDynamic) {
+    setText("port-forward-editor-target-host-label", isRemote ? "port_forward.editor.target_remote" : "port_forward.editor.target_local");
+    setText("port-forward-editor-target-port-label", "port_forward.editor.target_port");
+  }
   if (portForwardEditorHint) {
     portForwardEditorHint.textContent = isDynamic
       ? t("port_forward.editor.hint.dynamic")
