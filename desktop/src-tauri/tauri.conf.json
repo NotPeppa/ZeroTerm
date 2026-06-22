@@ -41,10 +41,15 @@
     "active": true,
     "targets": "all",
     "createUpdaterArtifacts": true,
+    "licenseFile": "installer/license.txt",
     "windows": {
       "nsis": {
         "installMode": "both",
-        "installerIcon": "icons/icon.ico"
+        "installerIcon": "icons/icon.ico",
+        "headerImage": "installer/header.bmp",
+        "sidebarImage": "installer/sidebar.bmp",
+        "languages": ["SimpChinese", "English"],
+        "displayLanguageSelector": true
       }
     },
     "icon": [
