@@ -503,14 +503,21 @@
                                 <span id="terminal-sftp-subtitle">当前终端文件</span>
                               </div>
                             </div>
-                            <button id="terminal-sftp-refresh" type="button" class="terminal-side-add-btn" title="刷新">
-                              <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
-                                <path d="M21 12a9 9 0 0 1-15.2 6.5"></path>
-                                <path d="M3 12A9 9 0 0 1 18.2 5.5"></path>
-                                <path d="M18 3v4h-4"></path>
-                                <path d="M6 21v-4h4"></path>
-                              </svg>
-                            </button>
+                            <div class="terminal-side-actions">
+                              <button id="terminal-sftp-pin" type="button" class="terminal-side-add-btn" title="书签">
+                                <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                  <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+                                </svg>
+                              </button>
+                              <button id="terminal-sftp-refresh" type="button" class="terminal-side-add-btn" title="刷新">
+                                <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                  <path d="M21 12a9 9 0 0 1-15.2 6.5"></path>
+                                  <path d="M3 12A9 9 0 0 1 18.2 5.5"></path>
+                                  <path d="M18 3v4h-4"></path>
+                                  <path d="M6 21v-4h4"></path>
+                                </svg>
+                              </button>
+                            </div>
                           </header>
                           <div id="sftp-terminal-pane" class="terminal-side-body terminal-sftp-body sftp-pane">
                             <select id="sftp-terminal-host" hidden></select>
@@ -1200,6 +1207,7 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
                         <button id="files-menu-rename" type="button">Rename</button>
                         <button id="files-menu-delete" type="button">Delete</button>
                         <div id="files-menu-entry-separator" class="menu-separator"></div>
+                        <button id="files-menu-pin" type="button">Pin</button>
                         <button id="files-menu-refresh" type="button">Refresh</button>
                         <button id="files-menu-mkdir" type="button">New Folder</button>
                         <button id="files-menu-upload" type="button">Upload</button>
@@ -1211,6 +1219,7 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
                         <div id="files-menu-close-separator" class="menu-separator"></div>
                         <button id="files-menu-close" type="button" class="danger">Close</button>
                       </div>
+                      <div id="terminal-sftp-pin-menu" class="sftp-pin-menu" hidden></div>
                     </section>
                   </section>
                 </div>

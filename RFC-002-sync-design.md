@@ -581,7 +581,7 @@ device_public_key: 未来可选
   "deviceName": "MacBook Pro",
   "createdAt": 1779340800000,
   "lastSeenAt": 1779340800000,
-  "appVersion": "0.1.6",
+  "appVersion": "0.1.7",
   "platform": "macos"
 }
 ```

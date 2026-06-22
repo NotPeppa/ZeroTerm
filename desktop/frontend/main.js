@@ -294,6 +294,12 @@ const I18N = {
     "metrics.loading": "Collecting metrics...",
     "metrics.error": "Failed to collect metrics: {error}",
     "terminal_sftp.title": "SFTP",
+    "terminal_sftp.pin": "Bookmarks",
+    "terminal_sftp.pin.add_dir": "Bookmark current directory",
+    "terminal_sftp.pin.add_folder": "Bookmark this folder",
+    "terminal_sftp.pin.unpin": "Remove bookmark",
+    "terminal_sftp.pin.empty": "No bookmarks",
+    "terminal_sftp.pin.remove": "Remove",
     "terminal_sftp.subtitle": "Current terminal files",
     "terminal_sftp.empty.title": "No current terminal",
     "terminal_sftp.empty.desc": "Open a terminal session to browse files here.",
@@ -1107,6 +1113,12 @@ const I18N = {
     "metrics.loading": "正在采集指标...",
     "metrics.error": "指标采集失败：{error}",
     "terminal_sftp.title": "SFTP",
+    "terminal_sftp.pin": "书签",
+    "terminal_sftp.pin.add_dir": "将当前目录添加为书签",
+    "terminal_sftp.pin.add_folder": "添加为书签",
+    "terminal_sftp.pin.unpin": "移除书签",
+    "terminal_sftp.pin.empty": "暂无书签",
+    "terminal_sftp.pin.remove": "移除",
     "terminal_sftp.subtitle": "当前终端文件",
     "terminal_sftp.empty.title": "没有当前终端",
     "terminal_sftp.empty.desc": "打开终端会话后，可在这里浏览当前主机文件。",
@@ -3034,7 +3046,7 @@ function renderDockerList(rows) {
         ${running
           ? `<button type="button" class="docker-btn" data-act="stop" data-id="${idAttr}">停止</button><button type="button" class="docker-btn" data-act="restart" data-id="${idAttr}">重启</button><button type="button" class="docker-btn" data-act="terminal" data-id="${idAttr}">终端</button>`
           : `<button type="button" class="docker-btn docker-btn-success" data-act="start" data-id="${idAttr}">启动</button>`}
-        <button type="button" class="docker-btn" data-act="logs" data-id="${idAttr}">日志</button>
+        <button type="button" class="docker-btn" data-act="logs" data-id="${idAttr}" data-name="${escapeMetricText(c.name)}">日志</button>
         <button type="button" class="docker-btn docker-btn-danger" data-act="remove" data-id="${idAttr}" data-name="${escapeMetricText(c.name)}">删除</button>
       </div>
       <div class="docker-detail" data-id="${idAttr}" ${expanded ? "" : "hidden"}></div>
@@ -3141,8 +3153,11 @@ async function dockerEnterTerminal(id) {
 async function dockerShowLogs(id, name) {
   const overlay = ensureDockerLogsOverlay();
   const titleEl = overlay.querySelector(".docker-logs-title");
+  const cmdEl = overlay.querySelector(".docker-logs-cmd");
   const bodyEl = overlay.querySelector(".docker-logs-body");
-  titleEl.textContent = `日志 · ${name || id}`;
+  const label = name || id.slice(0, 12);
+  titleEl.textContent = `日志 · ${label}`;
+  if (cmdEl) cmdEl.textContent = `docker logs --tail 300 ${label}`;
   bodyEl.textContent = "加载中…";
   overlay.hidden = false;
   try {
@@ -3165,7 +3180,10 @@ function ensureDockerLogsOverlay() {
   overlay.innerHTML = `
     <section class="dialog docker-logs-dialog" role="dialog" aria-modal="true">
       <header class="docker-logs-head">
-        <strong class="docker-logs-title">日志</strong>
+        <div class="docker-logs-titlewrap">
+          <strong class="docker-logs-title">日志</strong>
+          <code class="docker-logs-cmd"></code>
+        </div>
         <button type="button" class="docker-logs-close">关闭</button>
       </header>
       <pre class="docker-logs-body"></pre>
@@ -9310,6 +9328,7 @@ function applyI18n() {
   setText("terminal-sftp-title", "terminal_sftp.title");
   setText("terminal-sftp-subtitle", "terminal_sftp.subtitle");
   setAttr("terminal-sftp-refresh", "title", "metrics.refresh");
+  setAttr("terminal-sftp-pin", "title", "terminal_sftp.pin");
   setAttr("lock-button", "title", "sidebar.lock");
   setAttr("window-minimize", "title", "window.minimize");
   setAttr("window-close", "title", "window.close");
@@ -11562,7 +11581,7 @@ terminalDockerBody?.addEventListener("click", (ev) => {
   if (act === "stop") return dockerAction(["stop", id], btn);
   if (act === "restart") return dockerAction(["restart", id], btn);
   if (act === "remove") return dockerRemove(id, btn.getAttribute("data-name") || id);
-  if (act === "logs") return dockerShowLogs(id, btn.getAttribute("data-name") || id);
+  if (act === "logs") return dockerShowLogs(id, btn.getAttribute("data-name"));
   if (act === "terminal") return dockerEnterTerminal(id);
 });
 
@@ -13307,6 +13326,7 @@ const filesMenuEdit = document.getElementById("files-menu-edit");
 const filesMenuDownload = document.getElementById("files-menu-download");
 const filesMenuCloseSeparator = document.getElementById("files-menu-close-separator");
 const filesMenuClose = document.getElementById("files-menu-close");
+const filesMenuPin = document.getElementById("files-menu-pin");
 const LOCAL_HOST_ID = "__local__";
 
 if (filesContextMenu && filesContextMenu.parentElement !== document.body) {
@@ -13327,6 +13347,69 @@ function isRightPaneHostEmpty(pane) {
 
 function isTerminalSideSftpPane(pane) {
   return pane?.key === "terminal";
+}
+
+// ----- Pinned SFTP paths (per-host favorites for the terminal SFTP panel) -----
+const SFTP_PINNED_PATHS_KEY = "zt.sftp.pinnedPaths";
+
+function pinnedHostKey(pane) {
+  // Pinned paths are scoped per host (a path on host A is meaningless on host B).
+  return pane?.hostId || null;
+}
+
+function loadPinnedPaths() {
+  try {
+    const obj = JSON.parse(localStorage.getItem(SFTP_PINNED_PATHS_KEY) || "{}");
+    return obj && typeof obj === "object" ? obj : {};
+  } catch {
+    return {};
+  }
+}
+
+function savePinnedPaths(obj) {
+  try {
+    localStorage.setItem(SFTP_PINNED_PATHS_KEY, JSON.stringify(obj));
+  } catch {}
+}
+
+function getPinnedForPane(pane) {
+  const key = pinnedHostKey(pane);
+  if (!key) return [];
+  const list = loadPinnedPaths()[key];
+  return Array.isArray(list) ? list.filter((p) => typeof p === "string" && p) : [];
+}
+
+function isPinned(pane, path) {
+  return getPinnedForPane(pane).includes(path);
+}
+
+function addPinnedPath(pane, path) {
+  const key = pinnedHostKey(pane);
+  if (!key || !path) return;
+  const all = loadPinnedPaths();
+  const list = Array.isArray(all[key]) ? all[key] : [];
+  if (!list.includes(path)) {
+    list.push(path);
+    all[key] = list;
+    savePinnedPaths(all);
+  }
+}
+
+function removePinnedPath(pane, path) {
+  const key = pinnedHostKey(pane);
+  if (!key) return;
+  const all = loadPinnedPaths();
+  const list = Array.isArray(all[key]) ? all[key] : [];
+  all[key] = list.filter((p) => p !== path);
+  savePinnedPaths(all);
+}
+
+// The path a "pin" action targets: a right-clicked folder -> that folder,
+// otherwise (blank area / file) the current directory.
+function getPinTargetPath(pane) {
+  const entry = filesContextEntry;
+  if (entry && entry.kind === "dir") return joinPanePath(pane, entry.name);
+  return pane.path;
 }
 
 function buildSftpPane(key) {
@@ -14626,6 +14709,21 @@ function showFilesContextMenu(pane, entry, x, y) {
   filesMenuClose.disabled = !connected;
   filesMenuHidden.textContent = pane.showHidden ? t("files.menu.hide_hidden") : t("files.menu.show_hidden");
 
+  // "Pin path" is only offered in the terminal-side SFTP panel.
+  const isTerminalPane = isTerminalSideSftpPane(pane);
+  setFilesContextNodeVisible(filesMenuPin, isTerminalPane);
+  if (isTerminalPane) {
+    const pinTargetIsDir = hasSingleTarget && targetEntry.kind === "dir";
+    const pinTargetPath = pinTargetIsDir ? joinPanePath(pane, targetEntry.name) : pane.path;
+    const alreadyPinned = connected && isPinned(pane, pinTargetPath);
+    filesMenuPin.textContent = alreadyPinned
+      ? t("terminal_sftp.pin.unpin")
+      : pinTargetIsDir
+        ? t("terminal_sftp.pin.add_folder")
+        : t("terminal_sftp.pin.add_dir");
+    filesMenuPin.disabled = !connected || !pinTargetPath;
+  }
+
   filesContextMenu.style.left = "0px";
   filesContextMenu.style.top = "0px";
   filesContextMenu.hidden = false;
@@ -15589,6 +15687,139 @@ filesMenuHidden.addEventListener("click", () => {
   pane.showHidden = !pane.showHidden;
   renderSftpPane(pane);
   pane.statusEl.textContent = pane.showHidden ? t("files.status.hidden_shown") : t("files.status.hidden_hidden");
+});
+
+filesMenuPin.addEventListener("click", () => {
+  const pane = getFilesContextPane();
+  const path = pane ? getPinTargetPath(pane) : null;
+  hideFilesContextMenu();
+  if (!pane || !isTerminalSideSftpPane(pane) || !isPaneConnected(pane) || !path) return;
+  if (isPinned(pane, path)) removePinnedPath(pane, path);
+  else addPinnedPath(pane, path);
+  renderPinMenu();
+});
+
+// ----- Pinned paths dropdown, anchored to the terminal SFTP 📌 button -----
+const terminalSftpPin = document.getElementById("terminal-sftp-pin");
+const terminalSftpPinMenu = document.getElementById("terminal-sftp-pin-menu");
+
+if (terminalSftpPinMenu && terminalSftpPinMenu.parentElement !== document.body) {
+  document.body.appendChild(terminalSftpPinMenu);
+}
+
+function renderPinMenu() {
+  if (!terminalSftpPinMenu) return;
+  const pane = sftpPanes.terminal;
+  const connected = Boolean(pane && isPaneConnected(pane));
+  terminalSftpPinMenu.innerHTML = "";
+
+  const addBtn = document.createElement("button");
+  addBtn.type = "button";
+  addBtn.className = "sftp-pin-menu-add";
+  addBtn.textContent = t("terminal_sftp.pin.add_dir");
+  addBtn.disabled = !connected;
+  addBtn.addEventListener("click", () => {
+    if (connected) addPinnedPath(pane, pane.path);
+    renderPinMenu();
+  });
+  terminalSftpPinMenu.appendChild(addBtn);
+
+  const sep = document.createElement("div");
+  sep.className = "menu-separator";
+  terminalSftpPinMenu.appendChild(sep);
+
+  const list = pane ? getPinnedForPane(pane) : [];
+  if (list.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "sftp-pin-menu-empty";
+    empty.textContent = t("terminal_sftp.pin.empty");
+    terminalSftpPinMenu.appendChild(empty);
+    return;
+  }
+
+  for (const p of list) {
+    const row = document.createElement("div");
+    row.className = "sftp-pin-menu-item";
+
+    const jump = document.createElement("button");
+    jump.type = "button";
+    jump.className = "sftp-pin-menu-jump";
+    jump.title = p;
+    jump.textContent = p;
+    jump.disabled = !connected;
+    jump.addEventListener("click", async () => {
+      hidePinMenu();
+      if (connected) await navigateSftpPane(pane, p);
+    });
+
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "sftp-pin-menu-remove";
+    del.title = t("terminal_sftp.pin.remove");
+    del.setAttribute("aria-label", t("terminal_sftp.pin.remove"));
+    del.textContent = "×";
+    del.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      removePinnedPath(pane, p);
+      renderPinMenu();
+    });
+
+    row.appendChild(jump);
+    row.appendChild(del);
+    terminalSftpPinMenu.appendChild(row);
+  }
+}
+
+function hidePinMenu() {
+  if (terminalSftpPinMenu) terminalSftpPinMenu.hidden = true;
+}
+
+function showPinMenu() {
+  if (!terminalSftpPinMenu || !terminalSftpPin) return;
+  renderPinMenu();
+  terminalSftpPinMenu.style.left = "0px";
+  terminalSftpPinMenu.style.top = "0px";
+  terminalSftpPinMenu.hidden = false;
+  const pad = 8;
+  const btn = terminalSftpPin.getBoundingClientRect();
+  const rect = terminalSftpPinMenu.getBoundingClientRect();
+  let left = btn.right - rect.width;
+  let top = btn.bottom + 4;
+  if (left < pad) left = pad;
+  if (left + rect.width + pad > window.innerWidth) {
+    left = Math.max(pad, window.innerWidth - rect.width - pad);
+  }
+  if (top + rect.height + pad > window.innerHeight) {
+    top = Math.max(pad, btn.top - rect.height - 4);
+  }
+  terminalSftpPinMenu.style.left = `${left}px`;
+  terminalSftpPinMenu.style.top = `${top}px`;
+}
+
+if (terminalSftpPin) {
+  terminalSftpPin.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    if (terminalSftpPinMenu && terminalSftpPinMenu.hidden) showPinMenu();
+    else hidePinMenu();
+  });
+}
+
+window.addEventListener("click", (ev) => {
+  if (
+    terminalSftpPinMenu &&
+    !terminalSftpPinMenu.hidden &&
+    !terminalSftpPinMenu.contains(ev.target) &&
+    ev.target !== terminalSftpPin &&
+    !(terminalSftpPin && terminalSftpPin.contains(ev.target))
+  ) {
+    hidePinMenu();
+  }
+});
+
+window.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && terminalSftpPinMenu && !terminalSftpPinMenu.hidden) {
+    hidePinMenu();
+  }
 });
 
 filesMenuPermissions.addEventListener("click", async () => {

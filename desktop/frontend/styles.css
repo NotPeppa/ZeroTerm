@@ -1799,6 +1799,12 @@ body.has-app-bg[data-app-theme="light"] .terminal-side-btn.active {
   border-bottom: 1px solid rgba(255, 255, 255, 0.07);
 }
 
+.terminal-side-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
 .terminal-side-title-wrap {
   min-width: 0;
   display: inline-flex;
@@ -6062,8 +6068,8 @@ body.has-app-bg .pane-body .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover
   word-break: break-all;
 }
 
-.docker-logs-dialog {
-  width: min(760px, calc(100vw - 32px));
+.dialog.docker-logs-dialog {
+  width: min(1080px, calc(100vw - 48px));
   max-height: 80vh;
   display: flex;
   flex-direction: column;
@@ -6077,7 +6083,42 @@ body.has-app-bg .pane-body .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover
   margin-bottom: 10px;
 }
 
+.docker-logs-title {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.docker-logs-titlewrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.docker-logs-cmd {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--stroke);
+  border-radius: 6px;
+  padding: 2px 8px;
+}
+
+body[data-app-theme="light"] .docker-logs-cmd {
+  background: rgba(15, 23, 42, 0.05);
+  border-color: rgba(15, 23, 42, 0.12);
+}
+
 .docker-logs-close {
+  flex-shrink: 0;
   border: 1px solid var(--stroke);
   border-radius: 8px;
   background: transparent;
@@ -6868,6 +6909,129 @@ body.has-app-bg[data-app-theme="light"] .terminal-sftp-body .sftp-status {
   height: 1px;
   margin: 2px 4px;
   background: #32466e;
+}
+
+.sftp-pin-menu {
+  position: fixed;
+  min-width: 200px;
+  max-width: 320px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(24, 32, 56, 0.55);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  box-shadow: 0 16px 40px rgba(3, 8, 20, 0.5);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 220;
+}
+
+.sftp-pin-menu .menu-separator {
+  height: 1px;
+  margin: 2px 4px;
+  background: #32466e;
+}
+
+.sftp-pin-menu-add,
+.sftp-pin-menu-jump {
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 8px;
+  text-align: left;
+  padding: 7px 9px;
+  font-size: 12px;
+  color: #d9e1f2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sftp-pin-menu-jump {
+  flex: 1;
+  min-width: 0;
+}
+
+.sftp-pin-menu-add:hover:not(:disabled),
+.sftp-pin-menu-jump:hover:not(:disabled) {
+  background: #2d3d64;
+  border-color: #4e6393;
+}
+
+.sftp-pin-menu-add:disabled,
+.sftp-pin-menu-jump:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.sftp-pin-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.sftp-pin-menu-remove {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #9caad0;
+  font-size: 16px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sftp-pin-menu-remove:hover {
+  background: #46283a;
+  border-color: #7b3f5a;
+  color: var(--danger);
+}
+
+.sftp-pin-menu-empty {
+  padding: 8px 9px;
+  font-size: 12px;
+  color: #9caad0;
+  text-align: center;
+}
+
+body[data-app-theme="light"] .sftp-pin-menu {
+  border-color: rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.14);
+}
+
+body[data-app-theme="light"] .sftp-pin-menu .menu-separator {
+  background: rgba(15, 23, 42, 0.08);
+}
+
+body[data-app-theme="light"] .sftp-pin-menu-add,
+body[data-app-theme="light"] .sftp-pin-menu-jump {
+  color: #0f172a;
+}
+
+body[data-app-theme="light"] .sftp-pin-menu-add:hover:not(:disabled),
+body[data-app-theme="light"] .sftp-pin-menu-jump:hover:not(:disabled) {
+  background: rgba(15, 23, 42, 0.06);
+  border-color: rgba(15, 23, 42, 0.1);
+}
+
+body[data-app-theme="light"] .sftp-pin-menu-remove,
+body[data-app-theme="light"] .sftp-pin-menu-empty {
+  color: #64748b;
+}
+
+body[data-app-theme="light"] .sftp-pin-menu-remove:hover {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.15);
+  color: var(--danger);
 }
 
 /* Overlays */
