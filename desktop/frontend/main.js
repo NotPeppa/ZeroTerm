@@ -753,7 +753,6 @@ const I18N = {
     "ai.compose.send": "Send to AI",
     "ai.context.toggle.title": "Toggle attaching current terminal output",
     "ai.context.toggle.label": "Auto-include terminal context",
-    "ai.context.mode.smart": "Auto terminal context",
     "ai.context.mode.always": "Always include terminal",
     "ai.context.mode.off": "No terminal context",
     "ai.session.title": "AI Sessions",
@@ -1574,7 +1573,6 @@ const I18N = {
     "ai.compose.send": "发送给 AI",
     "ai.context.toggle.title": "切换是否附带当前终端内容",
     "ai.context.toggle.label": "智能判断终端内容",
-    "ai.context.mode.smart": "智能判断终端内容",
     "ai.context.mode.always": "总是附带终端内容",
     "ai.context.mode.off": "不附带终端内容",
     "ai.session.title": "AI 会话",
@@ -2062,6 +2060,7 @@ const EDITABLE_TEXT_EXTS = new Set([
   "sql", "xml", "html", "htm", "css", "js", "mjs", "cjs", "ts", "tsx",
   "jsx", "py", "rb", "go", "rs", "java", "kt", "swift", "php", "c", "h",
   "cpp", "hpp", "cc", "cs", "vue", "svelte", "properties", "service",
+  "bat", "cmd",
 ]);
 
 const EDITABLE_TEXT_BASENAMES = new Set([
@@ -2639,9 +2638,9 @@ const TERMINAL_COMMAND_SNIPPETS_KEY = "zt.terminal.commandSnippets";
 const TERMINAL_SNIPPETS_MIGRATED_KEY = "zt.terminal.snippetsMigrated";
 const TERMINAL_SNIPPET_GROUP_STATE_KEY = "zt.terminal.commandSnippetGroups";
 let terminalSnippetGroupExpanded = {};
-const AI_CONTEXT_MODES = ["smart", "always", "off"];
-let aiContextMode = localStorage.getItem("zt.ai.contextMode") || "smart";
-if (!AI_CONTEXT_MODES.includes(aiContextMode)) aiContextMode = "smart";
+const AI_CONTEXT_MODES = ["always", "off"];
+let aiContextMode = localStorage.getItem("zt.ai.contextMode") || "always";
+if (!AI_CONTEXT_MODES.includes(aiContextMode)) aiContextMode = "always";
 let lastAutoAiModelsKey = "";
 let aiModelsRefreshedOnFirstOpen = false;
 let currentAiModelLabel = "";
@@ -3461,7 +3460,6 @@ function renderTerminalCommandSnippets() {
 function syncAiContextToggle() {
   if (!aiContextToggle) return;
   const labels = {
-    smart: t("ai.context.mode.smart"),
     always: t("ai.context.mode.always"),
     off: t("ai.context.mode.off"),
   };
@@ -3934,7 +3932,7 @@ function normalizeAiSessionMessages(messages) {
       commandResults: Array.isArray(message?.commandResults)
         ? message.commandResults.map((result) => ({
           command: String(result?.command || ""),
-          output: String(result?.output || ""),
+          output: typeof result?.output === "string" ? result.output : "",
         })).filter((result) => result.command.trim())
         : [],
     }))
@@ -4361,18 +4359,39 @@ function updateAiMessageWithReasoning(node, reasoning, content) {
   const body = node?.querySelector?.(".ai-message-body");
   if (!body) return;
   const shouldStickToBottom = isAiPanelNearBottom();
-  body.textContent = "";
-  const fragment = document.createDocumentFragment();
+  // Preserve user's manual expand state on the thinking block
+  let thinkingBlock = body.querySelector(".ai-thinking-block");
+  const wasOpen = thinkingBlock?.open;
   if (reasoning) {
-    fragment.appendChild(renderAiThinkingBlock(reasoning));
+    if (!thinkingBlock) {
+      thinkingBlock = renderAiThinkingBlock(reasoning);
+      body.insertBefore(thinkingBlock, body.firstChild);
+    } else {
+      const contentDiv = thinkingBlock.querySelector(".ai-thinking-content");
+      if (contentDiv) {
+        contentDiv.textContent = "";
+        contentDiv.appendChild(renderAiMarkdown(reasoning));
+      }
+    }
+    if (wasOpen) thinkingBlock.open = true;
+  } else if (thinkingBlock) {
+    thinkingBlock.remove();
+    thinkingBlock = null;
   }
+  let contentWrap = body.querySelector(".ai-message-content");
   if (content) {
-    const contentWrap = document.createElement("div");
-    contentWrap.className = "ai-message-content";
-    contentWrap.appendChild(renderAiMarkdown(content));
-    fragment.appendChild(contentWrap);
+    if (!contentWrap) {
+      contentWrap = document.createElement("div");
+      contentWrap.className = "ai-message-content";
+      contentWrap.appendChild(renderAiMarkdown(content));
+      body.appendChild(contentWrap);
+    } else {
+      contentWrap.textContent = "";
+      contentWrap.appendChild(renderAiMarkdown(content));
+    }
+  } else if (contentWrap) {
+    contentWrap.remove();
   }
-  body.appendChild(fragment);
   enhanceAiCodeBlocks(body);
   scrollAiPanelToBottom({ force: shouldStickToBottom });
 }
@@ -4456,17 +4475,16 @@ async function executeAiCommand(command, { autoContinue = true } = {}) {
     showToast("当前没有可执行命令的终端会话。", "error", 3600);
     return;
   }
+  const buffer = pane.term?.buffer?.active;
+  const cursor = buffer ? buffer.length : 0;
   const before = getActiveTerminalSnapshot(240);
   try {
     await sendTextToPane(pane, command, { submit: true });
     pane.term?.focus?.();
     await waitForTerminalOutputSettle(before, { maxMs: commandWaitMaxMs(command) });
     keepPaneTerminalAtBottom(pane, { force: true });
-    const after = getActiveTerminalSnapshot(260);
-    const output = after.startsWith(before) ? after.slice(before.length).trim() : after;
-    const finalOutput = output || after;
-    if (autoContinue) await continueAiAfterCommand(command, finalOutput);
-    return finalOutput;
+    if (autoContinue) await continueAiAfterCommand(command, cursor);
+    return cursor;
   } catch (e) {
     showToast(String(e), "error", 4200);
     throw e;
@@ -4567,97 +4585,96 @@ function commandWaitMaxMs(command) {
   return Math.min(90000, Math.max(15000, totalSleepMs + 8000));
 }
 
-async function continueAiAfterCommand(command, output) {
-  const userGoal = [...aiMessages].reverse().find((m) => m.role === "user")?.content || "";
+function scanTerminalFromCursor(cursor) {
+  const buffer = getActivePane()?.term?.buffer?.active;
+  if (!buffer) return "";
+  const maxLines = buffer.length || 0;
+  if (cursor > 0 && cursor < maxLines && buffer.getLine(cursor)) {
+    const rows = [];
+    for (let i = cursor; i < maxLines; i++) {
+      rows.push(buffer.getLine(i)?.translateToString?.(true) || "");
+    }
+    return rows.join("\n");
+  }
+  const start = Math.max(0, maxLines - 200);
+  const rows = [];
+  for (let i = start; i < maxLines; i++) {
+    rows.push(buffer.getLine(i)?.translateToString?.(true) || "");
+  }
+  return rows.join("\n").trim();
+}
+
+function buildConversationSummary(messages) {
+  const msgs = Array.isArray(messages) ? messages : [];
+  const lastUser = [...msgs].reverse().find((m) => m.role === "user");
+  const lastAssistant = [...msgs].reverse().find((m) => m.role === "assistant");
+  const parts = [];
+  if (lastUser?.content) {
+    const text = String(lastUser.content).replace(/```[\s\S]*?```/g, "").trim().slice(0, 200);
+    if (text) parts.push(`用户的原始问题：${text}`);
+  }
+  if (lastAssistant?.content) {
+    const text = String(lastAssistant.content).replace(/```[\s\S]*?```/g, "").trim().slice(0, 150);
+    if (text) parts.push(`AI 上一步的建议摘要：${text}`);
+  }
+  return parts.join("\n");
+}
+
+async function continueAiAfterCommand(command, cursor) {
   const includeCommandOutput = aiContextMode !== "off";
-  await runAiTurn([
-    {
-      role: "system",
-      content: withGlobalAiPrompt([
-        "你是 ZeroTerm 的 AI 助手。用户刚批准执行了一条命令。",
-        "你的任务是根据这次命令输出继续推进用户目标，但不要为了推进而反复检查。",
-        "先判断当前输出是否已经回答了用户的问题，或者已经暴露了明确异常。",
-        "如果证据已经足够，必须停止继续排查，直接给出：结论、依据、影响、建议下一步。",
-        "如果问题是配置缺失、服务未运行、依赖不存在、权限不足、资源不足、网络不通等，应给出可执行的修复方向，而不是继续搜集同类信息。",
-        "只有在当前输出无法支持结论，且缺少一个关键事实时，才给下一条最有用的命令。",
-        "每次最多建议一条命令，且每个 fenced code block 只能包含一条命令。",
-        "引用终端输出、报错或日志时必须使用 ```terminal 代码块；只有真正需要用户批准执行的命令才使用 ```bash。",
-        "不要重复建议已经执行过或等价的检查命令。",
-        "不要假装执行未执行的命令。",
-      ].join("\n")),
-    },
-    ...redactAiMessagesForRequest(aiMessages.slice(-6), { includeTerminalContent: includeCommandOutput }),
-    { role: "user", content: userGoal },
-    {
-      role: "system",
-      content: includeCommandOutput
-        ? [
-          "已批准并执行的命令：",
-          "```bash",
-          command,
-          "```",
-          "本次终端输出（已本地脱敏）：",
-          "```terminal",
-          redactSensitiveText(output),
-          "```",
-        ].join("\n")
-        : [
-          "已批准并执行的命令：",
-          "```bash",
-          command,
-          "```",
-          "用户当前选择了“不附带终端内容”，因此不要基于终端输出做判断，也不要声称看到了命令输出。",
-        ].join("\n"),
-    },
-  ], "正在分析执行结果...");
+  const summary = buildConversationSummary(aiMessages);
+  const terminalOutput = includeCommandOutput ? scanTerminalFromCursor(cursor) : "";
+  const systemParts = [
+    "你是 ZeroTerm 的 AI 助手。用户刚批准执行了一条命令，需要你继续分析。",
+    "先判断终端输出是否已经回答了用户的问题，或者已经暴露了明确异常。",
+    "如果证据已经足够，必须停止继续排查，直接给出：结论、依据、影响、建议下一步。",
+    "如果问题是配置缺失、服务未运行、依赖不存在、权限不足、资源不足、网络不通等，应给出可执行的修复方向。",
+    "只有在当前输出无法支持结论，且缺少一个关键事实时，才给下一条最有用的命令。",
+    "每次最多建议一条命令，且每个 fenced code block 只能包含一条命令。",
+    "引用终端输出、报错或日志时必须使用 ```terminal 代码块；只有真正需要用户批准执行的命令才使用 ```bash。",
+    "不要重复建议已经执行过或等价的检查命令。",
+    `用户已执行的命令：${command}`,
+  ];
+  if (summary) systemParts.push(`\n对话摘要：\n${summary}`);
+  if (!includeCommandOutput) systemParts.push("用户当前选择了不附带终端内容，不要基于终端输出做判断。");
+  const messages = [{ role: "system", content: withGlobalAiPrompt(systemParts.join("\n")) }];
+  if (terminalOutput) {
+    messages.push({ role: "system", content: `从终端获取到的命令执行输出：\n\`\`\`terminal\n${redactSensitiveText(terminalOutput)}\n\`\`\`` });
+  }
+  messages.push({ role: "user", content: "继续分析" });
+  await runAiTurn(messages, "正在分析执行结果...");
 }
 
 async function continueAiAfterCommands(results, { totalCommands = 0 } = {}) {
   const executed = Array.isArray(results) ? results.filter((item) => item?.command) : [];
   if (!executed.length) return;
-  const userGoal = [...aiMessages].reverse().find((m) => m.role === "user")?.content || "";
   const includeCommandOutput = aiContextMode !== "off";
-  const blocks = [];
-  executed.forEach((item, index) => {
-    blocks.push(`命令 ${index + 1}：`);
-    blocks.push("```bash");
-    blocks.push(item.command);
-    blocks.push("```");
-    if (includeCommandOutput) {
-      blocks.push("输出：");
-      blocks.push("```terminal");
-      blocks.push(redactSensitiveText(item.output || "(无输出)"));
-      blocks.push("```");
-    }
-  });
-  await runAiTurn([
-    {
-      role: "system",
-      content: withGlobalAiPrompt([
-        "你是 ZeroTerm 的 AI 助手。用户刚在同一条 AI 回复里批准执行了多条命令。",
-        "你的任务是综合这些已执行命令的结果继续推进用户目标，但不要假装未执行的命令已经执行。",
-        "如果证据已经足够，必须停止继续排查，直接给出：结论、依据、影响、建议下一步。",
-        "如果当前结果已经能回答问题，不要再重复建议同类检查命令。",
-        "只有在缺少一个关键事实时，才给下一条最有用的命令。",
-        "每次最多建议一条命令，且每个 fenced code block 只能包含一条命令。",
-        "引用终端输出、报错或日志时必须使用 ```terminal 代码块；只有真正需要用户批准执行的命令才使用 ```bash。",
-        "不要假装执行未执行的命令。",
-        includeCommandOutput
-          ? "用户允许附带这些已执行命令的输出，你可以基于下面的输出继续分析。"
-          : "用户当前选择了“不附带终端内容”，因此下面只提供已执行命令名称；不要基于终端输出做判断，也不要声称看到了命令输出。",
-      ].join("\n")),
-    },
-    ...redactAiMessagesForRequest(aiMessages.slice(-6), { includeTerminalContent: includeCommandOutput }),
-    { role: "user", content: userGoal },
-    {
-      role: "system",
-      content: [
-        `同一条 AI 回复中共有 ${totalCommands || executed.length} 条可执行命令，用户本次已执行 ${executed.length} 条。`,
-        includeCommandOutput ? "仅基于下面这些已执行命令和输出继续分析：" : "仅基于下面这些已执行命令名称继续分析：",
-        ...blocks,
-      ].join("\n"),
-    },
-  ], "正在分析已执行命令...");
+  const summary = buildConversationSummary(aiMessages);
+  const commands = executed.map((item) => item.command);
+  const earliestCursor = executed.reduce((min, item) => {
+    const c = typeof item.cursor === "number" ? item.cursor : 0;
+    return c > 0 && (min === 0 || c < min) ? c : min;
+  }, 0);
+  const terminalOutput = includeCommandOutput ? scanTerminalFromCursor(earliestCursor) : "";
+  const systemParts = [
+    "你是 ZeroTerm 的 AI 助手。用户刚在同一条 AI 回复里批准执行了多条命令，需要你继续分析。",
+    "综合这些已执行命令的终端输出继续推进用户目标，但不要假装未执行的命令已经执行。",
+    "如果证据已经足够，必须停止继续排查，直接给出：结论、依据、影响、建议下一步。",
+    "如果当前结果已经能回答问题，不要再重复建议同类检查命令。",
+    "只有在缺少一个关键事实时，才给下一条最有用的命令。",
+    "每次最多建议一条命令，且每个 fenced code block 只能包含一条命令。",
+    "引用终端输出、报错或日志时必须使用 ```terminal 代码块；只有真正需要用户批准执行的命令才使用 ```bash。",
+    "不要重复建议已经执行过或等价的检查命令。",
+    `用户已执行的命令：${commands.join(", ")}`,
+  ];
+  if (summary) systemParts.push(`\n对话摘要：\n${summary}`);
+  if (!includeCommandOutput) systemParts.push("用户当前选择了不附带终端内容，不要基于终端输出做判断。");
+  const messages = [{ role: "system", content: withGlobalAiPrompt(systemParts.join("\n")) }];
+  if (terminalOutput) {
+    messages.push({ role: "system", content: `从终端获取到的命令执行输出：\n\`\`\`terminal\n${redactSensitiveText(terminalOutput)}\n\`\`\`` });
+  }
+  messages.push({ role: "user", content: "继续分析" });
+  await runAiTurn(messages, "正在分析已执行命令...");
 }
 
 /// Run a single AI turn (initial send or retry) under shared "sending" state
@@ -4774,7 +4791,7 @@ function ensureAiMultiCommandControls(messageNode, totalCommands) {
     if (storedResults.length) {
       state.results = storedResults.map((item) => ({
         command: String(item?.command || ""),
-        output: String(item?.output || ""),
+        output: typeof item?.output === "string" ? item.output : "",
       })).filter((item) => item.command.trim());
       state.executedCount = state.results.length;
       state.lastContinuedCount = 0;
@@ -4849,10 +4866,7 @@ function storeAiCommandResultForMessage(messageNode, result) {
   if (!message || !result?.command) return;
   if (!Array.isArray(message.commandResults)) message.commandResults = [];
   message.commandResults = message.commandResults.filter((item) => item.command !== result.command);
-  message.commandResults.push({
-    command: result.command,
-    output: redactSensitiveText(result.output || ""),
-  });
+  message.commandResults.push({ command: result.command });
   storeAiConversationForActivePane();
 }
 
@@ -4958,10 +4972,7 @@ function buildAiTerminalContext() {
 
 function shouldAttachTerminalContext(text) {
   if (aiContextMode === "off") return false;
-  if (aiContextMode === "always") return true;
-  const q = String(text || "").toLowerCase();
-  if (!q.trim()) return false;
-  return /终端|命令|输出|结果|报错|错误|日志|执行|刚才|上面|当前|这台|机器|服务器|主机|系统|环境|配置|性能|cpu|内存|磁盘|硬盘|网络|公网|ip|端口|进程|服务|登录|连接|ssh|shell|目录|文件|项目|部署|安装|启动|运行|检查|看看|分析|诊断/.test(q);
+  return true;
 }
 
 function stripTerminalContentFromAiText(text) {
@@ -5011,9 +5022,9 @@ function enhanceAiCodeBlocks(root) {
         run.textContent = "运行中";
         block.classList.add("approved");
         try {
-          const output = await executeAiCommand(singleCommand, { autoContinue: false });
+          const cursor = await executeAiCommand(singleCommand, { autoContinue: false });
           if (commandState) {
-            const result = { command: singleCommand, output: output || "" };
+            const result = { command: singleCommand, cursor: cursor || 0 };
             commandState.results.push(result);
             commandState.executedCount += 1;
             storeAiCommandResultForMessage(messageNode, result);
@@ -5153,6 +5164,17 @@ async function ensureAiStreamListener() {
       state.node.classList.remove("pending");
       state.node.className = "ai-message ai-message-assistant";
       updateAiMessageWithReasoning(state.node, state.reasoning || "", state.content || "");
+      if (state.timeoutId) {
+        window.clearTimeout(state.timeoutId);
+      }
+      state.timeoutId = window.setTimeout(() => {
+        const s = window.__ztAiStreams?.get?.(payload.requestId);
+        if (!s) return;
+        showAiTurnError(s.node, "AI 响应超时，请重试。", s.messages, s.pendingText);
+        if (aiActiveRequestId === payload.requestId) aiActiveRequestId = "";
+        updateAiSendButton();
+        window.__ztAiStreams.delete(payload.requestId);
+      }, 45000);
     }
     if (payload.done) {
       if (state.timeoutId) window.clearTimeout(state.timeoutId);

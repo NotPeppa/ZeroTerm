@@ -196,6 +196,7 @@ pub struct AiChatMessage {
 #[serde(rename_all = "camelCase")]
 pub struct AiCommandResult {
     pub command: String,
+    #[serde(default)]
     pub output: String,
 }
 
@@ -4515,7 +4516,6 @@ pub async fn create_local_terminal_session(
     let cmd = {
         let mut cmd = CommandBuilder::new("cmd.exe");
         cmd.arg("/K");
-        cmd.arg("chcp 65001 > nul");
         cmd
     };
     #[cfg(not(target_os = "windows"))]
@@ -4582,16 +4582,24 @@ pub async fn create_local_terminal_session(
 
     let app_for_read = app_handle.clone();
     tokio::task::spawn_blocking(move || {
+        use encoding_rs::GBK;
         let mut buf = vec![0u8; 8192];
         loop {
             match reader.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => {
+                    let raw = &buf[..n];
+                    let data = if std::str::from_utf8(raw).is_ok() {
+                        raw.to_vec()
+                    } else {
+                        let (cow, _) = GBK.decode_without_bom_handling(raw);
+                        cow.as_bytes().to_vec()
+                    };
                     let _ = app_for_read.emit(
                         "session:data",
                         crate::session::DataEvent {
                             session_id,
-                            data: buf[..n].to_vec(),
+                            data,
                         },
                     );
                 }
