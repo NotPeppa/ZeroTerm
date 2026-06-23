@@ -135,6 +135,8 @@ pub struct AiProfile {
     pub models: Vec<String>,
     #[serde(default)]
     pub has_api_key: bool,
+    #[serde(default)]
+    pub reasoning_effort: String,
 }
 
 /// The multi-profile store persisted to `ai-config.json` (schema v2).
@@ -168,6 +170,8 @@ pub struct SaveAiProfileInput {
     pub api_key: String,
     #[serde(default)]
     pub models: Vec<String>,
+    #[serde(default)]
+    pub reasoning_effort: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -182,6 +186,8 @@ pub struct SetAiProfileModelInput {
 pub struct AiChatMessage {
     pub role: String,
     pub content: String,
+    #[serde(default)]
+    pub reasoning_content: String,
     #[serde(default)]
     pub command_results: Vec<AiCommandResult>,
 }
@@ -240,6 +246,8 @@ pub struct ClearAiSessionsForScopeInput {
 #[serde(rename_all = "camelCase")]
 pub struct AiChatResponse {
     pub content: String,
+    #[serde(default)]
+    pub reasoning_content: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -262,6 +270,8 @@ pub struct AiChatStreamInput {
 pub struct AiStreamEvent {
     pub request_id: String,
     pub delta: String,
+    #[serde(default)]
+    pub reasoning_delta: String,
     pub done: bool,
     pub error: Option<String>,
 }
@@ -313,6 +323,8 @@ struct OpenAiChoice {
 #[derive(Debug, Deserialize)]
 struct OpenAiMessage {
     content: Option<String>,
+    #[serde(default)]
+    reasoning_content: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -338,6 +350,8 @@ struct OpenAiStreamChoice {
 #[derive(Debug, Deserialize)]
 struct OpenAiStreamDelta {
     content: Option<String>,
+    #[serde(default)]
+    reasoning_content: Option<String>,
 }
 
 static CANCELED_AI_REQUESTS: OnceLock<StdMutex<HashSet<String>>> = OnceLock::new();
@@ -738,6 +752,7 @@ fn read_ai_store_from_disk() -> Result<AiConfigStore, String> {
             model: legacy.model,
             models: Vec::new(),
             has_api_key: false,
+            reasoning_effort: String::new(),
         }],
         active_profile_id: AI_KEYCHAIN_PROFILE.to_string(),
         safe_mode: legacy.safe_mode,
@@ -1174,6 +1189,7 @@ fn emit_ai_stream_error(app: &AppHandle, request_id: &str, error: String) {
         AiStreamEvent {
             request_id: request_id.to_string(),
             delta: String::new(),
+            reasoning_delta: String::new(),
             done: true,
             error: Some(error),
         },
@@ -1231,6 +1247,7 @@ pub async fn save_ai_profile(input: SaveAiProfileInput) -> Result<AiConfigStore,
         model: input.model,
         models: input.models,
         has_api_key: false,
+        reasoning_effort: input.reasoning_effort,
     });
 
     let api_key = input.api_key.trim();
@@ -1440,14 +1457,18 @@ pub async fn ai_chat(
         .timeout(Duration::from_secs(90))
         .build()
         .map_err(|e| e.to_string())?;
+    let mut body = json!({
+        "model": profile.model,
+        "messages": payload_messages,
+        "temperature": 0.2,
+    });
+    if !profile.reasoning_effort.is_empty() {
+        body["reasoning_effort"] = json!(profile.reasoning_effort);
+    }
     let response = client
         .post(endpoint)
         .bearer_auth(api_key)
-        .json(&json!({
-            "model": profile.model,
-            "messages": payload_messages,
-            "temperature": 0.2,
-        }))
+        .json(&body)
         .send()
         .await
         .map_err(|e| format!("AI request failed: {e}"))?;
@@ -1463,17 +1484,22 @@ pub async fn ai_chat(
 
     let parsed: OpenAiChatResponse =
         serde_json::from_str(&body).map_err(|e| format!("parsing AI response failed: {e}"))?;
-    let content = parsed
-        .choices
-        .into_iter()
-        .find_map(|c| c.message.content)
+    let choice = parsed.choices.into_iter().next();
+    let content = choice
+        .as_ref()
+        .and_then(|c| c.message.content.clone())
         .unwrap_or_default()
         .trim()
         .to_string();
-    if content.is_empty() {
+    let reasoning_content = choice
+        .and_then(|c| c.message.reasoning_content)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if content.is_empty() && reasoning_content.is_empty() {
         return Err("AI response was empty.".into());
     }
-    Ok(AiChatResponse { content })
+    Ok(AiChatResponse { content, reasoning_content })
 }
 
 #[tauri::command]
@@ -1500,15 +1526,19 @@ pub async fn ai_chat_stream(app: AppHandle, input: AiChatStreamInput) -> Result<
         .timeout(Duration::from_secs(120))
         .build()
         .map_err(|e| e.to_string())?;
+    let mut body = json!({
+        "model": profile.model,
+        "messages": payload_messages,
+        "temperature": 0.2,
+        "stream": true,
+    });
+    if !profile.reasoning_effort.is_empty() {
+        body["reasoning_effort"] = json!(profile.reasoning_effort);
+    }
     let response = match client
         .post(endpoint)
         .bearer_auth(api_key)
-        .json(&json!({
-            "model": profile.model,
-            "messages": payload_messages,
-            "temperature": 0.2,
-            "stream": true,
-        }))
+        .json(&body)
         .send()
         .await
     {
@@ -1537,6 +1567,7 @@ pub async fn ai_chat_stream(app: AppHandle, input: AiChatStreamInput) -> Result<
                 AiStreamEvent {
                     request_id,
                     delta: String::new(),
+                    reasoning_delta: String::new(),
                     done: true,
                     error: Some("canceled".to_string()),
                 },
@@ -1565,6 +1596,7 @@ pub async fn ai_chat_stream(app: AppHandle, input: AiChatStreamInput) -> Result<
                         AiStreamEvent {
                             request_id: request_id.clone(),
                             delta: String::new(),
+                            reasoning_delta: String::new(),
                             done: true,
                             error: None,
                         },
@@ -1577,6 +1609,7 @@ pub async fn ai_chat_stream(app: AppHandle, input: AiChatStreamInput) -> Result<
                         AiStreamEvent {
                             request_id,
                             delta: String::new(),
+                            reasoning_delta: String::new(),
                             done: true,
                             error: Some("canceled".to_string()),
                         },
@@ -1588,18 +1621,19 @@ pub async fn ai_chat_stream(app: AppHandle, input: AiChatStreamInput) -> Result<
                     Err(_) => continue,
                 };
                 for choice in parsed.choices {
-                    if let Some(delta) = choice.delta.content {
-                        if !delta.is_empty() {
-                            emit_ai_stream(
-                                &app,
-                                AiStreamEvent {
-                                    request_id: request_id.clone(),
-                                    delta,
-                                    done: false,
-                                    error: None,
-                                },
-                            );
-                        }
+                    let reasoning = choice.delta.reasoning_content.clone().unwrap_or_default();
+                    let content = choice.delta.content.clone().unwrap_or_default();
+                    if !reasoning.is_empty() || !content.is_empty() {
+                        emit_ai_stream(
+                            &app,
+                            AiStreamEvent {
+                                request_id: request_id.clone(),
+                                delta: content,
+                                reasoning_delta: reasoning,
+                                done: false,
+                                error: None,
+                            },
+                        );
                     }
                 }
             }
@@ -1610,6 +1644,7 @@ pub async fn ai_chat_stream(app: AppHandle, input: AiChatStreamInput) -> Result<
         AiStreamEvent {
             request_id,
             delta: String::new(),
+            reasoning_delta: String::new(),
             done: true,
             error: None,
         },

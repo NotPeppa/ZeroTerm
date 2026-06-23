@@ -1011,6 +1011,11 @@ const I18N = {
     "settings.ai.profile.confirm_delete": "Delete config \"{name}\"? Its saved API key will be removed.",
     "settings.ai.profile.new": "New config",
     "settings.ai.profile.edit_title": "Edit config",
+    "settings.ai.reasoning_effort.label": "Reasoning effort",
+    "settings.ai.reasoning_effort.default": "Default (auto)",
+    "settings.ai.reasoning_effort.low": "Low",
+    "settings.ai.reasoning_effort.medium": "Medium",
+    "settings.ai.reasoning_effort.high": "High",
     "settings.language.label": "Language",
     "settings.language.hint": "Changes apply immediately and are saved locally.",
     "settings.version.label": "Version",
@@ -1827,6 +1832,11 @@ const I18N = {
     "settings.ai.profile.confirm_delete": "删除配置「{name}」？其保存的密钥也会被一并清除。",
     "settings.ai.profile.new": "新建配置",
     "settings.ai.profile.edit_title": "编辑配置",
+    "settings.ai.reasoning_effort.label": "推理强度",
+    "settings.ai.reasoning_effort.default": "默认（不指定）",
+    "settings.ai.reasoning_effort.low": "低",
+    "settings.ai.reasoning_effort.medium": "中",
+    "settings.ai.reasoning_effort.high": "高",
     "settings.language.label": "语言",
     "settings.language.hint": "修改立即生效，并会保存在本地。",
     "settings.version.label": "版本",
@@ -2416,6 +2426,7 @@ const settingsAiSystemPrompt = document.getElementById("settings-ai-system-promp
 const aiConfigOverlay = document.getElementById("ai-config-overlay");
 const aiConfigTitle = document.getElementById("ai-config-title");
 const settingsAiName = document.getElementById("settings-ai-name");
+const settingsAiReasoningEffort = document.getElementById("settings-ai-reasoning-effort");
 const settingsAiCancel = document.getElementById("settings-ai-cancel");
 const settingsSyncRefresh = document.getElementById("settings-sync-refresh");
 const settingsSyncSave = document.getElementById("settings-sync-save");
@@ -3627,6 +3638,7 @@ function startNewAiProfile() {
   if (settingsAiBaseUrl) settingsAiBaseUrl.value = "";
   if (settingsAiApiKey) settingsAiApiKey.value = "";
   setAiModelOptions([], "");
+  if (settingsAiReasoningEffort) settingsAiReasoningEffort.value = "";
   if (settingsAiStatus) settingsAiStatus.textContent = t("settings.ai.status.unsaved");
   lastAutoAiModelsKey = "";
   if (aiConfigTitle) aiConfigTitle.textContent = t("settings.ai.profile.new");
@@ -3645,6 +3657,7 @@ function editAiProfile(id) {
   }
   if (settingsAiBaseUrl) settingsAiBaseUrl.value = p.baseUrl || "";
   if (settingsAiApiKey) settingsAiApiKey.value = "";
+  if (settingsAiReasoningEffort) settingsAiReasoningEffort.value = p.reasoningEffort || "";
   setAiModelOptions(Array.isArray(p.models) ? p.models : [], p.model || "");
   if (settingsAiStatus) {
     settingsAiStatus.textContent = p.hasApiKey
@@ -3917,6 +3930,7 @@ function normalizeAiSessionMessages(messages) {
     .map((message) => ({
       role: String(message?.role || "user"),
       content: String(message?.content || ""),
+      reasoningContent: String(message?.reasoningContent || ""),
       commandResults: Array.isArray(message?.commandResults)
         ? message.commandResults.map((result) => ({
           command: String(result?.command || ""),
@@ -3924,7 +3938,7 @@ function normalizeAiSessionMessages(messages) {
         })).filter((result) => result.command.trim())
         : [],
     }))
-    .filter((message) => ["user", "assistant", "error"].includes(message.role) && message.content.trim());
+    .filter((message) => ["user", "assistant", "error"].includes(message.role) && (message.content.trim() || message.reasoningContent.trim()));
 }
 
 async function persistCurrentAiSession() {
@@ -4343,6 +4357,40 @@ function setAiMessageContent(node, content) {
   scrollAiPanelToBottom({ force: shouldStickToBottom });
 }
 
+function updateAiMessageWithReasoning(node, reasoning, content) {
+  const body = node?.querySelector?.(".ai-message-body");
+  if (!body) return;
+  const shouldStickToBottom = isAiPanelNearBottom();
+  body.textContent = "";
+  const fragment = document.createDocumentFragment();
+  if (reasoning) {
+    fragment.appendChild(renderAiThinkingBlock(reasoning));
+  }
+  if (content) {
+    const contentWrap = document.createElement("div");
+    contentWrap.className = "ai-message-content";
+    contentWrap.appendChild(renderAiMarkdown(content));
+    fragment.appendChild(contentWrap);
+  }
+  body.appendChild(fragment);
+  enhanceAiCodeBlocks(body);
+  scrollAiPanelToBottom({ force: shouldStickToBottom });
+}
+
+function renderAiThinkingBlock(reasoning) {
+  const details = document.createElement("details");
+  details.className = "ai-thinking-block";
+  const summary = document.createElement("summary");
+  summary.className = "ai-thinking-summary";
+  summary.textContent = "🤔 思考过程";
+  details.appendChild(summary);
+  const content = document.createElement("div");
+  content.className = "ai-thinking-content";
+  content.appendChild(renderAiMarkdown(reasoning));
+  details.appendChild(content);
+  return details;
+}
+
 function parseAiErrorMessage(error) {
   const raw = String(error || "");
   const jsonStart = raw.indexOf("{");
@@ -4636,7 +4684,7 @@ async function streamAiMessages(messages, pendingText = "正在思考...") {
   const requestId = `ai-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   aiActiveRequestId = requestId;
   updateAiSendButton();
-  window.__ztAiStreams.set(requestId, { node: pendingNode, content: "", messages, pendingText });
+  window.__ztAiStreams.set(requestId, { node: pendingNode, content: "", reasoning: "", messages, pendingText });
   const timeoutId = window.setTimeout(() => {
     const state = window.__ztAiStreams?.get?.(requestId);
     if (!state) return;
@@ -4661,11 +4709,16 @@ async function streamAiMessages(messages, pendingText = "正在思考...") {
     try {
       const fallback = await invoke("ai_chat", { messages, profileId: aiStore.activeProfileId || null });
       const content = fallback?.content || "";
-      if (content.trim()) {
+      const reasoningContent = fallback?.reasoningContent || "";
+      if (content.trim() || reasoningContent.trim()) {
         state.node.classList.remove("pending");
         state.node.className = "ai-message ai-message-assistant";
-        setAiMessageContent(state.node, content);
-        const assistantMessage = { role: "assistant", content, commandResults: [] };
+        if (reasoningContent) {
+          updateAiMessageWithReasoning(state.node, reasoningContent, content);
+        } else {
+          setAiMessageContent(state.node, content);
+        }
+        const assistantMessage = { role: "assistant", content, commandResults: [], reasoningContent };
         aiMessages.push(assistantMessage);
         aiMessageByNode.set(state.node, assistantMessage);
         storeAiConversationForActivePane();
@@ -5019,7 +5072,12 @@ function appendAiMessage(role, content, { pending = false, skipStore = false, me
   node.append(label, body);
   aiChatLog.appendChild(node);
   if (message) aiMessageByNode.set(node, message);
-  setAiMessageContent(node, content);
+  const reasoning = message?.reasoningContent || "";
+  if (reasoning && !pending) {
+    updateAiMessageWithReasoning(node, reasoning, content);
+  } else {
+    setAiMessageContent(node, content);
+  }
   scrollAiPanelToBottom({ force: true });
   if (!skipStore) storeAiConversationForActivePane();
   return node;
@@ -5083,29 +5141,76 @@ async function ensureAiStreamListener() {
       window.__ztAiStreams.delete(payload.requestId);
       return;
     }
-    if (payload.delta) {
-      state.content += payload.delta;
+    const reasoningDelta = payload.reasoningDelta || "";
+    const contentDelta = payload.delta || "";
+    if (reasoningDelta) {
+      state.reasoning = (state.reasoning || "") + reasoningDelta;
+    }
+    if (contentDelta) {
+      state.content = (state.content || "") + contentDelta;
+    }
+    if (reasoningDelta || contentDelta) {
       state.node.classList.remove("pending");
       state.node.className = "ai-message ai-message-assistant";
-      setAiMessageContent(state.node, state.content);
+      updateAiMessageWithReasoning(state.node, state.reasoning || "", state.content || "");
     }
     if (payload.done) {
       if (state.timeoutId) window.clearTimeout(state.timeoutId);
       state.node.classList.remove("pending");
       if (aiActiveRequestId === payload.requestId) aiActiveRequestId = "";
-      if (!state.content.trim()) {
-        showAiTurnError(state.node, "AI 没有返回内容，请重试。", state.messages, state.pendingText);
-        updateAiSendButton();
-        window.__ztAiStreams.delete(payload.requestId);
+      const finalContent = (state.content || "").trim();
+      const finalReasoning = (state.reasoning || "").trim();
+      if (!finalContent && !finalReasoning) {
+        if (state.fallbackTried) {
+          showAiTurnError(state.node, "AI 没有返回内容，请重试。", state.messages, state.pendingText);
+          updateAiSendButton();
+          window.__ztAiStreams.delete(payload.requestId);
+          return;
+        }
+        state.fallbackTried = true;
+        tryFallbackAiChat(state, payload.requestId);
         return;
       }
-      const assistantMessage = { role: "assistant", content: state.content, commandResults: [] };
+      const assistantMessage = { role: "assistant", content: finalContent, commandResults: [], reasoningContent: finalReasoning };
       aiMessages.push(assistantMessage);
       aiMessageByNode.set(state.node, assistantMessage);
       storeAiConversationForActivePane();
       window.__ztAiStreams.delete(payload.requestId);
     }
   });
+}
+
+async function tryFallbackAiChat(state, requestId) {
+  try {
+    if (aiActiveRequestId !== requestId) return;
+    const fallback = await invoke("ai_chat", {
+      messages: state.messages,
+      profileId: aiStore.activeProfileId || null,
+    });
+    if (aiActiveRequestId !== requestId) return;
+    const content = fallback?.content || "";
+    const reasoningContent = fallback?.reasoningContent || "";
+    if (content.trim() || reasoningContent.trim()) {
+      state.node.classList.remove("pending");
+      state.node.className = "ai-message ai-message-assistant";
+      if (reasoningContent) {
+        updateAiMessageWithReasoning(state.node, reasoningContent, content);
+      } else {
+        setAiMessageContent(state.node, content);
+      }
+      const assistantMessage = { role: "assistant", content, commandResults: [], reasoningContent };
+      aiMessages.push(assistantMessage);
+      aiMessageByNode.set(state.node, assistantMessage);
+      storeAiConversationForActivePane();
+      updateAiSendButton();
+      window.__ztAiStreams.delete(requestId);
+      return;
+    }
+  } catch (_) {}
+  if (aiActiveRequestId !== requestId) return;
+  showAiTurnError(state.node, "AI 没有返回内容，请重试。", state.messages, state.pendingText);
+  updateAiSendButton();
+  window.__ztAiStreams.delete(requestId);
 }
 
 const SETTINGS_KEY_AI_SYSTEM_PROMPT = "zeroterm.settings.ai.system_prompt";
@@ -5144,6 +5249,7 @@ async function saveAiProfileFromForm() {
     baseUrl: settingsAiBaseUrl?.value || "",
     apiKey: settingsAiApiKey?.value || "",
     models,
+    reasoningEffort: settingsAiReasoningEffort?.value || "",
   };
   const store = await invoke("save_ai_profile", { input });
   if (settingsAiApiKey) settingsAiApiKey.value = "";
@@ -9615,6 +9721,11 @@ function applyI18n() {
   setPlaceholder("settings-ai-model-custom", "settings.ai.model.placeholder");
   setPlaceholder("settings-ai-base-url", "settings.ai.base_url.placeholder");
   setPlaceholder("settings-ai-api-key", "settings.ai.api_key.placeholder");
+  setText("settings-ai-reasoning-effort-label", "settings.ai.reasoning_effort.label");
+  setOptionText("settings-ai-reasoning-effort", "", "settings.ai.reasoning_effort.default");
+  setOptionText("settings-ai-reasoning-effort", "low", "settings.ai.reasoning_effort.low");
+  setOptionText("settings-ai-reasoning-effort", "medium", "settings.ai.reasoning_effort.medium");
+  setOptionText("settings-ai-reasoning-effort", "high", "settings.ai.reasoning_effort.high");
   setOptionText("settings-ai-provider", "openai-compatible", "settings.ai.provider.openai_compatible");
   setOptionText("settings-ai-provider", "openai", "settings.ai.provider.openai");
   setOptionText("settings-ai-provider", "anthropic", "settings.ai.provider.anthropic");
@@ -9631,6 +9742,7 @@ function applyI18n() {
   }
   syncCustomSelect("settings-ai-model");
   syncCustomSelect("settings-ai-provider");
+  syncCustomSelect("settings-ai-reasoning-effort");
   setText("settings-sftp-title", "settings.sftp.title");
   setText("settings-sftp-auto-label", "settings.sftp.auto.label");
   setText("settings-sftp-auto-hint", "settings.sftp.auto.hint");

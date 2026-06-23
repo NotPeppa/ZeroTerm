@@ -3289,6 +3289,47 @@ body[data-app-theme="light"] .terminal-side-btn.active::before {
   color: rgba(204, 215, 242, 0.72);
 }
 
+.ai-thinking-block {
+  margin-bottom: 12px;
+  border: 1px solid rgba(104, 168, 255, 0.2);
+  border-radius: 10px;
+  background: rgba(104, 168, 255, 0.06);
+  overflow: hidden;
+}
+
+.ai-thinking-summary {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(156, 170, 208, 0.82);
+  user-select: none;
+}
+
+.ai-thinking-summary:hover {
+  color: rgba(238, 242, 255, 0.92);
+}
+
+.ai-thinking-content {
+  padding: 8px 12px 12px;
+  border-top: 1px solid rgba(104, 168, 255, 0.1);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: rgba(204, 215, 242, 0.8);
+}
+
+.ai-thinking-content p {
+  margin: 0 0 8px;
+}
+
+.ai-thinking-content p:last-child {
+  margin-bottom: 0;
+}
+
+.ai-message-content {
+  margin-top: 0;
+}
+
 .ai-hero-card {
   padding: 18px;
   border-radius: 20px;
@@ -3741,6 +3782,24 @@ body[data-app-theme="light"] .ai-message-error .ai-message-body {
 body[data-app-theme="light"] .ai-message.pending .ai-message-body {
   color: #475569;
   background: rgba(255, 255, 255, 0.92);
+}
+
+body[data-app-theme="light"] .ai-thinking-block {
+  border-color: rgba(37, 99, 235, 0.18);
+  background: rgba(37, 99, 235, 0.04);
+}
+
+body[data-app-theme="light"] .ai-thinking-summary {
+  color: #475569;
+}
+
+body[data-app-theme="light"] .ai-thinking-summary:hover {
+  color: #0f172a;
+}
+
+body[data-app-theme="light"] .ai-thinking-content {
+  color: #475569;
+  border-top-color: rgba(37, 99, 235, 0.1);
 }
 
 body[data-app-theme="light"] .ai-examples button {

@@ -1581,6 +1581,15 @@ drwxr-xr-x 1 root  data</pre>
               <span id="settings-ai-api-key-label">API Key</span>
               <input id="settings-ai-api-key" type="password" placeholder="留空则沿用已保存的密钥" autocomplete="off" />
             </label>
+            <label class="settings-field settings-grid-span-2">
+              <span id="settings-ai-reasoning-effort-label">推理强度 (reasoning_effort)</span>
+              <select id="settings-ai-reasoning-effort">
+                <option value="">默认 (不指定)</option>
+                <option value="low">低 (low)</option>
+                <option value="medium">中 (medium)</option>
+                <option value="high">高 (high)</option>
+              </select>
+            </label>
           </div>
           <p id="settings-ai-status" class="muted tiny">AI 配置尚未保存。</p>
           <div class="dialog-actions">
