@@ -4863,6 +4863,65 @@ body[data-app-theme="light"] .pane-ai-toggle.active {
   margin-top: 1px;
 }
 
+.terminal-selection-menu {
+  position: fixed;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px;
+  border: 1px solid rgba(118, 131, 161, 0.45);
+  border-radius: 999px;
+  background: rgba(31, 36, 48, 0.94);
+  box-shadow: 0 10px 22px rgba(3, 8, 20, 0.28);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  z-index: 1300;
+}
+
+.terminal-selection-menu button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  min-height: 24px;
+  border: none;
+  border-radius: 999px;
+  padding: 0 9px;
+  background: transparent;
+  color: #eef3ff;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.terminal-selection-menu button:hover:not(:disabled) {
+  background: rgba(104, 168, 255, 0.16);
+}
+
+.terminal-selection-menu button:disabled {
+  opacity: 0.48;
+  cursor: default;
+}
+
+.terminal-selection-menu button + button {
+  position: relative;
+}
+
+.terminal-selection-menu button + button::before {
+  content: "";
+  position: absolute;
+  left: -2px;
+  top: 5px;
+  width: 1px;
+  height: 14px;
+  background: rgba(146, 160, 190, 0.28);
+}
+
+.terminal-selection-menu .zt-icon {
+  display: none;
+}
+
 .host-card .target {
   display: none;
 }
@@ -11800,7 +11859,8 @@ body[data-app-theme="light"] .ace-tomorrow-night-bright .ace_heading {
 /* 14. Context Menus Light Theme Overrides */
 body[data-app-theme="light"] .files-context-menu,
 body[data-app-theme="light"] .hosts-context-menu,
-body[data-app-theme="light"] #groups-context-menu {
+body[data-app-theme="light"] #groups-context-menu,
+body[data-app-theme="light"] .terminal-selection-menu {
   background: #ffffff !important;
   border: 1px solid rgba(203, 213, 225, 0.8) !important;
   box-shadow: 0 16px 40px rgba(15, 23, 42, 0.12) !important;
@@ -11808,10 +11868,19 @@ body[data-app-theme="light"] #groups-context-menu {
 
 body[data-app-theme="light"] .files-context-menu button,
 body[data-app-theme="light"] .hosts-context-menu button,
-body[data-app-theme="light"] #groups-context-menu button {
+body[data-app-theme="light"] #groups-context-menu button,
+body[data-app-theme="light"] .terminal-selection-menu button {
   background: transparent !important;
   border-color: transparent !important;
   color: var(--text) !important;
+}
+
+body[data-app-theme="light"] .terminal-selection-menu button:hover:not(:disabled) {
+  background: rgba(15, 23, 42, 0.06) !important;
+}
+
+body[data-app-theme="light"] .terminal-selection-menu button + button::before {
+  background: rgba(148, 163, 184, 0.42) !important;
 }
 
 body[data-app-theme="light"] #theme-mode-menu button.active {

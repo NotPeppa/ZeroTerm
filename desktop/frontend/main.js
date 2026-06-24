@@ -751,6 +751,10 @@ const I18N = {
     "ai.compose.placeholder": "Describe your goal, e.g. Get this project running",
     "ai.compose.hint": "Enter to send, Shift+Enter for newline",
     "ai.compose.send": "Send to AI",
+    "terminal.selection.copy": "Copy",
+    "terminal.selection.ai": "AI",
+    "terminal.selection.copy_failed": "Copy failed: {error}",
+    "terminal.selection.ai_busy": "AI is still working. Please wait for this turn to finish.",
     "ai.context.toggle.title": "Toggle attaching current terminal output",
     "ai.context.toggle.label": "Auto-include terminal context",
     "ai.context.mode.always": "Always include terminal",
@@ -1571,6 +1575,10 @@ const I18N = {
     "ai.compose.placeholder": "描述你的目标，例如：帮我把这个项目运行起来",
     "ai.compose.hint": "Enter 发送，Shift+Enter 换行",
     "ai.compose.send": "发送给 AI",
+    "terminal.selection.copy": "复制",
+    "terminal.selection.ai": "AI",
+    "terminal.selection.copy_failed": "复制失败：{error}",
+    "terminal.selection.ai_busy": "AI 正在处理中，请等当前这轮完成后再试。",
     "ai.context.toggle.title": "切换是否附带当前终端内容",
     "ai.context.toggle.label": "智能判断终端内容",
     "ai.context.mode.always": "总是附带终端内容",
@@ -2338,6 +2346,9 @@ const snippetEditCommand = document.getElementById("snippet-edit-command");
 const snippetItemContextMenu = document.getElementById("snippet-item-context-menu");
 const snippetItemMenuEdit = document.getElementById("snippet-item-menu-edit");
 const snippetItemMenuDelete = document.getElementById("snippet-item-menu-delete");
+const terminalSelectionMenu = document.getElementById("terminal-selection-menu");
+const terminalSelectionMenuCopy = document.getElementById("terminal-selection-menu-copy");
+const terminalSelectionMenuAi = document.getElementById("terminal-selection-menu-ai");
 const aiComposeForm = document.getElementById("ai-compose-form");
 const aiComposeInput = document.getElementById("ai-compose-input");
 const aiChatLog = document.getElementById("ai-chat-log");
@@ -5557,6 +5568,8 @@ let groupStateInitialized = false;
 let draggingHostId = null;
 let hostsContextHostId = null;
 let groupsContextGroupId = null;
+let terminalSelectionMenuPaneId = null;
+let terminalSelectionMenuText = "";
 let sftpFollowPollTimer = null;
 let sftpFollowPollingTick = false;
 const SETTINGS_KEY_SFTP_AUTO_DETECT = "zeroterm.settings.sftp.auto_detect";
@@ -8929,6 +8942,69 @@ function hideGroupsContextMenu() {
   groupsContextGroupId = null;
 }
 
+function hideTerminalSelectionMenu() {
+  if (!terminalSelectionMenu) return;
+  terminalSelectionMenu.hidden = true;
+  terminalSelectionMenuPaneId = null;
+  terminalSelectionMenuText = "";
+}
+
+function showTerminalSelectionMenu(pane, text, x, y) {
+  if (!terminalSelectionMenu || !pane) return;
+  const selectedText = String(text || "");
+  if (!selectedText.trim()) {
+    hideTerminalSelectionMenu();
+    return;
+  }
+  terminalSelectionMenuPaneId = pane.id;
+  terminalSelectionMenuText = selectedText;
+  terminalSelectionMenu.style.left = "0px";
+  terminalSelectionMenu.style.top = "0px";
+  terminalSelectionMenu.hidden = false;
+  requestAnimationFrame(() => {
+    const rect = terminalSelectionMenu.getBoundingClientRect();
+    const pad = 8;
+    let left = x;
+    let top = y;
+    if (left + rect.width + pad > window.innerWidth) {
+      left = Math.max(pad, window.innerWidth - rect.width - pad);
+    }
+    if (top + rect.height + pad > window.innerHeight) {
+      top = Math.max(pad, window.innerHeight - rect.height - pad);
+    }
+    terminalSelectionMenu.style.left = `${left}px`;
+    terminalSelectionMenu.style.top = `${top}px`;
+  });
+}
+
+async function copyTerminalSelectionMenuText() {
+  if (!terminalSelectionMenuText) return;
+  try {
+    await navigator.clipboard.writeText(terminalSelectionMenuText);
+  } catch (e) {
+    showToast(t("terminal.selection.copy_failed", { error: e }), "error", 3200);
+    throw e;
+  }
+}
+
+function focusAiPanelForPaneId(paneId) {
+  const tab = getActiveTab();
+  if (tab && paneId) tab.activePaneId = paneId;
+  syncAiConversationToActivePane();
+  setTerminalSidePanel("ai");
+  aiComposeInput?.focus();
+}
+
+async function sendTerminalSelectionToAi() {
+  if (!terminalSelectionMenuText) return;
+  if (aiSending) {
+    showToast(t("terminal.selection.ai_busy"), "error", 2600);
+    return;
+  }
+  focusAiPanelForPaneId(terminalSelectionMenuPaneId);
+  await sendAiMessage(terminalSelectionMenuText);
+}
+
 function showHostsContextMenu(host, ev) {
   if (!hostsContextMenu || !host) return;
   hostsContextHostId = host.id;
@@ -9656,6 +9732,8 @@ function applyI18n() {
   setText("ai-example-4", "ai.example.4");
   setText("ai-compose-hint", "ai.compose.hint");
   setPlaceholder("ai-compose-input", "ai.compose.placeholder");
+  setText("terminal-selection-menu-copy-label", "terminal.selection.copy");
+  setText("terminal-selection-menu-ai-label", "terminal.selection.ai");
   setAttr("ai-context-toggle", "title", "ai.context.toggle.title");
   setText("ai-session-dialog-title", "ai.session.title");
   setText("ai-session-close", "ai.session.close");
@@ -12165,8 +12243,19 @@ function ensurePaneTerminal(pane) {
       console.warn("canvas renderer unavailable, falling back to DOM renderer", e);
       pane.rendererAddon = null;
     }
+    pane.bodyEl.addEventListener("contextmenu", (ev) => {
+      const selected = pane.term?.getSelection?.() || "";
+      if (!selected.trim()) {
+        hideTerminalSelectionMenu();
+        return;
+      }
+      ev.preventDefault();
+      ev.stopPropagation();
+      showTerminalSelectionMenu(pane, selected, ev.clientX, ev.clientY);
+    });
     pane.bodyEl.addEventListener("wheel", (ev) => {
       if (!pane.term) return;
+      if (!terminalSelectionMenu?.hidden) hideTerminalSelectionMenu();
       const cellHeight = pane.term?._core?._renderService?.dimensions?.css?.cell?.height || 18;
       const lines = Math.max(1, Math.round(Math.abs(ev.deltaY) / Math.max(1, cellHeight)));
       pane.term.scrollLines(ev.deltaY > 0 ? lines : -lines);
@@ -12188,7 +12277,14 @@ function ensurePaneTerminal(pane) {
   });
 
   pane.term.onScroll(() => {
+    hideTerminalSelectionMenu();
     syncPaneViewportScroll(pane);
+  });
+
+  pane.term.onSelectionChange(() => {
+    if (terminalSelectionMenuPaneId !== pane.id) return;
+    const selected = pane.term?.getSelection?.() || "";
+    if (!selected.trim()) hideTerminalSelectionMenu();
   });
 
   pane.term.attachCustomKeyEventHandler((ev) => {
@@ -12573,6 +12669,23 @@ function nextFrame() {
 
 let terminalFontsReadyPromise = null;
 
+function refreshPaneFontMetrics(pane) {
+  const term = pane?.term;
+  const core = term?._core;
+  if (!term || !core) return;
+  try {
+    // xterm measures cell geometry when the terminal opens. If our bundled
+    // web font finishes loading afterwards, the renderer can repaint glyphs
+    // with the new font while selection/hit-testing still uses fallback-font
+    // cell metrics for a frame or longer. Re-measure first, then rebuild the
+    // renderer dimensions from those updated character metrics.
+    core._charSizeService?.measure?.();
+    core._renderService?.handleResize?.(term.cols, term.rows);
+  } catch (e) {
+    console.warn("terminal font metric refresh failed", e);
+  }
+}
+
 /// Force the active renderer (Canvas/WebGL) to re-rasterise its glyph texture
 /// atlas once the custom terminal font is actually loaded. Without this the
 /// atlas keeps the fallback-font glyphs baked in at load time and text stays
@@ -12581,11 +12694,13 @@ function rebuildRendererAtlasWhenReady(pane) {
   waitForTerminalFonts()
     .then(() => {
       // The pane may have been torn down meanwhile.
-      if (!pane.term || !pane.rendererAddon) return;
+      if (!pane.term) return;
       try {
-        pane.rendererAddon.clearTextureAtlas();
+        refreshPaneFontMetrics(pane);
+        pane.rendererAddon?.clearTextureAtlas?.();
         // Canvas's clearTextureAtlas only drops the cache; force a redraw so
         // the now-correct glyphs are repainted (WebGL self-requests one).
+        requestPaneFit(pane, { immediate: true });
         refreshPaneTerminal(pane);
       } catch (e) {
         console.warn("renderer atlas rebuild failed", e);
@@ -16013,6 +16128,22 @@ document.querySelectorAll("[data-ai-example-key]").forEach((button) => {
   });
 });
 
+terminalSelectionMenuCopy?.addEventListener("click", async () => {
+  try {
+    await copyTerminalSelectionMenuText();
+    hideTerminalSelectionMenu();
+  } catch {}
+});
+
+terminalSelectionMenuAi?.addEventListener("click", () => {
+  sendTerminalSelectionToAi()
+    .then(() => hideTerminalSelectionMenu())
+    .catch((e) => {
+      hideTerminalSelectionMenu();
+      appendAiMessage("error", String(e));
+    });
+});
+
 aiComposeInput?.addEventListener("keydown", (ev) => {
   if (ev.key !== "Enter" || ev.shiftKey) return;
   ev.preventDefault();
@@ -16174,6 +16305,9 @@ document.addEventListener("pointerdown", (ev) => {
   if (!filesContextMenu.hidden && !filesContextMenu.contains(ev.target)) {
     hideFilesContextMenu();
   }
+  if (terminalSelectionMenu && !terminalSelectionMenu.hidden && !terminalSelectionMenu.contains(ev.target)) {
+    hideTerminalSelectionMenu();
+  }
 });
 document.addEventListener("dragend", () => {
   resetSftpDragState();
@@ -16185,11 +16319,16 @@ document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape" && !filesContextMenu.hidden) {
     hideFilesContextMenu();
   }
+  if (ev.key === "Escape" && terminalSelectionMenu && !terminalSelectionMenu.hidden) {
+    hideTerminalSelectionMenu();
+  }
 });
 window.addEventListener("resize", () => {
   if (!filesContextMenu.hidden) hideFilesContextMenu();
+  if (terminalSelectionMenu && !terminalSelectionMenu.hidden) hideTerminalSelectionMenu();
   resetSftpDragState();
 });
+window.addEventListener("blur", () => hideTerminalSelectionMenu());
 
 // --------------------------------------------------------------------------
 // Boot
