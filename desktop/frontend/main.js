@@ -1063,6 +1063,18 @@ const I18N = {
     "settings.terminal_font.line_height": "Line Height",
     "settings.terminal.subtab.theme": "Theme",
     "settings.terminal.subtab.font": "Font",
+    "settings.terminal.title": "Terminal",
+    "settings.terminal.desc": "Configure the shell used by local terminal tabs.",
+    "settings.terminal.shell.label": "Local terminal shell",
+    "settings.terminal.shell.hint": "Path to the shell executable launched for Local terminal tabs. Leave empty to use the system default.",
+    "settings.terminal.shell.browse": "Browse",
+    "settings.terminal.shell.reset": "Reset",
+    "settings.terminal.shell.system_default": "System default",
+    "settings.terminal.shell.current": "Used when empty: {shell}",
+    "settings.terminal.cwd.label": "Working directory",
+    "settings.terminal.cwd.hint": "Open Local terminal tabs in this directory. Leave empty to use the default.",
+    "settings.terminal.cwd.placeholder": "e.g. D:\\projects",
+    "settings.terminal.cwd.browse": "Browse",
     "settings.sftp.title": "SFTP",
     "settings.sftp.auto.label": "Auto-detect directory follow",
     "settings.sftp.auto.hint": "When opening SFTP, detect whether remote shell has directory-follow configured and prompt to install if missing.",
@@ -1893,6 +1905,18 @@ const I18N = {
     "settings.terminal_font.line_height": "行高",
     "settings.terminal.subtab.theme": "主题",
     "settings.terminal.subtab.font": "字体",
+    "settings.terminal.title": "终端",
+    "settings.terminal.desc": "配置本地终端标签页使用的 Shell。",
+    "settings.terminal.shell.label": "本地终端 Shell",
+    "settings.terminal.shell.hint": "打开「本地」终端标签页时启动的 shell 可执行文件路径。留空则使用系统默认。",
+    "settings.terminal.shell.browse": "浏览",
+    "settings.terminal.shell.reset": "恢复默认",
+    "settings.terminal.shell.system_default": "系统默认",
+    "settings.terminal.shell.current": "留空时使用：{shell}",
+    "settings.terminal.cwd.label": "工作目录",
+    "settings.terminal.cwd.hint": "配置后，每次打开「本地」终端标签页都会自动切换到该目录。留空则使用默认目录。",
+    "settings.terminal.cwd.placeholder": "例如：D:\\projects",
+    "settings.terminal.cwd.browse": "浏览",
     "settings.sftp.title": "SFTP",
     "settings.sftp.auto.label": "自动检测目录配置",
     "settings.sftp.auto.hint": "打开 SFTP 标签页时，自动检测远端 shell 是否已配置目录跟随，未配置时提示自动安装。",
@@ -2992,10 +3016,29 @@ function stopMetricsAutoRefresh() {
 // ---------- Docker panel ----------
 let dockerRefreshToken = 0;
 const dockerExpanded = new Set();
+// Groups the user has explicitly expanded. Empty by default → every group
+// starts collapsed.
+const dockerExpandedGroups = new Set();
+let dockerLastRows = [];
+// Sentinel group key for containers without a compose project. Contains a ":"
+// which is not a valid compose project name char, so it never collides.
+const DOCKER_UNGROUPED = "::ungrouped";
 
 async function dockerExec(args) {
   const pane = getActivePane();
   return invoke("docker_exec", { hostId: pane?.host?.id || null, args });
+}
+
+// `docker ps --format {{json .}}` exposes labels as a single comma-joined
+// "k=v,k=v" string. Split into a map so we can read the compose labels.
+function parseDockerLabels(str) {
+  const map = {};
+  String(str || "").split(",").forEach((pair) => {
+    const eq = pair.indexOf("=");
+    if (eq <= 0) return;
+    map[pair.slice(0, eq).trim()] = pair.slice(eq + 1);
+  });
+  return map;
 }
 
 function parseDockerPsLines(stdout) {
@@ -3005,6 +3048,7 @@ function parseDockerPsLines(stdout) {
     if (!s) return;
     try {
       const o = JSON.parse(s);
+      const labels = parseDockerLabels(o.Labels);
       rows.push({
         id: o.ID || o.Id || "",
         name: o.Names || o.Name || "",
@@ -3012,6 +3056,9 @@ function parseDockerPsLines(stdout) {
         state: String(o.State || "").toLowerCase(),
         status: o.Status || "",
         ports: o.Ports || "",
+        project: labels["com.docker.compose.project"] || "",
+        service: labels["com.docker.compose.service"] || "",
+        configFiles: labels["com.docker.compose.project.config_files"] || "",
       });
     } catch (e) {}
   });
@@ -3055,16 +3102,40 @@ async function renderDockerPanel(options = {}) {
 
 function renderDockerList(rows) {
   if (!terminalDockerBody) return;
+  hideDockerGroupMenu();
+  dockerLastRows = rows;
   if (!rows.length) {
     terminalDockerBody.innerHTML = `<div class="terminal-side-empty"><strong>没有容器</strong><p>该主机上未发现任何 Docker 容器。</p></div>`;
     return;
   }
-  terminalDockerBody.innerHTML = rows.map((c) => {
-    const tone = dockerStateTone(c.state);
-    const running = c.state === "running";
-    const expanded = dockerExpanded.has(c.id);
-    const idAttr = escapeMetricText(c.id);
-    return `
+  // Group by compose project, preserving first-seen order within each group.
+  const groups = new Map();
+  rows.forEach((c) => {
+    const key = c.project || DOCKER_UNGROUPED;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(c);
+  });
+  // Compose projects sorted alphabetically; the ungrouped bucket always last.
+  const keys = [...groups.keys()].filter((k) => k !== DOCKER_UNGROUPED).sort((a, b) => a.localeCompare(b));
+  if (groups.has(DOCKER_UNGROUPED)) keys.push(DOCKER_UNGROUPED);
+  // Nothing belongs to a compose project → render a flat list (old behaviour).
+  const onlyUngrouped = keys.length === 1 && keys[0] === DOCKER_UNGROUPED;
+  terminalDockerBody.innerHTML = keys.map((key) => {
+    const items = groups.get(key);
+    if (onlyUngrouped) return items.map(dockerCardHtml).join("");
+    return dockerGroupHtml(key, items);
+  }).join("");
+  dockerExpanded.forEach((id) => {
+    if (rows.some((r) => r.id === id)) loadDockerDetail(id);
+  });
+}
+
+function dockerCardHtml(c) {
+  const tone = dockerStateTone(c.state);
+  const running = c.state === "running";
+  const expanded = dockerExpanded.has(c.id);
+  const idAttr = escapeMetricText(c.id);
+  return `
     <section class="docker-card" data-id="${idAttr}">
       <button type="button" class="docker-card-toggle" data-act="detail" data-id="${idAttr}">
         <span class="docker-state docker-state-${tone}"></span>
@@ -3085,10 +3156,126 @@ function renderDockerList(rows) {
       </div>
       <div class="docker-detail" data-id="${idAttr}" ${expanded ? "" : "hidden"}></div>
     </section>`;
-  }).join("");
-  dockerExpanded.forEach((id) => {
-    if (rows.some((r) => r.id === id)) loadDockerDetail(id);
+}
+
+function dockerGroupHtml(key, items) {
+  const ungrouped = key === DOCKER_UNGROUPED;
+  const total = items.length;
+  const running = items.filter((c) => c.state === "running").length;
+  const tone = running === 0 ? "muted" : (running === total ? "ok" : "warn");
+  const collapsed = !dockerExpandedGroups.has(key);
+  const keyAttr = escapeMetricText(key);
+  const label = ungrouped ? "未分组" : key;
+  const configFiles = ungrouped ? "" : (items.find((c) => c.configFiles)?.configFiles || "");
+  const hidden = collapsed ? "hidden" : "";
+  const menuBtn = ungrouped ? "" : `<button type="button" class="docker-group-menu-btn" data-act="group-menu" data-project="${keyAttr}" title="批量操作" aria-label="批量操作">
+          <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>
+        </button>`;
+  return `
+    <section class="docker-group${ungrouped ? " docker-group-ungrouped" : ""}" data-project="${keyAttr}">
+      <header class="docker-group-head" data-act="group-toggle" data-project="${keyAttr}"${configFiles ? ` title="${escapeMetricText(configFiles)}"` : ""}>
+        <span class="docker-group-caret${collapsed ? "" : " open"}">›</span>
+        <span class="docker-state docker-state-${tone}"></span>
+        <span class="docker-group-name">${escapeMetricText(label)}</span>
+        <span class="docker-group-count">${running}/${total}</span>
+        ${menuBtn}
+      </header>
+      <div class="docker-group-body" ${hidden}>
+        ${items.map(dockerCardHtml).join("")}
+      </div>
+    </section>`;
+}
+
+function toggleDockerGroup(key, headerEl) {
+  const section = headerEl?.closest(".docker-group");
+  if (!section || !key) return;
+  const expanded = dockerExpandedGroups.has(key);
+  if (expanded) dockerExpandedGroups.delete(key); else dockerExpandedGroups.add(key);
+  const nowCollapsed = expanded;
+  section.querySelector(".docker-group-body")?.toggleAttribute("hidden", nowCollapsed);
+  section.querySelector(".docker-group-caret")?.classList.toggle("open", !nowCollapsed);
+}
+
+async function dockerGroupAction(project, op, btn) {
+  const ids = dockerLastRows.filter((r) => r.project === project && r.id).map((r) => r.id);
+  if (!ids.length) return;
+  if (btn) btn.disabled = true;
+  try {
+    const res = await dockerExec([op, ...ids]);
+    if (res.code !== 0) {
+      showToast(String(res.stderr || res.stdout || "操作失败。").trim(), "error", 4200);
+    }
+  } catch (e) {
+    showToast(String(e), "error", 4200);
+  } finally {
+    renderDockerPanel({ silent: true });
+  }
+}
+
+let dockerGroupMenuProject = "";
+
+function ensureDockerGroupMenu() {
+  let menu = document.getElementById("docker-group-menu");
+  if (menu) return menu;
+  menu = document.createElement("div");
+  menu.id = "docker-group-menu";
+  menu.className = "hosts-context-menu docker-group-menu";
+  menu.hidden = true;
+  menu.innerHTML = `
+    <button type="button" class="success" data-op="start">
+      <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4 20 12 6 20Z"/></svg>
+      <span>全部启动</span>
+    </button>
+    <button type="button" data-op="restart">
+      <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="22 5 22 11 16 11"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L22 11"/></svg>
+      <span>全部重启</span>
+    </button>
+    <button type="button" class="danger" data-op="stop">
+      <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+      <span>全部停止</span>
+    </button>`;
+  document.body.appendChild(menu);
+  menu.addEventListener("click", (ev) => {
+    const b = ev.target.closest("button[data-op]");
+    if (!b) return;
+    const op = b.getAttribute("data-op");
+    const project = dockerGroupMenuProject;
+    hideDockerGroupMenu();
+    if (project) dockerGroupAction(project, op);
   });
+  document.addEventListener("click", (ev) => {
+    if (!menu.hidden && !menu.contains(ev.target)) hideDockerGroupMenu();
+  });
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" && !menu.hidden) { ev.stopPropagation(); hideDockerGroupMenu(); }
+  });
+  return menu;
+}
+
+function hideDockerGroupMenu() {
+  const menu = document.getElementById("docker-group-menu");
+  if (menu) menu.hidden = true;
+  dockerGroupMenuProject = "";
+}
+
+function openDockerGroupMenu(project, anchorBtn) {
+  const menu = ensureDockerGroupMenu();
+  // Re-clicking the same group's button closes the menu (toggle).
+  if (!menu.hidden && dockerGroupMenuProject === project) { hideDockerGroupMenu(); return; }
+  dockerGroupMenuProject = project || "";
+  menu.style.left = "0px";
+  menu.style.top = "0px";
+  menu.hidden = false;
+  const pad = 8;
+  const rect = menu.getBoundingClientRect();
+  const anchor = anchorBtn.getBoundingClientRect();
+  let left = anchor.right - rect.width;       // right-align under the button
+  let top = anchor.bottom + 4;                // drop below it
+  if (left < pad) left = pad;
+  if (left + rect.width + pad > window.innerWidth) left = Math.max(pad, window.innerWidth - rect.width - pad);
+  if (top + rect.height + pad > window.innerHeight) top = Math.max(pad, anchor.top - rect.height - 4);
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
 }
 
 function dockerDetailEl(id) {
@@ -3140,7 +3327,11 @@ function renderDockerDetail(info) {
   const mounts = Array.isArray(info?.Mounts)
     ? info.Mounts.map((m) => `${m.Source || m.Name || ""} → ${m.Destination || ""}`)
     : [];
+  const labels = info?.Config?.Labels || {};
+  const composeProject = labels["com.docker.compose.project"];
+  const composeService = labels["com.docker.compose.service"];
   const rows = [["IP", ips.length ? ips.join("、") : "—"]];
+  if (composeProject) rows.push(["Compose", composeService ? `${composeProject} / ${composeService}` : composeProject]);
   if (created) rows.push(["创建", created]);
   if (info?.Config?.Image) rows.push(["镜像", info.Config.Image]);
   if (restart) rows.push(["重启策略", restart]);
@@ -5482,6 +5673,12 @@ const settingsTerminalFontSection = document.getElementById("settings-terminal-f
 const settingsTerminalFontFamily = document.getElementById("settings-terminal-font-family");
 const settingsTerminalFontSize = document.getElementById("settings-terminal-font-size");
 const settingsTerminalLineHeight = document.getElementById("settings-terminal-line-height");
+const settingsTerminalShell = document.getElementById("settings-terminal-shell");
+const settingsTerminalShellBrowse = document.getElementById("settings-terminal-shell-browse");
+const settingsTerminalShellReset = document.getElementById("settings-terminal-shell-reset");
+const settingsTerminalShellCurrent = document.getElementById("settings-terminal-shell-current");
+const settingsTerminalCwd = document.getElementById("settings-terminal-cwd");
+const settingsTerminalCwdBrowse = document.getElementById("settings-terminal-cwd-browse");
 const settingsTerminalFontPreview = document.getElementById("settings-terminal-font-preview");
 const terminalThemeListLight = document.getElementById("terminal-theme-list-light");
 const terminalThemeListDark = document.getElementById("terminal-theme-list-dark");
@@ -5597,6 +5794,8 @@ const SETTINGS_KEY_TERMINAL_CUSTOM_THEMES = "zeroterm.settings.terminal.custom_t
 const SETTINGS_KEY_TERMINAL_HIDDEN_BUILTIN_THEMES = "zeroterm.settings.terminal.hidden_builtin_themes";
 const SETTINGS_KEY_TERMINAL_FONT_FAMILY = "zeroterm.settings.terminal.font_family";
 const SETTINGS_KEY_TERMINAL_FONT_SIZE = "zeroterm.settings.terminal.font_size";
+const SETTINGS_KEY_TERMINAL_LOCAL_SHELL = "zeroterm.settings.terminal.local_shell";
+const SETTINGS_KEY_TERMINAL_LOCAL_CWD = "zeroterm.settings.terminal.local_cwd";
 const SETTINGS_KEY_TERMINAL_LINE_HEIGHT = "zeroterm.settings.terminal.line_height";
 const SETTINGS_KEY_APP_BG_OPACITY = "zeroterm.settings.app_background.opacity";
 const SETTINGS_KEY_APP_BG_BLUR = "zeroterm.settings.app_background.blur";
@@ -6441,6 +6640,58 @@ async function populateTerminalFontFamilyOptionsAsync() {
   }
 
   populateTerminalFontFamilyOptions();
+}
+
+function getLocalShellPath() {
+  return (localStorage.getItem(SETTINGS_KEY_TERMINAL_LOCAL_SHELL) || "").trim();
+}
+
+function getLocalCwd() {
+  return (localStorage.getItem(SETTINGS_KEY_TERMINAL_LOCAL_CWD) || "").trim();
+}
+
+function defaultLocalShellLabel() {
+  return isWindowsPlatform ? "cmd.exe" : "$SHELL";
+}
+
+const LOCAL_SHELL_SUGGESTIONS = isWindowsPlatform
+  ? ["cmd.exe", "powershell.exe", "pwsh.exe", "wsl.exe", "C:\\Program Files\\Git\\bin\\bash.exe"]
+  : ["/bin/bash", "/bin/zsh", "/bin/sh", "/usr/bin/fish"];
+
+// Effective shell path shown in the settings combobox: a typed/browsed custom
+// value (dataset.customValue) wins, otherwise the selected preset option.
+function readLocalShellFromSelect() {
+  if (!settingsTerminalShell) return "";
+  return (settingsTerminalShell.dataset.customValue || settingsTerminalShell.value || "").trim();
+}
+
+function saveLocalShellFromSelect() {
+  const v = readLocalShellFromSelect();
+  if (v) localStorage.setItem(SETTINGS_KEY_TERMINAL_LOCAL_SHELL, v);
+  else localStorage.removeItem(SETTINGS_KEY_TERMINAL_LOCAL_SHELL);
+}
+
+// Build the custom-dropdown options (system default + common shells) and select
+// the saved value — as a preset option when it matches one, else a custom entry.
+function populateLocalShellSelect() {
+  if (!settingsTerminalShell) return;
+  const saved = getLocalShellPath();
+  const options = [`<option value="">${t("settings.terminal.shell.system_default")}</option>`]
+    .concat(LOCAL_SHELL_SUGGESTIONS.map((s) => `<option value="${s}">${s}</option>`));
+  settingsTerminalShell.innerHTML = options.join("");
+  if (saved && LOCAL_SHELL_SUGGESTIONS.includes(saved)) {
+    settingsTerminalShell.value = saved;
+    settingsTerminalShell.dataset.customValue = "";
+  } else {
+    settingsTerminalShell.value = "";
+    settingsTerminalShell.dataset.customValue = saved || "";
+  }
+  syncCustomSelect("settings-terminal-shell");
+}
+
+function updateLocalShellCurrentHint() {
+  if (!settingsTerminalShellCurrent) return;
+  settingsTerminalShellCurrent.textContent = t("settings.terminal.shell.current", { shell: defaultLocalShellLabel() });
 }
 
 function getTerminalFontSize() {
@@ -7304,6 +7555,9 @@ function setWorkspaceMode(mode) {
     }
     if (settingsTerminalFontSize) settingsTerminalFontSize.value = String(getTerminalFontSize());
     if (settingsTerminalLineHeight) settingsTerminalLineHeight.value = String(getTerminalLineHeight());
+    populateLocalShellSelect();
+    updateLocalShellCurrentHint();
+    if (settingsTerminalCwd) settingsTerminalCwd.value = getLocalCwd();
     syncTerminalFontPreview();
     syncTerminalThemeCardsActive();
   } else if (showingPortForward) {
@@ -7693,7 +7947,7 @@ async function savePortForwardEditor() {
 
 function setSettingsSection(section) {
   settingsSection = section === "terminal"
-    ? "general"
+    ? "terminal"
     : section === "ai"
       ? "ai"
       : section === "sync"
@@ -7710,7 +7964,7 @@ function setSettingsSection(section) {
   settingsNavData?.classList.toggle("active", settingsSection === "data");
   settingsNavAbout?.classList.toggle("active", settingsSection === "about");
   if (settingsGeneralPanel) settingsGeneralPanel.hidden = settingsSection !== "general";
-  if (settingsTerminalPanel) settingsTerminalPanel.hidden = true;
+  if (settingsTerminalPanel) settingsTerminalPanel.hidden = settingsSection !== "terminal";
   if (settingsAiPanel) settingsAiPanel.hidden = settingsSection !== "ai";
   if (settingsSyncPanel) settingsSyncPanel.hidden = settingsSection !== "sync";
   settingsPageBody?.classList.toggle("settings-sync-scrollbar", settingsSection === "sync");
@@ -7720,7 +7974,9 @@ function setSettingsSection(section) {
     maybeAutoRefreshAiModels().catch(() => {});
   }
   if (settingsGeneralTitle) {
-    settingsGeneralTitle.textContent = settingsSection === "ai"
+    settingsGeneralTitle.textContent = settingsSection === "terminal"
+        ? t("settings.terminal.title")
+        : settingsSection === "ai"
         ? t("settings.ai.title")
         : settingsSection === "sync"
           ? t("settings.nav.sync")
@@ -7731,7 +7987,9 @@ function setSettingsSection(section) {
         : t("settings.general.title");
   }
   if (settingsGeneralDesc) {
-    settingsGeneralDesc.textContent = settingsSection === "ai"
+    settingsGeneralDesc.textContent = settingsSection === "terminal"
+        ? t("settings.terminal.desc")
+        : settingsSection === "ai"
         ? t("settings.ai.desc")
         : settingsSection === "sync"
           ? t("settings.sync.desc")
@@ -9897,6 +10155,15 @@ function applyI18n() {
   if (typeof syncAiModelPill === "function") syncAiModelPill();
   setText("settings-terminal-subtab-theme", "settings.terminal.subtab.theme");
   setText("settings-terminal-subtab-font", "settings.terminal.subtab.font");
+  setText("settings-terminal-shell-label", "settings.terminal.shell.label");
+  setText("settings-terminal-shell-hint", "settings.terminal.shell.hint");
+  setText("settings-terminal-shell-browse", "settings.terminal.shell.browse");
+  setText("settings-terminal-shell-reset", "settings.terminal.shell.reset");
+  setText("settings-terminal-cwd-label", "settings.terminal.cwd.label");
+  setText("settings-terminal-cwd-hint", "settings.terminal.cwd.hint");
+  setText("settings-terminal-cwd-browse", "settings.terminal.cwd.browse");
+  setPlaceholder("settings-terminal-cwd", "settings.terminal.cwd.placeholder");
+  updateLocalShellCurrentHint();
   setText("settings-nav-sftp", "settings.nav.sftp");
   setText("settings-nav-hotkeys", "settings.nav.hotkeys");
   setText("settings-language-label", "settings.language.label");
@@ -11058,6 +11325,54 @@ settingsTerminalFontSize?.addEventListener("change", () => {
   applyTerminalThemeToAllPanes();
   syncTerminalFontPreview();
 });
+settingsTerminalShell?.addEventListener("change", saveLocalShellFromSelect);
+// Custom-typed paths don't fire `change`; persist them when focus leaves the combobox.
+settingsTerminalPanel?.addEventListener("focusout", () => {
+  if (settingsTerminalShell) saveLocalShellFromSelect();
+});
+settingsTerminalShellBrowse?.addEventListener("click", async () => {
+  if (!settingsTerminalShell) return;
+  try {
+    const options = { multiple: false, directory: false, title: t("settings.terminal.shell.browse") };
+    if (isWindowsPlatform) options.filters = [{ name: "Executable", extensions: ["exe", "bat", "cmd"] }];
+    const picked = await invoke("plugin:dialog|open", { options });
+    const resolved = Array.isArray(picked) ? picked[0] : picked;
+    if (!resolved || typeof resolved !== "string") return;
+    settingsTerminalShell.dataset.customValue = resolved;
+    settingsTerminalShell.value = "";
+    settingsTerminalShell._ztSync?.();
+    saveLocalShellFromSelect();
+  } catch (e) {
+    console.warn("pick local shell failed", e);
+  }
+});
+settingsTerminalShellReset?.addEventListener("click", () => {
+  if (!settingsTerminalShell) return;
+  settingsTerminalShell.dataset.customValue = "";
+  settingsTerminalShell.value = "";
+  settingsTerminalShell._ztSync?.();
+  saveLocalShellFromSelect();
+});
+settingsTerminalCwd?.addEventListener("change", () => {
+  const v = settingsTerminalCwd.value.trim();
+  settingsTerminalCwd.value = v;
+  if (v) localStorage.setItem(SETTINGS_KEY_TERMINAL_LOCAL_CWD, v);
+  else localStorage.removeItem(SETTINGS_KEY_TERMINAL_LOCAL_CWD);
+});
+settingsTerminalCwdBrowse?.addEventListener("click", async () => {
+  if (!settingsTerminalCwd) return;
+  try {
+    const picked = await invoke("plugin:dialog|open", {
+      options: { directory: true, multiple: false, title: t("settings.terminal.cwd.browse") },
+    });
+    const resolved = Array.isArray(picked) ? picked[0] : picked;
+    if (!resolved || typeof resolved !== "string") return;
+    settingsTerminalCwd.value = resolved;
+    localStorage.setItem(SETTINGS_KEY_TERMINAL_LOCAL_CWD, resolved);
+  } catch (e) {
+    console.warn("pick local cwd failed", e);
+  }
+});
 settingsTerminalLineHeight?.addEventListener("change", () => {
   localStorage.setItem(SETTINGS_KEY_TERMINAL_LINE_HEIGHT, String(settingsTerminalLineHeight.value || "1.25"));
   applyTerminalThemeToAllPanes();
@@ -11819,7 +12134,7 @@ async function openLocalTerminalInTab() {
 
   const cols = pane.term ? pane.term.cols : 80;
   const rows = pane.term ? pane.term.rows : 24;
-  const sessionId = await invoke("create_local_terminal_session", { cols, rows });
+  const sessionId = await invoke("create_local_terminal_session", { cols, rows, shell: getLocalShellPath() || null, cwd: getLocalCwd() || null });
   pane.sessionId = sessionId;
   pane.statusEl.textContent = t("terminal.status.local");
   if (pane.reconnectBtn) pane.reconnectBtn.hidden = true;
@@ -11827,7 +12142,7 @@ async function openLocalTerminalInTab() {
   pane.reconnectFactory = async () => {
     const cols2 = pane.term ? pane.term.cols : 80;
     const rows2 = pane.term ? pane.term.rows : 24;
-    const sid2 = await invoke("create_local_terminal_session", { cols: cols2, rows: rows2 });
+    const sid2 = await invoke("create_local_terminal_session", { cols: cols2, rows: rows2, shell: getLocalShellPath() || null, cwd: getLocalCwd() || null });
     pane.sessionId = sid2;
     if (pane.statusEl) pane.statusEl.textContent = t("terminal.status.local");
     if (pane.reconnectBtn) pane.reconnectBtn.hidden = true;
@@ -11944,8 +12259,11 @@ terminalDockerRefresh?.addEventListener("click", () => renderDockerPanel());
 terminalDockerBody?.addEventListener("click", (ev) => {
   const btn = ev.target.closest("[data-act]");
   if (!btn) return;
-  const id = btn.getAttribute("data-id");
   const act = btn.getAttribute("data-act");
+  const project = btn.getAttribute("data-project");
+  if (act === "group-toggle") return toggleDockerGroup(project, btn);
+  if (act === "group-menu") { ev.stopPropagation(); return openDockerGroupMenu(project, btn); }
+  const id = btn.getAttribute("data-id");
   if (!id) return;
   if (act === "detail") return toggleDockerDetail(id);
   if (act === "start") return dockerAction(["start", id], btn);

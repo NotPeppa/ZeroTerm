@@ -4495,12 +4495,32 @@ pub async fn open_local_terminal() -> Result<(), String> {
     }
 }
 
+/// Build the default local shell command for the current platform. Used when
+/// the user hasn't configured a custom shell path in terminal settings.
+fn default_local_shell_command() -> CommandBuilder {
+    #[cfg(target_os = "windows")]
+    {
+        let mut cmd = CommandBuilder::new("cmd.exe");
+        cmd.arg("/K");
+        cmd
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+        let mut cmd = CommandBuilder::new(shell);
+        cmd.arg("-l");
+        cmd
+    }
+}
+
 #[tauri::command]
 pub async fn create_local_terminal_session(
     state: State<'_, AppState>,
     app_handle: AppHandle,
     cols: Option<u16>,
     rows: Option<u16>,
+    shell: Option<String>,
+    cwd: Option<String>,
 ) -> Result<u64, String> {
     let pty_system = portable_pty::native_pty_system();
     let pair = pty_system
@@ -4512,19 +4532,20 @@ pub async fn create_local_terminal_session(
         })
         .map_err(|e| format!("open pty failed: {e}"))?;
 
-    #[cfg(target_os = "windows")]
-    let cmd = {
-        let mut cmd = CommandBuilder::new("cmd.exe");
-        cmd.arg("/K");
-        cmd
+    // A non-empty configured path wins; spawn it directly (no forced /K or -l,
+    // since those are cmd/login-shell specific). Otherwise use the platform default.
+    let mut cmd = match shell.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
+        Some(prog) => CommandBuilder::new(prog),
+        None => default_local_shell_command(),
     };
-    #[cfg(not(target_os = "windows"))]
-    let mut cmd = {
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
-        CommandBuilder::new(shell)
-    };
-    #[cfg(not(target_os = "windows"))]
-    cmd.arg("-l");
+
+    // Start the shell in the configured working directory when it exists; fall
+    // back to the process default rather than failing to spawn on a stale path.
+    if let Some(dir) = cwd.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
+        if std::path::Path::new(&dir).is_dir() {
+            cmd.cwd(dir);
+        }
+    }
 
     let child = pair
         .slave

@@ -651,7 +651,7 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
                           <div class="settings-nav-group">
                             <div id="settings-nav-pref" class="settings-nav-label">偏好</div>
                             <button id="settings-nav-general" type="button" class="settings-nav-item active"><svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>常规</button>
-                            <button id="settings-nav-terminal" type="button" class="settings-nav-item" hidden><svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="21" y1="9" x2="3" y2="9"></line><path d="m8 14-2 2 2 2"></path><line x1="12" y1="18" x2="16" y2="18"></line></svg>终端</button>
+                            <button id="settings-nav-terminal" type="button" class="settings-nav-item"><svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="21" y1="9" x2="3" y2="9"></line><path d="m8 14-2 2 2 2"></path><line x1="12" y1="18" x2="16" y2="18"></line></svg>终端</button>
                             <button id="settings-nav-ai" type="button" class="settings-nav-item"><svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 4.8L18.5 10l-4.7 2.2L12 17l-1.8-4.8L5.5 10l4.7-2.2z"></path><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"></path></svg>AI</button>
                             <button id="settings-nav-sync" type="button" class="settings-nav-item"><svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>同步</button>
                             <button id="settings-nav-data" type="button" class="settings-nav-item"><svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"></path></svg>数据管理</button>
@@ -764,13 +764,31 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
                           </section>
 
                           <section id="settings-terminal-panel" class="settings-panel" hidden>
-                            <div class="settings-subtabs">
-                              <button id="settings-terminal-subtab-theme" type="button" class="settings-subtab" hidden>主题</button>
-                              <button id="settings-terminal-subtab-font" type="button" class="settings-subtab active">字体</button>
-                            </div>
-                            <section id="settings-terminal-theme-section" class="settings-section" hidden></section>
-
-                            <section id="settings-terminal-font-section-placeholder" class="settings-section" hidden></section>
+                            <section class="settings-section">
+                              <div class="settings-row settings-row-dir">
+                                <div>
+                                  <div id="settings-terminal-shell-label" class="settings-item-title">本地终端 Shell</div>
+                                  <p id="settings-terminal-shell-hint" class="muted tiny">打开「本地」终端标签页时启动的 shell 可执行文件路径。留空则使用系统默认。</p>
+                                </div>
+                                <div class="settings-dir-inputs">
+                                  <select id="settings-terminal-shell" data-allow-custom="1"></select>
+                                  <button id="settings-terminal-shell-browse" type="button">浏览</button>
+                                  <button id="settings-terminal-shell-reset" type="button">恢复默认</button>
+                                </div>
+                              </div>
+                              <p id="settings-terminal-shell-current" class="muted tiny"></p>
+                              <div class="settings-divider"></div>
+                              <div class="settings-row settings-row-dir">
+                                <div>
+                                  <div id="settings-terminal-cwd-label" class="settings-item-title">工作目录</div>
+                                  <p id="settings-terminal-cwd-hint" class="muted tiny">配置后，每次打开「本地」终端标签页都会自动切换到该目录。留空则使用默认目录。</p>
+                                </div>
+                                <div class="settings-dir-inputs">
+                                  <input id="settings-terminal-cwd" type="text" placeholder="例如：D:\projects" autocomplete="off" spellcheck="false" />
+                                  <button id="settings-terminal-cwd-browse" type="button">浏览</button>
+                                </div>
+                              </div>
+                            </section>
                           </section>
 
                           <section id="settings-ai-panel" class="settings-panel" hidden>
