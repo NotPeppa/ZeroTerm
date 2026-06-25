@@ -753,7 +753,10 @@ const I18N = {
     "ai.compose.send": "Send to AI",
     "terminal.selection.copy": "Copy",
     "terminal.selection.ai": "AI",
+    "terminal.selection.open": "Open",
+    "terminal.selection.open_url": "Open link",
     "terminal.selection.copy_failed": "Copy failed: {error}",
+    "terminal.selection.open_url_failed": "Open link failed: {error}",
     "terminal.selection.ai_busy": "AI is still working. Please wait for this turn to finish.",
     "ai.context.toggle.title": "Toggle attaching current terminal output",
     "ai.context.toggle.label": "Auto-include terminal context",
@@ -939,8 +942,11 @@ const I18N = {
     "settings.sync.button.busy.resolve_conflict": "Resolving...",
     "settings.data.title": "Data Management",
     "settings.data.desc": "Clear all saved records and sync metadata. This action cannot be undone.",
+    "settings.data.button.reset_settings": "Reset Settings",
     "settings.data.button.clear_vault": "Clear All Data",
+    "settings.data.confirm.reset_settings": "Reset local app settings now? This clears local appearance, terminal theme and font, proxy, background image, window layout, SFTP local preferences, auto-sync options, and pinned or expanded UI state. Vault data, sync profiles, and AI profiles are kept.",
     "settings.data.confirm.clear_vault": "Clear all data now? This cannot be undone.",
+    "settings.data.status.settings_reset": "Settings reset",
     "settings.data.status.cleared": "All data cleared",
     "settings.update.status.installing": "Installing update...",
     "settings.sync.backend.local_folder": "Local Folder",
@@ -1575,9 +1581,12 @@ const I18N = {
     "ai.compose.placeholder": "描述你的目标，例如：帮我把这个项目运行起来",
     "ai.compose.hint": "Enter 发送，Shift+Enter 换行",
     "ai.compose.send": "发送给 AI",
-    "terminal.selection.copy": "复制",
+    "terminal.selection.copy": "拷贝",
     "terminal.selection.ai": "AI",
+    "terminal.selection.open": "访问",
+    "terminal.selection.open_url": "打开链接",
     "terminal.selection.copy_failed": "复制失败：{error}",
+    "terminal.selection.open_url_failed": "打开链接失败：{error}",
     "terminal.selection.ai_busy": "AI 正在处理中，请等当前这轮完成后再试。",
     "ai.context.toggle.title": "切换是否附带当前终端内容",
     "ai.context.toggle.label": "智能判断终端内容",
@@ -1763,8 +1772,11 @@ const I18N = {
     "settings.sync.button.busy.resolve_conflict": "处理中...",
     "settings.data.title": "数据管理",
     "settings.data.desc": "清空当前保存的全部记录与同步元数据。此操作不可撤销。",
+    "settings.data.button.reset_settings": "重置设置",
     "settings.data.button.clear_vault": "清空所有数据",
+    "settings.data.confirm.reset_settings": "确定要重置本地设置吗？这会清除界面外观、终端主题与字体、代理、背景图、窗口布局、SFTP 本地偏好、自动同步选项，以及固定路径和展开状态等本地设置；不会清空 Vault 数据、同步配置或 AI 配置。",
     "settings.data.confirm.clear_vault": "确定要清空全部数据吗？此操作不可撤销。",
+    "settings.data.status.settings_reset": "设置已重置",
     "settings.data.status.cleared": "数据已清空",
     "settings.update.status.installing": "正在安装更新...",
     "settings.sync.backend.local_folder": "本地文件夹",
@@ -2347,6 +2359,7 @@ const snippetItemContextMenu = document.getElementById("snippet-item-context-men
 const snippetItemMenuEdit = document.getElementById("snippet-item-menu-edit");
 const snippetItemMenuDelete = document.getElementById("snippet-item-menu-delete");
 const terminalSelectionMenu = document.getElementById("terminal-selection-menu");
+const terminalSelectionMenuUrl = document.getElementById("terminal-selection-menu-url");
 const terminalSelectionMenuCopy = document.getElementById("terminal-selection-menu-copy");
 const terminalSelectionMenuAi = document.getElementById("terminal-selection-menu-ai");
 const aiComposeForm = document.getElementById("ai-compose-form");
@@ -5425,6 +5438,7 @@ const settingsNavAbout = document.getElementById("settings-nav-about");
 const settingsNavData = document.getElementById("settings-nav-data");
 const settingsAboutPanel = document.getElementById("settings-about-panel");
 const settingsDataPanel = document.getElementById("settings-data-panel");
+const settingsDataResetSettings = document.getElementById("settings-data-reset-settings");
 const settingsDataClearVault = document.getElementById("settings-data-clear-vault");
 const settingsDataStatus = document.getElementById("settings-data-status");
 const settingsGeneralSubtabBasic = document.getElementById("settings-general-subtab-basic");
@@ -5570,6 +5584,7 @@ let hostsContextHostId = null;
 let groupsContextGroupId = null;
 let terminalSelectionMenuPaneId = null;
 let terminalSelectionMenuText = "";
+let terminalSelectionMenuUrlValue = "";
 let sftpFollowPollTimer = null;
 let sftpFollowPollingTick = false;
 const SETTINGS_KEY_SFTP_AUTO_DETECT = "zeroterm.settings.sftp.auto_detect";
@@ -6146,6 +6161,89 @@ async function resetWindowLayout() {
   }
   await syncWindowLayoutSettingsUI();
   if (settingsWinsizeStatus) settingsWinsizeStatus.textContent = t("settings.winsize.status.reset");
+}
+
+async function resetLocalSettingsToDefaults() {
+  const localKeysToRemove = [
+    "zt.ai.contextMode",
+    SETTINGS_KEY_AI_SYSTEM_PROMPT,
+    SETTINGS_KEY_SFTP_AUTO_DETECT,
+    SETTINGS_KEY_SFTP_LOCAL_DIR,
+    SETTINGS_KEY_SYNC_AUTO_ENABLED,
+    SETTINGS_KEY_SYNC_AUTO_INTERVAL,
+    SETTINGS_KEY_SYNC_AUTO_ON_VISIBILITY,
+    "zeroterm.sync.last",
+    SETTINGS_KEY_APP_THEME_MODE,
+    SETTINGS_KEY_TERMINAL_THEME,
+    SETTINGS_KEY_TERMINAL_CUSTOM_THEMES,
+    SETTINGS_KEY_TERMINAL_HIDDEN_BUILTIN_THEMES,
+    SETTINGS_KEY_TERMINAL_FONT_FAMILY,
+    SETTINGS_KEY_TERMINAL_FONT_SIZE,
+    SETTINGS_KEY_TERMINAL_LINE_HEIGHT,
+    SETTINGS_KEY_APP_BG_OPACITY,
+    SETTINGS_KEY_APP_BG_BLUR,
+    SETTINGS_KEY_APP_BG_ENABLED,
+    GROUP_STATE_STORAGE_KEY,
+    TERMINAL_SNIPPET_GROUP_STATE_KEY,
+    SFTP_PINNED_PATHS_KEY,
+  ];
+  for (const key of localKeysToRemove) {
+    localStorage.removeItem(key);
+  }
+
+  try {
+    await invoke("clear_network_proxy_config");
+  } catch (e) {
+    console.warn("clear network proxy config failed", e);
+  }
+  applyNetworkProxySettingsUI(null);
+  if (settingsProxyStatus) settingsProxyStatus.textContent = t("settings.proxy.status.disabled");
+
+  await clearBackgroundImage();
+  await resetWindowLayout();
+
+  aiContextMode = "always";
+  syncAiContextToggle();
+  if (settingsAiSystemPrompt) settingsAiSystemPrompt.value = "";
+
+  groupExpandedState = {};
+  terminalSnippetGroupExpanded = {};
+
+  if (settingsSftpAutoDetect) settingsSftpAutoDetect.checked = true;
+  if (settingsSftpLocalDir) {
+    settingsSftpLocalDir.value = "";
+    fillSftpLocalDirDefaultIfEmpty().catch(() => {});
+  }
+
+  loadCustomThemes();
+  terminalEditingThemeId = getTerminalThemeName();
+  rebuildTerminalThemeSelectOptions();
+  renderTerminalThemeCards();
+  if (settingsTerminalTheme) {
+    settingsTerminalTheme.value = getTerminalThemeName();
+    syncCustomSelect("settings-terminal-theme");
+  }
+  if (settingsTerminalFontFamily) {
+    await populateTerminalFontFamilyOptionsAsync().catch((e) => {
+      console.warn("populateTerminalFontFamilyOptionsAsync failed", e);
+    });
+  }
+  if (settingsTerminalFontSize) settingsTerminalFontSize.value = String(getTerminalFontSize());
+  if (settingsTerminalLineHeight) settingsTerminalLineHeight.value = String(getTerminalLineHeight());
+  applyAppTheme();
+  applyTerminalThemeToAllPanes();
+  syncTerminalFontPreview();
+  syncTerminalThemeEditor();
+
+  syncBackgroundSettingsUI();
+  scheduleAutoSync();
+  updateSyncIndicator();
+  const autoSyncEnabledEl = document.getElementById("settings-sync-auto-enabled");
+  const autoSyncIntervalEl = document.getElementById("settings-sync-auto-interval");
+  const autoSyncVisibilityEl = document.getElementById("settings-sync-auto-visibility");
+  if (autoSyncEnabledEl) autoSyncEnabledEl.checked = autoSyncEnabled();
+  if (autoSyncIntervalEl) autoSyncIntervalEl.value = String(autoSyncInterval());
+  if (autoSyncVisibilityEl) autoSyncVisibilityEl.checked = autoSyncOnVisibility();
 }
 
 
@@ -8425,7 +8523,7 @@ function autoSyncAfterDataChange() {
 
 async function runAutoSync(reason) {
   if (!autoSync.running) return null;
-  if (!autoSyncEnabled() && reason === "heartbeat") return null;
+  if (!autoSyncEnabled()) return null;
   if (autoSync.inFlight) {
     autoSync.pendingReason = reason;
     return null;
@@ -8534,6 +8632,10 @@ function stopAutoSync() {
 
 document.addEventListener("visibilitychange", () => {
   if (!autoSync.running) return;
+  if (!autoSyncEnabled()) {
+    updateSyncIndicator();
+    return;
+  }
   if (!autoSyncOnVisibility()) {
     scheduleAutoSync();
     return;
@@ -8947,6 +9049,16 @@ function hideTerminalSelectionMenu() {
   terminalSelectionMenu.hidden = true;
   terminalSelectionMenuPaneId = null;
   terminalSelectionMenuText = "";
+  terminalSelectionMenuUrlValue = "";
+}
+
+function normalizeOpenableSelectionUrl(text) {
+  const value = String(text || "").trim();
+  if (!value || /\s/.test(value)) return "";
+  const urlPattern = /^(https?:\/\/|www\.)[^\s<>'"`]+$/i;
+  const ipv4Pattern = /^(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}(?::\d{1,5})?(?:\/[\w\-./?%&=+#:]*)?$/;
+  if (!urlPattern.test(value) && !ipv4Pattern.test(value)) return "";
+  return /^https?:\/\//i.test(value) ? value : `http://${value}`;
 }
 
 function showTerminalSelectionMenu(pane, text, x, y) {
@@ -8958,6 +9070,10 @@ function showTerminalSelectionMenu(pane, text, x, y) {
   }
   terminalSelectionMenuPaneId = pane.id;
   terminalSelectionMenuText = selectedText;
+  terminalSelectionMenuUrlValue = normalizeOpenableSelectionUrl(selectedText);
+  if (terminalSelectionMenuUrl) {
+    terminalSelectionMenuUrl.hidden = !terminalSelectionMenuUrlValue;
+  }
   terminalSelectionMenu.style.left = "0px";
   terminalSelectionMenu.style.top = "0px";
   terminalSelectionMenu.hidden = false;
@@ -8983,6 +9099,20 @@ async function copyTerminalSelectionMenuText() {
     await navigator.clipboard.writeText(terminalSelectionMenuText);
   } catch (e) {
     showToast(t("terminal.selection.copy_failed", { error: e }), "error", 3200);
+    throw e;
+  }
+}
+
+async function openTerminalSelectionUrl() {
+  if (!terminalSelectionMenuUrlValue) return;
+  try {
+    await invoke("plugin:opener|open_url", { url: terminalSelectionMenuUrlValue });
+  } catch (e) {
+    try {
+      const opened = window.open(terminalSelectionMenuUrlValue, "_blank", "noopener");
+      if (opened) return;
+    } catch {}
+    showToast(t("terminal.selection.open_url_failed", { error: e }), "error", 3200);
     throw e;
   }
 }
@@ -9732,6 +9862,9 @@ function applyI18n() {
   setText("ai-example-4", "ai.example.4");
   setText("ai-compose-hint", "ai.compose.hint");
   setPlaceholder("ai-compose-input", "ai.compose.placeholder");
+  setAttr("terminal-selection-menu-url", "aria-label", "terminal.selection.open_url");
+  setAttr("terminal-selection-menu-url", "title", "terminal.selection.open_url");
+  setText("terminal-selection-menu-url-label", "terminal.selection.open");
   setText("terminal-selection-menu-copy-label", "terminal.selection.copy");
   setText("terminal-selection-menu-ai-label", "terminal.selection.ai");
   setAttr("ai-context-toggle", "title", "ai.context.toggle.title");
@@ -9891,6 +10024,7 @@ function applyI18n() {
   setText("settings-sync-compact-now", "settings.sync.button.compact_now");
   setText("settings-data-title", "settings.data.title");
   setText("settings-data-desc", "settings.data.desc");
+  setText("settings-data-reset-settings", "settings.data.button.reset_settings");
   setText("settings-data-clear-vault", "settings.data.button.clear_vault");
   setOptionText("settings-sync-backend", "local_folder", "settings.sync.backend.local_folder");
   setOptionText("settings-sync-backend", "sftp", "settings.sync.backend.sftp");
@@ -10349,8 +10483,33 @@ aiModelPill?.addEventListener("click", (ev) => {
 });
 aiModelMenu?.addEventListener("click", (ev) => ev.stopPropagation());
 document.addEventListener("click", () => setAiModelMenuOpen(false));
+settingsDataResetSettings?.addEventListener("click", async () => {
+  const ok = await openConfirmDialog({
+    title: t("settings.data.title"),
+    message: t("settings.data.confirm.reset_settings"),
+    okText: t("settings.data.button.reset_settings"),
+    cancelText: t("input.button.cancel"),
+  });
+  if (!ok) return;
+  await runSyncButtonAction(settingsDataResetSettings, t("settings.data.button.reset_settings"), async () => {
+    try {
+      await resetLocalSettingsToDefaults();
+      if (settingsDataStatus) settingsDataStatus.textContent = t("settings.data.status.settings_reset");
+      showToast(t("settings.data.status.settings_reset"), "success");
+    } catch (e) {
+      const msg = String(e);
+      if (settingsDataStatus) settingsDataStatus.textContent = msg;
+      showToast(msg, "error", 4200);
+    }
+  });
+});
 settingsDataClearVault?.addEventListener("click", async () => {
-  const ok = confirm(t("settings.data.confirm.clear_vault"));
+  const ok = await openConfirmDialog({
+    title: t("settings.data.title"),
+    message: t("settings.data.confirm.clear_vault"),
+    okText: t("settings.data.button.clear_vault"),
+    cancelText: t("input.button.cancel"),
+  });
   if (!ok) return;
   await runSyncButtonAction(settingsDataClearVault, t("settings.data.button.clear_vault"), async () => {
     try {
@@ -12190,8 +12349,8 @@ function ensurePaneTerminal(pane) {
     try {
       const linksAddon = new WebLinksAddon((event, uri) => {
         if (!uri) return;
-        // Mac: Option+Click; Windows/Linux: Ctrl+Click
-        if (isMacPlatform ? !event?.altKey : !event?.ctrlKey) return;
+        // Mac: Cmd+Click; Windows/Linux: Ctrl+Click
+        if (isMacPlatform ? !event?.metaKey : !event?.ctrlKey) return;
         event?.preventDefault?.();
         const url = /^https?:\/\//i.test(uri) ? uri : `http://${uri}`;
         invoke("plugin:opener|open_url", { url }).catch(() => {
@@ -12377,7 +12536,7 @@ function installIpLinkProvider(pane) {
           },
           text: value,
           activate: (event) => {
-            if (isMacPlatform ? !event?.altKey : !event?.ctrlKey) return;
+            if (isMacPlatform ? !event?.metaKey : !event?.ctrlKey) return;
             const url = /^https?:\/\//i.test(value) ? value : `http://${value}`;
             invoke("plugin:opener|open_url", { url }).catch(() => {
               window.open(url, "_blank", "noopener");
@@ -12398,7 +12557,7 @@ function installIpLinkProvider(pane) {
           },
           text: value,
           activate: (event) => {
-            if (isMacPlatform ? !event?.altKey : !event?.ctrlKey) return;
+            if (isMacPlatform ? !event?.metaKey : !event?.ctrlKey) return;
             const url = /^https?:\/\//i.test(value) ? value : `http://${value}`;
             invoke("plugin:opener|open_url", { url }).catch(() => {
               window.open(url, "_blank", "noopener");
@@ -16126,6 +16285,12 @@ document.querySelectorAll("[data-ai-example-key]").forEach((button) => {
     aiComposeInput.value = key ? t(key) : button.textContent || "";
     aiComposeInput.focus();
   });
+});
+
+terminalSelectionMenuUrl?.addEventListener("click", () => {
+  openTerminalSelectionUrl()
+    .then(() => hideTerminalSelectionMenu())
+    .catch(() => {});
 });
 
 terminalSelectionMenuCopy?.addEventListener("click", async () => {

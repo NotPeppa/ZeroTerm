@@ -1056,6 +1056,7 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
                               <div id="settings-data-title" class="settings-item-title">数据管理</div>
                               <p id="settings-data-desc" class="muted tiny">清空当前 Vault 内的全部记录与同步元数据。此操作不可撤销。</p>
                               <div class="settings-sync-actions">
+                                <button id="settings-data-reset-settings" type="button" class="subtle">重置设置</button>
                                 <button id="settings-data-clear-vault" type="button" class="danger">清空 Vault 数据</button>
                               </div>
                               <p id="settings-data-status" class="muted tiny"></p>
@@ -1492,12 +1493,15 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
       </div>
 
       <div id="terminal-selection-menu" class="terminal-selection-menu" hidden>
+        <button id="terminal-selection-menu-url" type="button" hidden aria-label="打开链接" title="打开链接">
+          <span id="terminal-selection-menu-url-label">访问</span>
+        </button>
         <button id="terminal-selection-menu-copy" type="button">
           <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
             <rect x="9" y="9" width="10" height="10" rx="2"></rect>
             <path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path>
           </svg>
-          <span id="terminal-selection-menu-copy-label">复制</span>
+          <span id="terminal-selection-menu-copy-label">拷贝</span>
         </button>
         <button id="terminal-selection-menu-ai" type="button">
           <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
