@@ -1215,6 +1215,19 @@ fn parse_sse_frames(buffer: &mut String) -> Vec<String> {
     frames
 }
 
+fn parse_sse_frame_payloads(frame: &str) -> Vec<String> {
+    frame
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if !line.starts_with("data:") {
+                return None;
+            }
+            Some(line.trim_start_matches("data:").trim().to_string())
+        })
+        .collect()
+}
+
 #[tauri::command]
 pub async fn vault_status(state: State<'_, AppState>) -> Result<VaultStatus, String> {
     let path = zeroterm_app::default_vault_path()
@@ -1500,7 +1513,10 @@ pub async fn ai_chat(
     if content.is_empty() && reasoning_content.is_empty() {
         return Err("AI response was empty.".into());
     }
-    Ok(AiChatResponse { content, reasoning_content })
+    Ok(AiChatResponse {
+        content,
+        reasoning_content,
+    })
 }
 
 #[tauri::command]
@@ -1585,12 +1601,7 @@ pub async fn ai_chat_stream(app: AppHandle, input: AiChatStreamInput) -> Result<
         };
         buffer.push_str(&String::from_utf8_lossy(&bytes));
         for frame in parse_sse_frames(&mut buffer) {
-            for line in frame.lines() {
-                let line = line.trim();
-                if !line.starts_with("data:") {
-                    continue;
-                }
-                let data = line.trim_start_matches("data:").trim();
+            for data in parse_sse_frame_payloads(&frame) {
                 if data == "[DONE]" {
                     emit_ai_stream(
                         &app,
@@ -1617,7 +1628,7 @@ pub async fn ai_chat_stream(app: AppHandle, input: AiChatStreamInput) -> Result<
                     );
                     return Ok(());
                 }
-                let parsed: OpenAiStreamChunk = match serde_json::from_str(data) {
+                let parsed: OpenAiStreamChunk = match serde_json::from_str(&data) {
                     Ok(v) => v,
                     Err(_) => continue,
                 };
@@ -1636,6 +1647,44 @@ pub async fn ai_chat_stream(app: AppHandle, input: AiChatStreamInput) -> Result<
                             },
                         );
                     }
+                }
+            }
+        }
+    }
+    if !buffer.trim().is_empty() {
+        let trailing = buffer.replace("\r\n", "\n");
+        for data in parse_sse_frame_payloads(&trailing) {
+            if data == "[DONE]" {
+                emit_ai_stream(
+                    &app,
+                    AiStreamEvent {
+                        request_id: request_id.clone(),
+                        delta: String::new(),
+                        reasoning_delta: String::new(),
+                        done: true,
+                        error: None,
+                    },
+                );
+                return Ok(());
+            }
+            let parsed: OpenAiStreamChunk = match serde_json::from_str(&data) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            for choice in parsed.choices {
+                let reasoning = choice.delta.reasoning_content.clone().unwrap_or_default();
+                let content = choice.delta.content.clone().unwrap_or_default();
+                if !reasoning.is_empty() || !content.is_empty() {
+                    emit_ai_stream(
+                        &app,
+                        AiStreamEvent {
+                            request_id: request_id.clone(),
+                            delta: content,
+                            reasoning_delta: reasoning,
+                            done: false,
+                            error: None,
+                        },
+                    );
                 }
             }
         }
@@ -4534,7 +4583,10 @@ pub async fn create_local_terminal_session(
 
     // A non-empty configured path wins; spawn it directly (no forced /K or -l,
     // since those are cmd/login-shell specific). Otherwise use the platform default.
-    let mut cmd = match shell.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
+    let mut cmd = match shell
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+    {
         Some(prog) => CommandBuilder::new(prog),
         None => default_local_shell_command(),
     };
@@ -4618,10 +4670,7 @@ pub async fn create_local_terminal_session(
                     };
                     let _ = app_for_read.emit(
                         "session:data",
-                        crate::session::DataEvent {
-                            session_id,
-                            data,
-                        },
+                        crate::session::DataEvent { session_id, data },
                     );
                 }
                 Err(_) => break,
@@ -5161,7 +5210,11 @@ async fn stream_local_file_to_local(
         return Err(format!("destination already exists: {}", target.display()));
     }
     let to_err = |e: std::io::Error| {
-        format!("copy file {} -> {}: {e}", source.display(), target.display())
+        format!(
+            "copy file {} -> {}: {e}",
+            source.display(),
+            target.display()
+        )
     };
     match progress_ctx {
         Some((app_handle, state)) => {
@@ -5183,7 +5236,10 @@ async fn stream_local_file_to_local(
             forget_transfer(state, transfer_id);
             result.map(|_| ()).map_err(to_err)
         }
-        None => tokio::fs::copy(&source, &target).await.map(|_| ()).map_err(to_err),
+        None => tokio::fs::copy(&source, &target)
+            .await
+            .map(|_| ())
+            .map_err(to_err),
     }
 }
 
@@ -5203,7 +5259,10 @@ where
     let mut writer = tokio::fs::File::create(target).await?;
     let mut buf = vec![0u8; zeroterm_ssh::DEFAULT_CHUNK];
     let mut done: u64 = 0;
-    progress_cb(zeroterm_ssh::ProgressTick { bytes_done: 0, total });
+    progress_cb(zeroterm_ssh::ProgressTick {
+        bytes_done: 0,
+        total,
+    });
     loop {
         if cancel.is_cancelled() {
             return Err(std::io::Error::new(
@@ -5284,8 +5343,8 @@ async fn copy_local_tree_to_remote(
             }
 
             use futures_util::stream::StreamExt;
-            let mut stream = futures_util::stream::iter(file_jobs.into_iter().map(
-                |(child_src, child_dst)| {
+            let mut stream =
+                futures_util::stream::iter(file_jobs.into_iter().map(|(child_src, child_dst)| {
                     stream_local_file_to_remote(
                         Arc::clone(target_sftp),
                         child_src,
@@ -5293,9 +5352,8 @@ async fn copy_local_tree_to_remote(
                         overwrite,
                         progress_ctx,
                     )
-                },
-            ))
-            .buffer_unordered(DIR_UPLOAD_CONCURRENCY);
+                }))
+                .buffer_unordered(DIR_UPLOAD_CONCURRENCY);
 
             while let Some(res) = stream.next().await {
                 res?;
@@ -5441,8 +5499,8 @@ async fn copy_remote_tree_to_local(
             }
 
             use futures_util::stream::StreamExt;
-            let mut stream = futures_util::stream::iter(file_jobs.into_iter().map(
-                |(child_src, child_dst)| {
+            let mut stream =
+                futures_util::stream::iter(file_jobs.into_iter().map(|(child_src, child_dst)| {
                     stream_one_remote_file_to_local(
                         Arc::clone(source_sftp),
                         child_src,
@@ -5450,9 +5508,8 @@ async fn copy_remote_tree_to_local(
                         overwrite,
                         progress_ctx,
                     )
-                },
-            ))
-            .buffer_unordered(DIR_DOWNLOAD_CONCURRENCY);
+                }))
+                .buffer_unordered(DIR_DOWNLOAD_CONCURRENCY);
 
             while let Some(res) = stream.next().await {
                 res?;
@@ -5521,8 +5578,8 @@ async fn copy_remote_tree_to_remote(
             }
 
             use futures_util::stream::StreamExt;
-            let mut stream = futures_util::stream::iter(file_jobs.into_iter().map(
-                |(child_src, child_dst)| {
+            let mut stream =
+                futures_util::stream::iter(file_jobs.into_iter().map(|(child_src, child_dst)| {
                     stream_remote_file_to_remote(
                         Arc::clone(source_sftp),
                         child_src,
@@ -5531,9 +5588,8 @@ async fn copy_remote_tree_to_remote(
                         overwrite,
                         progress_ctx,
                     )
-                },
-            ))
-            .buffer_unordered(DIR_UPLOAD_CONCURRENCY);
+                }))
+                .buffer_unordered(DIR_UPLOAD_CONCURRENCY);
 
             while let Some(res) = stream.next().await {
                 res?;
