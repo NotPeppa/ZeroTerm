@@ -2394,6 +2394,13 @@ body.resizing-ai-panel .ai-panel-splitter {
   min-width: 0;
 }
 
+.ai-assistant-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .ai-assistant-mark {
   position: relative;
   flex: 0 0 auto;
@@ -2430,6 +2437,22 @@ body.resizing-ai-panel .ai-panel-splitter {
 .ai-assistant-title strong {
   font-size: 13px;
   line-height: 1.25;
+}
+
+.ai-session-mode-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 190, 92, 0.28);
+  background: rgba(255, 190, 92, 0.12);
+  color: #ffd48a;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 
 .ai-assistant-title span {
@@ -2795,6 +2818,10 @@ body[data-app-theme="light"] .ai-session-actions button.active {
   background: rgba(104, 168, 255, 0.12);
 }
 
+.ai-session-item.temporary {
+  border-style: dashed;
+}
+
 .ai-session-item.out-of-scope {
   opacity: 0.62;
   cursor: not-allowed;
@@ -2887,6 +2914,10 @@ body[data-app-theme="light"] .ai-session-item:hover,
 body[data-app-theme="light"] .ai-session-item.active {
   border-color: rgba(37, 99, 235, 0.38);
   background: rgba(219, 234, 254, 0.7);
+}
+
+body[data-app-theme="light"] .ai-session-item.temporary {
+  border-style: dashed;
 }
 
 body[data-app-theme="light"] .ai-session-item.out-of-scope {
@@ -3635,6 +3666,12 @@ body[data-app-theme="light"] .ai-process-step p,
 body[data-app-theme="light"] .ai-compose-footer span,
 body[data-app-theme="light"] .ai-compose textarea::placeholder {
   color: #475569;
+}
+
+body[data-app-theme="light"] .ai-session-mode-badge {
+  border-color: rgba(217, 119, 6, 0.22);
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
 }
 
 body[data-app-theme="light"] .ai-hero-card,

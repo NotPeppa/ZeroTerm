@@ -537,6 +537,8 @@ const I18N = {
     "port_forward.action.delete": "Delete",
     "port_forward.confirm.delete.title": "Delete port forward?",
     "port_forward.confirm.delete": "This rule will be removed from synced data. If it is running, ZeroTerm will stop it first.",
+    "port_forward.confirm.close_app.title": "Active port forwards detected",
+    "port_forward.confirm.close_app": "There are {count} active port forward(s). Closing ZeroTerm will stop them. Continue?",
     "port_forward.editor.title.create": "New forward",
     "port_forward.editor.title.edit": "Edit forward - {hostName}",
     "port_forward.editor.subtitle": "Forward rules sync independently from host connection details.",
@@ -768,6 +770,9 @@ const I18N = {
     "ai.session.scope.global": "Global",
     "ai.session.scope.local": "Local terminal",
     "ai.session.scope.ssh": "SSH host",
+    "ai.session.temp_title": "Temporary session",
+    "ai.session.temp_button": "Temporary session",
+    "ai.session.temp_meta": "Unsaved temporary session",
     "ai.session.new_title": "New session",
     "ai.session.close": "Close",
     "ai.session.filter.aria": "AI session scope",
@@ -778,6 +783,7 @@ const I18N = {
     "ai.session.clear.current": "Clear current host sessions",
     "ai.session.clear.all": "Clear all sessions",
     "ai.session.confirm.new": "Start a new session? The current session will remain in the session list.",
+    "ai.session.confirm.new_temp": "Start a new session? The current temporary session will not be saved.",
     "ai.session.confirm.clear_current": "Clear AI sessions for {scope}?",
     "ai.session.confirm.clear_all": "Clear all AI sessions?",
     "ai.session.toast.need_scope": "Switch to the matching host before continuing this AI session.",
@@ -1381,6 +1387,8 @@ const I18N = {
     "port_forward.action.delete": "删除",
     "port_forward.confirm.delete.title": "删除端口转发？",
     "port_forward.confirm.delete": "这条规则会从同步数据中删除。如果正在运行，ZeroTerm 会先停止转发。",
+    "port_forward.confirm.close_app.title": "检测到正在运行的端口转发",
+    "port_forward.confirm.close_app": "当前有 {count} 个正在运行的端口转发。关闭 ZeroTerm 会停止它们。确定继续关闭吗？",
     "port_forward.editor.title.create": "新建转发",
     "port_forward.editor.title.edit": "编辑转发 - {hostName}",
     "port_forward.editor.subtitle": "转发规则会独立于主机连接信息同步。",
@@ -1610,6 +1618,9 @@ const I18N = {
     "ai.session.scope.global": "全局",
     "ai.session.scope.local": "本地终端",
     "ai.session.scope.ssh": "SSH 主机",
+    "ai.session.temp_title": "临时会话",
+    "ai.session.temp_button": "临时会话",
+    "ai.session.temp_meta": "未保存的临时会话",
     "ai.session.new_title": "新会话",
     "ai.session.close": "关闭",
     "ai.session.filter.aria": "AI 会话范围",
@@ -1620,6 +1631,7 @@ const I18N = {
     "ai.session.clear.current": "清空当前机器会话",
     "ai.session.clear.all": "清空全部会话",
     "ai.session.confirm.new": "开始新会话？当前会话会保留在会话列表中。",
+    "ai.session.confirm.new_temp": "开始新会话？当前临时会话不会被保存。",
     "ai.session.confirm.clear_current": "清空 {scope} 的 AI 会话？",
     "ai.session.confirm.clear_all": "清空所有 AI 会话？",
     "ai.session.toast.need_scope": "请切换到对应机器后再继续这个 AI 会话",
@@ -2390,6 +2402,9 @@ const aiComposeForm = document.getElementById("ai-compose-form");
 const aiComposeInput = document.getElementById("ai-compose-input");
 const aiChatLog = document.getElementById("ai-chat-log");
 const aiEmptyState = document.getElementById("ai-empty-state");
+const aiAssistantSubtitle = document.getElementById("ai-assistant-subtitle");
+const aiSessionModeBadge = document.getElementById("ai-session-mode-badge");
+const aiTempChatButton = document.getElementById("ai-temp-chat");
 const aiNewChatButton = document.getElementById("ai-new-chat");
 const aiSessionToggle = document.getElementById("ai-session-toggle");
 const aiSessionOverlay = document.getElementById("ai-session-overlay");
@@ -2665,10 +2680,13 @@ let aiSending = false;
 let aiActiveRequestId = "";
 let aiCanceling = false;
 let aiStreamUnlistenPromise = null;
+let aiConfigLoaded = false;
+let aiConfigLoadPromise = null;
 const aiConversationByPane = new Map();
 const aiSessionIdentityByPane = new Map();
 let aiCurrentSessionId = "";
 let aiCurrentSessionCreatedAt = 0;
+let aiCurrentSessionTemporary = false;
 let aiSessionItems = [];
 let aiSessionOpen = false;
 let aiSessionFilter = "current";
@@ -2705,6 +2723,7 @@ let pendingAiCommandCounter = 0;
 const aiMultiCommandState = new WeakMap();
 const aiMessageByNode = new WeakMap();
 let snippetEditResolver = null;
+const TERMINAL_SCROLLBACK = 3000;
 
 async function loadTerminalCommandSnippets() {
   // Snippets now live in the encrypted vault (kind "snippet") so they
@@ -3739,6 +3758,7 @@ function applyAiStore(store) {
   aiStore = store && Array.isArray(store.profiles)
     ? store
     : { version: 2, profiles: [], activeProfileId: "" };
+  aiConfigLoaded = true;
   const active = getActiveAiProfile();
   aiConfigured = Boolean(active && active.hasApiKey && String(active.model || "").trim());
   currentAiModelLabel = active ? String(active.model || "") : "";
@@ -3806,7 +3826,12 @@ function setAiModelMenuOpen(open) {
   if (!aiModelMenu || !aiModelPill) return;
   aiModelPill.setAttribute("aria-expanded", open ? "true" : "false");
   aiModelMenu.hidden = !open;
-  if (open) renderAiModelMenu();
+  if (open) {
+    renderAiModelMenu();
+    loadAiConfig().then(() => {
+      if (aiModelMenu?.hidden === false) renderAiModelMenu();
+    }).catch(() => {});
+  }
 }
 
 async function setActiveAiProfileById(id) {
@@ -4002,6 +4027,7 @@ function renderAiModelMenu() {
 
 async function refreshAiModelsOnFirstPanelOpen() {
   if (aiModelsRefreshedOnFirstOpen) return;
+  await loadAiConfig().catch(() => {});
   aiModelsRefreshedOnFirstOpen = true;
   const active = getActiveAiProfile();
   if (!active || !active.hasApiKey) return;
@@ -4122,6 +4148,7 @@ function aiSessionTitle(messages = aiMessages) {
 function resetAiSessionIdentity() {
   aiCurrentSessionId = "";
   aiCurrentSessionCreatedAt = 0;
+  aiCurrentSessionTemporary = false;
   aiSessionIdentityByPane.delete(aiSessionIdentityKey());
 }
 
@@ -4157,6 +4184,7 @@ function normalizeAiSessionMessages(messages) {
 async function persistCurrentAiSession() {
   const messages = normalizeAiSessionMessages(aiMessages);
   if (!messages.length) return;
+  if (aiCurrentSessionTemporary) return;
   const now = Date.now();
   if (!aiCurrentSessionId) {
     aiCurrentSessionId = newAiSessionId();
@@ -4180,6 +4208,7 @@ async function persistCurrentAiSession() {
     aiSessionIdentityByPane.set(aiSessionIdentityKey(), {
       id: aiCurrentSessionId,
       createdAt: aiCurrentSessionCreatedAt,
+      temporary: false,
     });
     await loadAiSessions({ render: true });
   } catch (e) {
@@ -4195,6 +4224,7 @@ function formatAiSessionTime(ts) {
 
 function renderAiSessions() {
   if (!aiSessionList || !aiSessionEmpty) return;
+  syncAiSessionModeUi();
   aiSessionList.textContent = "";
   const scope = getAiSessionScope();
   if (aiSessionScopeLabel) {
@@ -4209,8 +4239,23 @@ function renderAiSessions() {
   }
   const allItems = Array.isArray(aiSessionItems) ? aiSessionItems : [];
   const items = aiSessionFilter === "current" ? allItems.filter(isAiSessionInCurrentScope) : allItems;
-  aiSessionEmpty.hidden = items.length > 0;
+  const hasTemporary = aiCurrentSessionTemporary;
+  aiSessionEmpty.hidden = hasTemporary || items.length > 0;
   aiSessionEmpty.textContent = aiSessionFilter === "current" ? t("ai.session.empty.current") : t("ai.session.empty.all");
+  if (hasTemporary) {
+    const row = document.createElement("div");
+    row.setAttribute("role", "status");
+    row.className = "ai-session-item active temporary";
+    const title = document.createElement("strong");
+    title.textContent = t("ai.session.temp_title");
+    const meta = document.createElement("span");
+    const scope = getAiSessionScope();
+    meta.textContent = aiSessionFilter === "all"
+      ? `${scope.scopeLabel} | ${t("ai.session.temp_meta")}`
+      : t("ai.session.temp_meta");
+    row.append(title, meta);
+    aiSessionList.appendChild(row);
+  }
   for (const item of items) {
     const row = document.createElement("div");
     row.setAttribute("role", "button");
@@ -4265,6 +4310,7 @@ function restoreAiSessionItem(item) {
   }
   aiCurrentSessionId = String(item?.id || "");
   aiCurrentSessionCreatedAt = Number(item?.createdAt || item?.updatedAt || Date.now());
+  aiCurrentSessionTemporary = false;
   aiMessages = normalizeAiSessionMessages(item?.messages || []);
   storeAiConversationForActivePane({ persist: false });
   renderAiConversation();
@@ -4272,9 +4318,10 @@ function restoreAiSessionItem(item) {
   setAiSessionOpen(false);
 }
 
-function startNewAiConversation() {
+function startNewAiConversation({ temporary = false } = {}) {
   aiMessages = [];
   resetAiSessionIdentity();
+  aiCurrentSessionTemporary = Boolean(temporary);
   storeAiConversationForActivePane({ persist: false });
   renderAiConversation();
   renderAiSessions();
@@ -4282,6 +4329,7 @@ function startNewAiConversation() {
 
 function renderAiConversation() {
   if (!aiChatLog) return;
+  syncAiSessionModeUi();
   aiChatLog.textContent = "";
   const messages = aiMessages || [];
   aiChatLog.hidden = messages.length === 0;
@@ -4299,7 +4347,21 @@ function syncAiConversationToActivePane() {
   const identity = aiSessionIdentityByPane.get(aiSessionIdentityKey()) || {};
   aiCurrentSessionId = identity.id || "";
   aiCurrentSessionCreatedAt = identity.createdAt || 0;
+  aiCurrentSessionTemporary = identity.temporary === true;
   renderAiConversation();
+}
+
+function syncAiSessionModeUi() {
+  if (aiTempChatButton) aiTempChatButton.classList.toggle("active", aiCurrentSessionTemporary);
+  if (aiSessionModeBadge) {
+    aiSessionModeBadge.hidden = !aiCurrentSessionTemporary;
+    aiSessionModeBadge.textContent = t("ai.session.temp_title");
+  }
+  if (aiAssistantSubtitle) {
+    aiAssistantSubtitle.textContent = aiCurrentSessionTemporary
+      ? `${t("ai.assistant.subtitle")} · ${t("ai.session.temp_meta")}`
+      : t("ai.assistant.subtitle");
+  }
 }
 
 function storeAiConversationForActivePane({ persist = true } = {}) {
@@ -4309,6 +4371,7 @@ function storeAiConversationForActivePane({ persist = true } = {}) {
   aiSessionIdentityByPane.set(aiSessionIdentityKey(), {
     id: aiCurrentSessionId,
     createdAt: aiCurrentSessionCreatedAt,
+    temporary: aiCurrentSessionTemporary,
   });
   if (persist) {
     persistCurrentAiSession();
@@ -4681,10 +4744,10 @@ async function runCommandInActiveTerminal(command) {
 function requestAiCommandApproval(command) {
   const text = normalizeAiCommandBlock(command);
   if (!text) return;
-  return executeAiCommand(text, { autoContinue: false });
+  return executeAiCommand(text);
 }
 
-async function executeAiCommand(command, { autoContinue = true } = {}) {
+async function executeAiCommand(command) {
   const pane = getActivePane();
   if (!pane?.sessionId) {
     showToast("当前没有可执行命令的终端会话。", "error", 3600);
@@ -4698,7 +4761,6 @@ async function executeAiCommand(command, { autoContinue = true } = {}) {
     pane.term?.focus?.();
     await waitForTerminalOutputSettle(before, { maxMs: commandWaitMaxMs(command) });
     keepPaneTerminalAtBottom(pane, { force: true });
-    if (autoContinue) await continueAiAfterCommand(command, cursor);
     return cursor;
   } catch (e) {
     showToast(String(e), "error", 4200);
@@ -4835,34 +4897,8 @@ function buildConversationSummary(messages) {
   return parts.join("\n");
 }
 
-async function continueAiAfterCommand(command, cursor) {
-  const includeCommandOutput = aiContextMode !== "off";
-  const summary = buildConversationSummary(aiMessages);
-  const terminalOutput = includeCommandOutput ? scanTerminalFromCursor(cursor) : "";
-  const systemParts = [
-    "你是 ZeroTerm 的 AI 助手。用户刚批准执行了一条命令，需要你继续分析。",
-    "先判断终端输出是否已经回答了用户的问题，或者已经暴露了明确异常。",
-    "如果证据已经足够，必须停止继续排查，直接给出：结论、依据、影响、建议下一步。",
-    "如果问题是配置缺失、服务未运行、依赖不存在、权限不足、资源不足、网络不通等，应给出可执行的修复方向。",
-    "只有在当前输出无法支持结论，且缺少一个关键事实时，才给下一条最有用的命令。",
-    "每次最多建议一条命令，且每个 fenced code block 只能包含一条命令。",
-    "引用终端输出、报错或日志时必须使用 ```terminal 代码块；只有真正需要用户批准执行的命令才使用 ```bash。",
-    "不要重复建议已经执行过或等价的检查命令。",
-    `用户已执行的命令：${command}`,
-  ];
-  if (summary) systemParts.push(`\n对话摘要：\n${summary}`);
-  if (!includeCommandOutput) systemParts.push("用户当前选择了不附带终端内容，不要基于终端输出做判断。");
-  const messages = [{ role: "system", content: withGlobalAiPrompt(systemParts.join("\n")) }];
-  if (terminalOutput) {
-    messages.push({ role: "system", content: `从终端获取到的命令执行输出：\n\`\`\`terminal\n${redactSensitiveText(terminalOutput)}\n\`\`\`` });
-  }
-  messages.push({ role: "user", content: "继续分析" });
-  await runAiTurn(messages, "正在分析执行结果...");
-}
-
 async function continueAiAfterCommands(results, { totalCommands = 0 } = {}) {
   const executed = Array.isArray(results) ? results.filter((item) => item?.command) : [];
-  if (!executed.length) return;
   const includeCommandOutput = aiContextMode !== "off";
   const summary = buildConversationSummary(aiMessages);
   const commands = executed.map((item) => item.command);
@@ -4871,25 +4907,39 @@ async function continueAiAfterCommands(results, { totalCommands = 0 } = {}) {
     return c > 0 && (min === 0 || c < min) ? c : min;
   }, 0);
   const terminalOutput = includeCommandOutput ? scanTerminalFromCursor(earliestCursor) : "";
-  const systemParts = [
-    "你是 ZeroTerm 的 AI 助手。用户刚在同一条 AI 回复里批准执行了多条命令，需要你继续分析。",
-    "综合这些已执行命令的终端输出继续推进用户目标，但不要假装未执行的命令已经执行。",
-    "如果证据已经足够，必须停止继续排查，直接给出：结论、依据、影响、建议下一步。",
-    "如果当前结果已经能回答问题，不要再重复建议同类检查命令。",
-    "只有在缺少一个关键事实时，才给下一条最有用的命令。",
-    "每次最多建议一条命令，且每个 fenced code block 只能包含一条命令。",
-    "引用终端输出、报错或日志时必须使用 ```terminal 代码块；只有真正需要用户批准执行的命令才使用 ```bash。",
-    "不要重复建议已经执行过或等价的检查命令。",
-    `用户已执行的命令：${commands.join(", ")}`,
-  ];
+  const systemParts = executed.length
+    ? [
+      "你是 ZeroTerm 的 AI 助手。用户刚在同一条 AI 回复里批准执行了多条命令，需要你继续分析。",
+      "综合这些已执行命令的终端输出继续推进用户目标，但不要假装未执行的命令已经执行。",
+      "如果证据已经足够，必须停止继续排查，直接给出：结论、依据、影响、建议下一步。",
+      "如果当前结果已经能回答问题，不要再重复建议同类检查命令。",
+      "只有在缺少一个关键事实时，才给下一条最有用的命令。",
+      "每次最多建议一条命令，且每个 fenced code block 只能包含一条命令。",
+      "引用终端输出、报错或日志时必须使用 ```terminal 代码块；只有真正需要用户批准执行的命令才使用 ```bash。",
+      "不要重复建议已经执行过或等价的检查命令。",
+      `用户已执行的命令：${commands.join(", ")}`,
+    ]
+    : [
+      "你是 ZeroTerm 的 AI 助手。用户点击了“继续分析”，但这次不一定是通过对话里的批准按钮执行命令，也可能是手动在终端里执行过。",
+      "优先根据当前终端内容继续推进用户目标，不要假装知道用户具体执行了哪条命令。",
+      "如果证据已经足够，必须停止继续排查，直接给出：结论、依据、影响、建议下一步。",
+      "如果当前终端内容已经能回答问题，不要再重复建议同类检查命令。",
+      "只有在缺少一个关键事实时，才给下一条最有用的命令。",
+      "每次最多建议一条命令，且每个 fenced code block 只能包含一条命令。",
+      "引用终端输出、报错或日志时必须使用 ```terminal 代码块；只有真正需要用户批准执行的命令才使用 ```bash。",
+      totalCommands > 0
+        ? `这条 AI 回复里原本给出了 ${totalCommands} 条可执行命令，但当前没有记录到通过按钮执行的命令；用户可能改为手动执行。`
+        : "当前没有记录到通过按钮执行的命令；用户可能是在终端中手动执行后再回来继续分析。",
+    ];
   if (summary) systemParts.push(`\n对话摘要：\n${summary}`);
   if (!includeCommandOutput) systemParts.push("用户当前选择了不附带终端内容，不要基于终端输出做判断。");
   const messages = [{ role: "system", content: withGlobalAiPrompt(systemParts.join("\n")) }];
   if (terminalOutput) {
-    messages.push({ role: "system", content: `从终端获取到的命令执行输出：\n\`\`\`terminal\n${redactSensitiveText(terminalOutput)}\n\`\`\`` });
+    const label = executed.length ? "从终端获取到的命令执行输出" : "从当前终端获取到的最新内容";
+    messages.push({ role: "system", content: `${label}：\n\`\`\`terminal\n${redactSensitiveText(terminalOutput)}\n\`\`\`` });
   }
   messages.push({ role: "user", content: "继续分析" });
-  await runAiTurn(messages, "正在分析已执行命令...");
+  await runAiTurn(messages, executed.length ? "正在分析已执行命令..." : "正在基于当前终端继续分析...");
 }
 
 /// Run a single AI turn (initial send or retry) under shared "sending" state
@@ -5028,10 +5078,6 @@ function ensureAiMultiCommandControls(messageNode, totalCommands) {
     button.addEventListener("click", async () => {
       const current = aiMultiCommandState.get(messageNode);
       if (!current || current.continuing) return;
-      if (!current.results.length) {
-        showToast("请先执行至少一条命令，再继续分析。", "error", 3200);
-        return;
-      }
       current.continuing = true;
       updateAiMultiCommandControls(messageNode);
       try {
@@ -5059,21 +5105,15 @@ function updateAiMultiCommandControls(messageNode) {
   const total = state.totalCommands || 0;
   const pending = Math.max(0, total - executed);
   state.hint.textContent = executed
-    ? `这条回复里有 ${total} 条可执行命令，已执行 ${executed} 条${pending ? `，剩余 ${pending} 条` : ""}。`
-    : `这条回复里有 ${total} 条可执行命令；你可以执行后，再手动继续分析。`;
+    ? `这条回复里有 ${total} 条可执行命令，已执行 ${executed} 条${pending ? `，剩余 ${pending} 条` : ""}。你也可以手动执行后直接继续分析。`
+    : `这条回复里有 ${total} 条可执行命令；你可以手动执行后，直接点“继续分析”。`;
   if (state.continuing) {
     state.button.disabled = true;
     state.button.textContent = "分析中...";
     return;
   }
-  if (!executed) {
-    state.button.disabled = true;
-    state.button.textContent = "继续分析";
-    return;
-  }
-  const dirty = executed > (state.lastContinuedCount || 0);
-  state.button.disabled = !dirty;
-  state.button.textContent = dirty ? "继续分析" : "已分析";
+  state.button.disabled = false;
+  state.button.textContent = "继续分析";
 }
 
 function storeAiCommandResultForMessage(messageNode, result) {
@@ -5237,7 +5277,7 @@ function enhanceAiCodeBlocks(root) {
         run.textContent = "运行中";
         block.classList.add("approved");
         try {
-          const cursor = await executeAiCommand(singleCommand, { autoContinue: false });
+          const cursor = await executeAiCommand(singleCommand);
           if (commandState) {
             const result = { command: singleCommand, cursor: cursor || 0 };
             commandState.results.push(result);
@@ -5466,12 +5506,22 @@ function withGlobalAiPrompt(system) {
 }
 
 async function loadAiConfig() {
-  try {
-    const store = await invoke("get_ai_config");
-    applyAiStore(store);
-  } catch (e) {
-    if (settingsAiStatus) settingsAiStatus.textContent = String(e);
-  }
+  if (aiConfigLoaded) return aiStore;
+  if (aiConfigLoadPromise) return aiConfigLoadPromise;
+  aiConfigLoadPromise = (async () => {
+    try {
+      const store = await invoke("get_ai_config");
+      applyAiStore(store);
+      aiConfigLoaded = true;
+      return aiStore;
+    } catch (e) {
+      if (settingsAiStatus) settingsAiStatus.textContent = String(e);
+      throw e;
+    } finally {
+      aiConfigLoadPromise = null;
+    }
+  })();
+  return aiConfigLoadPromise;
 }
 
 async function saveAiProfileFromForm() {
@@ -7290,6 +7340,61 @@ if (appWindow) {
   });
 }
 
+let windowCloseRequestPromise = null;
+
+async function getActivePortForwardsForCloseCheck() {
+  try {
+    const rows = await invoke("list_port_forward_status");
+    return Array.isArray(rows) ? rows.filter((row) => row?.active) : [];
+  } catch (e) {
+    console.warn("list_port_forward_status for close check failed", e);
+    return Array.isArray(portForwardRowsCache) ? portForwardRowsCache.filter((row) => row?.active) : [];
+  }
+}
+
+async function closeAppWindowNow() {
+  await invoke("destroy_current_window");
+}
+
+async function requestWindowClose() {
+  if (!appWindow) return;
+  if (windowCloseRequestPromise) return windowCloseRequestPromise;
+  windowCloseRequestPromise = (async () => {
+    const activeForwards = await getActivePortForwardsForCloseCheck();
+    if (!activeForwards.length) {
+      await closeAppWindowNow();
+      return;
+    }
+    const ok = await openConfirmDialog({
+      title: t("port_forward.confirm.close_app.title"),
+      message: t("port_forward.confirm.close_app", { count: activeForwards.length }),
+      okText: t("window.close"),
+      cancelText: t("snippets.dialog.cancel"),
+    });
+    if (!ok) return;
+    await closeAppWindowNow();
+  })()
+    .catch((e) => {
+      console.warn("requestWindowClose failed", e);
+    })
+    .finally(() => {
+      windowCloseRequestPromise = null;
+    });
+  return windowCloseRequestPromise;
+}
+
+function installWindowCloseInterceptor() {
+  if (!appWindow || typeof appWindow.onCloseRequested !== "function") return;
+  try {
+    appWindow.onCloseRequested((event) => {
+      event.preventDefault();
+      requestWindowClose();
+    });
+  } catch (e) {
+    console.warn("install close interceptor failed", e);
+  }
+}
+
 if (isWindowsPlatform && appWindow) {
   if (windowMinimizeButton) {
     windowMinimizeButton.addEventListener("click", () => {
@@ -7309,13 +7414,13 @@ if (isWindowsPlatform && appWindow) {
   }
   if (windowCloseButton) {
     windowCloseButton.addEventListener("click", () => {
-      appWindow.close().catch((e) => {
-        console.warn("close failed", e);
-      });
+      requestWindowClose();
     });
   }
   syncWindowMaximizeButtonState();
 }
+
+installWindowCloseInterceptor();
 
 function closeTextInputDialog(result) {
   if (!textInputResolver) return;
@@ -7971,7 +8076,9 @@ function setSettingsSection(section) {
   if (settingsDataPanel) settingsDataPanel.hidden = settingsSection !== "data";
   if (settingsAboutPanel) settingsAboutPanel.hidden = settingsSection !== "about";
   if (settingsSection === "ai") {
-    maybeAutoRefreshAiModels().catch(() => {});
+    loadAiConfig()
+      .then(() => maybeAutoRefreshAiModels().catch(() => {}))
+      .catch(() => {});
   }
   if (settingsGeneralTitle) {
     settingsGeneralTitle.textContent = settingsSection === "terminal"
@@ -10131,6 +10238,8 @@ function applyI18n() {
   setText("ai-session-current-filter", "ai.session.filter.current");
   setText("ai-session-all-filter", "ai.session.filter.all");
   setAttr("ai-session-filter", "aria-label", "ai.session.filter.aria");
+  setAttr("ai-temp-chat", "title", "ai.session.temp_button");
+  setAttr("ai-temp-chat", "aria-label", "ai.session.temp_button");
   setAttr("ai-new-chat", "title", "ai.session.new_title");
   setAttr("ai-new-chat", "aria-label", "ai.session.new_title");
   if (terminalSidebarAiToggle) {
@@ -12648,7 +12757,7 @@ function ensurePaneTerminal(pane) {
     allowProposedApi: true,
     customGlyphs: true,
     rescaleOverlappingGlyphs: false,
-    scrollback: 10000,
+    scrollback: TERMINAL_SCROLLBACK,
     convertEol: false,
     reflowCursorLine: false,
   });
@@ -16636,8 +16745,15 @@ aiComposeInput?.addEventListener("keydown", (ev) => {
 aiContextToggle?.addEventListener("click", cycleAiContextMode);
 
 aiNewChatButton?.addEventListener("click", () => {
-  if (aiMessages.length && !confirm(t("ai.session.confirm.new"))) return;
+  if (aiMessages.length && !confirm(t(aiCurrentSessionTemporary ? "ai.session.confirm.new_temp" : "ai.session.confirm.new"))) return;
   startNewAiConversation();
+  setAiSessionOpen(false);
+  aiComposeInput?.focus();
+});
+
+aiTempChatButton?.addEventListener("click", () => {
+  if (aiMessages.length && !confirm(t(aiCurrentSessionTemporary ? "ai.session.confirm.new_temp" : "ai.session.confirm.new"))) return;
+  startNewAiConversation({ temporary: true });
   setAiSessionOpen(false);
   aiComposeInput?.focus();
 });
@@ -16665,6 +16781,7 @@ aiSessionOverlay?.addEventListener("click", (ev) => {
 aiSessionClear?.addEventListener("click", async () => {
   const currentOnly = aiSessionFilter === "current";
   const scope = getAiSessionScope();
+  const wasTemporary = aiCurrentSessionTemporary;
   const confirmText = currentOnly
     ? t("ai.session.confirm.clear_current", { scope: scope.scopeLabel })
     : t("ai.session.confirm.clear_all");
@@ -16680,11 +16797,18 @@ aiSessionClear?.addEventListener("click", async () => {
       });
       aiSessionItems = aiSessionItems.filter((item) => !isAiSessionInCurrentScope(item));
       clearAiSessionIdentitiesForScope(scope);
-      if (!deletedCurrentSession && aiMessages.length) storeAiConversationForActivePane({ persist: false });
+      if (!deletedCurrentSession && aiMessages.length) {
+        aiCurrentSessionTemporary = wasTemporary;
+        storeAiConversationForActivePane({ persist: false });
+      }
     } else {
       await invoke("clear_ai_sessions");
       aiSessionItems = [];
       clearAiSessionIdentitiesForScope();
+      if (aiMessages.length) {
+        aiCurrentSessionTemporary = wasTemporary;
+        storeAiConversationForActivePane({ persist: false });
+      }
     }
     renderAiSessions();
     showToast(currentOnly ? t("ai.session.toast.cleared_current") : t("ai.session.toast.cleared_all"), "success", 1800);
@@ -16818,8 +16942,6 @@ window.addEventListener("blur", () => hideTerminalSelectionMenu());
 // --------------------------------------------------------------------------
 
 applyI18n();
-loadAiConfig().catch(() => {});
-loadAiSessions({ render: true }).catch(() => {});
 loadNetworkProxyConfig({ quiet: true }).catch(() => {});
 refreshVaultStatus();
 function openSettingsPage() {

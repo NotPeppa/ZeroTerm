@@ -112,6 +112,7 @@ pub fn run() {
             commands::try_keychain_unlock,
             commands::forget_keychain,
             commands::open_new_window,
+            commands::destroy_current_window,
             commands::app_version,
             commands::check_for_update,
             commands::install_update,

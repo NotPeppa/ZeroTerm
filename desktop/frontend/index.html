@@ -344,7 +344,10 @@
                                   </svg>
                                 </span>
                                 <div>
-                                  <strong id="ai-assistant-title">AI 助手</strong>
+                                  <div class="ai-assistant-heading">
+                                    <strong id="ai-assistant-title">AI 助手</strong>
+                                    <span id="ai-session-mode-badge" class="ai-session-mode-badge" hidden>Temporary</span>
+                                  </div>
                                   <span id="ai-assistant-subtitle">当前 SSH 会话</span>
                                 </div>
                               </div>
@@ -354,6 +357,14 @@
                               </button>
                               <div id="ai-model-menu" class="ai-model-menu" role="menu" hidden></div>
                               <div class="ai-session-actions">
+                                <button id="ai-temp-chat" type="button" title="Temporary session" aria-label="Temporary session">
+                                  <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M8 3h8"></path>
+                                    <path d="M9 3v2a1 1 0 0 1-.29.71L6.41 8a2 2 0 0 0-.58 1.41V11a2 2 0 0 0 .59 1.41l4.17 4.18a2 2 0 0 1 .58 1.41V21"></path>
+                                    <path d="M15 3v2a1 1 0 0 0 .29.71L17.59 8a2 2 0 0 1 .58 1.41V11a2 2 0 0 1-.59 1.41l-4.17 4.18a2 2 0 0 0-.58 1.41V21"></path>
+                                    <path d="M9 14h6"></path>
+                                  </svg>
+                                </button>
                                 <button id="ai-new-chat" type="button" title="New session" aria-label="New session">
                                   <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
                                     <path d="M12 5v14"></path>
