@@ -300,7 +300,6 @@ impl SyncAdapter for S3Adapter {
                 }))
             }
             Err(e) => {
-                tracing::warn!(target: "zeroterm_sync.s3", error = ?e, "head_object failed");
                 let s = e.to_string();
                 if sdk_http_status(&e) == 404 || is_not_found_str(&s) {
                     Ok(None)
