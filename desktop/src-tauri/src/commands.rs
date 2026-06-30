@@ -450,15 +450,15 @@ async fn download_remote_file_to_local(
     source: String,
     target: PathBuf,
     overwrite: bool,
-    progress_ctx: Option<(&AppHandle, &AppState)>,
+    progress: ProgressMode<'_>,
 ) -> Result<u64, String> {
     if target.exists() && !overwrite {
         return Err(format!("destination already exists: {}", target.display()));
     }
 
     let temp_path = unique_sibling_path(&target, "download");
-    let result = match progress_ctx {
-        Some((app_handle, state)) => {
+    let result = match progress {
+        ProgressMode::Standalone { app, state } => {
             let file = tokio::fs::File::create(&temp_path)
                 .await
                 .map_err(|e| format!("opening {}: {e}", temp_path.display()))?;
@@ -466,7 +466,7 @@ async fn download_remote_file_to_local(
             let (transfer_id, cancel) = register_transfer(state);
             let destination = target.display().to_string();
             let result = run_with_progress(
-                app_handle,
+                app,
                 transfer_id,
                 "download",
                 source.clone(),
@@ -488,7 +488,33 @@ async fn download_remote_file_to_local(
             forget_transfer(state, transfer_id);
             result.map_err(|e| e.to_string())
         }
-        None => {
+        ProgressMode::Aggregate(sink) => {
+            let file = tokio::fs::File::create(&temp_path)
+                .await
+                .map_err(|e| format!("opening {}: {e}", temp_path.display()))?;
+            let mut file = tokio::io::BufWriter::new(file);
+            let cancel = sink.cancel_token();
+            let source_label = source.clone();
+            let mut last_bytes: u64 = 0;
+            source_sftp
+                .download_to_writer_parallel(
+                    &source,
+                    &mut file,
+                    zeroterm_ssh::DEFAULT_CHUNK,
+                    zeroterm_ssh::DEFAULT_DOWNLOAD_PARALLELISM,
+                    cancel,
+                    move |tick| {
+                        let delta = tick.bytes_done.saturating_sub(last_bytes);
+                        if delta > 0 {
+                            sink.add_bytes(delta, &source_label);
+                        }
+                        last_bytes = tick.bytes_done;
+                    },
+                )
+                .await
+                .map_err(|e| e.to_string())
+        }
+        ProgressMode::None => {
             let file = tokio::fs::File::create(&temp_path)
                 .await
                 .map_err(|e| format!("opening {}: {e}", temp_path.display()))?;
@@ -784,16 +810,68 @@ fn store_with_key_flags(mut store: AiConfigStore) -> AiConfigStore {
     store
 }
 
+/// Send an AI API request, retrying up to 3 times on HTTP 429.
+///
+/// Honors the `Retry-After` response header (interpreted as whole
+/// seconds) when present; otherwise uses exponential backoff
+/// (1s → 2s → 4s). Transport errors and other non-success statuses
+/// are terminal — they surface to the caller unchanged so existing
+/// error messages stay intact.
+async fn send_ai_request_with_retry(
+    builder: reqwest::RequestBuilder,
+) -> Result<reqwest::Response, reqwest::Error> {
+    const MAX_RETRIES: usize = 3;
+    let mut attempt = 0usize;
+    loop {
+        // Clone the builder so we can re-issue on 429. JSON request
+        // bodies are cloneable, so this always succeeds for our calls;
+        // the None branch is a defensive fallback for non-cloneable
+        // bodies (single attempt, no retry).
+        let req = match builder.try_clone() {
+            Some(r) => r,
+            None => return builder.send().await,
+        };
+        match req.send().await {
+            Ok(resp) => {
+                if resp.status() != reqwest::StatusCode::TOO_MANY_REQUESTS
+                    || attempt >= MAX_RETRIES
+                {
+                    return Ok(resp);
+                }
+                let backoff = match attempt {
+                    0 => Duration::from_secs(1),
+                    1 => Duration::from_secs(2),
+                    _ => Duration::from_secs(4),
+                };
+                let delay = resp
+                    .headers()
+                    .get(reqwest::header::RETRY_AFTER)
+                    .and_then(|h| h.to_str().ok())
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .map(Duration::from_secs)
+                    .unwrap_or(backoff);
+                // Drain the 429 body so the connection can be reused.
+                let _ = resp.text().await;
+                warn!(
+                    attempt = attempt + 1,
+                    delay_ms = delay.as_millis() as u64,
+                    "AI request rate-limited (429), retrying"
+                );
+                tokio::time::sleep(delay).await;
+                attempt += 1;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
 async fn fetch_ai_models(base_url: &str, api_key: &str) -> Result<Vec<String>, String> {
     let endpoint = format!("{}/models", base_url.trim_end_matches('/'));
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
         .build()
         .map_err(|e| e.to_string())?;
-    let response = client
-        .get(endpoint)
-        .bearer_auth(api_key)
-        .send()
+    let response = send_ai_request_with_retry(client.get(endpoint).bearer_auth(api_key))
         .await
         .map_err(|e| format!("AI model request failed: {e}"))?;
     let status = response.status();
@@ -1479,13 +1557,11 @@ pub async fn ai_chat(
     if !profile.reasoning_effort.is_empty() {
         body["reasoning_effort"] = json!(profile.reasoning_effort);
     }
-    let response = client
-        .post(endpoint)
-        .bearer_auth(api_key)
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("AI request failed: {e}"))?;
+    let response = send_ai_request_with_retry(
+        client.post(endpoint).bearer_auth(api_key).json(&body),
+    )
+    .await
+    .map_err(|e| format!("AI request failed: {e}"))?;
 
     let status = response.status();
     let body = response
@@ -1552,12 +1628,10 @@ pub async fn ai_chat_stream(app: AppHandle, input: AiChatStreamInput) -> Result<
     if !profile.reasoning_effort.is_empty() {
         body["reasoning_effort"] = json!(profile.reasoning_effort);
     }
-    let response = match client
-        .post(endpoint)
-        .bearer_auth(api_key)
-        .json(&body)
-        .send()
-        .await
+    let response = match send_ai_request_with_retry(
+        client.post(endpoint).bearer_auth(api_key).json(&body),
+    )
+    .await
     {
         Ok(v) => v,
         Err(e) => {
@@ -5151,11 +5225,15 @@ async fn copy_local_tree_to_local(
 ) -> Result<(), String> {
     match root_kind {
         CopyNodeKind::File => {
+            let progress = match progress_ctx {
+                Some((app, state)) => ProgressMode::Standalone { app, state },
+                None => ProgressMode::None,
+            };
             stream_local_file_to_local(
                 source.to_path_buf(),
                 target.to_path_buf(),
                 overwrite,
-                progress_ctx,
+                progress,
             )
             .await
         }
@@ -5165,51 +5243,85 @@ async fn copy_local_tree_to_local(
                     .map_err(|e| format!("mkdir {}: {e}", target.display()))?;
             }
 
-            let mut stack: Vec<(PathBuf, PathBuf)> =
-                vec![(source.to_path_buf(), target.to_path_buf())];
-            while let Some((src_dir, dst_dir)) = stack.pop() {
-                let rd = fs::read_dir(&src_dir)
-                    .map_err(|e| format!("read_dir {}: {e}", src_dir.display()))?;
-                for item in rd {
-                    let entry =
-                        item.map_err(|e| format!("read_dir entry {}: {e}", src_dir.display()))?;
-                    let name = entry.file_name();
-                    let child_src = entry.path();
-                    let child_dst = dst_dir.join(&name);
-                    let kind = detect_local_kind(&child_src)?;
-                    match kind {
-                        CopyNodeKind::File => {
-                            stream_local_file_to_local(
-                                child_src,
-                                child_dst,
-                                overwrite,
-                                progress_ctx,
-                            )
-                            .await?;
-                        }
-                        CopyNodeKind::Dir => {
-                            if !child_dst.exists() {
-                                fs::create_dir_all(&child_dst)
-                                    .map_err(|e| format!("mkdir {}: {e}", child_dst.display()))?;
+            let source = source.to_path_buf();
+            let target = target.to_path_buf();
+
+            run_tree_transfer(
+                progress_ctx,
+                "copy",
+                source.display().to_string(),
+                target.display().to_string(),
+                move |sink_opt| async move {
+                    let mut file_jobs: Vec<(PathBuf, PathBuf)> = Vec::new();
+                    let mut total_bytes: u64 = 0;
+                    let mut stack: Vec<(PathBuf, PathBuf)> =
+                        vec![(source.clone(), target.clone())];
+                    while let Some((src_dir, dst_dir)) = stack.pop() {
+                        let rd = fs::read_dir(&src_dir)
+                            .map_err(|e| format!("read_dir {}: {e}", src_dir.display()))?;
+                        for item in rd {
+                            let entry = item
+                                .map_err(|e| format!("read_dir entry {}: {e}", src_dir.display()))?;
+                            let name = entry.file_name();
+                            let child_src = entry.path();
+                            let child_dst = dst_dir.join(&name);
+                            let kind = detect_local_kind(&child_src)?;
+                            match kind {
+                                CopyNodeKind::File => {
+                                    if let Ok(meta) = entry.metadata() {
+                                        total_bytes = total_bytes.saturating_add(meta.len());
+                                    }
+                                    file_jobs.push((child_src, child_dst));
+                                }
+                                CopyNodeKind::Dir => {
+                                    if !child_dst.exists() {
+                                        fs::create_dir_all(&child_dst).map_err(|e| {
+                                            format!("mkdir {}: {e}", child_dst.display())
+                                        })?;
+                                    }
+                                    stack.push((child_src, child_dst));
+                                }
                             }
-                            stack.push((child_src, child_dst));
                         }
                     }
-                }
-            }
-            Ok(())
+
+                    if let Some(sink) = &sink_opt {
+                        sink.set_total(total_bytes);
+                    }
+
+                    use futures_util::stream::StreamExt;
+                    let mut stream =
+                        futures_util::stream::iter(file_jobs.into_iter().map(|(child_src, child_dst)| {
+                            let sink_opt = sink_opt.clone();
+                            async move {
+                                let progress = match sink_opt {
+                                    Some(s) => ProgressMode::Aggregate(s),
+                                    None => ProgressMode::None,
+                                };
+                                stream_local_file_to_local(child_src, child_dst, overwrite, progress)
+                                    .await
+                            }
+                        }))
+                        .buffer_unordered(DIR_DOWNLOAD_CONCURRENCY);
+                    while let Some(res) = stream.next().await {
+                        res?;
+                    }
+                    Ok(())
+                },
+            )
+            .await
         }
     }
 }
 
-/// Copy a single local file. With `progress_ctx` it streams in chunks and emits
-/// throttled `sftp:progress` events (so the transfer dock shows a bar); without
-/// it, a plain `fs::copy` is used.
+/// Copy a single local file. With progress it streams in chunks and emits
+/// throttled `sftp:progress` events (so the transfer dock shows a bar);
+/// without, a plain `fs::copy` is used.
 async fn stream_local_file_to_local(
     source: PathBuf,
     target: PathBuf,
     overwrite: bool,
-    progress_ctx: Option<(&AppHandle, &AppState)>,
+    progress: ProgressMode<'_>,
 ) -> Result<(), String> {
     if target.exists() && !overwrite {
         return Err(format!("destination already exists: {}", target.display()));
@@ -5221,27 +5333,50 @@ async fn stream_local_file_to_local(
             target.display()
         )
     };
-    match progress_ctx {
-        Some((app_handle, state)) => {
+    match progress {
+        ProgressMode::Standalone { app, state } => {
             let total = tokio::fs::metadata(&source).await.ok().map(|m| m.len());
             let (transfer_id, cancel) = register_transfer(state);
             let src = source.clone();
             let dst = target.clone();
             let result = run_with_progress(
-                app_handle,
+                app,
                 transfer_id,
                 "copy",
                 source.display().to_string(),
                 target.display().to_string(),
                 move |progress_cb| async move {
-                    copy_local_file_chunked(&src, &dst, total, cancel, progress_cb).await
+                    copy_local_file_chunked(&src, &dst, total, cancel, progress_cb)
+                        .await
+                        .map_err(|e| {
+                            format!("copy file {} -> {}: {e}", src.display(), dst.display())
+                        })
                 },
             )
             .await;
             forget_transfer(state, transfer_id);
-            result.map(|_| ()).map_err(to_err)
+            result.map(|_| ())
         }
-        None => tokio::fs::copy(&source, &target)
+        ProgressMode::Aggregate(sink) => {
+            let total = tokio::fs::metadata(&source).await.ok().map(|m| m.len());
+            let cancel = sink.cancel_token();
+            let src = source.clone();
+            let dst = target.clone();
+            let sink_for_cb = sink.clone();
+            let source_label = source.display().to_string();
+            let mut last_bytes: u64 = 0;
+            copy_local_file_chunked(&src, &dst, total, cancel, move |tick| {
+                let delta = tick.bytes_done.saturating_sub(last_bytes);
+                if delta > 0 {
+                    sink_for_cb.add_bytes(delta, &source_label);
+                }
+                last_bytes = tick.bytes_done;
+            })
+            .await
+            .map_err(|e| format!("copy file {} -> {}: {e}", source.display(), target.display()))?;
+            Ok(())
+        }
+        ProgressMode::None => tokio::fs::copy(&source, &target)
             .await
             .map(|_| ())
             .map_err(to_err),
@@ -5300,12 +5435,16 @@ async fn copy_local_tree_to_remote(
 ) -> Result<(), String> {
     match root_kind {
         CopyNodeKind::File => {
+            let progress = match progress_ctx {
+                Some((app, state)) => ProgressMode::Standalone { app, state },
+                None => ProgressMode::None,
+            };
             stream_local_file_to_remote(
                 Arc::clone(target_sftp),
                 source.to_path_buf(),
                 target.to_string(),
                 overwrite,
-                progress_ctx,
+                progress,
             )
             .await
         }
@@ -5314,56 +5453,85 @@ async fn copy_local_tree_to_remote(
                 target_sftp.stat(target).await.map_err(|e| e.to_string())?;
             }
 
-            // Walk first, creating directories eagerly, then upload files with
-            // bounded concurrency so many small files don't serialize a full
-            // round-trip each.
-            let mut file_jobs: Vec<(PathBuf, String)> = Vec::new();
-            let mut stack: Vec<(PathBuf, String)> =
-                vec![(source.to_path_buf(), target.to_string())];
-            while let Some((src_dir, dst_dir)) = stack.pop() {
-                let rd = fs::read_dir(&src_dir)
-                    .map_err(|e| format!("read_dir {}: {e}", src_dir.display()))?;
-                for item in rd {
-                    let entry =
-                        item.map_err(|e| format!("read_dir entry {}: {e}", src_dir.display()))?;
-                    let name = entry.file_name().to_string_lossy().to_string();
-                    let child_src = entry.path();
-                    let child_dst = remote_join_path(&dst_dir, &name);
-                    let kind = detect_local_kind(&child_src)?;
-                    match kind {
-                        CopyNodeKind::File => {
-                            file_jobs.push((child_src, child_dst));
-                        }
-                        CopyNodeKind::Dir => {
-                            if target_sftp.create_dir(&child_dst).await.is_err() {
-                                target_sftp
-                                    .stat(&child_dst)
-                                    .await
-                                    .map_err(|e| e.to_string())?;
+            let target_sftp = Arc::clone(target_sftp);
+            let source = source.to_path_buf();
+            let target = target.to_string();
+
+            run_tree_transfer(
+                progress_ctx,
+                "upload",
+                source.display().to_string(),
+                target.clone(),
+                move |sink_opt| async move {
+                    // Walk inside the body so `emit_initial` has already
+                    // fired and the bar is visible during the walk.
+                    let mut file_jobs: Vec<(PathBuf, String)> = Vec::new();
+                    let mut total_bytes: u64 = 0;
+                    let mut stack: Vec<(PathBuf, String)> =
+                        vec![(source.clone(), target.clone())];
+                    while let Some((src_dir, dst_dir)) = stack.pop() {
+                        let rd = fs::read_dir(&src_dir)
+                            .map_err(|e| format!("read_dir {}: {e}", src_dir.display()))?;
+                        for item in rd {
+                            let entry = item
+                                .map_err(|e| format!("read_dir entry {}: {e}", src_dir.display()))?;
+                            let name = entry.file_name().to_string_lossy().to_string();
+                            let child_src = entry.path();
+                            let child_dst = remote_join_path(&dst_dir, &name);
+                            let kind = detect_local_kind(&child_src)?;
+                            match kind {
+                                CopyNodeKind::File => {
+                                    if let Ok(meta) = entry.metadata() {
+                                        total_bytes = total_bytes.saturating_add(meta.len());
+                                    }
+                                    file_jobs.push((child_src, child_dst));
+                                }
+                                CopyNodeKind::Dir => {
+                                    if target_sftp.create_dir(&child_dst).await.is_err() {
+                                        target_sftp
+                                            .stat(&child_dst)
+                                            .await
+                                            .map_err(|e| e.to_string())?;
+                                    }
+                                    stack.push((child_src, child_dst));
+                                }
                             }
-                            stack.push((child_src, child_dst));
                         }
                     }
-                }
-            }
 
-            use futures_util::stream::StreamExt;
-            let mut stream =
-                futures_util::stream::iter(file_jobs.into_iter().map(|(child_src, child_dst)| {
-                    stream_local_file_to_remote(
-                        Arc::clone(target_sftp),
-                        child_src,
-                        child_dst,
-                        overwrite,
-                        progress_ctx,
-                    )
-                }))
-                .buffer_unordered(DIR_UPLOAD_CONCURRENCY);
+                    // Flip the bar from indeterminate to determinate.
+                    if let Some(sink) = &sink_opt {
+                        sink.set_total(total_bytes);
+                    }
 
-            while let Some(res) = stream.next().await {
-                res?;
-            }
-            Ok(())
+                    use futures_util::stream::StreamExt;
+                    let mut stream =
+                        futures_util::stream::iter(file_jobs.into_iter().map(|(child_src, child_dst)| {
+                            let sink_opt = sink_opt.clone();
+                            let target_sftp = Arc::clone(&target_sftp);
+                            async move {
+                                let progress = match sink_opt {
+                                    Some(s) => ProgressMode::Aggregate(s),
+                                    None => ProgressMode::None,
+                                };
+                                stream_local_file_to_remote(
+                                    target_sftp,
+                                    child_src,
+                                    child_dst,
+                                    overwrite,
+                                    progress,
+                                )
+                                .await
+                            }
+                        }))
+                        .buffer_unordered(DIR_UPLOAD_CONCURRENCY);
+                    while let Some(res) = stream.next().await {
+                        res?;
+                    }
+                    Ok(())
+                },
+            )
+            .await
         }
     }
 }
@@ -5376,7 +5544,7 @@ async fn stream_local_file_to_remote(
     source: PathBuf,
     target: String,
     overwrite: bool,
-    progress_ctx: Option<(&AppHandle, &AppState)>,
+    progress: ProgressMode<'_>,
 ) -> Result<(), String> {
     if !overwrite && target_sftp.stat(&target).await.is_ok() {
         return Err(format!("destination already exists: {target}"));
@@ -5388,11 +5556,11 @@ async fn stream_local_file_to_remote(
     let mut file = tokio::fs::File::open(&source)
         .await
         .map_err(|e| format!("reading {}: {e}", source.display()))?;
-    match progress_ctx {
-        Some((app_handle, state)) => {
+    match progress {
+        ProgressMode::Standalone { app, state } => {
             let (transfer_id, cancel) = register_transfer(state);
             let result = run_with_progress(
-                app_handle,
+                app,
                 transfer_id,
                 "copy",
                 source.display().to_string(),
@@ -5414,7 +5582,30 @@ async fn stream_local_file_to_remote(
             forget_transfer(state, transfer_id);
             result.map(|_| ()).map_err(|e| e.to_string())
         }
-        None => {
+        ProgressMode::Aggregate(sink) => {
+            let cancel = sink.cancel_token();
+            let source_label = source.display().to_string();
+            let mut last_bytes: u64 = 0;
+            target_sftp
+                .upload_from_reader(
+                    &target,
+                    &mut file,
+                    zeroterm_ssh::DEFAULT_CHUNK,
+                    size_hint,
+                    cancel,
+                    move |tick| {
+                        let delta = tick.bytes_done.saturating_sub(last_bytes);
+                        if delta > 0 {
+                            sink.add_bytes(delta, &source_label);
+                        }
+                        last_bytes = tick.bytes_done;
+                    },
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        }
+        ProgressMode::None => {
             target_sftp
                 .upload_from_reader(
                     &target,
@@ -5444,21 +5635,25 @@ async fn copy_remote_tree_to_local(
         source: String,
         target: PathBuf,
         overwrite: bool,
-        progress_ctx: Option<(&AppHandle, &AppState)>,
+        progress: ProgressMode<'_>,
     ) -> Result<(), String> {
-        download_remote_file_to_local(source_sftp, source, target, overwrite, progress_ctx)
+        download_remote_file_to_local(source_sftp, source, target, overwrite, progress)
             .await
             .map(|_| ())
     }
 
     match root_kind {
         CopyNodeKind::File => {
+            let progress = match progress_ctx {
+                Some((app, state)) => ProgressMode::Standalone { app, state },
+                None => ProgressMode::None,
+            };
             stream_one_remote_file_to_local(
                 Arc::clone(source_sftp),
                 source.to_string(),
                 target.to_path_buf(),
                 overwrite,
-                progress_ctx,
+                progress,
             )
             .await
         }
@@ -5468,58 +5663,82 @@ async fn copy_remote_tree_to_local(
                     .await
                     .map_err(|e| format!("mkdir {}: {e}", target.display()))?;
             }
-            // Walk the tree first, creating directories eagerly (parents before
-            // children) and collecting the flat list of file transfers. Then
-            // run those transfers with bounded concurrency so many small files
-            // don't each pay a full round-trip serially.
-            let mut file_jobs: Vec<(String, PathBuf)> = Vec::new();
-            let mut stack: Vec<(String, PathBuf)> =
-                vec![(source.to_string(), target.to_path_buf())];
-            while let Some((src_dir, dst_dir)) = stack.pop() {
-                let entries = source_sftp
-                    .list(&src_dir)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                for entry in entries {
-                    if entry.name == "." || entry.name == ".." {
-                        continue;
-                    }
-                    let child_src = remote_join_path(&src_dir, &entry.name);
-                    let child_dst = dst_dir.join(&entry.name);
-                    let kind = detect_remote_kind(&child_src, entry.kind)?;
-                    match kind {
-                        CopyNodeKind::File => {
-                            file_jobs.push((child_src, child_dst));
-                        }
-                        CopyNodeKind::Dir => {
-                            if tokio::fs::metadata(&child_dst).await.is_err() {
-                                tokio::fs::create_dir_all(&child_dst)
-                                    .await
-                                    .map_err(|e| format!("mkdir {}: {e}", child_dst.display()))?;
+
+            let source_sftp = Arc::clone(source_sftp);
+            let source = source.to_string();
+            let target = target.to_path_buf();
+
+            run_tree_transfer(
+                progress_ctx,
+                "download",
+                source.clone(),
+                target.display().to_string(),
+                move |sink_opt| async move {
+                    let mut file_jobs: Vec<(String, PathBuf)> = Vec::new();
+                    let mut total_bytes: u64 = 0;
+                    let mut stack: Vec<(String, PathBuf)> =
+                        vec![(source.clone(), target.clone())];
+                    while let Some((src_dir, dst_dir)) = stack.pop() {
+                        let entries = source_sftp
+                            .list(&src_dir)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        for entry in entries {
+                            if entry.name == "." || entry.name == ".." {
+                                continue;
                             }
-                            stack.push((child_src, child_dst));
+                            let child_src = remote_join_path(&src_dir, &entry.name);
+                            let child_dst = dst_dir.join(&entry.name);
+                            let kind = detect_remote_kind(&child_src, entry.kind)?;
+                            match kind {
+                                CopyNodeKind::File => {
+                                    total_bytes = total_bytes.saturating_add(entry.size);
+                                    file_jobs.push((child_src, child_dst));
+                                }
+                                CopyNodeKind::Dir => {
+                                    if tokio::fs::metadata(&child_dst).await.is_err() {
+                                        tokio::fs::create_dir_all(&child_dst)
+                                            .await
+                                            .map_err(|e| format!("mkdir {}: {e}", child_dst.display()))?;
+                                    }
+                                    stack.push((child_src, child_dst));
+                                }
+                            }
                         }
                     }
-                }
-            }
 
-            use futures_util::stream::StreamExt;
-            let mut stream =
-                futures_util::stream::iter(file_jobs.into_iter().map(|(child_src, child_dst)| {
-                    stream_one_remote_file_to_local(
-                        Arc::clone(source_sftp),
-                        child_src,
-                        child_dst,
-                        overwrite,
-                        progress_ctx,
-                    )
-                }))
-                .buffer_unordered(DIR_DOWNLOAD_CONCURRENCY);
+                    if let Some(sink) = &sink_opt {
+                        sink.set_total(total_bytes);
+                    }
 
-            while let Some(res) = stream.next().await {
-                res?;
-            }
-            Ok(())
+                    use futures_util::stream::StreamExt;
+                    let mut stream =
+                        futures_util::stream::iter(file_jobs.into_iter().map(|(child_src, child_dst)| {
+                            let sink_opt = sink_opt.clone();
+                            let source_sftp = Arc::clone(&source_sftp);
+                            async move {
+                                let progress = match sink_opt {
+                                    Some(s) => ProgressMode::Aggregate(s),
+                                    None => ProgressMode::None,
+                                };
+                                stream_one_remote_file_to_local(
+                                    source_sftp,
+                                    child_src,
+                                    child_dst,
+                                    overwrite,
+                                    progress,
+                                )
+                                .await
+                            }
+                        }))
+                        .buffer_unordered(DIR_DOWNLOAD_CONCURRENCY);
+                    while let Some(res) = stream.next().await {
+                        res?;
+                    }
+                    Ok(())
+                },
+            )
+            .await
         }
     }
 }
@@ -5535,13 +5754,17 @@ async fn copy_remote_tree_to_remote(
 ) -> Result<(), String> {
     match root_kind {
         CopyNodeKind::File => {
+            let progress = match progress_ctx {
+                Some((app, state)) => ProgressMode::Standalone { app, state },
+                None => ProgressMode::None,
+            };
             stream_remote_file_to_remote(
                 Arc::clone(source_sftp),
                 source.to_string(),
                 Arc::clone(target_sftp),
                 target.to_string(),
                 overwrite,
-                progress_ctx,
+                progress,
             )
             .await
         }
@@ -5549,57 +5772,86 @@ async fn copy_remote_tree_to_remote(
             if target_sftp.create_dir(target).await.is_err() {
                 target_sftp.stat(target).await.map_err(|e| e.to_string())?;
             }
-            // Walk first, creating directories eagerly, then transfer files with
-            // bounded concurrency.
-            let mut file_jobs: Vec<(String, String)> = Vec::new();
-            let mut stack: Vec<(String, String)> = vec![(source.to_string(), target.to_string())];
-            while let Some((src_dir, dst_dir)) = stack.pop() {
-                let entries = source_sftp
-                    .list(&src_dir)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                for entry in entries {
-                    if entry.name == "." || entry.name == ".." {
-                        continue;
-                    }
-                    let child_src = remote_join_path(&src_dir, &entry.name);
-                    let child_dst = remote_join_path(&dst_dir, &entry.name);
-                    let kind = detect_remote_kind(&child_src, entry.kind)?;
-                    match kind {
-                        CopyNodeKind::File => {
-                            file_jobs.push((child_src, child_dst));
-                        }
-                        CopyNodeKind::Dir => {
-                            if target_sftp.create_dir(&child_dst).await.is_err() {
-                                target_sftp
-                                    .stat(&child_dst)
-                                    .await
-                                    .map_err(|e| e.to_string())?;
+
+            let source_sftp = Arc::clone(source_sftp);
+            let target_sftp = Arc::clone(target_sftp);
+            let source = source.to_string();
+            let target = target.to_string();
+
+            run_tree_transfer(
+                progress_ctx,
+                "copy",
+                source.clone(),
+                target.clone(),
+                move |sink_opt| async move {
+                    let mut file_jobs: Vec<(String, String)> = Vec::new();
+                    let mut total_bytes: u64 = 0;
+                    let mut stack: Vec<(String, String)> =
+                        vec![(source.clone(), target.clone())];
+                    while let Some((src_dir, dst_dir)) = stack.pop() {
+                        let entries = source_sftp
+                            .list(&src_dir)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        for entry in entries {
+                            if entry.name == "." || entry.name == ".." {
+                                continue;
                             }
-                            stack.push((child_src, child_dst));
+                            let child_src = remote_join_path(&src_dir, &entry.name);
+                            let child_dst = remote_join_path(&dst_dir, &entry.name);
+                            let kind = detect_remote_kind(&child_src, entry.kind)?;
+                            match kind {
+                                CopyNodeKind::File => {
+                                    total_bytes = total_bytes.saturating_add(entry.size);
+                                    file_jobs.push((child_src, child_dst));
+                                }
+                                CopyNodeKind::Dir => {
+                                    if target_sftp.create_dir(&child_dst).await.is_err() {
+                                        target_sftp
+                                            .stat(&child_dst)
+                                            .await
+                                            .map_err(|e| e.to_string())?;
+                                    }
+                                    stack.push((child_src, child_dst));
+                                }
+                            }
                         }
                     }
-                }
-            }
 
-            use futures_util::stream::StreamExt;
-            let mut stream =
-                futures_util::stream::iter(file_jobs.into_iter().map(|(child_src, child_dst)| {
-                    stream_remote_file_to_remote(
-                        Arc::clone(source_sftp),
-                        child_src,
-                        Arc::clone(target_sftp),
-                        child_dst,
-                        overwrite,
-                        progress_ctx,
-                    )
-                }))
-                .buffer_unordered(DIR_UPLOAD_CONCURRENCY);
+                    if let Some(sink) = &sink_opt {
+                        sink.set_total(total_bytes);
+                    }
 
-            while let Some(res) = stream.next().await {
-                res?;
-            }
-            Ok(())
+                    use futures_util::stream::StreamExt;
+                    let mut stream =
+                        futures_util::stream::iter(file_jobs.into_iter().map(|(child_src, child_dst)| {
+                            let sink_opt = sink_opt.clone();
+                            let source_sftp = Arc::clone(&source_sftp);
+                            let target_sftp = Arc::clone(&target_sftp);
+                            async move {
+                                let progress = match sink_opt {
+                                    Some(s) => ProgressMode::Aggregate(s),
+                                    None => ProgressMode::None,
+                                };
+                                stream_remote_file_to_remote(
+                                    source_sftp,
+                                    child_src,
+                                    target_sftp,
+                                    child_dst,
+                                    overwrite,
+                                    progress,
+                                )
+                                .await
+                            }
+                        }))
+                        .buffer_unordered(DIR_UPLOAD_CONCURRENCY);
+                    while let Some(res) = stream.next().await {
+                        res?;
+                    }
+                    Ok(())
+                },
+            )
+            .await
         }
     }
 }
@@ -5613,19 +5865,19 @@ async fn stream_remote_file_to_remote(
     target_sftp: Arc<zeroterm_ssh::Sftp>,
     target: String,
     overwrite: bool,
-    progress_ctx: Option<(&AppHandle, &AppState)>,
+    progress: ProgressMode<'_>,
 ) -> Result<(), String> {
     if !overwrite && target_sftp.stat(&target).await.is_ok() {
         return Err(format!("destination already exists: {target}"));
     }
 
-    match progress_ctx {
-        Some((app_handle, state)) => {
+    match progress {
+        ProgressMode::Standalone { app, state } => {
             // Knowing the source size lets the UI show a real percentage.
             let size_hint = source_sftp.stat(&source).await.ok().map(|m| m.size);
             let (transfer_id, cancel) = register_transfer(state);
             let result = run_with_progress(
-                app_handle,
+                app,
                 transfer_id,
                 "copy",
                 source.clone(),
@@ -5647,7 +5899,30 @@ async fn stream_remote_file_to_remote(
             forget_transfer(state, transfer_id);
             result.map(|_| ()).map_err(|e| e.to_string())
         }
-        None => pipe_remote_file_to_remote(
+        ProgressMode::Aggregate(sink) => {
+            let cancel = sink.cancel_token();
+            let source_label = source.clone();
+            let mut last_bytes: u64 = 0;
+            pipe_remote_file_to_remote(
+                source_sftp,
+                source,
+                target_sftp,
+                target,
+                None,
+                cancel,
+                move |tick| {
+                    let delta = tick.bytes_done.saturating_sub(last_bytes);
+                    if delta > 0 {
+                        sink.add_bytes(delta, &source_label);
+                    }
+                    last_bytes = tick.bytes_done;
+                },
+            )
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+        }
+        ProgressMode::None => pipe_remote_file_to_remote(
             source_sftp,
             source,
             target_sftp,
@@ -6023,7 +6298,10 @@ pub async fn sftp_download(
         remote,
         PathBuf::from(local),
         overwrite.unwrap_or(false),
-        Some((&app_handle, &state)),
+        ProgressMode::Standalone {
+            app: &app_handle,
+            state: &state,
+        },
     )
     .await
 }
@@ -6238,6 +6516,10 @@ pub struct TransferProgressEvent {
     /// are known and non-zero.
     pub eta_seconds: Option<u64>,
     pub finished: bool,
+    /// For aggregate (directory) transfers: the file currently being
+    /// copied. `None` for single-file transfers (where `source` already
+    /// names the file) and on `finished` events.
+    pub current_file: Option<String>,
 }
 
 fn register_transfer(state: &AppState) -> (u64, tokio_util::sync::CancellationToken) {
@@ -6249,6 +6531,334 @@ fn register_transfer(state: &AppState) -> (u64, tokio_util::sync::CancellationTo
 
 fn forget_transfer(state: &AppState, id: u64) {
     state.transfers.lock().unwrap().remove(&id);
+}
+
+/// How a per-file upload reports progress to the UI.
+enum ProgressMode<'a> {
+    /// No progress events. Used for background / non-UI transfers.
+    None,
+    /// Standalone single-file transfer: registers its own `transfer_id`
+    /// via `register_transfer` and emits its own `sftp:progress` events
+    /// through `run_with_progress`. Used by the File branch of tree
+    /// functions and by direct single-file commands like `sftp_download`.
+    Standalone {
+        app: &'a AppHandle,
+        state: &'a AppState,
+    },
+    /// Part of a larger aggregate directory transfer: reports byte
+    /// *deltas* to the shared sink. The sink owns the single
+    /// `transfer_id` for the whole transfer and handles all emits +
+    /// idle watchdog. Used by the Dir branch of tree functions.
+    Aggregate(Arc<TransferSink>),
+}
+
+/// Shared byte-accumulator for a directory transfer. The tree-level
+/// orchestrator creates one of these via [`TransferSink::register`],
+/// passes clones down to each per-file upload (through
+/// [`ProgressMode::Aggregate`]), and wraps the body in
+/// [`run_tree_with_sink`] which adds an idle watchdog and guarantees a
+/// final `finished: true` event.
+///
+/// Each per-file upload converts its absolute `ProgressTick.bytes_done`
+/// into a delta and calls [`TransferSink::add_bytes`]; the sink
+/// atomically sums across all in-flight files, throttles emits to ~10/s,
+/// and refreshes `last_activity_at` so the watchdog doesn't false-fire
+/// during slow-but-alive transfers.
+struct TransferSink {
+    transfer_id: u64,
+    kind: &'static str,
+    source: String,
+    destination: String,
+    /// Total bytes across all files. Starts at 0 (indeterminate) so
+    /// the bar can render before the tree walk finishes; updated via
+    /// [`set_total`] once the walk has summed all file sizes.
+    total: std::sync::atomic::AtomicU64,
+    bytes_done: std::sync::atomic::AtomicU64,
+    app_handle: AppHandle,
+    cancel: tokio_util::sync::CancellationToken,
+    state: std::sync::Mutex<SinkState>,
+}
+
+struct SinkState {
+    last_emit_at: std::time::Instant,
+    last_emit_bytes: u64,
+    last_activity_at: std::time::Instant,
+    has_baseline: bool,
+    /// The file currently being copied (updated on every `add_bytes`
+    /// call so concurrent uploads always reflect the most-recently-active
+    /// file). Emitted as `current_file` in progress events.
+    current_file: String,
+}
+
+impl TransferSink {
+    /// Register a new aggregate transfer and return the sink ready to
+    /// be passed (cloned) to per-file uploads.
+    fn register(
+        app_handle: AppHandle,
+        state: &AppState,
+        kind: &'static str,
+        source: String,
+        destination: String,
+        total: u64,
+    ) -> Arc<Self> {
+        let (transfer_id, cancel) = register_transfer(state);
+        Arc::new(Self {
+            transfer_id,
+            kind,
+            source,
+            destination,
+            total: std::sync::atomic::AtomicU64::new(total),
+            bytes_done: std::sync::atomic::AtomicU64::new(0),
+            app_handle,
+            cancel,
+            state: std::sync::Mutex::new(SinkState {
+                last_emit_at: std::time::Instant::now(),
+                last_emit_bytes: 0,
+                last_activity_at: std::time::Instant::now(),
+                has_baseline: false,
+                current_file: String::new(),
+            }),
+        })
+    }
+
+    /// Update the total after the tree walk has summed all file sizes.
+    /// The bar starts indeterminate (total=0); this flips it to
+    /// determinate so the UI can show a percentage.
+    fn set_total(&self, total: u64) {
+        use std::sync::atomic::Ordering;
+        self.total.store(total, Ordering::SeqCst);
+    }
+
+    fn cancel_token(&self) -> tokio_util::sync::CancellationToken {
+        self.cancel.clone()
+    }
+
+    fn transfer_id(&self) -> u64 {
+        self.transfer_id
+    }
+
+    /// Report a byte delta from a per-file upload. Atomically updates
+    /// the cumulative `bytes_done`, refreshes `last_activity_at` (so
+    /// `run_tree_with_sink`'s watchdog doesn't false-fire), records
+    /// which file the delta came from, and emits a throttled
+    /// `sftp:progress` event.
+    fn add_bytes(&self, delta: u64, current_file: &str) {
+        use std::sync::atomic::Ordering;
+        use std::time::{Duration, Instant};
+
+        if delta == 0 {
+            return;
+        }
+        let now = Instant::now();
+        let bytes_done = self.bytes_done.fetch_add(delta, Ordering::SeqCst) + delta;
+        let total = self.total.load(Ordering::Relaxed);
+
+        let mut s = self.state.lock().unwrap();
+        s.last_activity_at = now;
+        s.current_file = current_file.to_string();
+        let is_done = total > 0 && bytes_done >= total;
+
+        // Throttle: don't emit more than ~10/s, but always emit the
+        // first tick (so the UI renders initial state) and the final
+        // tick (so the UI sees 100%).
+        if s.has_baseline
+            && now.duration_since(s.last_emit_at) < Duration::from_millis(100)
+            && !is_done
+        {
+            return;
+        }
+
+        let bytes_per_sec = if s.has_baseline {
+            let dt = now.duration_since(s.last_emit_at).as_secs_f64();
+            if dt > 0.001 {
+                let db = bytes_done.saturating_sub(s.last_emit_bytes) as f64;
+                Some((db / dt) as u64)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let eta_seconds = match (bytes_per_sec, total) {
+            (Some(bps), total) if bps > 0 && total > 0 && bytes_done < total => {
+                Some((total - bytes_done) / bps)
+            }
+            _ => None,
+        };
+
+        s.last_emit_at = now;
+        s.last_emit_bytes = bytes_done;
+        s.has_baseline = true;
+        let current_file = s.current_file.clone();
+        drop(s);
+
+        let _ = self.app_handle.emit(
+            "sftp:progress",
+            TransferProgressEvent {
+                transfer_id: self.transfer_id,
+                kind: self.kind,
+                source: self.source.clone(),
+                destination: self.destination.clone(),
+                bytes_done,
+                total: if total > 0 { Some(total) } else { None },
+                bytes_per_sec,
+                eta_seconds,
+                finished: false,
+                current_file: if current_file.is_empty() {
+                    None
+                } else {
+                    Some(current_file)
+                },
+            },
+        );
+    }
+
+    /// Emit the initial 0-byte tick so the UI renders the bar
+    /// immediately, before any per-file upload reports a delta.
+    fn emit_initial(&self) {
+        use std::sync::atomic::Ordering;
+        let total = self.total.load(Ordering::Relaxed);
+        let _ = self.app_handle.emit(
+            "sftp:progress",
+            TransferProgressEvent {
+                transfer_id: self.transfer_id,
+                kind: self.kind,
+                source: self.source.clone(),
+                destination: self.destination.clone(),
+                bytes_done: 0,
+                total: if total > 0 { Some(total) } else { None },
+                bytes_per_sec: None,
+                eta_seconds: None,
+                finished: false,
+                current_file: None,
+            },
+        );
+    }
+
+    /// Emit the final `finished: true` event so the UI closes the bar.
+    /// Reports the last-known `bytes_done` (on success equals `total`;
+    /// on error is whatever was uploaded before the failure).
+    fn emit_finished(&self) {
+        use std::sync::atomic::Ordering;
+        let bytes_done = self.bytes_done.load(Ordering::SeqCst);
+        let total = self.total.load(Ordering::Relaxed);
+        let _ = self.app_handle.emit(
+            "sftp:progress",
+            TransferProgressEvent {
+                transfer_id: self.transfer_id,
+                kind: self.kind,
+                source: self.source.clone(),
+                destination: self.destination.clone(),
+                bytes_done,
+                total: if total > 0 { Some(total) } else { None },
+                bytes_per_sec: None,
+                eta_seconds: None,
+                finished: true,
+                current_file: None,
+            },
+        );
+    }
+}
+
+/// Run a multi-file transfer body against an idle watchdog. Emits the
+/// final `finished: true` event after the body completes (or after the
+/// watchdog fires). Does NOT emit the initial tick — the caller
+/// ([`run_tree_transfer`]) calls `emit_initial` before the walk so the
+/// bar appears immediately. Trips the sink's cancel token on watchdog
+/// fire so any per-file future that later wakes up exits at its next
+/// loop iteration.
+async fn run_tree_with_sink<F, Fut>(sink: Arc<TransferSink>, body: F) -> Result<(), String>
+where
+    F: FnOnce(Arc<TransferSink>) -> Fut,
+    Fut: std::future::Future<Output = Result<(), String>>,
+{
+    use std::time::{Duration, Instant};
+
+    /// Idle window after which a transfer with zero progress is
+    /// declared stalled. See `run_with_progress` for the rationale.
+    const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+
+    let body_fut = body(sink.clone());
+    tokio::pin!(body_fut);
+
+    let outcome = loop {
+        let deadline = {
+            let s = sink.state.lock().unwrap();
+            s.last_activity_at + IDLE_TIMEOUT
+        };
+        tokio::select! {
+            biased;
+            r = &mut body_fut => {
+                break r;
+            }
+            _ = tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)) => {
+                // A tick may have landed between us computing `deadline`
+                // and the select arming the sleep; re-check before
+                // declaring a stall.
+                let idle = {
+                    let s = sink.state.lock().unwrap();
+                    Instant::now().duration_since(s.last_activity_at)
+                };
+                if idle >= IDLE_TIMEOUT {
+                    sink.cancel.cancel();
+                    warn!(
+                        transfer_id = sink.transfer_id,
+                        idle_secs = idle.as_secs(),
+                        bytes_done = sink.bytes_done.load(std::sync::atomic::Ordering::SeqCst),
+                        "SFTP tree transfer stalled, aborting"
+                    );
+                    break Err(format!(
+                        "transfer stalled: no progress for {} seconds",
+                        idle.as_secs()
+                    ));
+                }
+                // Otherwise a tick landed during the race; loop and
+                // recompute the deadline.
+            }
+        }
+    };
+
+    sink.emit_finished();
+    outcome
+}
+
+/// Set up an aggregate transfer sink, emit the initial indeterminate
+/// bar immediately (so the UI shows the dock before the tree walk
+/// finishes), then run `body` under the idle watchdog. The body
+/// receives `Some(sink)` (with `total=0`, indeterminate) and is
+/// expected to walk the tree, call `sink.set_total(real_total)`, then
+/// run the per-file uploads. Without `progress_ctx`, runs the body
+/// with `None` (no progress events).
+async fn run_tree_transfer<F, Fut>(
+    progress_ctx: Option<(&AppHandle, &AppState)>,
+    kind: &'static str,
+    source_label: String,
+    destination_label: String,
+    body: F,
+) -> Result<(), String>
+where
+    F: FnOnce(Option<Arc<TransferSink>>) -> Fut + Send,
+    Fut: std::future::Future<Output = Result<(), String>> + Send,
+{
+    match progress_ctx {
+        Some((app, state)) => {
+            let sink = TransferSink::register(
+                app.clone(),
+                state,
+                kind,
+                source_label,
+                destination_label,
+                0, // indeterminate until the walk calls set_total
+            );
+            sink.emit_initial(); // bar appears NOW, before the walk
+            let transfer_id = sink.transfer_id();
+            let result = run_tree_with_sink(sink, move |sink_arc| body(Some(sink_arc))).await;
+            forget_transfer(state, transfer_id);
+            result
+        }
+        None => body(None).await,
+    }
 }
 
 async fn sftp_remove_dir_recursive(sftp: &zeroterm_ssh::Sftp, path: &str) -> Result<(), String> {
@@ -6289,6 +6899,15 @@ async fn sftp_remove_dir_recursive(sftp: &zeroterm_ssh::Sftp, path: &str) -> Res
 /// `sftp:progress` events, throttled to ~10 per second so we don't
 /// drown the IPC bus on big files. Always emits a final `finished`
 /// event regardless of success / failure.
+///
+/// **Idle watchdog.** If the body produces no progress for
+/// [`IDLE_TIMEOUT`], we assume the remote I/O has stalled — a
+/// `write_all` / `flush` / `shutdown` on a half-dead SSH channel that
+/// never returns — drop the body future, and synthesize an error so
+/// the final `finished: true` event still fires. Without this guard
+/// the progress bar in the UI would hang open forever whenever the
+/// remote side silently stops ACKing. Every emitted tick resets the
+/// deadline, so a slow-but-honest transfer stays alive indefinitely.
 async fn run_with_progress<F, Fut, E>(
     app_handle: &AppHandle,
     transfer_id: u64,
@@ -6296,28 +6915,41 @@ async fn run_with_progress<F, Fut, E>(
     source: String,
     destination: String,
     body: F,
-) -> Result<u64, E>
+) -> Result<u64, String>
 where
     F: FnOnce(Box<dyn FnMut(zeroterm_ssh::ProgressTick) + Send>) -> Fut,
     Fut: std::future::Future<Output = Result<u64, E>>,
+    E: std::fmt::Display,
 {
     use std::sync::Mutex;
     use std::time::{Duration, Instant};
 
-    /// Tracking state for throughput / ETA computation. `has_baseline`
-    /// flips to true after the first emit so subsequent emits know they
-    /// have a prior point to subtract from.
+    /// Idle window after which a transfer with zero progress is
+    /// declared stalled. Generous enough that even a sluggish link
+    /// keeps it alive — any chunk processed within this window
+    /// resets the deadline.
+    const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+
+    /// Tracking state for throughput / ETA computation and for the
+    /// idle watchdog. `has_baseline` flips to true after the first
+    /// emit so subsequent emits know they have a prior point to
+    /// subtract from. `last_activity_at` is updated on every raw
+    /// tick (even throttled ones) so the watchdog isn't fooled by
+    /// emit suppression.
     struct ProgressState {
         last_emit_at: Instant,
         last_emit_bytes: u64,
+        last_activity_at: Instant,
         has_baseline: bool,
     }
 
     let state = Arc::new(Mutex::new(ProgressState {
         last_emit_at: Instant::now(),
         last_emit_bytes: 0,
+        last_activity_at: Instant::now(),
         has_baseline: false,
     }));
+    let watchdog_state = state.clone();
     let app_handle_for_cb = app_handle.clone();
     let source_for_cb = source.clone();
     let dest_for_cb = destination.clone();
@@ -6326,6 +6958,12 @@ where
         let now = Instant::now();
         let mut s = state.lock().unwrap();
         let is_done = matches!(tick.total, Some(t) if tick.bytes_done >= t);
+
+        // Always record raw activity so the idle-watchdog in
+        // `run_with_progress` can distinguish a stalled transfer
+        // from a slow one, even when the throttled emit below is
+        // suppressed.
+        s.last_activity_at = now;
 
         // Throttle: don't emit more than ~10/s, but always emit the very
         // first tick (so the UI can render initial state) and the final
@@ -6373,13 +7011,66 @@ where
                 bytes_per_sec,
                 eta_seconds,
                 finished: false,
+                current_file: None,
             },
         );
     });
 
-    let outcome = body(cb).await;
+    // Race the body against an idle watchdog. If the watchdog wins,
+    // the body future is dropped (cancelling it as best the underlying
+    // SSH client allows) and we synthesize an error so we still hit
+    // the final `finished: true` emit below — that's what unblocks the
+    // UI's progress bar.
+    let body_fut = body(cb);
+    tokio::pin!(body_fut);
+
+    let outcome: Result<u64, String> = loop {
+        let deadline = {
+            let s = watchdog_state.lock().unwrap();
+            s.last_activity_at + IDLE_TIMEOUT
+        };
+        tokio::select! {
+            biased;
+            r = &mut body_fut => {
+                break match r {
+                    Ok(n) => Ok(n),
+                    Err(e) => Err(e.to_string()),
+                };
+            }
+            _ = tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)) => {
+                // A tick may have landed between us computing `deadline`
+                // and the select arming the sleep; re-check before
+                // declaring a stall.
+                let idle = {
+                    let s = watchdog_state.lock().unwrap();
+                    Instant::now().duration_since(s.last_activity_at)
+                };
+                if idle >= IDLE_TIMEOUT {
+                    let last_bytes = watchdog_state.lock().unwrap().last_emit_bytes;
+                    warn!(
+                        transfer_id,
+                        idle_secs = idle.as_secs(),
+                        bytes_done = last_bytes,
+                        "SFTP transfer stalled, aborting"
+                    );
+                    break Err(format!(
+                        "transfer stalled: no progress for {} seconds",
+                        idle.as_secs()
+                    ));
+                }
+                // Otherwise a tick landed during the race; loop and
+                // recompute the deadline.
+            }
+        }
+    };
 
     // Always send a final event so the UI knows it can clean up.
+    // On error we report the last-known byte count rather than 0 so
+    // the UI's final frame matches what the user just saw.
+    let final_bytes = match &outcome {
+        Ok(n) => *n,
+        Err(_) => watchdog_state.lock().unwrap().last_emit_bytes,
+    };
     let _ = app_handle.emit(
         "sftp:progress",
         TransferProgressEvent {
@@ -6387,11 +7078,12 @@ where
             kind,
             source,
             destination,
-            bytes_done: outcome.as_ref().copied().unwrap_or(0),
+            bytes_done: final_bytes,
             total: None,
             bytes_per_sec: None,
             eta_seconds: None,
             finished: true,
+            current_file: None,
         },
     );
 

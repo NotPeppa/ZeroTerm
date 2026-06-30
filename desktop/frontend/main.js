@@ -2573,6 +2573,9 @@ function formatTransferEta(seconds) {
 
 function summarizeSftpTransfer(item) {
   const bits = [];
+  if (item.currentFile) {
+    bits.push(basename(item.currentFile));
+  }
   if (Number.isFinite(item.total) && item.total > 0) {
     bits.push(`${formatSize(item.bytesDone)} / ${formatSize(item.total)}`);
   } else {
@@ -2584,7 +2587,7 @@ function summarizeSftpTransfer(item) {
   if (Number.isFinite(item.etaSeconds) && item.etaSeconds >= 0) {
     bits.push(t("files.progress.eta", { eta: formatTransferEta(item.etaSeconds) }));
   }
-  return bits.join(", ") || t("files.progress.preparing");
+  return bits.join(" · ") || t("files.progress.preparing");
 }
 
 function pickActiveSftpTransfer(preferredId = null) {
@@ -2670,6 +2673,7 @@ listen("sftp:progress", (ev) => {
     total: Number.isFinite(payload.total) ? Number(payload.total) : null,
     bytesPerSec: Number.isFinite(payload.bytesPerSec) ? Number(payload.bytesPerSec) : null,
     etaSeconds: Number.isFinite(payload.etaSeconds) ? Number(payload.etaSeconds) : null,
+    currentFile: payload.currentFile ? String(payload.currentFile) : null,
     updatedAt: Date.now(),
   });
   renderSftpTransferDock(transferId);

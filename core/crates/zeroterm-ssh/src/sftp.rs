@@ -385,13 +385,29 @@ impl Sftp {
             }
             file.write_all(&buf[..n]).await?;
             bytes_done += n as u64;
-            on_progress(ProgressTick {
-                bytes_done,
-                total: size_hint,
-            });
+            // Don't emit the final 100% tick here — `write_all` only
+            // queues the write into the SSH channel; the bytes aren't
+            // truly acknowledged until `flush` + `shutdown` below. If
+            // we reported 100% now the progress bar would sit at full
+            // while the remote finishes ACKing the final writes, which
+            // looks like a hang.
+            if bytes_done < size_hint.unwrap_or(u64::MAX) {
+                on_progress(ProgressTick {
+                    bytes_done,
+                    total: size_hint,
+                });
+            }
         }
         file.flush().await?;
         file.shutdown().await?;
+        // Every queued write has now been ACK'd by the remote — emit
+        // the final tick so the bar reaches 100% exactly when the
+        // transfer is truly complete, instead of when the last write
+        // was merely queued.
+        on_progress(ProgressTick {
+            bytes_done,
+            total: size_hint,
+        });
         Ok(bytes_done)
     }
 
