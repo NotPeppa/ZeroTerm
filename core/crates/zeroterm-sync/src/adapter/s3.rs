@@ -217,7 +217,25 @@ fn is_not_found_str(s: &str) -> bool {
     s.contains("NoSuchKey") || s.contains("NotFound") || s.contains("404")
 }
 
-fn err_str<E: std::fmt::Display>(e: E) -> Error {
+/// HTTP status code carried by an S3 SDK error, or 0 when the request
+/// never got a response (construction / timeout / dispatch failures).
+///
+/// `SdkError::Display` is the opaque string "service error" regardless of
+/// the actual status, so the adapter can't rely on substring-matching the
+/// Display to detect 404s. This reads the status off the raw `HttpResponse`
+/// that the SDK attaches to every `ServiceError` / `ResponseError`.
+fn sdk_http_status<E>(e: &aws_sdk_s3::error::SdkError<E>) -> u16 {
+    e.raw_response()
+        .map(|r| r.status().as_u16())
+        .unwrap_or(0)
+}
+
+fn err_str<E: std::fmt::Display + std::fmt::Debug>(e: E) -> Error {
+    // SdkError's Display is the unhelpful "service error" / "dispatch
+    // failure"; its Debug carries the HTTP status, inner error code, and
+    // request id. Log the structured form so the real cause is visible
+    // instead of being flattened away by `to_string()`.
+    tracing::warn!(target: "zeroterm_sync.s3", error = ?e, "s3 call failed");
     Error::Io(std::io::Error::other(e.to_string()))
 }
 
@@ -248,8 +266,9 @@ impl SyncAdapter for S3Adapter {
                 Ok(Some(body.into_bytes().to_vec()))
             }
             Err(e) => {
+                tracing::warn!(target: "zeroterm_sync.s3", error = ?e, "get_object failed");
                 let s = e.to_string();
-                if is_not_found_str(&s) {
+                if sdk_http_status(&e) == 404 || is_not_found_str(&s) {
                     Ok(None)
                 } else {
                     Err(err_str(s))
@@ -281,8 +300,9 @@ impl SyncAdapter for S3Adapter {
                 }))
             }
             Err(e) => {
+                tracing::warn!(target: "zeroterm_sync.s3", error = ?e, "head_object failed");
                 let s = e.to_string();
-                if is_not_found_str(&s) {
+                if sdk_http_status(&e) == 404 || is_not_found_str(&s) {
                     Ok(None)
                 } else {
                     Err(err_str(s))
@@ -354,8 +374,9 @@ impl SyncAdapter for S3Adapter {
         match res {
             Ok(_) => self.stat(key).await?.ok_or(Error::Corrupt),
             Err(e) => {
+                tracing::warn!(target: "zeroterm_sync.s3", error = ?e, "put_object (write_new) failed");
                 let s = e.to_string();
-                if is_precondition_failed_str(&s) {
+                if sdk_http_status(&e) == 412 || is_precondition_failed_str(&s) {
                     Err(Error::AlreadyExists)
                 } else {
                     Err(err_str(s))
@@ -418,8 +439,9 @@ impl SyncAdapter for S3Adapter {
         {
             Ok(_) => Ok(()),
             Err(e) => {
+                tracing::warn!(target: "zeroterm_sync.s3", error = ?e, "delete_object failed");
                 let s = e.to_string();
-                if is_not_found_str(&s) {
+                if sdk_http_status(&e) == 404 || is_not_found_str(&s) {
                     Ok(())
                 } else {
                     Err(err_str(s))

@@ -34,7 +34,11 @@ pub fn run() {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-                tracing_subscriber::EnvFilter::new("info,zeroterm=debug,tauri=info")
+                tracing_subscriber::EnvFilter::new(
+                    "info,zeroterm=debug,tauri=info,\
+                     aws_sdk_s3=trace,aws_smithy_http_client=trace,aws_smithy_http=trace,\
+                     hyper=debug,rustls=debug,aws_sigv4=debug",
+                )
             }),
         )
         .init();
