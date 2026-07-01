@@ -121,6 +121,7 @@ pub struct LocalSessionHandle {
 /// both naturally. If the host has a saved ProxyJump, the jump session
 /// hangs off here too — the underlying TCP connection can't outlive it.
 pub struct SftpHandle {
+    pub host_id: String,
     pub _session: zeroterm_ssh::Session,
     pub _jump_session: Option<zeroterm_ssh::Session>,
     pub sftp: Arc<zeroterm_ssh::Sftp>,

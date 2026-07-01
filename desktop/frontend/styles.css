@@ -8867,6 +8867,9 @@ body[data-app-theme="light"] .settings-sync-method-row .zt-select-trigger:hover 
   font-size: 13px;
   color: rgba(214, 227, 255, 0.72);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: min(56vw, 760px);
 }
 
 @keyframes sftp-transfer-indeterminate {

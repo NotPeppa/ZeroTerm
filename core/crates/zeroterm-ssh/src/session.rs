@@ -490,7 +490,17 @@ impl Session {
             russh_sftp::client::Config {
                 max_packet_len: 1024 * 1024,
                 max_concurrent_writes: 16,
-                request_timeout_secs: 30,
+                // Per-request timeout. 30s was too aggressive for slow
+                // servers and large directory listings — a timed-out
+                // request leaves an orphaned response that desyncs the
+                // SFTP channel, and the user sees "io error: Timeout"
+                // followed by a cascade of failures that looks like a
+                // disconnect. 120s gives overloaded servers room to
+                // breathe while still catching genuinely hung requests.
+                // Truly dead connections are detected by the SSH
+                // keepalive (30s interval, 3 misses = 90s) and by the
+                // transfer-level idle watchdog in the Tauri layer.
+                request_timeout_secs: 120,
             },
         )
         .await

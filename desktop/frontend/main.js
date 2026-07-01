@@ -2574,7 +2574,7 @@ function formatTransferEta(seconds) {
 function summarizeSftpTransfer(item) {
   const bits = [];
   if (item.currentFile) {
-    bits.push(basename(item.currentFile));
+    bits.push(item.currentFile);
   }
   if (Number.isFinite(item.total) && item.total > 0) {
     bits.push(`${formatSize(item.bytesDone)} / ${formatSize(item.total)}`);
@@ -2633,7 +2633,11 @@ function renderSftpTransferDock(preferredId = null) {
     sftpTransferName.textContent = activeCount > 1 ? `${baseName} +${activeCount - 1}` : baseName;
     sftpTransferName.title = `${item.source || ""} -> ${item.destination || ""}`;
   }
-  if (sftpTransferMeta) sftpTransferMeta.textContent = summarizeSftpTransfer(item);
+  if (sftpTransferMeta) {
+    const meta = summarizeSftpTransfer(item);
+    sftpTransferMeta.textContent = meta;
+    sftpTransferMeta.title = meta;
+  }
   if (sftpTransferCancel) {
     const cancelLabel = t("files.button.cancel");
     sftpTransferCancel.setAttribute("aria-label", cancelLabel);

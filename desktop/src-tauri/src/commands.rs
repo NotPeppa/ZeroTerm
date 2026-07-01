@@ -6,7 +6,7 @@
 //!   - Sync mutexes are acquired in tight blocks; `await` happens after
 //!     the lock is dropped.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 #[cfg(target_os = "windows")]
 use std::process::Command;
 use std::sync::atomic::Ordering;
@@ -80,11 +80,12 @@ const AI_STORE_VERSION: u32 = 2;
 /// without overwhelming the server's `MaxSessions` or local disk.
 const DIR_DOWNLOAD_CONCURRENCY: usize = 4;
 
-/// Number of files uploaded concurrently when recursively pushing a directory
-/// to a remote (local→remote or remote→remote). Symmetric with the download
-/// path; bounds round-trip stacking without exhausting the server's
-/// `MaxSessions` or piling too many in-flight transfers into memory.
-const DIR_UPLOAD_CONCURRENCY: usize = 4;
+/// Number of independent target SFTP workers used when recursively pushing a
+/// directory to a remote. Each worker owns its own SFTP channel/session and
+/// uploads one file at a time; this keeps concurrency without interleaving
+/// multiple file writes on a single fragile channel.
+const DIR_UPLOAD_WORKERS: usize = 3;
+const SFTP_TRANSFER_IDLE_TIMEOUT_SECS: u64 = 180;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -833,8 +834,7 @@ async fn send_ai_request_with_retry(
         };
         match req.send().await {
             Ok(resp) => {
-                if resp.status() != reqwest::StatusCode::TOO_MANY_REQUESTS
-                    || attempt >= MAX_RETRIES
+                if resp.status() != reqwest::StatusCode::TOO_MANY_REQUESTS || attempt >= MAX_RETRIES
                 {
                     return Ok(resp);
                 }
@@ -1557,11 +1557,10 @@ pub async fn ai_chat(
     if !profile.reasoning_effort.is_empty() {
         body["reasoning_effort"] = json!(profile.reasoning_effort);
     }
-    let response = send_ai_request_with_retry(
-        client.post(endpoint).bearer_auth(api_key).json(&body),
-    )
-    .await
-    .map_err(|e| format!("AI request failed: {e}"))?;
+    let response =
+        send_ai_request_with_retry(client.post(endpoint).bearer_auth(api_key).json(&body))
+            .await
+            .map_err(|e| format!("AI request failed: {e}"))?;
 
     let status = response.status();
     let body = response
@@ -1628,18 +1627,17 @@ pub async fn ai_chat_stream(app: AppHandle, input: AiChatStreamInput) -> Result<
     if !profile.reasoning_effort.is_empty() {
         body["reasoning_effort"] = json!(profile.reasoning_effort);
     }
-    let response = match send_ai_request_with_retry(
-        client.post(endpoint).bearer_auth(api_key).json(&body),
-    )
-    .await
-    {
-        Ok(v) => v,
-        Err(e) => {
-            let msg = format!("AI request failed: {e}");
-            emit_ai_stream_error(&app, &request_id, msg.clone());
-            return Err(msg);
-        }
-    };
+    let response =
+        match send_ai_request_with_retry(client.post(endpoint).bearer_auth(api_key).json(&body))
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                let msg = format!("AI request failed: {e}");
+                emit_ai_stream_error(&app, &request_id, msg.clone());
+                return Err(msg);
+            }
+        };
 
     let status = response.status();
     if !status.is_success() {
@@ -5216,6 +5214,209 @@ fn detect_remote_kind(path: &str, kind: FileKind) -> Result<CopyNodeKind, String
     }
 }
 
+async fn ensure_remote_dir_exists(sftp: &zeroterm_ssh::Sftp, path: &str) -> Result<bool, String> {
+    match sftp.create_dir(path).await {
+        Ok(()) => Ok(true),
+        Err(mkdir_err) => match sftp.stat(path).await {
+            Ok(meta) if meta.kind == FileKind::Dir => Ok(false),
+            Ok(_) => Err(format!("destination is not a directory: {path}")),
+            Err(stat_err) => Err(format!(
+                "mkdir {path}: {mkdir_err}; stat after mkdir failed: {stat_err}"
+            )),
+        },
+    }
+}
+
+async fn remote_existing_names(
+    sftp: &zeroterm_ssh::Sftp,
+    path: &str,
+    known_empty: bool,
+) -> Result<HashSet<String>, String> {
+    if known_empty {
+        return Ok(HashSet::new());
+    }
+    sftp.list(path)
+        .await
+        .map_err(|e| format!("list {path}: {e}"))
+        .map(|entries| entries.into_iter().map(|entry| entry.name).collect())
+}
+
+async fn build_upload_worker_pool(
+    primary: Arc<zeroterm_ssh::Sftp>,
+    progress_ctx: Option<(&AppHandle, &AppState)>,
+    target_host_id: Option<&str>,
+) -> (Vec<Arc<zeroterm_ssh::Sftp>>, Vec<SftpHandle>) {
+    let mut workers = vec![primary];
+    let mut extra_handles = Vec::new();
+
+    let (Some((app, state)), Some(host_id)) = (progress_ctx, target_host_id) else {
+        return (workers, extra_handles);
+    };
+
+    for worker_index in 1..DIR_UPLOAD_WORKERS {
+        match open_ephemeral_sftp(state, app, host_id).await {
+            Ok(handle) => {
+                workers.push(Arc::clone(&handle.sftp));
+                extra_handles.push(handle);
+            }
+            Err(err) => {
+                warn!(
+                    host_id = %host_id,
+                    worker_index,
+                    error = %err,
+                    "failed to open extra SFTP upload worker; continuing with fewer workers"
+                );
+                break;
+            }
+        }
+    }
+
+    (workers, extra_handles)
+}
+
+async fn run_local_to_remote_upload_workers(
+    file_jobs: Vec<(PathBuf, String)>,
+    workers: Vec<Arc<zeroterm_ssh::Sftp>>,
+    overwrite: bool,
+    sink_opt: Option<Arc<TransferSink>>,
+) -> Result<(), String> {
+    let queue = Arc::new(tokio::sync::Mutex::new(VecDeque::from(file_jobs)));
+    let mut joins = tokio::task::JoinSet::new();
+
+    for target_sftp in workers {
+        let queue = Arc::clone(&queue);
+        let sink_opt = sink_opt.clone();
+        joins.spawn(async move {
+            loop {
+                if let Some(sink) = &sink_opt {
+                    if sink.cancel_token().is_cancelled() {
+                        break;
+                    }
+                }
+                let next = {
+                    let mut queue = queue.lock().await;
+                    queue.pop_front()
+                };
+                let Some((child_src, child_dst)) = next else {
+                    break;
+                };
+                if let Some(sink) = &sink_opt {
+                    sink.note_path(&child_src.display().to_string());
+                }
+                let progress = match sink_opt.clone() {
+                    Some(s) => ProgressMode::Aggregate(s),
+                    None => ProgressMode::None,
+                };
+                stream_local_file_to_remote(
+                    Arc::clone(&target_sftp),
+                    child_src,
+                    child_dst,
+                    overwrite,
+                    true,
+                    progress,
+                )
+                .await?;
+            }
+            Ok::<(), String>(())
+        });
+    }
+
+    while let Some(result) = joins.join_next().await {
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => {
+                if let Some(sink) = &sink_opt {
+                    sink.cancel.cancel();
+                }
+                joins.shutdown().await;
+                return Err(err);
+            }
+            Err(err) => {
+                if let Some(sink) = &sink_opt {
+                    sink.cancel.cancel();
+                }
+                joins.shutdown().await;
+                return Err(format!("upload worker task failed: {err}"));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn run_remote_to_remote_upload_workers(
+    file_jobs: Vec<(String, String)>,
+    source_sftp: Arc<zeroterm_ssh::Sftp>,
+    target_workers: Vec<Arc<zeroterm_ssh::Sftp>>,
+    overwrite: bool,
+    sink_opt: Option<Arc<TransferSink>>,
+) -> Result<(), String> {
+    let queue = Arc::new(tokio::sync::Mutex::new(VecDeque::from(file_jobs)));
+    let mut joins = tokio::task::JoinSet::new();
+
+    for target_sftp in target_workers {
+        let queue = Arc::clone(&queue);
+        let sink_opt = sink_opt.clone();
+        let source_sftp = Arc::clone(&source_sftp);
+        joins.spawn(async move {
+            loop {
+                if let Some(sink) = &sink_opt {
+                    if sink.cancel_token().is_cancelled() {
+                        break;
+                    }
+                }
+                let next = {
+                    let mut queue = queue.lock().await;
+                    queue.pop_front()
+                };
+                let Some((child_src, child_dst)) = next else {
+                    break;
+                };
+                if let Some(sink) = &sink_opt {
+                    sink.note_path(&child_src);
+                }
+                let progress = match sink_opt.clone() {
+                    Some(s) => ProgressMode::Aggregate(s),
+                    None => ProgressMode::None,
+                };
+                stream_remote_file_to_remote(
+                    Arc::clone(&source_sftp),
+                    child_src,
+                    Arc::clone(&target_sftp),
+                    child_dst,
+                    overwrite,
+                    true,
+                    progress,
+                )
+                .await?;
+            }
+            Ok::<(), String>(())
+        });
+    }
+
+    while let Some(result) = joins.join_next().await {
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => {
+                if let Some(sink) = &sink_opt {
+                    sink.cancel.cancel();
+                }
+                joins.shutdown().await;
+                return Err(err);
+            }
+            Err(err) => {
+                if let Some(sink) = &sink_opt {
+                    sink.cancel.cancel();
+                }
+                joins.shutdown().await;
+                return Err(format!("copy worker task failed: {err}"));
+            }
+        }
+    }
+
+    Ok(())
+}
+
 async fn copy_local_tree_to_local(
     source: &Path,
     target: &Path,
@@ -5254,14 +5455,17 @@ async fn copy_local_tree_to_local(
                 move |sink_opt| async move {
                     let mut file_jobs: Vec<(PathBuf, PathBuf)> = Vec::new();
                     let mut total_bytes: u64 = 0;
-                    let mut stack: Vec<(PathBuf, PathBuf)> =
-                        vec![(source.clone(), target.clone())];
+                    let mut stack: Vec<(PathBuf, PathBuf)> = vec![(source.clone(), target.clone())];
                     while let Some((src_dir, dst_dir)) = stack.pop() {
+                        if let Some(sink) = &sink_opt {
+                            sink.note_path(&src_dir.display().to_string());
+                        }
                         let rd = fs::read_dir(&src_dir)
                             .map_err(|e| format!("read_dir {}: {e}", src_dir.display()))?;
                         for item in rd {
-                            let entry = item
-                                .map_err(|e| format!("read_dir entry {}: {e}", src_dir.display()))?;
+                            let entry = item.map_err(|e| {
+                                format!("read_dir entry {}: {e}", src_dir.display())
+                            })?;
                             let name = entry.file_name();
                             let child_src = entry.path();
                             let child_dst = dst_dir.join(&name);
@@ -5290,19 +5494,25 @@ async fn copy_local_tree_to_local(
                     }
 
                     use futures_util::stream::StreamExt;
-                    let mut stream =
-                        futures_util::stream::iter(file_jobs.into_iter().map(|(child_src, child_dst)| {
+                    let mut stream = futures_util::stream::iter(file_jobs.into_iter().map(
+                        |(child_src, child_dst)| {
                             let sink_opt = sink_opt.clone();
                             async move {
+                                if let Some(s) = &sink_opt {
+                                    s.note_path(&child_src.display().to_string());
+                                }
                                 let progress = match sink_opt {
                                     Some(s) => ProgressMode::Aggregate(s),
                                     None => ProgressMode::None,
                                 };
-                                stream_local_file_to_local(child_src, child_dst, overwrite, progress)
-                                    .await
+                                stream_local_file_to_local(
+                                    child_src, child_dst, overwrite, progress,
+                                )
+                                .await
                             }
-                        }))
-                        .buffer_unordered(DIR_DOWNLOAD_CONCURRENCY);
+                        },
+                    ))
+                    .buffer_unordered(DIR_DOWNLOAD_CONCURRENCY);
                     while let Some(res) = stream.next().await {
                         res?;
                     }
@@ -5373,7 +5583,13 @@ async fn stream_local_file_to_local(
                 last_bytes = tick.bytes_done;
             })
             .await
-            .map_err(|e| format!("copy file {} -> {}: {e}", source.display(), target.display()))?;
+            .map_err(|e| {
+                format!(
+                    "copy file {} -> {}: {e}",
+                    source.display(),
+                    target.display()
+                )
+            })?;
             Ok(())
         }
         ProgressMode::None => tokio::fs::copy(&source, &target)
@@ -5429,6 +5645,7 @@ async fn copy_local_tree_to_remote(
     source: &Path,
     target_sftp: &Arc<zeroterm_ssh::Sftp>,
     target: &str,
+    target_host_id: Option<String>,
     root_kind: CopyNodeKind,
     overwrite: bool,
     progress_ctx: Option<(&AppHandle, &AppState)>,
@@ -5444,18 +5661,18 @@ async fn copy_local_tree_to_remote(
                 source.to_path_buf(),
                 target.to_string(),
                 overwrite,
+                false,
                 progress,
             )
             .await
         }
         CopyNodeKind::Dir => {
-            if target_sftp.create_dir(target).await.is_err() {
-                target_sftp.stat(target).await.map_err(|e| e.to_string())?;
-            }
+            ensure_remote_dir_exists(target_sftp, target).await?;
 
             let target_sftp = Arc::clone(target_sftp);
             let source = source.to_path_buf();
             let target = target.to_string();
+            let worker_progress_ctx = progress_ctx;
 
             run_tree_transfer(
                 progress_ctx,
@@ -5467,33 +5684,47 @@ async fn copy_local_tree_to_remote(
                     // fired and the bar is visible during the walk.
                     let mut file_jobs: Vec<(PathBuf, String)> = Vec::new();
                     let mut total_bytes: u64 = 0;
-                    let mut stack: Vec<(PathBuf, String)> =
-                        vec![(source.clone(), target.clone())];
-                    while let Some((src_dir, dst_dir)) = stack.pop() {
+                    // Stack entry: (src_dir, dst_dir, dst_is_fresh).
+                    // `fresh` = we just created the dir, so it's empty
+                    // and we can skip the `list` for existing files.
+                    let mut stack: Vec<(PathBuf, String, bool)> =
+                        vec![(source.clone(), target.clone(), false)];
+                    while let Some((src_dir, dst_dir, dst_fresh)) = stack.pop() {
+                        if let Some(sink) = &sink_opt {
+                            sink.note_path(&src_dir.display().to_string());
+                        }
+                        // List the destination directory once to get
+                        // existing file names. This replaces N per-file
+                        // `stat` round-trips with 1 `list` per dir.
+                        // Fresh dirs are empty — skip.
+                        let existing =
+                            remote_existing_names(&target_sftp, &dst_dir, dst_fresh).await?;
                         let rd = fs::read_dir(&src_dir)
                             .map_err(|e| format!("read_dir {}: {e}", src_dir.display()))?;
                         for item in rd {
-                            let entry = item
-                                .map_err(|e| format!("read_dir entry {}: {e}", src_dir.display()))?;
+                            let entry = item.map_err(|e| {
+                                format!("read_dir entry {}: {e}", src_dir.display())
+                            })?;
                             let name = entry.file_name().to_string_lossy().to_string();
                             let child_src = entry.path();
                             let child_dst = remote_join_path(&dst_dir, &name);
                             let kind = detect_local_kind(&child_src)?;
                             match kind {
                                 CopyNodeKind::File => {
+                                    if !overwrite && existing.contains(&name) {
+                                        return Err(format!(
+                                            "destination already exists: {child_dst}"
+                                        ));
+                                    }
                                     if let Ok(meta) = entry.metadata() {
                                         total_bytes = total_bytes.saturating_add(meta.len());
                                     }
                                     file_jobs.push((child_src, child_dst));
                                 }
                                 CopyNodeKind::Dir => {
-                                    if target_sftp.create_dir(&child_dst).await.is_err() {
-                                        target_sftp
-                                            .stat(&child_dst)
-                                            .await
-                                            .map_err(|e| e.to_string())?;
-                                    }
-                                    stack.push((child_src, child_dst));
+                                    let fresh =
+                                        ensure_remote_dir_exists(&target_sftp, &child_dst).await?;
+                                    stack.push((child_src, child_dst, fresh));
                                 }
                             }
                         }
@@ -5504,31 +5735,14 @@ async fn copy_local_tree_to_remote(
                         sink.set_total(total_bytes);
                     }
 
-                    use futures_util::stream::StreamExt;
-                    let mut stream =
-                        futures_util::stream::iter(file_jobs.into_iter().map(|(child_src, child_dst)| {
-                            let sink_opt = sink_opt.clone();
-                            let target_sftp = Arc::clone(&target_sftp);
-                            async move {
-                                let progress = match sink_opt {
-                                    Some(s) => ProgressMode::Aggregate(s),
-                                    None => ProgressMode::None,
-                                };
-                                stream_local_file_to_remote(
-                                    target_sftp,
-                                    child_src,
-                                    child_dst,
-                                    overwrite,
-                                    progress,
-                                )
-                                .await
-                            }
-                        }))
-                        .buffer_unordered(DIR_UPLOAD_CONCURRENCY);
-                    while let Some(res) = stream.next().await {
-                        res?;
-                    }
-                    Ok(())
+                    let (worker_sftps, _worker_handles) = build_upload_worker_pool(
+                        Arc::clone(&target_sftp),
+                        worker_progress_ctx,
+                        target_host_id.as_deref(),
+                    )
+                    .await;
+                    run_local_to_remote_upload_workers(file_jobs, worker_sftps, overwrite, sink_opt)
+                        .await
                 },
             )
             .await
@@ -5544,9 +5758,10 @@ async fn stream_local_file_to_remote(
     source: PathBuf,
     target: String,
     overwrite: bool,
+    skip_overwrite_check: bool,
     progress: ProgressMode<'_>,
 ) -> Result<(), String> {
-    if !overwrite && target_sftp.stat(&target).await.is_ok() {
+    if !skip_overwrite_check && !overwrite && target_sftp.stat(&target).await.is_ok() {
         return Err(format!("destination already exists: {target}"));
     }
     let metadata = tokio::fs::metadata(&source)
@@ -5676,9 +5891,11 @@ async fn copy_remote_tree_to_local(
                 move |sink_opt| async move {
                     let mut file_jobs: Vec<(String, PathBuf)> = Vec::new();
                     let mut total_bytes: u64 = 0;
-                    let mut stack: Vec<(String, PathBuf)> =
-                        vec![(source.clone(), target.clone())];
+                    let mut stack: Vec<(String, PathBuf)> = vec![(source.clone(), target.clone())];
                     while let Some((src_dir, dst_dir)) = stack.pop() {
+                        if let Some(sink) = &sink_opt {
+                            sink.note_path(&src_dir);
+                        }
                         let entries = source_sftp
                             .list(&src_dir)
                             .await
@@ -5697,9 +5914,9 @@ async fn copy_remote_tree_to_local(
                                 }
                                 CopyNodeKind::Dir => {
                                     if tokio::fs::metadata(&child_dst).await.is_err() {
-                                        tokio::fs::create_dir_all(&child_dst)
-                                            .await
-                                            .map_err(|e| format!("mkdir {}: {e}", child_dst.display()))?;
+                                        tokio::fs::create_dir_all(&child_dst).await.map_err(
+                                            |e| format!("mkdir {}: {e}", child_dst.display()),
+                                        )?;
                                     }
                                     stack.push((child_src, child_dst));
                                 }
@@ -5712,11 +5929,14 @@ async fn copy_remote_tree_to_local(
                     }
 
                     use futures_util::stream::StreamExt;
-                    let mut stream =
-                        futures_util::stream::iter(file_jobs.into_iter().map(|(child_src, child_dst)| {
+                    let mut stream = futures_util::stream::iter(file_jobs.into_iter().map(
+                        |(child_src, child_dst)| {
                             let sink_opt = sink_opt.clone();
                             let source_sftp = Arc::clone(&source_sftp);
                             async move {
+                                if let Some(s) = &sink_opt {
+                                    s.note_path(&child_src);
+                                }
                                 let progress = match sink_opt {
                                     Some(s) => ProgressMode::Aggregate(s),
                                     None => ProgressMode::None,
@@ -5730,8 +5950,9 @@ async fn copy_remote_tree_to_local(
                                 )
                                 .await
                             }
-                        }))
-                        .buffer_unordered(DIR_DOWNLOAD_CONCURRENCY);
+                        },
+                    ))
+                    .buffer_unordered(DIR_DOWNLOAD_CONCURRENCY);
                     while let Some(res) = stream.next().await {
                         res?;
                     }
@@ -5748,6 +5969,7 @@ async fn copy_remote_tree_to_remote(
     source: &str,
     target_sftp: &Arc<zeroterm_ssh::Sftp>,
     target: &str,
+    target_host_id: Option<String>,
     root_kind: CopyNodeKind,
     overwrite: bool,
     progress_ctx: Option<(&AppHandle, &AppState)>,
@@ -5764,19 +5986,19 @@ async fn copy_remote_tree_to_remote(
                 Arc::clone(target_sftp),
                 target.to_string(),
                 overwrite,
+                false,
                 progress,
             )
             .await
         }
         CopyNodeKind::Dir => {
-            if target_sftp.create_dir(target).await.is_err() {
-                target_sftp.stat(target).await.map_err(|e| e.to_string())?;
-            }
+            ensure_remote_dir_exists(target_sftp, target).await?;
 
             let source_sftp = Arc::clone(source_sftp);
             let target_sftp = Arc::clone(target_sftp);
             let source = source.to_string();
             let target = target.to_string();
+            let worker_progress_ctx = progress_ctx;
 
             run_tree_transfer(
                 progress_ctx,
@@ -5786,9 +6008,18 @@ async fn copy_remote_tree_to_remote(
                 move |sink_opt| async move {
                     let mut file_jobs: Vec<(String, String)> = Vec::new();
                     let mut total_bytes: u64 = 0;
-                    let mut stack: Vec<(String, String)> =
-                        vec![(source.clone(), target.clone())];
-                    while let Some((src_dir, dst_dir)) = stack.pop() {
+                    // Stack entry: (src_dir, dst_dir, dst_is_fresh).
+                    let mut stack: Vec<(String, String, bool)> =
+                        vec![(source.clone(), target.clone(), false)];
+                    while let Some((src_dir, dst_dir, dst_fresh)) = stack.pop() {
+                        if let Some(sink) = &sink_opt {
+                            sink.note_path(&src_dir);
+                        }
+                        // List the destination directory once to get
+                        // existing file names. Replaces N per-file
+                        // `stat` round-trips with 1 `list` per dir.
+                        let existing =
+                            remote_existing_names(&target_sftp, &dst_dir, dst_fresh).await?;
                         let entries = source_sftp
                             .list(&src_dir)
                             .await
@@ -5802,17 +6033,18 @@ async fn copy_remote_tree_to_remote(
                             let kind = detect_remote_kind(&child_src, entry.kind)?;
                             match kind {
                                 CopyNodeKind::File => {
+                                    if !overwrite && existing.contains(&entry.name) {
+                                        return Err(format!(
+                                            "destination already exists: {child_dst}"
+                                        ));
+                                    }
                                     total_bytes = total_bytes.saturating_add(entry.size);
                                     file_jobs.push((child_src, child_dst));
                                 }
                                 CopyNodeKind::Dir => {
-                                    if target_sftp.create_dir(&child_dst).await.is_err() {
-                                        target_sftp
-                                            .stat(&child_dst)
-                                            .await
-                                            .map_err(|e| e.to_string())?;
-                                    }
-                                    stack.push((child_src, child_dst));
+                                    let fresh =
+                                        ensure_remote_dir_exists(&target_sftp, &child_dst).await?;
+                                    stack.push((child_src, child_dst, fresh));
                                 }
                             }
                         }
@@ -5822,33 +6054,20 @@ async fn copy_remote_tree_to_remote(
                         sink.set_total(total_bytes);
                     }
 
-                    use futures_util::stream::StreamExt;
-                    let mut stream =
-                        futures_util::stream::iter(file_jobs.into_iter().map(|(child_src, child_dst)| {
-                            let sink_opt = sink_opt.clone();
-                            let source_sftp = Arc::clone(&source_sftp);
-                            let target_sftp = Arc::clone(&target_sftp);
-                            async move {
-                                let progress = match sink_opt {
-                                    Some(s) => ProgressMode::Aggregate(s),
-                                    None => ProgressMode::None,
-                                };
-                                stream_remote_file_to_remote(
-                                    source_sftp,
-                                    child_src,
-                                    target_sftp,
-                                    child_dst,
-                                    overwrite,
-                                    progress,
-                                )
-                                .await
-                            }
-                        }))
-                        .buffer_unordered(DIR_UPLOAD_CONCURRENCY);
-                    while let Some(res) = stream.next().await {
-                        res?;
-                    }
-                    Ok(())
+                    let (target_workers, _worker_handles) = build_upload_worker_pool(
+                        Arc::clone(&target_sftp),
+                        worker_progress_ctx,
+                        target_host_id.as_deref(),
+                    )
+                    .await;
+                    run_remote_to_remote_upload_workers(
+                        file_jobs,
+                        Arc::clone(&source_sftp),
+                        target_workers,
+                        overwrite,
+                        sink_opt,
+                    )
+                    .await
                 },
             )
             .await
@@ -5865,9 +6084,10 @@ async fn stream_remote_file_to_remote(
     target_sftp: Arc<zeroterm_ssh::Sftp>,
     target: String,
     overwrite: bool,
+    skip_overwrite_check: bool,
     progress: ProgressMode<'_>,
 ) -> Result<(), String> {
-    if !overwrite && target_sftp.stat(&target).await.is_ok() {
+    if !skip_overwrite_check && !overwrite && target_sftp.stat(&target).await.is_ok() {
         return Err(format!("destination already exists: {target}"));
     }
 
@@ -6033,12 +6253,14 @@ pub async fn sftp_copy_entry_between_panes(
         (None, Some(dst_id)) => {
             let src = PathBuf::from(&source_path);
             let dst_sftp = lookup_sftp(&state, dst_id)?;
+            let dst_host_id = lookup_sftp_host_id(&state, dst_id)?;
             let dst = remote_join_path(&destination_dir, &source_name);
             let root_kind = detect_local_kind(&src)?;
             copy_local_tree_to_remote(
                 &src,
                 &dst_sftp,
                 &dst,
+                Some(dst_host_id),
                 root_kind,
                 overwrite,
                 Some((&app_handle, &state)),
@@ -6067,6 +6289,7 @@ pub async fn sftp_copy_entry_between_panes(
         (Some(src_id), Some(dst_id)) => {
             let src_sftp = lookup_sftp(&state, src_id)?;
             let dst_sftp = lookup_sftp(&state, dst_id)?;
+            let dst_host_id = lookup_sftp_host_id(&state, dst_id)?;
             let dst = remote_join_path(&destination_dir, &source_name);
 
             let meta = src_sftp
@@ -6086,6 +6309,7 @@ pub async fn sftp_copy_entry_between_panes(
                 &source_path,
                 &dst_sftp,
                 &dst,
+                Some(dst_host_id),
                 root_kind,
                 overwrite,
                 Some((&app_handle, &state)),
@@ -6172,6 +6396,7 @@ pub async fn sftp_open(
     state.sftp_handles.lock().unwrap().insert(
         sftp_id,
         SftpHandle {
+            host_id,
             _session: session,
             _jump_session: jump_session,
             sftp: Arc::new(sftp),
@@ -6180,6 +6405,34 @@ pub async fn sftp_open(
 
     info!(sftp_id, "sftp ready");
     Ok(sftp_id)
+}
+
+async fn open_ephemeral_sftp(
+    state: &AppState,
+    app_handle: &AppHandle,
+    host_id: &str,
+) -> Result<SftpHandle, String> {
+    let (_host, cfg, jump_cfg) = build_connect_chain_for_host(state, app_handle, host_id)?;
+    let (jump_session, mut session) = match jump_cfg {
+        Some(jcfg) => {
+            let j = Session::connect(jcfg).await.map_err(|e| e.to_string())?;
+            let t = Session::connect_via(cfg, &j)
+                .await
+                .map_err(|e| e.to_string())?;
+            (Some(j), t)
+        }
+        None => {
+            let s = Session::connect(cfg).await.map_err(|e| e.to_string())?;
+            (None, s)
+        }
+    };
+    let sftp = session.sftp().await.map_err(|e| e.to_string())?;
+    Ok(SftpHandle {
+        host_id: host_id.to_string(),
+        _session: session,
+        _jump_session: jump_session,
+        sftp: Arc::new(sftp),
+    })
 }
 
 #[tauri::command]
@@ -6252,6 +6505,16 @@ fn lookup_sftp(state: &AppState, sftp_id: u64) -> Result<Arc<zeroterm_ssh::Sftp>
         .unwrap()
         .get(&sftp_id)
         .map(|h| h.sftp.clone())
+        .ok_or_else(|| format!("no sftp handle with id {sftp_id}"))
+}
+
+fn lookup_sftp_host_id(state: &AppState, sftp_id: u64) -> Result<String, String> {
+    state
+        .sftp_handles
+        .lock()
+        .unwrap()
+        .get(&sftp_id)
+        .map(|h| h.host_id.clone())
         .ok_or_else(|| format!("no sftp handle with id {sftp_id}"))
 }
 
@@ -6637,6 +6900,51 @@ impl TransferSink {
         self.transfer_id
     }
 
+    /// Record activity for a path that is being walked or copied. This keeps
+    /// the idle watchdog alive during non-byte-producing work and gives the UI
+    /// a full current path before the first file chunk lands.
+    fn note_path(&self, current_file: &str) {
+        use std::sync::atomic::Ordering;
+        use std::time::{Duration, Instant};
+
+        let now = Instant::now();
+        let bytes_done = self.bytes_done.load(Ordering::SeqCst);
+        let total = self.total.load(Ordering::Relaxed);
+
+        let mut s = self.state.lock().unwrap();
+        s.last_activity_at = now;
+        s.current_file = current_file.to_string();
+        if s.has_baseline && now.duration_since(s.last_emit_at) < Duration::from_millis(250) {
+            return;
+        }
+
+        s.last_emit_at = now;
+        s.last_emit_bytes = bytes_done;
+        s.has_baseline = true;
+        let current_file = s.current_file.clone();
+        drop(s);
+
+        let _ = self.app_handle.emit(
+            "sftp:progress",
+            TransferProgressEvent {
+                transfer_id: self.transfer_id,
+                kind: self.kind,
+                source: self.source.clone(),
+                destination: self.destination.clone(),
+                bytes_done,
+                total: if total > 0 { Some(total) } else { None },
+                bytes_per_sec: None,
+                eta_seconds: None,
+                finished: false,
+                current_file: if current_file.is_empty() {
+                    None
+                } else {
+                    Some(current_file)
+                },
+            },
+        );
+    }
+
     /// Report a byte delta from a per-file upload. Atomically updates
     /// the cumulative `bytes_done`, refreshes `last_activity_at` (so
     /// `run_tree_with_sink`'s watchdog doesn't false-fire), records
@@ -6777,7 +7085,7 @@ where
 
     /// Idle window after which a transfer with zero progress is
     /// declared stalled. See `run_with_progress` for the rationale.
-    const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+    const IDLE_TIMEOUT: Duration = Duration::from_secs(SFTP_TRANSFER_IDLE_TIMEOUT_SECS);
 
     let body_fut = body(sink.clone());
     tokio::pin!(body_fut);
@@ -6928,7 +7236,7 @@ where
     /// declared stalled. Generous enough that even a sluggish link
     /// keeps it alive — any chunk processed within this window
     /// resets the deadline.
-    const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+    const IDLE_TIMEOUT: Duration = Duration::from_secs(SFTP_TRANSFER_IDLE_TIMEOUT_SECS);
 
     /// Tracking state for throughput / ETA computation and for the
     /// idle watchdog. `has_baseline` flips to true after the first
