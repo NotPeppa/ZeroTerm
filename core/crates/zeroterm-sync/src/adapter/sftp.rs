@@ -12,6 +12,7 @@
 //! path. The repo dir name `zeroterm-sync/` matches the local-folder
 //! adapter so the two stores look identical on the wire.
 
+use std::fmt::Write as _;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -56,24 +57,13 @@ impl SftpPaths {
 
     /// Repo-relative key → absolute remote path.
     pub(crate) fn full(&self, key: &str) -> String {
-        let trimmed = key.trim_start_matches('/');
-        if self.base_dir == "/" {
-            format!("/{REPO_DIR}/{trimmed}")
-        } else {
-            format!("{}/{REPO_DIR}/{}", self.base_dir, trimmed)
-        }
+        join_remote(&self.repo_root(), &normalize_key(key))
     }
 
     /// Same as [`full`] but for directory listings — trailing slashes
     /// confuse some servers so we never emit them.
     pub(crate) fn dir(&self, prefix: &str) -> String {
-        let p = self.full(prefix);
-        let trimmed = p.trim_end_matches('/');
-        if trimmed.is_empty() {
-            "/".to_string()
-        } else {
-            trimmed.to_string()
-        }
+        self.full(prefix)
     }
 
     /// Absolute path of the `zeroterm-sync` repo dir.
@@ -84,6 +74,46 @@ impl SftpPaths {
             format!("{}/{}", self.base_dir, REPO_DIR)
         }
     }
+
+    pub(crate) fn parent_for_key(&self, key: &str) -> Option<String> {
+        self.full(key).rsplit_once('/').map(|(parent, _)| {
+            if parent.is_empty() {
+                "/".to_string()
+            } else {
+                parent.to_string()
+            }
+        })
+    }
+
+    pub(crate) fn repo_root_prefix(&self) -> String {
+        format!("{}/", self.repo_root())
+    }
+}
+
+fn normalize_key(key: &str) -> String {
+    key.split('/')
+        .filter(|part| !part.is_empty() && *part != "." && *part != "..")
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn join_remote(base: &str, rel: &str) -> String {
+    if rel.is_empty() {
+        base.to_string()
+    } else if base == "/" {
+        format!("/{rel}")
+    } else {
+        format!("{base}/{rel}")
+    }
+}
+
+fn random_hex_suffix() -> String {
+    let bytes = zeroterm_crypto::random_bytes(8);
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        let _ = write!(&mut out, "{b:02x}");
+    }
+    out
 }
 
 impl SftpAdapter {
@@ -120,13 +150,10 @@ impl SftpAdapter {
     }
 
     async fn ensure_dirs_for(&self, key: &str) -> Result<(), Error> {
-        let full = self.full(key);
-        // Drop the final segment (file name).
-        let parent = match full.rsplit_once('/') {
-            Some((p, _)) => p.to_string(),
-            None => return Ok(()),
-        };
-        self.mkdir_p_absolute(&parent).await
+        match self.paths.parent_for_key(key) {
+            Some(parent) => self.mkdir_p_absolute(&parent).await,
+            None => Ok(()),
+        }
     }
 
     async fn mkdir_p_absolute(&self, abs_path: &str) -> Result<(), Error> {
@@ -250,7 +277,7 @@ impl SyncAdapter for SftpAdapter {
 
     async fn list(&self, prefix: &str, recursive: bool) -> Result<Vec<ObjectMeta>, Error> {
         let abs = self.dir(prefix);
-        let root = self.repo_root();
+        let root_prefix = self.paths.repo_root_prefix();
         let entries = self.list_recursive(&abs, recursive).await?;
 
         let mut out: Vec<ObjectMeta> = entries
@@ -259,7 +286,7 @@ impl SyncAdapter for SftpAdapter {
                 // Convert absolute path back to repo-relative.
                 let rel = e
                     .full_path
-                    .strip_prefix(&format!("{root}/"))
+                    .strip_prefix(&root_prefix)
                     .unwrap_or(&e.full_path)
                     .to_string();
                 ObjectMeta {
@@ -303,10 +330,7 @@ impl SyncAdapter for SftpAdapter {
         // rename across the same SFTP "filesystem" (cross-server rename
         // isn't a thing anyway). Pure-bytes randomness because the
         // crypto crate is already a dep.
-        let suffix: String = {
-            let r = zeroterm_crypto::random_bytes(8);
-            r.iter().map(|b| format!("{:02x}", b)).collect()
-        };
+        let suffix = random_hex_suffix();
         let tmp = format!("{path}.tmp-{suffix}");
 
         self.sftp
@@ -454,6 +478,29 @@ mod tests {
         assert_eq!(
             p.full("/manifest.json"),
             "/var/lib/zeroterm-sync/manifest.json"
+        );
+    }
+
+    #[test]
+    fn full_normalizes_empty_and_dot_segments() {
+        let p = SftpPaths::new("/var/lib");
+        assert_eq!(p.full(""), "/var/lib/zeroterm-sync");
+        assert_eq!(
+            p.full("//events/./2024-03/../ev-foo.json"),
+            "/var/lib/zeroterm-sync/events/2024-03/ev-foo.json"
+        );
+    }
+
+    #[test]
+    fn parent_for_key_returns_destination_parent() {
+        let p = SftpPaths::new("/var/lib");
+        assert_eq!(
+            p.parent_for_key("events/2024-03/ev-foo.json").as_deref(),
+            Some("/var/lib/zeroterm-sync/events/2024-03")
+        );
+        assert_eq!(
+            p.parent_for_key("manifest.json").as_deref(),
+            Some("/var/lib/zeroterm-sync")
         );
     }
 

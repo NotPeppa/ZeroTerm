@@ -16,10 +16,7 @@
 //! Default chunk size is 32 KiB — large enough to amortise per-packet
 //! overhead, small enough that progress updates feel responsive.
 
-use std::collections::HashMap;
 use std::io::SeekFrom;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
 
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::FileType;
@@ -93,6 +90,8 @@ pub const DEFAULT_CHUNK: usize = 512 * 1024;
 /// balance between throughput and server load (`MaxSessions`, memory).
 pub const DEFAULT_DOWNLOAD_PARALLELISM: usize = 8;
 
+const MIN_CHUNK_SIZE: usize = 1024;
+
 /// Live SFTP channel. Drop closes the underlying SSH channel.
 pub struct Sftp {
     inner: SftpSession,
@@ -162,7 +161,7 @@ impl Sftp {
             .open(remote.to_string())
             .await
             .map_err(map_sftp_err)?;
-        let chunk = chunk_size.max(1024);
+        let chunk = chunk_size.max(MIN_CHUNK_SIZE);
         let mut buf = vec![0u8; chunk];
         let mut bytes_done: u64 = 0;
 
@@ -218,7 +217,7 @@ impl Sftp {
         W: tokio::io::AsyncWrite + Unpin,
         F: FnMut(ProgressTick),
     {
-        let chunk = chunk_size.max(1024);
+        let chunk = chunk_size.max(MIN_CHUNK_SIZE);
         let total = self.stat(remote).await.ok().map(|m| m.size);
 
         // Divide-and-pipeline only helps with a known size larger than one
@@ -247,60 +246,10 @@ impl Sftp {
             files.push(f);
         }
 
-        // Shared monotonically-increasing chunk cursor; workers claim slices
-        // via fetch_add so no two read the same offset.
-        let next = Arc::new(AtomicU64::new(0));
-        let (tx, mut rx) =
-            tokio::sync::mpsc::channel::<Result<(u64, Vec<u8>), SshError>>(workers * 2);
-
-        let mut join = tokio::task::JoinSet::new();
-        for mut f in files {
-            let next = Arc::clone(&next);
-            let tx = tx.clone();
-            let cancel = cancel.clone();
-            join.spawn(async move {
-                loop {
-                    if cancel.is_cancelled() {
-                        break;
-                    }
-                    let offset = next.fetch_add(chunk as u64, Ordering::Relaxed);
-                    if offset >= total {
-                        break;
-                    }
-                    let want = (total - offset).min(chunk as u64) as usize;
-                    if let Err(e) = f.seek(SeekFrom::Start(offset)).await {
-                        let _ = tx.send(Err(SshError::Io(e))).await;
-                        break;
-                    }
-                    let mut buf = vec![0u8; want];
-                    match read_fully(&mut f, &mut buf).await {
-                        Ok(n) if n == want => {
-                            if tx.send(Ok((offset, buf))).await.is_err() {
-                                break;
-                            }
-                        }
-                        Ok(_) => {
-                            let _ = tx
-                                .send(Err(SshError::Io(io_other(
-                                    "remote file shrank during download",
-                                ))))
-                                .await;
-                            break;
-                        }
-                        Err(e) => {
-                            let _ = tx.send(Err(SshError::Io(e))).await;
-                            break;
-                        }
-                    }
-                }
-            });
-        }
-        // Drop our extra sender so `rx` closes once every worker is done.
-        drop(tx);
-
-        // Reorder buffer: hold out-of-order slices until their predecessor has
-        // been written, then flush the contiguous run.
-        let mut pending: HashMap<u64, Vec<u8>> = HashMap::new();
+        // Process fixed-size windows instead of letting workers read
+        // arbitrarily far ahead. That preserves the streaming contract: memory
+        // is bounded by `workers * chunk`, even if an early slice is slow.
+        let mut next_offset: u64 = 0;
         let mut write_pos: u64 = 0;
         let mut bytes_done: u64 = 0;
 
@@ -309,35 +258,79 @@ impl Sftp {
             total: Some(total),
         });
 
-        loop {
-            tokio::select! {
+        while next_offset < total {
+            if cancel.is_cancelled() {
+                return Err(SshError::Cancelled);
+            }
+
+            let remaining_chunks = (total - next_offset).div_ceil(chunk as u64) as usize;
+            let window = workers.min(remaining_chunks);
+            let mut join = tokio::task::JoinSet::new();
+
+            for _ in 0..window {
+                let mut f = files
+                    .pop()
+                    .expect("window size never exceeds available SFTP file handles");
+                let offset = next_offset;
+                next_offset = next_offset.saturating_add(chunk as u64);
+                let want = (total - offset).min(chunk as u64) as usize;
+                let cancel = cancel.clone();
+
+                join.spawn(async move {
+                    if cancel.is_cancelled() {
+                        return Err(SshError::Cancelled);
+                    }
+                    f.seek(SeekFrom::Start(offset)).await?;
+                    let mut buf = vec![0u8; want];
+                    match read_fully(&mut f, &mut buf).await {
+                        Ok(n) if n == want => Ok((offset, buf, f)),
+                        Ok(_) => Err(SshError::Io(io_other("remote file shrank during download"))),
+                        Err(e) => Err(SshError::Io(e)),
+                    }
+                });
+            }
+
+            let mut window_data = Vec::with_capacity(window);
+            while let Some(result) = tokio::select! {
                 _ = cancel.cancelled() => {
                     join.shutdown().await;
                     return Err(SshError::Cancelled);
                 }
-                msg = rx.recv() => match msg {
-                    None => break,
-                    Some(Err(e)) => {
+                result = join.join_next() => result,
+            } {
+                match result {
+                    Ok(Ok((offset, data, f))) => {
+                        files.push(f);
+                        window_data.push((offset, data));
+                    }
+                    Ok(Err(e)) => {
                         join.shutdown().await;
                         return Err(e);
                     }
-                    Some(Ok((offset, data))) => {
-                        bytes_done += data.len() as u64;
-                        pending.insert(offset, data);
-                        while let Some(d) = pending.remove(&write_pos) {
-                            dest.write_all(&d).await?;
-                            write_pos += d.len() as u64;
-                        }
-                        on_progress(ProgressTick { bytes_done, total: Some(total) });
+                    Err(e) => {
+                        join.shutdown().await;
+                        return Err(SshError::Io(io_other(&format!(
+                            "sftp download worker failed: {e}"
+                        ))));
                     }
                 }
             }
-        }
 
-        // Any contiguous tail still buffered (normally already flushed above).
-        while let Some(d) = pending.remove(&write_pos) {
-            dest.write_all(&d).await?;
-            write_pos += d.len() as u64;
+            window_data.sort_by_key(|(offset, _)| *offset);
+            for (offset, data) in window_data {
+                if offset != write_pos {
+                    return Err(SshError::Io(io_other(
+                        "sftp download window completed out of order",
+                    )));
+                }
+                dest.write_all(&data).await?;
+                write_pos += data.len() as u64;
+                bytes_done += data.len() as u64;
+                on_progress(ProgressTick {
+                    bytes_done,
+                    total: Some(total),
+                });
+            }
         }
         dest.flush().await?;
         Ok(bytes_done)
@@ -363,7 +356,7 @@ impl Sftp {
             .create(remote.to_string())
             .await
             .map_err(map_sftp_err)?;
-        let chunk = chunk_size.max(1024);
+        let chunk = chunk_size.max(MIN_CHUNK_SIZE);
         let mut buf = vec![0u8; chunk];
         let mut bytes_done: u64 = 0;
 

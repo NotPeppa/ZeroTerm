@@ -688,7 +688,7 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
                                 <option value="en">English</option>
                               </select>
                             </label>
-                            <p id="settings-language-hint" class="muted tiny">
+                            <p id="settings-language-hint" class="muted tiny settings-language-hint">
                               Changes apply immediately and are saved locally.
                             </p>
                             </section>
@@ -797,6 +797,17 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
                                 <div class="settings-dir-inputs">
                                   <input id="settings-terminal-cwd" type="text" placeholder="例如：D:\projects" autocomplete="off" spellcheck="false" />
                                   <button id="settings-terminal-cwd-browse" type="button">浏览</button>
+                                </div>
+                              </div>
+                              <div class="settings-divider"></div>
+                              <div class="settings-row settings-row-dir settings-menu-order-row">
+                                <div>
+                                  <div id="settings-terminal-selection-menu-order-label" class="settings-item-title">右键菜单排序</div>
+                                  <p id="settings-terminal-selection-menu-order-hint" class="muted tiny">拖动调整选中文本后右键菜单里的功能展示顺序。</p>
+                                </div>
+                                <div class="terminal-menu-order-editor">
+                                  <div id="settings-terminal-selection-menu-order" class="terminal-menu-order-list"></div>
+                                  <button id="settings-terminal-selection-menu-order-reset" type="button" class="settings-link-btn">恢复默认</button>
                                 </div>
                               </div>
                             </section>
@@ -1085,8 +1096,7 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
                               <div id="settings-data-title" class="settings-item-title">数据管理</div>
                               <p id="settings-data-desc" class="muted tiny">清空当前 Vault 内的全部记录与同步元数据。此操作不可撤销。</p>
                               <div class="settings-sync-actions">
-                                <button id="settings-data-reset-settings" type="button" class="subtle">重置设置</button>
-                                <button id="settings-data-clear-vault" type="button" class="danger">清空 Vault 数据</button>
+                                <button id="settings-data-clear-open" type="button" class="danger">清空数据</button>
                               </div>
                               <p id="settings-data-status" class="muted tiny"></p>
                             </section>
@@ -1240,6 +1250,7 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
                         <button id="files-menu-pin" type="button">Pin</button>
                         <button id="files-menu-refresh" type="button">Refresh</button>
                         <button id="files-menu-mkdir" type="button">New Folder</button>
+                        <button id="files-menu-new-file" type="button">New File</button>
                         <button id="files-menu-upload" type="button">Upload</button>
                         <button id="files-menu-hidden" type="button">Show Hidden Files</button>
                         <button id="files-menu-permissions" type="button">Edit Permissions</button>
@@ -1463,6 +1474,19 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
         </div>
       </div>
 
+      <div id="settings-data-clear-overlay" class="overlay" hidden>
+        <div class="dialog settings-data-clear-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-data-clear-title">
+          <h3 id="settings-data-clear-title">清空数据</h3>
+          <p id="settings-data-clear-message" class="muted">选择要清空的数据项。此操作不可撤销。</p>
+          <div id="settings-data-clear-options" class="settings-data-clear-options"></div>
+          <p id="settings-data-clear-warning" class="muted tiny">只会清空你勾选的项目。</p>
+          <div class="dialog-actions">
+            <button id="settings-data-clear-cancel" type="button" class="confirm-ghost-text">取消</button>
+            <button id="settings-data-clear-confirm" type="button" class="confirm-danger-text" disabled>清空所选</button>
+          </div>
+        </div>
+      </div>
+
       <div id="permissions-overlay" class="overlay" hidden>
         <div class="dialog permissions-dialog">
           <h3 id="permissions-title">编辑权限</h3>
@@ -1525,12 +1549,21 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
         <button id="terminal-selection-menu-url" type="button" hidden aria-label="打开链接" title="打开链接">
           <span id="terminal-selection-menu-url-label">访问</span>
         </button>
+        <button id="terminal-selection-menu-search" class="icon-only" type="button" aria-label="搜索" title="搜索">
+          <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="11" cy="11" r="7"></circle>
+            <path d="m20 20-3.5-3.5"></path>
+          </svg>
+        </button>
         <button id="terminal-selection-menu-copy" type="button">
           <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
             <rect x="9" y="9" width="10" height="10" rx="2"></rect>
             <path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path>
           </svg>
           <span id="terminal-selection-menu-copy-label">拷贝</span>
+        </button>
+        <button id="terminal-selection-menu-sftp" type="button" hidden>
+          <span id="terminal-selection-menu-sftp-label">SFTP</span>
         </button>
         <button id="terminal-selection-menu-ai" type="button">
           <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">

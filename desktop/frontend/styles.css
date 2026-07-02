@@ -3361,6 +3361,10 @@ body[data-app-theme="light"] .terminal-side-btn.active::before {
   margin-top: 0;
 }
 
+.ai-message-actions-slot:empty {
+  display: none;
+}
+
 .ai-hero-card {
   padding: 18px;
   border-radius: 20px;
@@ -4953,11 +4957,11 @@ body[data-app-theme="light"] .pane-ai-toggle.active {
   cursor: default;
 }
 
-.terminal-selection-menu button:not([hidden]) + button:not([hidden]) {
+.terminal-selection-menu button:not([hidden]):not(.first-visible) {
   position: relative;
 }
 
-.terminal-selection-menu button:not([hidden]) + button:not([hidden])::before {
+.terminal-selection-menu button:not([hidden]):not(.first-visible)::before {
   content: "";
   position: absolute;
   left: -2px;
@@ -7673,6 +7677,10 @@ body[data-app-theme="light"] .permissions-col-title {
   letter-spacing: 0.2px;
 }
 
+.settings-language-hint {
+  margin-top: 10px;
+}
+
 .settings-row {
   display: flex;
   align-items: center;
@@ -8215,10 +8223,10 @@ body.has-app-bg[data-app-theme="light"] .settings-ai-profile-actions button.dang
   width: 100%;
   min-height: 96px;
   resize: vertical;
-  border: 1px solid var(--stroke);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
-  background: var(--panel-2);
-  color: var(--text);
+  background: rgba(255, 255, 255, 0.03);
+  color: #ffffff;
   padding: 10px 12px;
   font: inherit;
   line-height: 1.55;
@@ -8227,6 +8235,7 @@ body.has-app-bg[data-app-theme="light"] .settings-ai-profile-actions button.dang
 #settings-ai-system-prompt:focus {
   outline: none;
   border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.055);
   box-shadow: 0 0 12px rgba(104, 168, 255, 0.25);
 }
 
@@ -8253,6 +8262,20 @@ body[data-app-theme="light"] .ai-settings-grid .zt-select-wrap .zt-select-trigge
   border-color: rgba(203, 213, 225, 0.72) !important;
   background: rgba(255, 255, 255, 0.78) !important;
   color: #0f172a;
+}
+
+body[data-app-theme="light"] #settings-ai-system-prompt {
+  background: rgba(255, 255, 255, 0.28) !important;
+  background-color: rgba(255, 255, 255, 0.28) !important;
+  background-image: none !important;
+  border-color: rgba(203, 213, 225, 0.56) !important;
+  color: #0f172a !important;
+}
+
+body[data-app-theme="light"] #settings-ai-system-prompt:focus {
+  background: rgba(255, 255, 255, 0.38) !important;
+  background-color: rgba(255, 255, 255, 0.38) !important;
+  border-color: rgba(37, 99, 235, 0.62) !important;
 }
 
 body[data-app-theme="light"] .ai-model-picker button {
@@ -8445,6 +8468,53 @@ body[data-app-theme="light"] .settings-sync-method-row .zt-select-trigger:hover 
 
 .settings-sync-actions button:hover {
   background: rgba(47, 71, 121, 0.92);
+}
+
+.settings-data-clear-dialog {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.settings-data-clear-options {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 10px;
+}
+
+.settings-data-clear-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text);
+}
+
+.settings-data-clear-option input {
+  margin-top: 3px;
+}
+
+.settings-data-clear-option-body {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.settings-data-clear-option-body strong {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.settings-data-clear-option-body small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.settings-data-clear-dialog .dialog-actions {
+  margin-top: 16px;
 }
 
 .settings-update-actions {
@@ -9010,6 +9080,67 @@ body[data-app-theme="light"] .settings-sync-method-row .zt-select-trigger:hover 
 
 .settings-proxy-inputs button {
   flex: 0 0 auto;
+}
+
+.terminal-menu-order-editor {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: 0 0 520px;
+  min-width: 360px;
+  max-width: 620px;
+}
+
+.terminal-menu-order-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.terminal-menu-order-editor .settings-link-btn {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.terminal-menu-order-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  max-width: 82px;
+  padding: 4px 9px 4px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.035);
+  color: #eef3ff;
+  cursor: grab;
+}
+
+.terminal-menu-order-item.dragging {
+  opacity: 0.55;
+}
+
+.terminal-menu-order-handle {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 20px;
+  color: #91a4c9;
+  font-size: 11px;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.terminal-menu-order-label {
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .terminal-theme-grid {
@@ -9639,10 +9770,15 @@ body[data-app-theme="light"] .theme-edit-preview-title {
     gap: 10px;
   }
 
-  .settings-dir-inputs {
+  .settings-dir-inputs,
+  .terminal-menu-order-editor {
     flex: 1 1 auto;
     min-width: 0;
     max-width: none;
+  }
+
+  .terminal-menu-order-editor {
+    flex-wrap: wrap;
   }
 }
 
@@ -11172,6 +11308,16 @@ body[data-app-theme="light"] .settings-sync-actions button:hover {
   color: var(--accent) !important;
 }
 
+body[data-app-theme="light"] .settings-data-clear-option {
+  background: rgba(248, 250, 252, 0.78);
+  border-color: rgba(203, 213, 225, 0.72);
+  color: var(--text);
+}
+
+body[data-app-theme="light"] .settings-data-clear-option-body small {
+  color: var(--muted);
+}
+
 body[data-app-theme="light"] .settings-sync-actions button.subtle {
   background: rgba(248, 250, 252, 0.78) !important;
   border: 1px solid rgba(203, 213, 225, 0.92) !important;
@@ -12089,8 +12235,18 @@ body[data-app-theme="light"] .terminal-selection-menu button:hover:not(:disabled
   background: rgba(15, 23, 42, 0.06) !important;
 }
 
-body[data-app-theme="light"] .terminal-selection-menu button:not([hidden]) + button:not([hidden])::before {
+body[data-app-theme="light"] .terminal-selection-menu button:not([hidden]):not(.first-visible)::before {
   background: rgba(148, 163, 184, 0.42) !important;
+}
+
+body[data-app-theme="light"] .terminal-menu-order-item {
+  background: #ffffff;
+  border-color: rgba(203, 213, 225, 0.82);
+  color: var(--text);
+}
+
+body[data-app-theme="light"] .terminal-menu-order-handle {
+  color: var(--muted);
 }
 
 body[data-app-theme="light"] #theme-mode-menu button.active {

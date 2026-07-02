@@ -570,6 +570,7 @@ const I18N = {
     "files.button.up_title": "Parent directory",
     "files.button.refresh": "Refresh",
     "files.button.new_folder": "New Folder",
+    "files.button.new_file": "New File",
     "files.button.upload": "Upload",
     "files.button.upload_many": "Upload Many",
     "files.select_all": "Select all",
@@ -593,6 +594,9 @@ const I18N = {
     "files.status.listing": "Listing {path}...",
     "files.error.mkdir_failed": "mkdir failed: {error}",
     "files.prompt.new_folder": "New folder name:",
+    "files.prompt.new_file": "New file name:",
+    "files.status.created_file": "Created file {path}.",
+    "files.error.create_file_failed": "create file failed: {error}",
     "files.prompt.copy_target_dir": "Target directory path:",
     "files.prompt.permissions": "Enter octal permissions (for example 644 or 755):",
     "files.empty": "(empty)",
@@ -755,10 +759,14 @@ const I18N = {
     "ai.compose.send": "Send to AI",
     "terminal.selection.copy": "Copy",
     "terminal.selection.ai": "AI",
+    "terminal.selection.sftp": "SFTP to directory",
     "terminal.selection.open": "Open",
+    "terminal.selection.search": "Search",
     "terminal.selection.open_url": "Open link",
     "terminal.selection.copy_failed": "Copy failed: {error}",
+    "terminal.selection.search_failed": "Search failed: {error}",
     "terminal.selection.open_url_failed": "Open link failed: {error}",
+    "terminal.selection.sftp_failed": "SFTP jump failed: {error}",
     "terminal.selection.ai_busy": "AI is still working. Please wait for this turn to finish.",
     "ai.context.toggle.title": "Toggle attaching current terminal output",
     "ai.context.toggle.label": "Auto-include terminal context",
@@ -947,13 +955,26 @@ const I18N = {
     "settings.sync.button.busy.delete_remote": "Deleting...",
     "settings.sync.button.busy.resolve_conflict": "Resolving...",
     "settings.data.title": "Data Management",
-    "settings.data.desc": "Clear all saved records and sync metadata. This action cannot be undone.",
-    "settings.data.button.reset_settings": "Reset Settings",
-    "settings.data.button.clear_vault": "Clear All Data",
-    "settings.data.confirm.reset_settings": "Reset local app settings now? This clears local appearance, terminal theme and font, proxy, background image, window layout, SFTP local preferences, auto-sync options, and pinned or expanded UI state. Vault data, sync profiles, and AI profiles are kept.",
-    "settings.data.confirm.clear_vault": "Clear all data now? This cannot be undone.",
-    "settings.data.status.settings_reset": "Settings reset",
-    "settings.data.status.cleared": "All data cleared",
+    "settings.data.desc": "Choose exactly which local data to clear. This action cannot be undone.",
+    "settings.data.button.clear": "Clear Data",
+    "settings.data.dialog.title": "Clear data",
+    "settings.data.dialog.message": "Select the data items to clear. This action cannot be undone.",
+    "settings.data.dialog.warning": "Only selected items will be cleared.",
+    "settings.data.dialog.confirm": "Clear selected",
+    "settings.data.dialog.none": "Select at least one item to clear.",
+    "settings.data.item.local_settings": "Local app settings",
+    "settings.data.item.local_settings.desc": "Appearance, terminal settings, proxy, background image, window layout, SFTP preferences, auto-sync options, and local UI state.",
+    "settings.data.item.vault_data": "Vault data",
+    "settings.data.item.vault_data.desc": "All encrypted Vault records, including saved hosts, groups, snippets, port forwards, and Vault-stored metadata.",
+    "settings.data.item.sync_profiles": "Sync profiles",
+    "settings.data.item.sync_profiles.desc": "Local sync profiles and cached sync engine/keychain state. Remote repository contents are not deleted.",
+    "settings.data.item.ai_profiles": "AI profiles",
+    "settings.data.item.ai_profiles.desc": "Saved AI provider configurations and their stored API keys.",
+    "settings.data.item.ai_sessions": "AI session history",
+    "settings.data.item.ai_sessions.desc": "Saved AI chat sessions on this device.",
+    "settings.data.item.remembered_password": "Remembered unlock password",
+    "settings.data.item.remembered_password.desc": "The cached Vault unlock password in the system keychain.",
+    "settings.data.status.cleared_selected": "Cleared: {items}",
     "settings.update.status.installing": "Installing update...",
     "settings.sync.backend.local_folder": "Local Folder",
     "settings.sync.label.path": "Sync Folder",
@@ -1081,6 +1102,9 @@ const I18N = {
     "settings.terminal.cwd.hint": "Open Local terminal tabs in this directory. Leave empty to use the default.",
     "settings.terminal.cwd.placeholder": "e.g. D:\\projects",
     "settings.terminal.cwd.browse": "Browse",
+    "settings.terminal.selection_menu_order.label": "Context menu order",
+    "settings.terminal.selection_menu_order.hint": "Drag items to customize the right-click menu order shown after selecting terminal text.",
+    "settings.terminal.selection_menu_order.reset": "Reset order",
     "settings.sftp.title": "SFTP",
     "settings.sftp.auto.label": "Auto-detect directory follow",
     "settings.sftp.auto.hint": "When opening SFTP, detect whether remote shell has directory-follow configured and prompt to install if missing.",
@@ -1420,6 +1444,7 @@ const I18N = {
     "files.button.up_title": "返回父目录",
     "files.button.refresh": "刷新",
     "files.button.new_folder": "新建文件夹",
+    "files.button.new_file": "新建文件",
     "files.button.upload": "上传",
     "files.button.upload_many": "批量上传",
     "files.select_all": "全选",
@@ -1443,6 +1468,9 @@ const I18N = {
     "files.status.listing": "正在列出 {path}...",
     "files.error.mkdir_failed": "创建目录失败：{error}",
     "files.prompt.new_folder": "新文件夹名称：",
+    "files.prompt.new_file": "新文件名称：",
+    "files.status.created_file": "已创建文件 {path}。",
+    "files.error.create_file_failed": "创建文件失败：{error}",
     "files.prompt.copy_target_dir": "目标目录路径：",
     "files.prompt.permissions": "请输入八进制权限（例如 644 或 755）：",
     "files.empty": "（空）",
@@ -1603,10 +1631,14 @@ const I18N = {
     "ai.compose.send": "发送给 AI",
     "terminal.selection.copy": "拷贝",
     "terminal.selection.ai": "AI",
+    "terminal.selection.sftp": "SFTP 跳转到目录",
     "terminal.selection.open": "访问",
+    "terminal.selection.search": "搜索",
     "terminal.selection.open_url": "打开链接",
     "terminal.selection.copy_failed": "复制失败：{error}",
+    "terminal.selection.search_failed": "搜索失败：{error}",
     "terminal.selection.open_url_failed": "打开链接失败：{error}",
+    "terminal.selection.sftp_failed": "SFTP 跳转失败：{error}",
     "terminal.selection.ai_busy": "AI 正在处理中，请等当前这轮完成后再试。",
     "ai.context.toggle.title": "切换是否附带当前终端内容",
     "ai.context.toggle.label": "智能判断终端内容",
@@ -1795,13 +1827,26 @@ const I18N = {
     "settings.sync.button.busy.delete_remote": "删除中...",
     "settings.sync.button.busy.resolve_conflict": "处理中...",
     "settings.data.title": "数据管理",
-    "settings.data.desc": "清空当前保存的全部记录与同步元数据。此操作不可撤销。",
-    "settings.data.button.reset_settings": "重置设置",
-    "settings.data.button.clear_vault": "清空所有数据",
-    "settings.data.confirm.reset_settings": "确定要重置本地设置吗？这会清除界面外观、终端主题与字体、代理、背景图、窗口布局、SFTP 本地偏好、自动同步选项，以及固定路径和展开状态等本地设置；不会清空 Vault 数据、同步配置或 AI 配置。",
-    "settings.data.confirm.clear_vault": "确定要清空全部数据吗？此操作不可撤销。",
-    "settings.data.status.settings_reset": "设置已重置",
-    "settings.data.status.cleared": "数据已清空",
+    "settings.data.desc": "选择要清空的本地数据项。此操作不可撤销。",
+    "settings.data.button.clear": "清空数据",
+    "settings.data.dialog.title": "清空数据",
+    "settings.data.dialog.message": "选择要清空的数据项。此操作不可撤销。",
+    "settings.data.dialog.warning": "只会清空你勾选的项目。",
+    "settings.data.dialog.confirm": "清空所选",
+    "settings.data.dialog.none": "请至少选择一个要清空的数据项。",
+    "settings.data.item.local_settings": "本地应用设置",
+    "settings.data.item.local_settings.desc": "界面外观、终端设置、代理、背景图、窗口布局、SFTP 偏好、自动同步选项和本地 UI 状态。",
+    "settings.data.item.vault_data": "Vault 数据",
+    "settings.data.item.vault_data.desc": "加密 Vault 内的全部记录，包括主机、分组、片段、端口转发和 Vault 内元数据。",
+    "settings.data.item.sync_profiles": "同步配置",
+    "settings.data.item.sync_profiles.desc": "本地同步配置和缓存的同步会话/钥匙串状态；不会删除远端仓库内容。",
+    "settings.data.item.ai_profiles": "AI 配置",
+    "settings.data.item.ai_profiles.desc": "保存的 AI 服务配置及其系统钥匙串中的 API Key。",
+    "settings.data.item.ai_sessions": "AI 会话历史",
+    "settings.data.item.ai_sessions.desc": "保存在本机的 AI 聊天会话。",
+    "settings.data.item.remembered_password": "记住的解锁密码",
+    "settings.data.item.remembered_password.desc": "系统钥匙串中缓存的 Vault 解锁密码。",
+    "settings.data.status.cleared_selected": "已清空：{items}",
     "settings.update.status.installing": "正在安装更新...",
     "settings.sync.backend.local_folder": "本地文件夹",
     "settings.sync.label.path": "同步文件夹",
@@ -1929,6 +1974,9 @@ const I18N = {
     "settings.terminal.cwd.hint": "配置后，每次打开「本地」终端标签页都会自动切换到该目录。留空则使用默认目录。",
     "settings.terminal.cwd.placeholder": "例如：D:\\projects",
     "settings.terminal.cwd.browse": "浏览",
+    "settings.terminal.selection_menu_order.label": "右键菜单排序",
+    "settings.terminal.selection_menu_order.hint": "拖动调整选中终端文本后右键菜单里的功能展示顺序。",
+    "settings.terminal.selection_menu_order.reset": "恢复默认",
     "settings.sftp.title": "SFTP",
     "settings.sftp.auto.label": "自动检测目录配置",
     "settings.sftp.auto.hint": "打开 SFTP 标签页时，自动检测远端 shell 是否已配置目录跟随，未配置时提示自动安装。",
@@ -2396,7 +2444,9 @@ const snippetItemMenuEdit = document.getElementById("snippet-item-menu-edit");
 const snippetItemMenuDelete = document.getElementById("snippet-item-menu-delete");
 const terminalSelectionMenu = document.getElementById("terminal-selection-menu");
 const terminalSelectionMenuUrl = document.getElementById("terminal-selection-menu-url");
+const terminalSelectionMenuSearch = document.getElementById("terminal-selection-menu-search");
 const terminalSelectionMenuCopy = document.getElementById("terminal-selection-menu-copy");
+const terminalSelectionMenuSftp = document.getElementById("terminal-selection-menu-sftp");
 const terminalSelectionMenuAi = document.getElementById("terminal-selection-menu-ai");
 const aiComposeForm = document.getElementById("ai-compose-form");
 const aiComposeInput = document.getElementById("ai-compose-input");
@@ -3451,7 +3501,7 @@ function ensureDockerLogsOverlay() {
 }
 
 
-function setTerminalSidePanel(panel) {
+function setTerminalSidePanel(panel, { skipSftpConnect = false } = {}) {
   terminalActiveSidePanel = panel || null;
   const paneKey = getAiPaneKey();
   if (paneKey !== "no-terminal") {
@@ -3484,7 +3534,7 @@ function setTerminalSidePanel(panel) {
   } else {
     stopMetricsAutoRefresh();
   }
-  if (terminalActiveSidePanel === "sftp") {
+  if (terminalActiveSidePanel === "sftp" && !skipSftpConnect) {
     connectTerminalSftpToActivePane().catch((e) => console.warn("terminal sftp connect failed", e));
   }
   if (terminalActiveSidePanel === "theme") {
@@ -3499,12 +3549,44 @@ function setTerminalSidePanel(panel) {
     syncTerminalFontPreview();
   }
   if (terminalActiveSidePanel === "docker") renderDockerPanel();
+  refitActiveTerminalPanes({ reason: "side-panel-toggle", forceBottom: true });
 }
 
 function applyTerminalSidePanelForActivePane() {
   const paneKey = getAiPaneKey();
   const panel = paneKey === "no-terminal" ? null : (terminalSidePanelByPane.get(paneKey) || null);
   setTerminalSidePanel(panel);
+}
+
+function refitActiveTerminalPanes({ reason = "", forceBottom = false, frames = 2 } = {}) {
+  const tab = getActiveTab();
+  if (!tab?.panes?.length) return;
+  const panes = tab.panes.filter((pane) => pane?.term);
+  if (!panes.length) return;
+
+  const fitOnce = () => {
+    for (const pane of panes) {
+      try {
+        requestPaneFit(pane, { immediate: true });
+        refreshPaneTerminal(pane);
+        if (forceBottom) keepPaneTerminalAtBottom(pane, { force: true });
+      } catch (e) {
+        if (reason) console.warn(`terminal refit failed (${reason})`, e);
+      }
+    }
+  };
+
+  fitOnce();
+  let remaining = Math.max(0, frames);
+  const tick = () => {
+    if (remaining <= 0) return;
+    remaining -= 1;
+    requestAnimationFrame(() => {
+      fitOnce();
+      tick();
+    });
+  };
+  tick();
 }
 
 function hideSnippetGroupContextMenu() {
@@ -4185,6 +4267,11 @@ function normalizeAiSessionMessages(messages) {
           output: typeof result?.output === "string" ? result.output : "",
         })).filter((result) => result.command.trim())
         : [],
+      continuedCommandCount: message?.continuedCommandCount === null || message?.continuedCommandCount === undefined
+        ? null
+        : Number.isFinite(Number(message.continuedCommandCount))
+          ? Number(message.continuedCommandCount)
+          : null,
     }))
     .filter((message) => ["user", "assistant", "error"].includes(message.role) && (message.content.trim() || message.reasoningContent.trim()));
 }
@@ -4615,6 +4702,30 @@ function markdownTableCellStatus(cell) {
   return "";
 }
 
+function ensureAiMessageParts(node) {
+  const body = node?.querySelector?.(".ai-message-body");
+  if (!body) return null;
+
+  let contentWrap = body.querySelector(":scope > .ai-message-content");
+  if (!contentWrap) {
+    contentWrap = document.createElement("div");
+    contentWrap.className = "ai-message-content";
+  }
+
+  let actionsSlot = body.querySelector(":scope > .ai-message-actions-slot");
+  if (!actionsSlot) {
+    actionsSlot = document.createElement("div");
+    actionsSlot.className = "ai-message-actions-slot";
+  }
+
+  const thinkingBlock = body.querySelector(":scope > .ai-thinking-block");
+  if (thinkingBlock) body.appendChild(thinkingBlock);
+  body.appendChild(contentWrap);
+  body.appendChild(actionsSlot);
+
+  return { body, thinkingBlock, contentWrap, actionsSlot };
+}
+
 function looksRunnableInlineCommand(value) {
   const text = String(value || "").trim();
   if (!text || text.length > 140 || text.includes("\n")) return false;
@@ -4629,29 +4740,35 @@ function setAiMessageContent(node, content) {
   const body = node?.querySelector?.(".ai-message-body");
   if (!body) return;
   const shouldStickToBottom = isAiPanelNearBottom();
-  body.textContent = "";
   if (node.classList.contains("ai-message-assistant")) {
-    body.appendChild(renderAiMarkdown(content));
+    const parts = ensureAiMessageParts(node);
+    if (!parts) return;
+    parts.thinkingBlock?.remove();
+    parts.contentWrap.textContent = "";
+    parts.contentWrap.appendChild(renderAiMarkdown(content));
     enhanceAiCodeBlocks(body);
   } else if (node.classList.contains("ai-message-error")) {
+    body.textContent = "";
     body.appendChild(renderAiError(content));
   } else {
+    body.textContent = "";
     body.textContent = content;
   }
   scrollAiPanelToBottom({ force: shouldStickToBottom });
 }
 
 function updateAiMessageWithReasoning(node, reasoning, content) {
-  const body = node?.querySelector?.(".ai-message-body");
-  if (!body) return;
+  const parts = ensureAiMessageParts(node);
+  if (!parts) return;
+  const { body, contentWrap } = parts;
   const shouldStickToBottom = isAiPanelNearBottom();
   // Preserve user's manual expand state on the thinking block
-  let thinkingBlock = body.querySelector(".ai-thinking-block");
+  let thinkingBlock = parts.thinkingBlock;
   const wasOpen = thinkingBlock?.open;
   if (reasoning) {
     if (!thinkingBlock) {
       thinkingBlock = renderAiThinkingBlock(reasoning);
-      body.insertBefore(thinkingBlock, body.firstChild);
+      body.insertBefore(thinkingBlock, contentWrap);
     } else {
       const contentDiv = thinkingBlock.querySelector(".ai-thinking-content");
       if (contentDiv) {
@@ -4664,20 +4781,13 @@ function updateAiMessageWithReasoning(node, reasoning, content) {
     thinkingBlock.remove();
     thinkingBlock = null;
   }
-  let contentWrap = body.querySelector(".ai-message-content");
   if (content) {
-    if (!contentWrap) {
-      contentWrap = document.createElement("div");
-      contentWrap.className = "ai-message-content";
-      contentWrap.appendChild(renderAiMarkdown(content));
-      body.appendChild(contentWrap);
-    } else {
-      contentWrap.textContent = "";
-      contentWrap.appendChild(renderAiMarkdown(content));
-    }
-  } else if (contentWrap) {
-    contentWrap.remove();
+    contentWrap.textContent = "";
+    contentWrap.appendChild(renderAiMarkdown(content));
+  } else {
+    contentWrap.textContent = "";
   }
+  ensureAiMessageParts(node);
   enhanceAiCodeBlocks(body);
   scrollAiPanelToBottom({ force: shouldStickToBottom });
 }
@@ -4761,6 +4871,7 @@ async function executeAiCommand(command) {
     showToast("当前没有可执行命令的终端会话。", "error", 3600);
     return;
   }
+  refitActiveTerminalPanes({ reason: "ai-command-before", forceBottom: true, frames: 1 });
   const buffer = pane.term?.buffer?.active;
   const cursor = buffer ? buffer.length : 0;
   const before = getActiveTerminalSnapshot(240);
@@ -4768,6 +4879,7 @@ async function executeAiCommand(command) {
     await sendTextToPane(pane, command, { submit: true });
     pane.term?.focus?.();
     await waitForTerminalOutputSettle(before, { maxMs: commandWaitMaxMs(command) });
+    refitActiveTerminalPanes({ reason: "ai-command-after", forceBottom: true, frames: 2 });
     keepPaneTerminalAtBottom(pane, { force: true });
     return cursor;
   } catch (e) {
@@ -4941,6 +5053,7 @@ async function continueAiAfterCommands(results, { totalCommands = 0 } = {}) {
     ];
   if (summary) systemParts.push(`\n对话摘要：\n${summary}`);
   if (!includeCommandOutput) systemParts.push("用户当前选择了不附带终端内容，不要基于终端输出做判断。");
+  systemParts.push(aiExecutableCommandFormatPrompt());
   const messages = [{ role: "system", content: withGlobalAiPrompt(systemParts.join("\n")) }];
   if (terminalOutput) {
     const label = executed.length ? "从终端获取到的命令执行输出" : "从当前终端获取到的最新内容";
@@ -5045,6 +5158,18 @@ function splitAiCommandBlockForApproval(command) {
   return lines;
 }
 
+function getAiContinuedCommandCount(message) {
+  const value = Number(message?.continuedCommandCount);
+  return Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function storeAiContinuedCommandCountForMessage(messageNode, count) {
+  const message = aiMessageByNode.get(messageNode);
+  if (!message) return;
+  message.continuedCommandCount = count;
+  storeAiConversationForActivePane();
+}
+
 function ensureAiMultiCommandControls(messageNode, totalCommands) {
   if (!messageNode || totalCommands < 1) return null;
   let state = aiMultiCommandState.get(messageNode);
@@ -5052,7 +5177,7 @@ function ensureAiMultiCommandControls(messageNode, totalCommands) {
     state = {
       totalCommands,
       executedCount: 0,
-      lastContinuedCount: 0,
+      lastContinuedCount: null,
       results: [],
       continuing: false,
       controls: null,
@@ -5061,21 +5186,21 @@ function ensureAiMultiCommandControls(messageNode, totalCommands) {
     };
     const message = aiMessageByNode.get(messageNode);
     const storedResults = Array.isArray(message?.commandResults) ? message.commandResults : [];
+    state.lastContinuedCount = getAiContinuedCommandCount(message);
     if (storedResults.length) {
       state.results = storedResults.map((item) => ({
         command: String(item?.command || ""),
         output: typeof item?.output === "string" ? item.output : "",
       })).filter((item) => item.command.trim());
       state.executedCount = state.results.length;
-      state.lastContinuedCount = 0;
     }
     aiMultiCommandState.set(messageNode, state);
   } else {
     state.totalCommands = Math.max(state.totalCommands || 0, totalCommands);
   }
   if (!state.controls || !state.controls.isConnected) {
-    const body = messageNode.querySelector(".ai-message-body");
-    if (!body) return state;
+    const parts = ensureAiMessageParts(messageNode);
+    if (!parts) return state;
     const controls = document.createElement("div");
     controls.className = "ai-message-actions";
     const hint = document.createElement("div");
@@ -5086,22 +5211,26 @@ function ensureAiMultiCommandControls(messageNode, totalCommands) {
     button.addEventListener("click", async () => {
       const current = aiMultiCommandState.get(messageNode);
       if (!current || current.continuing) return;
+      if (current.lastContinuedCount !== null && current.lastContinuedCount >= current.executedCount) return;
+      current.lastContinuedCount = current.executedCount;
+      storeAiContinuedCommandCountForMessage(messageNode, current.lastContinuedCount);
       current.continuing = true;
       updateAiMultiCommandControls(messageNode);
       try {
         await continueAiAfterCommands(current.results, { totalCommands: current.totalCommands });
-        current.lastContinuedCount = current.executedCount;
       } finally {
         current.continuing = false;
         updateAiMultiCommandControls(messageNode);
       }
     });
     controls.append(hint, button);
-    body.appendChild(controls);
+    parts.actionsSlot.textContent = "";
+    parts.actionsSlot.appendChild(controls);
     state.controls = controls;
     state.hint = hint;
     state.button = button;
   }
+  ensureAiMessageParts(messageNode);
   updateAiMultiCommandControls(messageNode);
   return state;
 }
@@ -5118,6 +5247,11 @@ function updateAiMultiCommandControls(messageNode) {
   if (state.continuing) {
     state.button.disabled = true;
     state.button.textContent = "分析中...";
+    return;
+  }
+  if (state.lastContinuedCount !== null && state.lastContinuedCount >= executed) {
+    state.button.disabled = true;
+    state.button.textContent = "已分析";
     return;
   }
   state.button.disabled = false;
@@ -5513,6 +5647,19 @@ function withGlobalAiPrompt(system) {
   return extra ? `${system}\n\n用户的自定义全局要求（请优先遵守）：\n${extra}` : system;
 }
 
+function aiExecutableCommandFormatPrompt() {
+  return [
+    "ZeroTerm executable command format:",
+    "- If the user needs to run something, provide the exact runnable command in a fenced code block whose language is one of: bash, sh, shell, zsh, powershell, pwsh, ps1, cmd, bat, batch.",
+    "- Short inline code is also runnable only when it is one line, 140 characters or less, starts with a command name or sudo, and is not a URL, domain, heredoc starter, or shell control keyword.",
+    "- Do not put runnable commands in terminal, text, log, output, or txt fenced blocks; ZeroTerm treats those as non-executable output.",
+    "- Do not mix terminal prompts, command output, explanations, or error logs inside runnable command blocks.",
+    "- Prefer one command per runnable fenced block. Use a multi-line command block only when it must run as one script, such as heredoc, control flow, continuation, or grouped commands.",
+    "- Use ```terminal fenced blocks only for observed terminal output, logs, or errors.",
+    "- Do not merely say in prose that the user should run a command. When execution is needed, include the command in one of the executable formats above.",
+  ].join("\n");
+}
+
 async function loadAiConfig() {
   if (aiConfigLoaded) return aiStore;
   if (aiConfigLoadPromise) return aiConfigLoadPromise;
@@ -5609,8 +5756,9 @@ async function sendAiMessage(text) {
   storeAiConversationForActivePane();
   appendAiMessage("user", text);
   const system = "你是 ZeroTerm 的 AI 助手。用户是普通用户，不一定懂命令。请先用人话解释和规划，不要假装已经执行命令。需要用户执行命令时，一次只建议下一条最有用的命令；每个 bash/shell fenced code block 只能包含一条命令。引用终端输出、报错或日志时必须使用 ```terminal 代码块，不要使用 bash。";
+  const systemWithCommandFormat = [system, aiExecutableCommandFormatPrompt()].join("\n");
   const terminalContext = shouldAttachTerminalContext(text) ? buildAiTerminalContext() : "";
-  const messages = [{ role: "system", content: withGlobalAiPrompt(system) }];
+  const messages = [{ role: "system", content: withGlobalAiPrompt(systemWithCommandFormat) }];
   if (terminalContext) messages.push({ role: "system", content: terminalContext });
   messages.push(...redactAiMessagesForRequest(aiMessages.slice(-10), { includeTerminalContent: aiContextMode !== "off" }));
   try {
@@ -5687,9 +5835,15 @@ const settingsNavAbout = document.getElementById("settings-nav-about");
 const settingsNavData = document.getElementById("settings-nav-data");
 const settingsAboutPanel = document.getElementById("settings-about-panel");
 const settingsDataPanel = document.getElementById("settings-data-panel");
-const settingsDataResetSettings = document.getElementById("settings-data-reset-settings");
-const settingsDataClearVault = document.getElementById("settings-data-clear-vault");
+const settingsDataClearOpen = document.getElementById("settings-data-clear-open");
 const settingsDataStatus = document.getElementById("settings-data-status");
+const settingsDataClearOverlay = document.getElementById("settings-data-clear-overlay");
+const settingsDataClearTitle = document.getElementById("settings-data-clear-title");
+const settingsDataClearMessage = document.getElementById("settings-data-clear-message");
+const settingsDataClearOptions = document.getElementById("settings-data-clear-options");
+const settingsDataClearWarning = document.getElementById("settings-data-clear-warning");
+const settingsDataClearCancel = document.getElementById("settings-data-clear-cancel");
+const settingsDataClearConfirm = document.getElementById("settings-data-clear-confirm");
 const settingsGeneralSubtabBasic = document.getElementById("settings-general-subtab-basic");
 const settingsGeneralSubtabSftp = document.getElementById("settings-general-subtab-sftp");
 const settingsGeneralBasicSection = document.getElementById("settings-general-basic-section");
@@ -5737,6 +5891,8 @@ const settingsTerminalShellReset = document.getElementById("settings-terminal-sh
 const settingsTerminalShellCurrent = document.getElementById("settings-terminal-shell-current");
 const settingsTerminalCwd = document.getElementById("settings-terminal-cwd");
 const settingsTerminalCwdBrowse = document.getElementById("settings-terminal-cwd-browse");
+const settingsTerminalSelectionMenuOrder = document.getElementById("settings-terminal-selection-menu-order");
+const settingsTerminalSelectionMenuOrderReset = document.getElementById("settings-terminal-selection-menu-order-reset");
 const settingsTerminalFontPreview = document.getElementById("settings-terminal-font-preview");
 const terminalThemeListLight = document.getElementById("terminal-theme-list-light");
 const terminalThemeListDark = document.getElementById("terminal-theme-list-dark");
@@ -5840,6 +5996,7 @@ let groupsContextGroupId = null;
 let terminalSelectionMenuPaneId = null;
 let terminalSelectionMenuText = "";
 let terminalSelectionMenuUrlValue = "";
+let terminalSelectionMenuSftpPath = "";
 let sftpFollowPollTimer = null;
 let sftpFollowPollingTick = false;
 const SETTINGS_KEY_SFTP_AUTO_DETECT = "zeroterm.settings.sftp.auto_detect";
@@ -5855,6 +6012,8 @@ const SETTINGS_KEY_TERMINAL_FONT_SIZE = "zeroterm.settings.terminal.font_size";
 const SETTINGS_KEY_TERMINAL_LOCAL_SHELL = "zeroterm.settings.terminal.local_shell";
 const SETTINGS_KEY_TERMINAL_LOCAL_CWD = "zeroterm.settings.terminal.local_cwd";
 const SETTINGS_KEY_TERMINAL_LINE_HEIGHT = "zeroterm.settings.terminal.line_height";
+const SETTINGS_KEY_TERMINAL_SELECTION_MENU_ORDER = "zeroterm.settings.terminal.selection_menu_order";
+const TERMINAL_SELECTION_MENU_DEFAULT_ORDER = Object.freeze(["url", "search", "copy", "sftp", "ai"]);
 const SETTINGS_KEY_APP_BG_OPACITY = "zeroterm.settings.app_background.opacity";
 const SETTINGS_KEY_APP_BG_BLUR = "zeroterm.settings.app_background.blur";
 const SETTINGS_KEY_APP_BG_ENABLED = "zeroterm.settings.app_background.enabled";
@@ -6436,7 +6595,10 @@ async function resetLocalSettingsToDefaults() {
     SETTINGS_KEY_TERMINAL_HIDDEN_BUILTIN_THEMES,
     SETTINGS_KEY_TERMINAL_FONT_FAMILY,
     SETTINGS_KEY_TERMINAL_FONT_SIZE,
+    SETTINGS_KEY_TERMINAL_LOCAL_SHELL,
+    SETTINGS_KEY_TERMINAL_LOCAL_CWD,
     SETTINGS_KEY_TERMINAL_LINE_HEIGHT,
+    SETTINGS_KEY_TERMINAL_SELECTION_MENU_ORDER,
     SETTINGS_KEY_APP_BG_OPACITY,
     SETTINGS_KEY_APP_BG_BLUR,
     SETTINGS_KEY_APP_BG_ENABLED,
@@ -6487,6 +6649,9 @@ async function resetLocalSettingsToDefaults() {
   }
   if (settingsTerminalFontSize) settingsTerminalFontSize.value = String(getTerminalFontSize());
   if (settingsTerminalLineHeight) settingsTerminalLineHeight.value = String(getTerminalLineHeight());
+  populateLocalShellSelect();
+  updateLocalShellCurrentHint();
+  if (settingsTerminalCwd) settingsTerminalCwd.value = getLocalCwd();
   applyAppTheme();
   applyTerminalThemeToAllPanes();
   syncTerminalFontPreview();
@@ -7671,6 +7836,7 @@ function setWorkspaceMode(mode) {
     populateLocalShellSelect();
     updateLocalShellCurrentHint();
     if (settingsTerminalCwd) settingsTerminalCwd.value = getLocalCwd();
+    renderTerminalSelectionMenuOrderSettings();
     syncTerminalFontPreview();
     syncTerminalThemeCardsActive();
   } else if (showingPortForward) {
@@ -9417,12 +9583,258 @@ function hideGroupsContextMenu() {
   groupsContextGroupId = null;
 }
 
+function getTerminalSelectionMenuElement(itemId) {
+  switch (itemId) {
+    case "url":
+      return terminalSelectionMenuUrl;
+    case "search":
+      return terminalSelectionMenuSearch;
+    case "copy":
+      return terminalSelectionMenuCopy;
+    case "sftp":
+      return terminalSelectionMenuSftp;
+    case "ai":
+      return terminalSelectionMenuAi;
+    default:
+      return null;
+  }
+}
+
+function getTerminalSelectionMenuLabelKey(itemId) {
+  switch (itemId) {
+    case "url":
+      return "terminal.selection.open";
+    case "search":
+      return "terminal.selection.search";
+    case "copy":
+      return "terminal.selection.copy";
+    case "ai":
+      return "terminal.selection.ai";
+    default:
+      return "";
+  }
+}
+
+function getTerminalSelectionMenuOrderLabel(itemId) {
+  if (itemId === "sftp") return "SFTP";
+  return t(getTerminalSelectionMenuLabelKey(itemId));
+}
+
+function normalizeTerminalSelectionMenuOrder(order) {
+  const known = new Set(TERMINAL_SELECTION_MENU_DEFAULT_ORDER);
+  const next = [];
+  if (Array.isArray(order)) {
+    for (const item of order) {
+      if (known.has(item) && !next.includes(item)) next.push(item);
+    }
+  }
+  for (const item of TERMINAL_SELECTION_MENU_DEFAULT_ORDER) {
+    if (!next.includes(item)) next.push(item);
+  }
+  return next;
+}
+
+function getTerminalSelectionMenuOrder() {
+  try {
+    return normalizeTerminalSelectionMenuOrder(JSON.parse(localStorage.getItem(SETTINGS_KEY_TERMINAL_SELECTION_MENU_ORDER) || "[]"));
+  } catch {
+    return [...TERMINAL_SELECTION_MENU_DEFAULT_ORDER];
+  }
+}
+
+function saveTerminalSelectionMenuOrder(order) {
+  const next = normalizeTerminalSelectionMenuOrder(order);
+  localStorage.setItem(SETTINGS_KEY_TERMINAL_SELECTION_MENU_ORDER, JSON.stringify(next));
+  applyTerminalSelectionMenuOrder();
+  renderTerminalSelectionMenuOrderSettings();
+}
+
+function applyTerminalSelectionMenuOrder() {
+  if (!terminalSelectionMenu) return;
+  for (const itemId of getTerminalSelectionMenuOrder()) {
+    const el = getTerminalSelectionMenuElement(itemId);
+    if (el) terminalSelectionMenu.appendChild(el);
+  }
+}
+
+function syncTerminalSelectionMenuFirstVisible() {
+  let found = false;
+  for (const itemId of getTerminalSelectionMenuOrder()) {
+    const el = getTerminalSelectionMenuElement(itemId);
+    if (!el) continue;
+    el.classList.remove("first-visible");
+    if (!found && !el.hidden) {
+      el.classList.add("first-visible");
+      found = true;
+    }
+  }
+}
+
+const SETTINGS_DATA_CLEAR_ITEMS = Object.freeze([
+  "local_settings",
+  "vault_data",
+  "sync_profiles",
+  "ai_profiles",
+  "ai_sessions",
+  "remembered_password",
+]);
+
+function getSettingsDataClearItemLabel(itemId) {
+  return t(`settings.data.item.${itemId}`);
+}
+
+function setSettingsDataClearConfirmEnabled() {
+  if (!settingsDataClearConfirm || !settingsDataClearOptions) return;
+  const checked = settingsDataClearOptions.querySelectorAll("input[type='checkbox']:checked").length;
+  settingsDataClearConfirm.disabled = checked === 0;
+}
+
+function renderSettingsDataClearOptions() {
+  if (!settingsDataClearOptions) return;
+  settingsDataClearOptions.textContent = "";
+  for (const itemId of SETTINGS_DATA_CLEAR_ITEMS) {
+    const label = document.createElement("label");
+    label.className = "settings-data-clear-option";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.value = itemId;
+    checkbox.addEventListener("change", setSettingsDataClearConfirmEnabled);
+
+    const body = document.createElement("span");
+    body.className = "settings-data-clear-option-body";
+    const title = document.createElement("strong");
+    title.textContent = getSettingsDataClearItemLabel(itemId);
+    const desc = document.createElement("small");
+    desc.textContent = t(`settings.data.item.${itemId}.desc`);
+    body.append(title, desc);
+    label.append(checkbox, body);
+    settingsDataClearOptions.appendChild(label);
+  }
+  setSettingsDataClearConfirmEnabled();
+}
+
+function setSettingsDataClearDialogOpen(open) {
+  if (!settingsDataClearOverlay) return;
+  settingsDataClearOverlay.hidden = !open;
+  if (open) {
+    renderSettingsDataClearOptions();
+    requestAnimationFrame(() => {
+      settingsDataClearOptions?.querySelector("input[type='checkbox']")?.focus();
+    });
+  }
+}
+
+function getSelectedSettingsDataClearItems() {
+  if (!settingsDataClearOptions) return [];
+  return Array.from(settingsDataClearOptions.querySelectorAll("input[type='checkbox']:checked"))
+    .map((input) => input.value)
+    .filter((value) => SETTINGS_DATA_CLEAR_ITEMS.includes(value));
+}
+
+async function clearAllAiProfiles() {
+  await loadAiConfig().catch(() => {});
+  const ids = Array.isArray(aiStore.profiles) ? aiStore.profiles.map((profile) => profile.id).filter(Boolean) : [];
+  let latestStore = null;
+  for (const id of ids) {
+    latestStore = await invoke("delete_ai_profile", { id });
+  }
+  if (latestStore) applyAiStore(latestStore);
+  else applyAiStore({ version: 2, profiles: [], activeProfileId: "" });
+  if (aiEditingProfileId) cancelAiEditor();
+}
+
+async function clearAllAiSessionHistory() {
+  const wasTemporary = aiCurrentSessionTemporary;
+  await invoke("clear_ai_sessions");
+  aiSessionItems = [];
+  clearAiSessionIdentitiesForScope();
+  if (aiMessages.length) {
+    aiCurrentSessionTemporary = wasTemporary;
+    storeAiConversationForActivePane({ persist: false });
+  }
+  renderAiSessions();
+}
+
+async function clearSelectedSettingsData(itemIds) {
+  const selected = new Set(itemIds);
+  if (selected.has("local_settings")) {
+    await resetLocalSettingsToDefaults();
+  }
+  if (selected.has("remembered_password")) {
+    await invoke("forget_keychain");
+  }
+  if (selected.has("ai_profiles")) {
+    await clearAllAiProfiles();
+  }
+  if (selected.has("ai_sessions")) {
+    await clearAllAiSessionHistory();
+  }
+  if (selected.has("sync_profiles") && !selected.has("vault_data")) {
+    await invoke("delete_all_sync_profiles");
+    await loadSyncProfiles().catch(() => {});
+  }
+  if (selected.has("vault_data")) {
+    await invoke("clear_vault_data");
+    await refreshAllSyncedViewsFromVault();
+    await loadSyncProfiles().catch(() => {});
+  }
+}
+
+function renderTerminalSelectionMenuOrderSettings() {
+  if (!settingsTerminalSelectionMenuOrder) return;
+  const order = getTerminalSelectionMenuOrder();
+  settingsTerminalSelectionMenuOrder.textContent = "";
+  order.forEach((itemId) => {
+    const row = document.createElement("div");
+    row.className = "terminal-menu-order-item";
+    row.draggable = true;
+    row.dataset.menuItem = itemId;
+    row.title = getTerminalSelectionMenuOrderLabel(itemId);
+
+    const handle = document.createElement("span");
+    handle.className = "terminal-menu-order-handle";
+    handle.textContent = "⋮⋮";
+    handle.setAttribute("aria-hidden", "true");
+
+    const label = document.createElement("span");
+    label.className = "terminal-menu-order-label";
+    label.textContent = getTerminalSelectionMenuOrderLabel(itemId);
+
+    row.addEventListener("dragstart", (ev) => {
+      row.classList.add("dragging");
+      ev.dataTransfer?.setData("text/plain", itemId);
+      if (ev.dataTransfer) ev.dataTransfer.effectAllowed = "move";
+    });
+    row.addEventListener("dragend", () => row.classList.remove("dragging"));
+    row.addEventListener("dragover", (ev) => {
+      ev.preventDefault();
+      if (ev.dataTransfer) ev.dataTransfer.dropEffect = "move";
+    });
+    row.addEventListener("drop", (ev) => {
+      ev.preventDefault();
+      const dragged = ev.dataTransfer?.getData("text/plain") || "";
+      if (!dragged || dragged === itemId) return;
+      const next = getTerminalSelectionMenuOrder().filter((item) => item !== dragged);
+      const targetIndex = next.indexOf(itemId);
+      if (targetIndex < 0) return;
+      const rect = row.getBoundingClientRect();
+      const afterTarget = ev.clientX > rect.left + rect.width / 2;
+      next.splice(targetIndex + (afterTarget ? 1 : 0), 0, dragged);
+      saveTerminalSelectionMenuOrder(next);
+    });
+
+    row.append(handle, label);
+    settingsTerminalSelectionMenuOrder.appendChild(row);
+  });
+}
+
 function hideTerminalSelectionMenu() {
   if (!terminalSelectionMenu) return;
   terminalSelectionMenu.hidden = true;
   terminalSelectionMenuPaneId = null;
   terminalSelectionMenuText = "";
   terminalSelectionMenuUrlValue = "";
+  terminalSelectionMenuSftpPath = "";
 }
 
 function normalizeOpenableSelectionUrl(text) {
@@ -9432,6 +9844,26 @@ function normalizeOpenableSelectionUrl(text) {
   const ipv4Pattern = /^(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}(?::\d{1,5})?(?:\/[\w\-./?%&=+#:]*)?$/;
   if (!urlPattern.test(value) && !ipv4Pattern.test(value)) return "";
   return /^https?:\/\//i.test(value) ? value : `http://${value}`;
+}
+
+function normalizeTerminalSelectionPath(text) {
+  let value = String(text || "").trim();
+  if (!value || value.length > 512) return "";
+  value = value.replace(/^[`"'([{<]+/, "").replace(/[`"',;:)\]}>]+$/, "").trim();
+  if (!value || /\r|\n|\t/.test(value)) return "";
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) return "";
+  if (/^[\w.-]+\.[a-z]{2,}(?:\/.*)?$/i.test(value)) return "";
+  if (value.includes("\0")) return "";
+
+  const posixRooted = value.startsWith("/");
+  const homeRooted = /^~(?:\/|$)/.test(value);
+  const relativeRooted = /^(?:\.{1,2})(?:\/|\\|$)/.test(value);
+  const windowsDrive = /^[A-Za-z]:[\\/]/.test(value);
+  const windowsUnc = /^\\\\[^\\]+\\[^\\]+/.test(value);
+  const hasSeparator = /[\\/]/.test(value);
+  if (!(posixRooted || homeRooted || relativeRooted || windowsDrive || windowsUnc)) return "";
+  if (!hasSeparator && !homeRooted) return "";
+  return value;
 }
 
 function showTerminalSelectionMenu(pane, text, x, y) {
@@ -9444,9 +9876,15 @@ function showTerminalSelectionMenu(pane, text, x, y) {
   terminalSelectionMenuPaneId = pane.id;
   terminalSelectionMenuText = selectedText;
   terminalSelectionMenuUrlValue = normalizeOpenableSelectionUrl(selectedText);
+  terminalSelectionMenuSftpPath = normalizeTerminalSelectionPath(selectedText);
+  applyTerminalSelectionMenuOrder();
   if (terminalSelectionMenuUrl) {
     terminalSelectionMenuUrl.hidden = !terminalSelectionMenuUrlValue;
   }
+  if (terminalSelectionMenuSftp) {
+    terminalSelectionMenuSftp.hidden = !terminalSelectionMenuSftpPath;
+  }
+  syncTerminalSelectionMenuFirstVisible();
   terminalSelectionMenu.style.left = "0px";
   terminalSelectionMenu.style.top = "0px";
   terminalSelectionMenu.hidden = false;
@@ -9490,12 +9928,77 @@ async function openTerminalSelectionUrl() {
   }
 }
 
+function buildTerminalSelectionSearchUrl(text) {
+  const query = String(text || "").trim().replace(/\s+/g, " ");
+  if (!query) return "";
+  return `https://www.bing.com/search?q=${encodeURIComponent(query)}`;
+}
+
+async function searchTerminalSelectionText() {
+  const url = buildTerminalSelectionSearchUrl(terminalSelectionMenuText);
+  if (!url) return;
+  try {
+    await invoke("plugin:opener|open_url", { url });
+  } catch (e) {
+    try {
+      const opened = window.open(url, "_blank", "noopener");
+      if (opened) return;
+    } catch {}
+    showToast(t("terminal.selection.search_failed", { error: e }), "error", 3200);
+    throw e;
+  }
+}
+
 function focusAiPanelForPaneId(paneId) {
   const tab = getActiveTab();
   if (tab && paneId) tab.activePaneId = paneId;
   syncAiConversationToActivePane();
   setTerminalSidePanel("ai");
   aiComposeInput?.focus();
+}
+
+function activateTerminalPaneById(paneId) {
+  const tab = getActiveTab();
+  if (!tab || !paneId) return null;
+  const pane = tab.panes.find((item) => item.id === paneId) || null;
+  if (!pane) return null;
+  if (tab.activePaneId !== pane.id) {
+    tab.activePaneId = pane.id;
+    renderTerminalWorkspace();
+  }
+  return pane;
+}
+
+function resolveTerminalSelectionPathForSftpPane(sftpPane, rawPath, terminalPane) {
+  const raw = String(rawPath || "").trim();
+  if (!raw) return "";
+  if (isLocalPane(sftpPane)) {
+    return resolveLocalTargetPath(sftpPane.path || "/", raw);
+  }
+  const unixRaw = raw.replace(/\\/g, "/");
+  if (unixRaw.startsWith("/")) return normalizeAbsolutePath(unixRaw);
+  if (unixRaw === "~" || unixRaw.startsWith("~/")) {
+    const user = String(terminalPane?.host?.user || "").trim();
+    const home = user === "root" ? "/root" : user ? `/home/${user}` : "/";
+    return unixRaw === "~" ? home : normalizeAbsolutePath(joinPath(home, unixRaw.slice(2)));
+  }
+  return normalizeAbsolutePath(joinPath(sftpPane.path || "/", unixRaw));
+}
+
+async function openTerminalSelectionPathInSftp() {
+  const rawPath = terminalSelectionMenuSftpPath;
+  if (!rawPath) return;
+  const terminalPane = activateTerminalPaneById(terminalSelectionMenuPaneId);
+  if (!terminalPane) return;
+  setTerminalSidePanel("sftp", { skipSftpConnect: true });
+  const sftpPane = sftpPanes.terminal;
+  await connectTerminalSftpToActivePane();
+  if (!sftpPane || !isPaneConnected(sftpPane)) {
+    throw new Error(sftpPane?.statusEl?.textContent || t("sftp.status.not_connected"));
+  }
+  const targetPath = resolveTerminalSelectionPathForSftpPane(sftpPane, rawPath, terminalPane);
+  if (!targetPath) return;
+  await navigateSftpPane(sftpPane, targetPath, { source: "user" });
 }
 
 async function sendTerminalSelectionToAi() {
@@ -10061,6 +10564,7 @@ function applyI18n() {
   setText("files-menu-copy", "files.menu.copy_to_target");
   setText("files-menu-refresh", "files.button.refresh");
   setText("files-menu-mkdir", "files.button.new_folder");
+  setText("files-menu-new-file", "files.button.new_file");
   setText("files-menu-upload", "files.button.upload");
   setText("files-menu-hidden", "files.menu.show_hidden");
   setText("files-menu-permissions", "files.menu.permissions");
@@ -10237,8 +10741,11 @@ function applyI18n() {
   setPlaceholder("ai-compose-input", "ai.compose.placeholder");
   setAttr("terminal-selection-menu-url", "aria-label", "terminal.selection.open_url");
   setAttr("terminal-selection-menu-url", "title", "terminal.selection.open_url");
+  setAttr("terminal-selection-menu-search", "aria-label", "terminal.selection.search");
+  setAttr("terminal-selection-menu-search", "title", "terminal.selection.search");
   setText("terminal-selection-menu-url-label", "terminal.selection.open");
   setText("terminal-selection-menu-copy-label", "terminal.selection.copy");
+  setText("terminal-selection-menu-sftp-label", "terminal.selection.sftp");
   setText("terminal-selection-menu-ai-label", "terminal.selection.ai");
   setAttr("ai-context-toggle", "title", "ai.context.toggle.title");
   setText("ai-session-dialog-title", "ai.session.title");
@@ -10280,6 +10787,10 @@ function applyI18n() {
   setText("settings-terminal-cwd-hint", "settings.terminal.cwd.hint");
   setText("settings-terminal-cwd-browse", "settings.terminal.cwd.browse");
   setPlaceholder("settings-terminal-cwd", "settings.terminal.cwd.placeholder");
+  setText("settings-terminal-selection-menu-order-label", "settings.terminal.selection_menu_order.label");
+  setText("settings-terminal-selection-menu-order-hint", "settings.terminal.selection_menu_order.hint");
+  setText("settings-terminal-selection-menu-order-reset", "settings.terminal.selection_menu_order.reset");
+  renderTerminalSelectionMenuOrderSettings();
   updateLocalShellCurrentHint();
   setText("settings-nav-sftp", "settings.nav.sftp");
   setText("settings-nav-hotkeys", "settings.nav.hotkeys");
@@ -10408,8 +10919,13 @@ function applyI18n() {
   setText("settings-sync-compact-now", "settings.sync.button.compact_now");
   setText("settings-data-title", "settings.data.title");
   setText("settings-data-desc", "settings.data.desc");
-  setText("settings-data-reset-settings", "settings.data.button.reset_settings");
-  setText("settings-data-clear-vault", "settings.data.button.clear_vault");
+  setText("settings-data-clear-open", "settings.data.button.clear");
+  setText("settings-data-clear-title", "settings.data.dialog.title");
+  setText("settings-data-clear-message", "settings.data.dialog.message");
+  setText("settings-data-clear-warning", "settings.data.dialog.warning");
+  setText("settings-data-clear-cancel", "input.button.cancel");
+  setText("settings-data-clear-confirm", "settings.data.dialog.confirm");
+  renderSettingsDataClearOptions();
   setOptionText("settings-sync-backend", "local_folder", "settings.sync.backend.local_folder");
   setOptionText("settings-sync-backend", "sftp", "settings.sync.backend.sftp");
   setOptionText("settings-sync-backend", "webdav", "settings.sync.backend.webdav");
@@ -10867,41 +11383,25 @@ aiModelPill?.addEventListener("click", (ev) => {
 });
 aiModelMenu?.addEventListener("click", (ev) => ev.stopPropagation());
 document.addEventListener("click", () => setAiModelMenuOpen(false));
-settingsDataResetSettings?.addEventListener("click", async () => {
-  const ok = await openConfirmDialog({
-    title: t("settings.data.title"),
-    message: t("settings.data.confirm.reset_settings"),
-    okText: t("settings.data.button.reset_settings"),
-    cancelText: t("input.button.cancel"),
-  });
-  if (!ok) return;
-  await runSyncButtonAction(settingsDataResetSettings, t("settings.data.button.reset_settings"), async () => {
-    try {
-      await resetLocalSettingsToDefaults();
-      if (settingsDataStatus) settingsDataStatus.textContent = t("settings.data.status.settings_reset");
-      showToast(t("settings.data.status.settings_reset"), "success");
-    } catch (e) {
-      const msg = String(e);
-      if (settingsDataStatus) settingsDataStatus.textContent = msg;
-      showToast(msg, "error", 4200);
-    }
-  });
+settingsDataClearOpen?.addEventListener("click", () => setSettingsDataClearDialogOpen(true));
+settingsDataClearCancel?.addEventListener("click", () => setSettingsDataClearDialogOpen(false));
+settingsDataClearOverlay?.addEventListener("click", (ev) => {
+  if (ev.target === settingsDataClearOverlay) setSettingsDataClearDialogOpen(false);
 });
-settingsDataClearVault?.addEventListener("click", async () => {
-  const ok = await openConfirmDialog({
-    title: t("settings.data.title"),
-    message: t("settings.data.confirm.clear_vault"),
-    okText: t("settings.data.button.clear_vault"),
-    cancelText: t("input.button.cancel"),
-  });
-  if (!ok) return;
-  await runSyncButtonAction(settingsDataClearVault, t("settings.data.button.clear_vault"), async () => {
+settingsDataClearConfirm?.addEventListener("click", async () => {
+  const selected = getSelectedSettingsDataClearItems();
+  if (!selected.length) {
+    showToast(t("settings.data.dialog.none"), "error", 2200);
+    return;
+  }
+  setSettingsDataClearDialogOpen(false);
+  await runSyncButtonAction(settingsDataClearOpen, t("settings.data.dialog.confirm"), async () => {
     try {
-      await invoke("clear_vault_data");
-      if (settingsDataStatus) settingsDataStatus.textContent = t("settings.data.status.cleared");
-      await refreshAllSyncedViewsFromVault();
-      await loadSyncProfiles().catch(() => {});
-      showToast(t("settings.data.status.cleared"), "success");
+      await clearSelectedSettingsData(selected);
+      const labels = selected.map(getSettingsDataClearItemLabel).join(", ");
+      const message = t("settings.data.status.cleared_selected", { items: labels });
+      if (settingsDataStatus) settingsDataStatus.textContent = message;
+      showToast(message, "success", 2600);
     } catch (e) {
       const msg = String(e);
       if (settingsDataStatus) settingsDataStatus.textContent = msg;
@@ -11489,6 +11989,11 @@ settingsTerminalCwdBrowse?.addEventListener("click", async () => {
   } catch (e) {
     console.warn("pick local cwd failed", e);
   }
+});
+settingsTerminalSelectionMenuOrderReset?.addEventListener("click", () => {
+  localStorage.removeItem(SETTINGS_KEY_TERMINAL_SELECTION_MENU_ORDER);
+  applyTerminalSelectionMenuOrder();
+  renderTerminalSelectionMenuOrderSettings();
 });
 settingsTerminalLineHeight?.addEventListener("change", () => {
   localStorage.setItem(SETTINGS_KEY_TERMINAL_LINE_HEIGHT, String(settingsTerminalLineHeight.value || "1.25"));
@@ -12246,21 +12751,26 @@ async function openLocalTerminalInTab() {
   // pane size to settle before sizing the PTY. Otherwise the cell size is
   // measured with the fallback font and the PTY's column count can disagree
   // with what xterm renders.
-  await waitForTerminalFonts();
-  await stabilizePaneSize(pane, 2);
+  ensurePaneTerminal(pane);
+  await preparePaneTerminalForSession(pane, 2);
 
   const cols = pane.term ? pane.term.cols : 80;
   const rows = pane.term ? pane.term.rows : 24;
   const sessionId = await invoke("create_local_terminal_session", { cols, rows, shell: getLocalShellPath() || null, cwd: getLocalCwd() || null });
   pane.sessionId = sessionId;
+  pane.lastSentCols = cols;
+  pane.lastSentRows = rows;
   pane.statusEl.textContent = t("terminal.status.local");
   if (pane.reconnectBtn) pane.reconnectBtn.hidden = true;
   await wirePaneSessionEvents(pane, sessionId);
   pane.reconnectFactory = async () => {
+    await preparePaneTerminalForSession(pane, 1);
     const cols2 = pane.term ? pane.term.cols : 80;
     const rows2 = pane.term ? pane.term.rows : 24;
     const sid2 = await invoke("create_local_terminal_session", { cols: cols2, rows: rows2, shell: getLocalShellPath() || null, cwd: getLocalCwd() || null });
     pane.sessionId = sid2;
+    pane.lastSentCols = cols2;
+    pane.lastSentRows = rows2;
     if (pane.statusEl) pane.statusEl.textContent = t("terminal.status.local");
     if (pane.reconnectBtn) pane.reconnectBtn.hidden = true;
     await wirePaneSessionEvents(pane, sid2);
@@ -12342,11 +12852,13 @@ function installAiPanelResize() {
       const clamped = Math.max(300, Math.min(620, width));
       terminalSessionLayout.style.setProperty("--ai-panel-width", `${clamped}px`);
       if (aiPanelCollapsed) setAiPanelCollapsed(false);
+      refitActiveTerminalPanes({ reason: "side-panel-resize", frames: 0 });
     };
     const onUp = () => {
       document.body.classList.remove("resizing-ai-panel");
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      refitActiveTerminalPanes({ reason: "side-panel-resize-end", forceBottom: true, frames: 2 });
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp, { once: true });
@@ -13365,8 +13877,16 @@ async function stabilizePaneSize(pane, rounds = 2) {
   if (!pane.term || !pane.fitAddon) return;
   for (let i = 0; i < rounds; i += 1) {
     await nextFrame();
+    refreshPaneFontMetrics(pane);
     fitPane(pane);
   }
+}
+
+async function preparePaneTerminalForSession(pane, rounds = 2) {
+  if (!pane?.term) return;
+  await waitForTerminalFonts();
+  refreshPaneFontMetrics(pane);
+  await stabilizePaneSize(pane, rounds);
 }
 
 async function connectPaneSession(pane) {
@@ -13385,8 +13905,7 @@ async function connectPaneSession(pane) {
     if (pane.statusEl) pane.statusEl.textContent = t("terminal.error.connect_failed_status", { error: "terminal init failed" });
     return;
   }
-  await waitForTerminalFonts();
-  await stabilizePaneSize(pane, 2);
+  await preparePaneTerminalForSession(pane, 2);
 
   if (pane.sessionId !== null) {
     await disconnectPaneSession(pane, { dispose: false });
@@ -14161,6 +14680,7 @@ const filesMenuDelete = document.getElementById("files-menu-delete");
 const filesMenuEntrySeparator = document.getElementById("files-menu-entry-separator");
 const filesMenuRefresh = document.getElementById("files-menu-refresh");
 const filesMenuMkdir = document.getElementById("files-menu-mkdir");
+const filesMenuNewFile = document.getElementById("files-menu-new-file");
 const filesMenuUpload = document.getElementById("files-menu-upload");
 const filesMenuHidden = document.getElementById("files-menu-hidden");
 const filesMenuPermissions = document.getElementById("files-menu-permissions");
@@ -15504,6 +16024,7 @@ function setFilesContextNodeVisible(el, visible) {
 function showFilesContextMenu(pane, entry, x, y) {
   const connected = isPaneConnected(pane);
   const local = isLocalPane(pane);
+  const isTerminalPane = isTerminalSideSftpPane(pane);
   const selectedEntries = connected ? getSelectedEntries(pane) : [];
   let targetEntry = entry || null;
   if (!targetEntry && selectedEntries.length === 1) {
@@ -15521,12 +16042,13 @@ function showFilesContextMenu(pane, entry, x, y) {
 
   setFilesContextNodeVisible(filesMenuOpen, true);
   setFilesContextNodeVisible(filesMenuOpenWith, true);
-  setFilesContextNodeVisible(filesMenuCopy, true);
+  setFilesContextNodeVisible(filesMenuCopy, !isTerminalPane);
   setFilesContextNodeVisible(filesMenuRename, true);
   setFilesContextNodeVisible(filesMenuDelete, true);
   setFilesContextNodeVisible(filesMenuEntrySeparator, true);
   setFilesContextNodeVisible(filesMenuRefresh, true);
   setFilesContextNodeVisible(filesMenuMkdir, true);
+  setFilesContextNodeVisible(filesMenuNewFile, isTerminalPane);
   setFilesContextNodeVisible(filesMenuUpload, true);
   setFilesContextNodeVisible(filesMenuHidden, true);
   setFilesContextNodeVisible(filesMenuPermissions, true);
@@ -15538,11 +16060,12 @@ function showFilesContextMenu(pane, entry, x, y) {
 
   filesMenuOpen.disabled = !(connected && hasSingleTarget);
   filesMenuOpenWith.disabled = !(connected && isFile);
-  filesMenuCopy.disabled = !(connected && !local && hasSingleTarget && isFile);
+  filesMenuCopy.disabled = !(connected && !local && !isTerminalPane && hasSingleTarget && isFile);
   filesMenuRename.disabled = !(connected && hasSingleTarget);
   filesMenuDelete.disabled = !(connected && hasDeleteTarget);
   filesMenuRefresh.disabled = !connected;
   filesMenuMkdir.disabled = !connected;
+  filesMenuNewFile.disabled = !(connected && isTerminalPane);
   filesMenuUpload.disabled = !connected || local;
   filesMenuHidden.disabled = !connected;
   filesMenuPermissions.disabled = !(connected && hasSingleTarget);
@@ -15553,7 +16076,6 @@ function showFilesContextMenu(pane, entry, x, y) {
   filesMenuHidden.textContent = pane.showHidden ? t("files.menu.hide_hidden") : t("files.menu.show_hidden");
 
   // "Pin path" is only offered in the terminal-side SFTP panel.
-  const isTerminalPane = isTerminalSideSftpPane(pane);
   setFilesContextNodeVisible(filesMenuPin, isTerminalPane);
   if (isTerminalPane) {
     const pinTargetIsDir = hasSingleTarget && targetEntry.kind === "dir";
@@ -15791,6 +16313,31 @@ async function sftpMkdir(pane) {
     await navigateSftpPane(pane, pane.path);
   } catch (e) {
     pane.statusEl.textContent = t("files.error.mkdir_failed", { error: e });
+  }
+}
+
+async function sftpCreateFile(pane) {
+  if (!isPaneConnected(pane)) return;
+  const name = await openTextInputDialog({
+    title: t("files.button.new_file"),
+    message: t("files.prompt.new_file"),
+  });
+  if (!name) return;
+  const path = joinPanePath(pane, name);
+  try {
+    if (isLocalPane(pane)) {
+      await invoke("local_write_text", { path, content: "" });
+    } else {
+      await invoke("sftp_write_text", {
+        sftpId: pane.sftpId,
+        path,
+        content: "",
+      });
+    }
+    pane.statusEl.textContent = t("files.status.created_file", { path });
+    await navigateSftpPane(pane, pane.path);
+  } catch (e) {
+    pane.statusEl.textContent = t("files.error.create_file_failed", { error: e });
   }
 }
 
@@ -16516,6 +17063,13 @@ filesMenuMkdir.addEventListener("click", async () => {
   await sftpMkdir(pane);
 });
 
+filesMenuNewFile.addEventListener("click", async () => {
+  const pane = getFilesContextPane();
+  hideFilesContextMenu();
+  if (!pane || !isPaneConnected(pane)) return;
+  await sftpCreateFile(pane);
+});
+
 filesMenuUpload.addEventListener("click", async () => {
   const pane = getFilesContextPane();
   hideFilesContextMenu();
@@ -16728,11 +17282,25 @@ terminalSelectionMenuUrl?.addEventListener("click", () => {
     .catch(() => {});
 });
 
+terminalSelectionMenuSearch?.addEventListener("click", () => {
+  searchTerminalSelectionText()
+    .then(() => hideTerminalSelectionMenu())
+    .catch(() => {});
+});
+
 terminalSelectionMenuCopy?.addEventListener("click", async () => {
   try {
     await copyTerminalSelectionMenuText();
     hideTerminalSelectionMenu();
   } catch {}
+});
+
+terminalSelectionMenuSftp?.addEventListener("click", () => {
+  openTerminalSelectionPathInSftp()
+    .catch((e) => {
+      showToast(t("terminal.selection.sftp_failed", { error: e }), "error", 3600);
+    })
+    .finally(() => hideTerminalSelectionMenu());
 });
 
 terminalSelectionMenuAi?.addEventListener("click", () => {
@@ -16937,6 +17505,9 @@ document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape" && terminalSelectionMenu && !terminalSelectionMenu.hidden) {
     hideTerminalSelectionMenu();
   }
+  if (ev.key === "Escape" && settingsDataClearOverlay && !settingsDataClearOverlay.hidden) {
+    setSettingsDataClearDialogOpen(false);
+  }
 });
 window.addEventListener("resize", () => {
   if (!filesContextMenu.hidden) hideFilesContextMenu();
@@ -16949,6 +17520,7 @@ window.addEventListener("blur", () => hideTerminalSelectionMenu());
 // Boot
 // --------------------------------------------------------------------------
 
+applyTerminalSelectionMenuOrder();
 applyI18n();
 loadNetworkProxyConfig({ quiet: true }).catch(() => {});
 refreshVaultStatus();
