@@ -10986,9 +10986,7 @@ function applyI18n() {
   } else {
     setText("file-editor-title", fileEditorState.dirty ? "editor.title.dirty" : "editor.title");
     if (fileEditorState.open) {
-      setText("file-editor-hint", "editor.hint.utf8_info", {
-        lines: fileEditorGetValue().split(/\r?\n/).length,
-      });
+      fileEditorHint.textContent = fileEditorTextInfo(fileEditorGetValue());
     }
   }
 
@@ -14869,6 +14867,7 @@ const fileEditorState = {
   paneKey: null,
   path: "",
   originalContent: "",
+  encoding: "UTF-8",
   dirty: false,
   saving: false,
 };
@@ -16628,6 +16627,7 @@ function resetFileEditorState() {
   fileEditorState.paneKey = null;
   fileEditorState.path = "";
   fileEditorState.originalContent = "";
+  fileEditorState.encoding = "UTF-8";
   fileEditorState.dirty = false;
   fileEditorState.saving = false;
   if (fileEditorAce) {
@@ -16648,6 +16648,13 @@ function resetFileEditorState() {
   fileEditorSaveButton.disabled = false;
   fileEditorCancelButton.disabled = false;
   setFileEditorError("");
+}
+
+function fileEditorTextInfo(content) {
+  const encoding = fileEditorState.encoding || "UTF-8";
+  const lines = String(content || "").split(/\r?\n/).length;
+  const suffix = encoding === "UTF-8" ? "Ctrl/Cmd + S to save" : "read-only";
+  return `${encoding} text · ${lines} lines · ${suffix}`;
 }
 
 async function openRemoteEditor(pane, entry) {
@@ -16693,14 +16700,14 @@ async function openRemoteEditor(pane, entry) {
     fileEditorState.paneKey = pane.key;
     fileEditorState.path = doc.path;
     fileEditorState.originalContent = doc.content;
+    fileEditorState.encoding = String(doc.encoding || "UTF-8");
     fileEditorSetValue(doc.content);
     fileEditorSetModeByPath(doc.path);
     fileEditorPath.textContent = `${doc.path} · ${formatSize(doc.size)}`;
-    fileEditorHint.textContent = t("editor.hint.utf8_info", {
-      lines: doc.content.split(/\r?\n/).length,
-    });
-    fileEditorSetReadOnly(false);
-    fileEditorSaveButton.disabled = false;
+    fileEditorHint.textContent = fileEditorTextInfo(doc.content);
+    const editable = fileEditorState.encoding === "UTF-8";
+    fileEditorSetReadOnly(!editable);
+    fileEditorSaveButton.disabled = !editable;
     setFileEditorDirty(false);
     refreshFileEditorLayout();
     fileEditorFocus();

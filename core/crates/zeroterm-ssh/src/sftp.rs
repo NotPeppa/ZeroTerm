@@ -83,6 +83,11 @@ pub struct ProgressTick {
 /// links while still remaining responsive to cancel / progress updates.
 pub const DEFAULT_CHUNK: usize = 512 * 1024;
 
+/// Default upload read-buffer size. The underlying SFTP writer splits this by
+/// the negotiated server write limit and keeps multiple WRITE requests in
+/// flight, so this can stay large without delaying progress.
+pub const DEFAULT_UPLOAD_CHUNK: usize = DEFAULT_CHUNK;
+
 /// Default number of READ requests kept in flight against a single file
 /// during a parallel download. A single-flight SFTP read is bounded by
 /// `chunk / RTT`; keeping N requests pipelined lifts that to roughly
@@ -376,27 +381,28 @@ impl Sftp {
             if n == 0 {
                 break;
             }
-            file.write_all(&buf[..n]).await?;
-            bytes_done += n as u64;
-            // Don't emit the final 100% tick here — `write_all` only
-            // queues the write into the SSH channel; the bytes aren't
-            // truly acknowledged until `flush` + `shutdown` below. If
-            // we reported 100% now the progress bar would sit at full
-            // while the remote finishes ACKing the final writes, which
-            // looks like a hang.
-            if bytes_done < size_hint.unwrap_or(u64::MAX) {
+            let mut written = 0;
+            while written < n {
+                if cancel.is_cancelled() {
+                    let _ = file.shutdown().await;
+                    return Err(SshError::Cancelled);
+                }
+                let accepted = file.write(&buf[written..n]).await?;
+                if accepted == 0 {
+                    let _ = file.shutdown().await;
+                    return Err(std::io::Error::from(std::io::ErrorKind::WriteZero).into());
+                }
+                written += accepted;
+                bytes_done += accepted as u64;
                 on_progress(ProgressTick {
                     bytes_done,
                     total: size_hint,
                 });
             }
         }
-        file.flush().await?;
         file.shutdown().await?;
-        // Every queued write has now been ACK'd by the remote — emit
-        // the final tick so the bar reaches 100% exactly when the
-        // transfer is truly complete, instead of when the last write
-        // was merely queued.
+        // Every queued write has now been acknowledged by the remote. Emit
+        // once more so callers can distinguish "queued" from fully complete.
         on_progress(ProgressTick {
             bytes_done,
             total: size_hint,
@@ -430,7 +436,7 @@ impl Sftp {
         self.upload_from_reader(
             remote,
             &mut cursor,
-            DEFAULT_CHUNK,
+            DEFAULT_UPLOAD_CHUNK,
             Some(data.len() as u64),
             CancellationToken::new(),
             |_| {},

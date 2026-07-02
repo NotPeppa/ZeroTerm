@@ -3309,18 +3309,13 @@ pub async fn local_read_text(
             max_len
         ));
     }
-    if bytes.contains(&0) {
-        return Err(format!(
-            "`{path}` looks like binary data (contains NUL bytes)"
-        ));
-    }
-    let content =
-        String::from_utf8(bytes).map_err(|_| format!("`{path}` is not valid UTF-8 text"))?;
+    let (content, encoding) = decode_editor_text(&path, bytes)?;
 
     Ok(RemoteTextFileDto {
         path,
         size: metadata.len(),
         content,
+        encoding,
     })
 }
 
@@ -5785,7 +5780,7 @@ async fn stream_local_file_to_remote(
                         .upload_from_reader(
                             &target,
                             &mut file,
-                            zeroterm_ssh::DEFAULT_CHUNK,
+                            zeroterm_ssh::DEFAULT_UPLOAD_CHUNK,
                             size_hint,
                             cancel,
                             progress_cb,
@@ -5805,7 +5800,7 @@ async fn stream_local_file_to_remote(
                 .upload_from_reader(
                     &target,
                     &mut file,
-                    zeroterm_ssh::DEFAULT_CHUNK,
+                    zeroterm_ssh::DEFAULT_UPLOAD_CHUNK,
                     size_hint,
                     cancel,
                     move |tick| {
@@ -5825,7 +5820,7 @@ async fn stream_local_file_to_remote(
                 .upload_from_reader(
                     &target,
                     &mut file,
-                    zeroterm_ssh::DEFAULT_CHUNK,
+                    zeroterm_ssh::DEFAULT_UPLOAD_CHUNK,
                     size_hint,
                     tokio_util::sync::CancellationToken::new(),
                     |_| {},
@@ -6196,7 +6191,7 @@ where
             .upload_from_reader(
                 &target,
                 &mut reader,
-                zeroterm_ssh::DEFAULT_CHUNK,
+                zeroterm_ssh::DEFAULT_UPLOAD_CHUNK,
                 size_hint,
                 cancel,
                 progress_cb,
@@ -6333,6 +6328,34 @@ pub struct RemoteTextFileDto {
     pub path: String,
     pub size: u64,
     pub content: String,
+    pub encoding: &'static str,
+}
+
+fn decode_editor_text(path: &str, bytes: Vec<u8>) -> Result<(String, &'static str), String> {
+    if bytes.contains(&0) {
+        return Err(format!(
+            "`{path}` looks like binary data (contains NUL bytes)"
+        ));
+    }
+    match String::from_utf8(bytes) {
+        Ok(content) => Ok((content, "UTF-8")),
+        Err(err) => {
+            let bytes = err.into_bytes();
+            for encoding in [
+                encoding_rs::GBK,
+                encoding_rs::WINDOWS_1252,
+                encoding_rs::SHIFT_JIS,
+                encoding_rs::EUC_KR,
+            ] {
+                let (content, _, had_errors) = encoding.decode(&bytes);
+                if !had_errors {
+                    return Ok((content.into_owned(), encoding.name()));
+                }
+            }
+            let (content, _, _) = encoding_rs::GBK.decode(&bytes);
+            Ok((content.into_owned(), "GBK (lossy)"))
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -6597,7 +6620,7 @@ pub async fn sftp_upload(
             sftp.upload_from_reader(
                 &remote,
                 &mut file,
-                zeroterm_ssh::DEFAULT_CHUNK,
+                zeroterm_ssh::DEFAULT_UPLOAD_CHUNK,
                 size_hint,
                 cancel,
                 progress_cb,
@@ -6639,7 +6662,7 @@ pub async fn sftp_upload_bytes(
             sftp.upload_from_reader(
                 &remote,
                 &mut cursor,
-                zeroterm_ssh::DEFAULT_CHUNK,
+                zeroterm_ssh::DEFAULT_UPLOAD_CHUNK,
                 size_hint,
                 cancel,
                 progress_cb,
@@ -6686,19 +6709,13 @@ pub async fn sftp_read_text(
             max_len
         ));
     }
-    if bytes.contains(&0) {
-        return Err(format!(
-            "`{path}` looks like binary data (contains NUL bytes)"
-        ));
-    }
-
-    let content =
-        String::from_utf8(bytes).map_err(|_| format!("`{path}` is not valid UTF-8 text"))?;
+    let (content, encoding) = decode_editor_text(&path, bytes)?;
 
     Ok(RemoteTextFileDto {
         path,
         size: metadata.size,
         content,
+        encoding,
     })
 }
 

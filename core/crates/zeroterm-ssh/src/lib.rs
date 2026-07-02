@@ -28,5 +28,5 @@ pub use session::{
 };
 pub use sftp::{
     DirEntry, FileKind, FileMetadata, ProgressTick, Sftp, DEFAULT_CHUNK,
-    DEFAULT_DOWNLOAD_PARALLELISM,
+    DEFAULT_DOWNLOAD_PARALLELISM, DEFAULT_UPLOAD_CHUNK,
 };

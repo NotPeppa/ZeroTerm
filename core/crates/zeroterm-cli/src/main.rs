@@ -690,7 +690,7 @@ async fn sftp_put(sftp: &zeroterm_ssh::Sftp, local: &Path, remote: &str) -> Resu
         .upload_from_reader(
             remote,
             &mut file,
-            zeroterm_ssh::DEFAULT_CHUNK,
+            zeroterm_ssh::DEFAULT_UPLOAD_CHUNK,
             size_hint,
             cancel,
             |tick| {
