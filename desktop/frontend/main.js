@@ -758,12 +758,14 @@ const I18N = {
     "ai.compose.hint": "Enter to send, Shift+Enter for newline",
     "ai.compose.send": "Send to AI",
     "terminal.selection.copy": "Copy",
+    "terminal.selection.execute": "Execute",
     "terminal.selection.ai": "AI",
     "terminal.selection.sftp": "SFTP to directory",
     "terminal.selection.open": "Open",
     "terminal.selection.search": "Search",
     "terminal.selection.open_url": "Open link",
     "terminal.selection.copy_failed": "Copy failed: {error}",
+    "terminal.selection.execute_failed": "Execute failed: {error}",
     "terminal.selection.search_failed": "Search failed: {error}",
     "terminal.selection.open_url_failed": "Open link failed: {error}",
     "terminal.selection.sftp_failed": "SFTP jump failed: {error}",
@@ -1630,12 +1632,14 @@ const I18N = {
     "ai.compose.hint": "Enter 发送，Shift+Enter 换行",
     "ai.compose.send": "发送给 AI",
     "terminal.selection.copy": "拷贝",
+    "terminal.selection.execute": "执行",
     "terminal.selection.ai": "AI",
     "terminal.selection.sftp": "SFTP 跳转到目录",
     "terminal.selection.open": "访问",
     "terminal.selection.search": "搜索",
     "terminal.selection.open_url": "打开链接",
     "terminal.selection.copy_failed": "复制失败：{error}",
+    "terminal.selection.execute_failed": "执行失败：{error}",
     "terminal.selection.search_failed": "搜索失败：{error}",
     "terminal.selection.open_url_failed": "打开链接失败：{error}",
     "terminal.selection.sftp_failed": "SFTP 跳转失败：{error}",
@@ -2446,6 +2450,7 @@ const terminalSelectionMenu = document.getElementById("terminal-selection-menu")
 const terminalSelectionMenuUrl = document.getElementById("terminal-selection-menu-url");
 const terminalSelectionMenuSearch = document.getElementById("terminal-selection-menu-search");
 const terminalSelectionMenuCopy = document.getElementById("terminal-selection-menu-copy");
+const terminalSelectionMenuExecute = document.getElementById("terminal-selection-menu-execute");
 const terminalSelectionMenuSftp = document.getElementById("terminal-selection-menu-sftp");
 const terminalSelectionMenuAi = document.getElementById("terminal-selection-menu-ai");
 const aiComposeForm = document.getElementById("ai-compose-form");
@@ -4902,6 +4907,11 @@ async function runSnippetInActiveTerminal(command) {
     showToast("当前没有可执行命令的终端会话。", "error", 3600);
     throw new Error("no terminal session");
   }
+  await runCommandTextInPane(pane, command);
+}
+
+async function runCommandTextInPane(pane, command) {
+  if (!pane?.sessionId) throw new Error("no terminal session");
   const normalized = String(command || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const lines = normalized.split("\n");
   while (lines.length && lines[lines.length - 1].trim() === "") lines.pop();
@@ -6013,7 +6023,7 @@ const SETTINGS_KEY_TERMINAL_LOCAL_SHELL = "zeroterm.settings.terminal.local_shel
 const SETTINGS_KEY_TERMINAL_LOCAL_CWD = "zeroterm.settings.terminal.local_cwd";
 const SETTINGS_KEY_TERMINAL_LINE_HEIGHT = "zeroterm.settings.terminal.line_height";
 const SETTINGS_KEY_TERMINAL_SELECTION_MENU_ORDER = "zeroterm.settings.terminal.selection_menu_order";
-const TERMINAL_SELECTION_MENU_DEFAULT_ORDER = Object.freeze(["url", "search", "copy", "sftp", "ai"]);
+const TERMINAL_SELECTION_MENU_DEFAULT_ORDER = Object.freeze(["url", "search", "copy", "execute", "sftp", "ai"]);
 const SETTINGS_KEY_APP_BG_OPACITY = "zeroterm.settings.app_background.opacity";
 const SETTINGS_KEY_APP_BG_BLUR = "zeroterm.settings.app_background.blur";
 const SETTINGS_KEY_APP_BG_ENABLED = "zeroterm.settings.app_background.enabled";
@@ -9591,6 +9601,8 @@ function getTerminalSelectionMenuElement(itemId) {
       return terminalSelectionMenuSearch;
     case "copy":
       return terminalSelectionMenuCopy;
+    case "execute":
+      return terminalSelectionMenuExecute;
     case "sftp":
       return terminalSelectionMenuSftp;
     case "ai":
@@ -9608,6 +9620,8 @@ function getTerminalSelectionMenuLabelKey(itemId) {
       return "terminal.selection.search";
     case "copy":
       return "terminal.selection.copy";
+    case "execute":
+      return "terminal.selection.execute";
     case "ai":
       return "terminal.selection.ai";
     default:
@@ -9629,7 +9643,18 @@ function normalizeTerminalSelectionMenuOrder(order) {
     }
   }
   for (const item of TERMINAL_SELECTION_MENU_DEFAULT_ORDER) {
-    if (!next.includes(item)) next.push(item);
+    if (next.includes(item)) continue;
+    const defaultIndex = TERMINAL_SELECTION_MENU_DEFAULT_ORDER.indexOf(item);
+    let insertAt = next.length;
+    for (let i = defaultIndex + 1; i < TERMINAL_SELECTION_MENU_DEFAULT_ORDER.length; i += 1) {
+      const nextDefaultItem = TERMINAL_SELECTION_MENU_DEFAULT_ORDER[i];
+      const nextIndex = next.indexOf(nextDefaultItem);
+      if (nextIndex >= 0) {
+        insertAt = nextIndex;
+        break;
+      }
+    }
+    next.splice(insertAt, 0, item);
   }
   return next;
 }
@@ -9912,6 +9937,13 @@ async function copyTerminalSelectionMenuText() {
     showToast(t("terminal.selection.copy_failed", { error: e }), "error", 3200);
     throw e;
   }
+}
+
+async function executeTerminalSelectionText() {
+  if (!terminalSelectionMenuText.trim()) return;
+  const pane = activateTerminalPaneById(terminalSelectionMenuPaneId);
+  if (!pane?.sessionId) throw new Error("no terminal session");
+  await runCommandTextInPane(pane, terminalSelectionMenuText);
 }
 
 async function openTerminalSelectionUrl() {
@@ -10745,6 +10777,7 @@ function applyI18n() {
   setAttr("terminal-selection-menu-search", "title", "terminal.selection.search");
   setText("terminal-selection-menu-url-label", "terminal.selection.open");
   setText("terminal-selection-menu-copy-label", "terminal.selection.copy");
+  setText("terminal-selection-menu-execute-label", "terminal.selection.execute");
   setText("terminal-selection-menu-sftp-label", "terminal.selection.sftp");
   setText("terminal-selection-menu-ai-label", "terminal.selection.ai");
   setAttr("ai-context-toggle", "title", "ai.context.toggle.title");
@@ -17300,6 +17333,14 @@ terminalSelectionMenuCopy?.addEventListener("click", async () => {
     await copyTerminalSelectionMenuText();
     hideTerminalSelectionMenu();
   } catch {}
+});
+
+terminalSelectionMenuExecute?.addEventListener("click", () => {
+  executeTerminalSelectionText()
+    .catch((e) => {
+      showToast(t("terminal.selection.execute_failed", { error: e }), "error", 3600);
+    })
+    .finally(() => hideTerminalSelectionMenu());
 });
 
 terminalSelectionMenuSftp?.addEventListener("click", () => {
