@@ -472,7 +472,7 @@ impl App {
                     None
                 };
 
-                let (jump_session, mut session) = match jump_cfg {
+                let (jump_session, session) = match jump_cfg {
                     Some(jc) => {
                         let j = Session::connect(jc)
                             .await

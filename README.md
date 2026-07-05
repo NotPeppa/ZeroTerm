@@ -219,7 +219,7 @@ ciphertext      = XChaCha20-Poly1305(record_key, nonce=24B, plaintext,
 - [RFC-002 — 多端同步设计](./RFC-002-sync-design.md)
 - [core/README.md](./core/README.md) — Rust 核心与 CLI 详解
 - [desktop/README.md](./desktop/README.md) — 桌面端架构与 IPC 契约
-- [docs/](./docs/) — SFTP / WebDAV / S3 手动测试记录
+- [docs/](./docs/) — SFTP / WebDAV / S3 / desktop SFTP 手动测试记录
 
 ---
 

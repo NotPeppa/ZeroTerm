@@ -1,6 +1,10 @@
 mod commands;
+mod connect;
+mod editor;
+mod file_dto;
 mod host_key;
 mod session;
+mod sftp;
 mod state;
 
 use crate::state::AppState;
@@ -182,26 +186,25 @@ pub fn run() {
             commands::local_rename,
             commands::local_permission_mode,
             commands::local_chmod,
+            sftp::file::prepare_staging_upload_path,
             commands::temp_open_path,
             commands::open_with_app,
-            commands::sftp_open,
-            commands::sftp_detect_dir_helper,
-            commands::sftp_install_dir_helper,
-            commands::sftp_close,
-            commands::sftp_list,
-            commands::sftp_download,
-            commands::sftp_upload,
-            commands::sftp_upload_bytes,
-            commands::sftp_read_text,
-            commands::sftp_permission_mode,
-            commands::sftp_write_text,
-            commands::sftp_chmod,
-            commands::sftp_remove,
-            commands::sftp_remove_dir,
-            commands::sftp_rename,
-            commands::sftp_mkdir,
-            commands::sftp_copy_entry_between_panes,
-            commands::sftp_cancel_transfer,
+            sftp::sftp_open,
+            sftp::sftp_close,
+            sftp::sftp_list,
+            sftp::sftp_download,
+            sftp::sftp_upload,
+            sftp::sftp_upload_bytes,
+            sftp::sftp_read_text,
+            sftp::sftp_permission_mode,
+            sftp::sftp_write_text,
+            sftp::sftp_chmod,
+            sftp::sftp_remove,
+            sftp::sftp_remove_dir,
+            sftp::sftp_rename,
+            sftp::sftp_mkdir,
+            sftp::sftp_copy_entry_between_panes,
+            sftp::sftp_cancel_transfer,
             commands::list_system_fonts,
         ])
         .run(tauri::generate_context!())

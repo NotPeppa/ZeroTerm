@@ -2,9 +2,11 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, AtomicU8};
 use std::sync::{Arc, Mutex};
 
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, Semaphore};
 
 use crate::host_key::HostKeyResponse;
+use crate::sftp::pool::SftpPool;
+use crate::sftp::transfer::TransferManager;
 use tokio_util::sync::CancellationToken;
 
 /// Backend state shared across Tauri commands.
@@ -39,18 +41,18 @@ pub struct AppState {
     pub pending_host_key: Mutex<HashMap<String, oneshot::Sender<HostKeyResponse>>>,
 
     /// Active SFTP handles keyed by id assigned via `next_sftp_id`.
-    /// Distinct from `sessions` because SFTP doesn't share the shell
-    /// session — each `sftp_open` builds its own SSH connection.
+    /// Distinct from `sessions` because the frontend addresses SFTP
+    /// panes separately from interactive shells.
     pub sftp_handles: Mutex<HashMap<u64, SftpHandle>>,
 
+    /// Shared SSH/SFTP connection pool keyed by host id. SFTP panes and
+    /// background directory-copy workers borrow channels from here.
+    pub sftp_pool: Arc<SftpPool>,
+
+    pub transfer_manager: Arc<TransferManager>,
+    pub transfer_slots: Arc<Semaphore>,
+
     pub next_sftp_id: AtomicU64,
-
-    /// Cancellation tokens for in-flight transfers, keyed by transferId.
-    /// `sftp_cancel_transfer` pulls one out and fires it; the streaming
-    /// download/upload loops check the token between chunks.
-    pub transfers: Mutex<HashMap<u64, CancellationToken>>,
-
-    pub next_transfer_id: AtomicU64,
 
     pub local_sessions: Mutex<HashMap<u64, LocalSessionHandle>>,
 
@@ -70,9 +72,10 @@ impl AppState {
             next_session_id: AtomicU64::new(1),
             pending_host_key: Mutex::new(HashMap::new()),
             sftp_handles: Mutex::new(HashMap::new()),
+            sftp_pool: Arc::new(SftpPool::new()),
+            transfer_manager: Arc::new(TransferManager::new()),
+            transfer_slots: Arc::new(Semaphore::new(3)),
             next_sftp_id: AtomicU64::new(1),
-            transfers: Mutex::new(HashMap::new()),
-            next_transfer_id: AtomicU64::new(1),
             local_sessions: Mutex::new(HashMap::new()),
             port_forwards: Mutex::new(HashMap::new()),
             next_port_forward_id: AtomicU64::new(1),
@@ -116,15 +119,9 @@ pub struct LocalSessionHandle {
     pub shutdown_tx: mpsc::Sender<()>,
 }
 
-/// Owns an SFTP channel along with the SSH session it rides on. Both
-/// must stay alive for the SFTP commands to keep working. Drop closes
-/// both naturally. If the host has a saved ProxyJump, the jump session
-/// hangs off here too — the underlying TCP connection can't outlive it.
 pub struct SftpHandle {
     pub host_id: String,
-    pub _session: zeroterm_ssh::Session,
-    pub _jump_session: Option<zeroterm_ssh::Session>,
-    pub sftp: Arc<zeroterm_ssh::Sftp>,
+    pub channel_id: u64,
 }
 
 pub struct PortForwardHandle {

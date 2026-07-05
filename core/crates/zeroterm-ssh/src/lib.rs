@@ -18,7 +18,7 @@ mod known_hosts;
 mod session;
 mod sftp;
 
-pub use error::SshError;
+pub use error::{SftpErrorKind, SshError};
 pub use forward::{forward_dynamic, forward_local, forward_remote, ForwardHandle};
 pub use host_key::{HostKeyInfo, HostKeyPolicy, HostKeyPrompt, MismatchAction};
 pub use known_hosts::{KnownHostStatus, KnownHosts};

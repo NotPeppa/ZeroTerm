@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
-use zeroterm_ssh::{FileKind, Session, Sftp, SshError};
+use zeroterm_ssh::{FileKind, Session, Sftp, SftpErrorKind, SshError};
 
 use crate::adapter::{ObjectMeta, SyncAdapter};
 use crate::error::Error;
@@ -243,8 +243,13 @@ fn map_ssh_err(e: SshError) -> Error {
 }
 
 fn is_not_found(e: &SshError) -> bool {
-    let s = e.to_string().to_lowercase();
-    s.contains("no such file") || s.contains("not found") || s.contains("does not exist")
+    matches!(
+        e,
+        SshError::Sftp {
+            kind: SftpErrorKind::NotFound,
+            ..
+        }
+    )
 }
 
 #[async_trait]

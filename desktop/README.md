@@ -143,6 +143,10 @@ Commands (frontend → backend):
 | `sftp_mkdir` | `{ sftpId, path }` | — |
 | `sftp_cancel_transfer` | `{ transferId }` | — (no-op if the transfer already finished) |
 
+Manual validation:
+
+- Desktop SFTP reliability playbook: [`docs/manual-desktop-sftp-test.md`](../docs/manual-desktop-sftp-test.md)
+
 Events (backend → frontend):
 
 | Event | Payload |
@@ -151,6 +155,7 @@ Events (backend → frontend):
 | `session:closed` | `{ sessionId, exitCode?, message? }` |
 | `host-key-prompt` | `{ requestId, kind: "unknown"\|"mismatch", host, port, keyType, fingerprint, stored? }` |
 | `sftp:progress` | `{ transferId, kind: "download"\|"upload", source, destination, bytesDone, total?, finished }` (throttled to ~10/s; one final event with `finished=true`) |
+| `sftp:transfer` | `{ transferId, kind, status: "queued"\|"running"\|"success"\|"error"\|"cancelled", source, destination, bytesDone, total?, bytesPerSec?, etaSeconds?, currentFile?, error?: { code, message } }` |
 
 ### Session task
 

@@ -515,6 +515,16 @@
                               </div>
                             </div>
                             <div class="terminal-side-actions">
+                              <label class="sftp-inline-filter terminal-sftp-filter">
+                                <span class="sftp-inline-filter-icon" aria-hidden="true">
+                                  <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                    <circle cx="11" cy="11" r="7"></circle>
+                                    <path d="m20 20-3.5-3.5"></path>
+                                  </svg>
+                                </span>
+                                <span id="sftp-terminal-filter-label" class="sftp-inline-filter-label">筛选</span>
+                                <input id="sftp-terminal-filter-input" class="sftp-inline-filter-input" type="text" autocomplete="off" spellcheck="false" placeholder="例如 log、conf、docker" />
+                              </label>
                               <button id="terminal-sftp-pin" type="button" class="terminal-side-add-btn" title="书签">
                                 <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
                                   <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
@@ -540,10 +550,6 @@
                                 <input id="sftp-terminal-path-input" class="sftp-path-input" type="text" autocomplete="off" />
                               </div>
                             </div>
-                            <label class="sftp-inline-filter terminal-sftp-filter" hidden>
-                              <span id="sftp-terminal-filter-label">筛选</span>
-                              <input id="sftp-terminal-filter-input" class="sftp-inline-filter-input" type="text" autocomplete="off" placeholder="例如 log、conf、docker" />
-                            </label>
                             <div id="sftp-terminal-status" class="sftp-status">未连接</div>
                             <ul id="sftp-terminal-list" class="files-list terminal-sftp-list"></ul>
                           </div>
@@ -751,13 +757,9 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
                             <h4 id="settings-sftp-title">SFTP</h4>
                             <div class="settings-row">
                               <div>
-                                <div id="settings-sftp-auto-label" class="settings-item-title">自动检测目录配置</div>
-                                <p id="settings-sftp-auto-hint" class="muted tiny">打开 SFTP 标签页时，自动检测远端 shell 是否已配置目录跟随，未配置时提示自动安装。</p>
+                                <div id="settings-sftp-follow-label" class="settings-item-title">目录跟随</div>
+                                <p id="settings-sftp-follow-hint" class="muted tiny">远端目录跟随现在依赖 shell 发出的 OSC 7 提示；如果 shell 不发送 OSC 7，SFTP 面板会保持在你当前停留的位置。</p>
                               </div>
-                              <label class="settings-switch">
-                                <input id="settings-sftp-auto-detect" type="checkbox" />
-                                <span></span>
-                              </label>
                             </div>
                             <div class="settings-divider"></div>
                             <div class="settings-row settings-row-dir">
@@ -1214,31 +1216,7 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
                         </article>
                       </div>
                       <section id="sftp-transfer-dock" class="sftp-transfer-dock" hidden aria-live="polite">
-                        <div class="sftp-transfer-row">
-                          <div class="sftp-transfer-leading">
-                            <div class="sftp-transfer-icon" aria-hidden="true">
-                              <svg class="zt-icon" viewBox="0 0 24 24">
-                                <path d="M7 3.5h6l4 4V20a.5.5 0 0 1-.5.5h-9A1.5 1.5 0 0 1 6 19V5a1.5 1.5 0 0 1 1-1.5z"></path>
-                                <path d="M13 3.5V8h4.5"></path>
-                              </svg>
-                            </div>
-                            <div class="sftp-transfer-copy">
-                              <div id="sftp-transfer-name" class="sftp-transfer-name"></div>
-                              <div id="sftp-transfer-meta" class="sftp-transfer-meta"></div>
-                            </div>
-                          </div>
-                          <div class="sftp-transfer-rail">
-                            <div id="sftp-transfer-progress" class="sftp-transfer-progress">
-                              <div id="sftp-transfer-progress-bar" class="sftp-transfer-progress-bar"></div>
-                            </div>
-                          </div>
-                          <button id="sftp-transfer-cancel" type="button" class="sftp-transfer-cancel">
-                            <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
-                              <path d="M7 7l10 10"></path>
-                              <path d="M17 7 7 17"></path>
-                            </svg>
-                          </button>
-                        </div>
+                        <div id="sftp-transfer-list" class="sftp-transfer-list"></div>
                       </section>
                       <div id="files-context-menu" class="files-context-menu" hidden>
                         <button id="files-menu-open" type="button">Open</button>

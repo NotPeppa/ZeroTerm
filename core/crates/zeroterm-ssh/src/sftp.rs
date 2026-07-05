@@ -18,12 +18,14 @@
 
 use std::io::SeekFrom;
 
+use russh_sftp::client::error::Error as SftpClientError;
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::FileType;
+use russh_sftp::protocol::StatusCode;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
 
-use crate::error::SshError;
+use crate::error::{SftpErrorKind, SshError};
 
 /// Categorisation of a remote path entry. Anything we don't actively
 /// distinguish (sockets, devices, …) gets bucketed into `Other` so the
@@ -495,12 +497,122 @@ impl Sftp {
     }
 }
 
-fn map_sftp_err(e: russh_sftp::client::error::Error) -> SshError {
-    SshError::Sftp(e.to_string())
+pub(crate) fn map_sftp_err(e: SftpClientError) -> SshError {
+    let (kind, message) = match &e {
+        SftpClientError::Status(status) => (
+            map_status_code(status.status_code, &status.error_message),
+            if status.error_message.trim().is_empty() {
+                status.status_code.to_string()
+            } else {
+                status.error_message.clone()
+            },
+        ),
+        SftpClientError::IO(message)
+        | SftpClientError::Limited(message)
+        | SftpClientError::UnexpectedBehavior(message) => {
+            (infer_kind_from_message(message), message.clone())
+        }
+        SftpClientError::Timeout => (SftpErrorKind::Timeout, e.to_string()),
+        SftpClientError::UnexpectedPacket => (SftpErrorKind::Other, e.to_string()),
+    };
+    SshError::Sftp { kind, message }
+}
+
+fn map_status_code(status: StatusCode, message: &str) -> SftpErrorKind {
+    match status {
+        StatusCode::NoSuchFile => SftpErrorKind::NotFound,
+        StatusCode::PermissionDenied => SftpErrorKind::PermissionDenied,
+        StatusCode::OpUnsupported => SftpErrorKind::Unsupported,
+        StatusCode::NoConnection | StatusCode::ConnectionLost => SftpErrorKind::ChannelClosed,
+        StatusCode::Failure => infer_kind_from_message(message),
+        StatusCode::BadMessage | StatusCode::Eof | StatusCode::Ok => SftpErrorKind::Other,
+    }
+}
+
+fn infer_kind_from_message(message: &str) -> SftpErrorKind {
+    let lower = message.trim().to_ascii_lowercase();
+    if lower.contains("no such file")
+        || lower.contains("not found")
+        || lower.contains("does not exist")
+    {
+        SftpErrorKind::NotFound
+    } else if lower.contains("permission denied") {
+        SftpErrorKind::PermissionDenied
+    } else if lower.contains("already exists") || lower.contains("file exists") {
+        SftpErrorKind::AlreadyExists
+    } else if lower.contains("not a directory") {
+        SftpErrorKind::NotADirectory
+    } else if lower.contains("unsupported") {
+        SftpErrorKind::Unsupported
+    } else if lower.contains("channel closed")
+        || lower.contains("broken pipe")
+        || lower.contains("connection reset")
+        || lower.contains("connection lost")
+        || lower.contains("no connection")
+    {
+        SftpErrorKind::ChannelClosed
+    } else if lower.contains("timeout") || lower.contains("timed out") {
+        SftpErrorKind::Timeout
+    } else {
+        SftpErrorKind::Other
+    }
 }
 
 fn io_other(msg: &str) -> std::io::Error {
     std::io::Error::other(msg.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn status_codes_map_to_structured_kinds() {
+        assert_eq!(
+            map_status_code(StatusCode::NoSuchFile, ""),
+            SftpErrorKind::NotFound
+        );
+        assert_eq!(
+            map_status_code(StatusCode::PermissionDenied, ""),
+            SftpErrorKind::PermissionDenied
+        );
+        assert_eq!(
+            map_status_code(StatusCode::ConnectionLost, ""),
+            SftpErrorKind::ChannelClosed
+        );
+        assert_eq!(
+            map_status_code(StatusCode::OpUnsupported, ""),
+            SftpErrorKind::Unsupported
+        );
+    }
+
+    #[test]
+    fn failure_status_infers_kind_from_server_message() {
+        assert_eq!(
+            map_status_code(StatusCode::Failure, "File already exists"),
+            SftpErrorKind::AlreadyExists
+        );
+        assert_eq!(
+            map_status_code(StatusCode::Failure, "not a directory"),
+            SftpErrorKind::NotADirectory
+        );
+        assert_eq!(
+            map_status_code(StatusCode::Failure, "connection reset by peer"),
+            SftpErrorKind::ChannelClosed
+        );
+    }
+
+    #[test]
+    fn infer_kind_from_message_handles_timeout_and_unknown() {
+        assert_eq!(
+            infer_kind_from_message("operation timed out"),
+            SftpErrorKind::Timeout
+        );
+        assert_eq!(
+            infer_kind_from_message("server said nope"),
+            SftpErrorKind::Other
+        );
+    }
 }
 
 /// Read until `buf` is full or EOF. Returns the number of bytes actually

@@ -16,6 +16,7 @@ use url::Url;
 
 use crate::error::SshError;
 use crate::host_key::HostKeyPolicy;
+use crate::sftp::map_sftp_err;
 
 /// Authentication credentials. The connection will try each entry in
 /// [`ConnectConfig::auth_methods`] in order, accepting the first one the
@@ -482,7 +483,7 @@ impl Session {
 
     /// Open an SFTP subsystem on a fresh channel. Returns a wrapper with
     /// the file-management methods we expose to UIs.
-    pub async fn sftp(&mut self) -> Result<crate::sftp::Sftp, SshError> {
+    pub async fn sftp(&self) -> Result<crate::sftp::Sftp, SshError> {
         let channel = self.handle.channel_open_session().await?;
         channel.request_subsystem(true, "sftp").await?;
         let session = russh_sftp::client::SftpSession::new_with_config(
@@ -504,7 +505,7 @@ impl Session {
             },
         )
         .await
-        .map_err(|e| SshError::Sftp(e.to_string()))?;
+        .map_err(map_sftp_err)?;
         Ok(crate::sftp::Sftp::from_session(session))
     }
 

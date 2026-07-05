@@ -225,9 +225,7 @@ fn is_not_found_str(s: &str) -> bool {
 /// Display to detect 404s. This reads the status off the raw `HttpResponse`
 /// that the SDK attaches to every `ServiceError` / `ResponseError`.
 fn sdk_http_status<E>(e: &aws_sdk_s3::error::SdkError<E>) -> u16 {
-    e.raw_response()
-        .map(|r| r.status().as_u16())
-        .unwrap_or(0)
+    e.raw_response().map(|r| r.status().as_u16()).unwrap_or(0)
 }
 
 fn err_str<E: std::fmt::Display + std::fmt::Debug>(e: E) -> Error {
