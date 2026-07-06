@@ -693,6 +693,13 @@ const I18N = {
     "files.transfer.retry_failed": "Retry failed: {error}",
     "files.transfer.retry_unavailable": "Transfer retry is unavailable because the source or destination pane is disconnected.",
     "files.transfer.dismiss": "Dismiss",
+    "files.transfer.title": "Transfers",
+    "files.transfer.active_count": "{count} active",
+    "files.transfer.done_count": "{count} finished",
+    "files.transfer.clear_finished": "Clear finished",
+    "files.transfer.collapse": "Collapse",
+    "files.transfer.expand": "Expand",
+    "files.transfer.files_progress": "{done}/{total} files",
     "editor.title": "Edit Remote File",
     "editor.title.dirty": "Edit Remote File *",
     "editor.hint.default": "Supports common UTF-8 text files. Press Ctrl/Cmd + S to save.",
@@ -1572,6 +1579,13 @@ const I18N = {
     "files.transfer.retry_failed": "重试失败：{error}",
     "files.transfer.retry_unavailable": "源或目标面板已断开，当前无法重试该传输。",
     "files.transfer.dismiss": "关闭",
+    "files.transfer.title": "传输",
+    "files.transfer.active_count": "{count} 项进行中",
+    "files.transfer.done_count": "{count} 项已结束",
+    "files.transfer.clear_finished": "清除已完成",
+    "files.transfer.collapse": "收起",
+    "files.transfer.expand": "展开",
+    "files.transfer.files_progress": "文件 {done}/{total}",
     "editor.title": "编辑远程文件",
     "editor.title.dirty": "编辑远程文件 *",
     "editor.hint.default": "支持常见 UTF-8 文本文件。按 Ctrl/Cmd + S 保存。",
@@ -2455,6 +2469,10 @@ const panelTerminal = document.getElementById("panel-terminal");
 const panelSftp = document.getElementById("panel-sftp");
 const sftpTransferDock = document.getElementById("sftp-transfer-dock");
 const sftpTransferList = document.getElementById("sftp-transfer-list");
+const sftpTransferTitleEl = document.getElementById("sftp-transfer-title");
+const sftpTransferSummaryEl = document.getElementById("sftp-transfer-summary");
+const sftpTransferClearBtn = document.getElementById("sftp-transfer-clear");
+const sftpTransferCollapseBtn = document.getElementById("sftp-transfer-collapse");
 const settingsPage = document.getElementById("settings-page");
 const vaultWelcome = document.getElementById("vault-welcome");
 const terminalSessionLayout = document.getElementById("terminal-session-layout");
@@ -2651,6 +2669,7 @@ function showToast(message, kind = "info", timeoutMs = 2600) {
 }
 
 let sftpTransferHideTimer = null;
+let sftpTransferDockCollapsed = false;
 const sftpTransferItems = new Map();
 const sftpTransferDismissTimers = new Map();
 const sftpPendingRetryPlans = new Map();
@@ -2666,23 +2685,56 @@ function formatTransferEta(seconds) {
   return remMin > 0 ? `${hours}h ${remMin}m` : `${hours}h`;
 }
 
-function summarizeSftpTransfer(item) {
+function sftpTransferPercent(item) {
+  if (!Number.isFinite(item.total) || item.total <= 0) return null;
+  return Math.max(0, Math.min(100, (item.bytesDone / item.total) * 100));
+}
+
+// Stable row title: the target name never changes mid-transfer, unlike the
+// current file which is relegated to the meta line for directory copies.
+function sftpTransferTitle(item) {
+  return (
+    basename(item.destination || "") || basename(item.source || "") || `#${item.transferId}`
+  );
+}
+
+function sftpTransferStatsText(item) {
+  if (item.status !== "running") return labelSftpTransferStatus(item.status);
   const bits = [];
-  if (item.currentFile) {
-    bits.push(item.currentFile);
-  }
-  if (Number.isFinite(item.total) && item.total > 0) {
-    bits.push(`${formatSize(item.bytesDone)} / ${formatSize(item.total)}`);
-  } else {
-    bits.push(formatSize(item.bytesDone));
-  }
+  const percent = sftpTransferPercent(item);
+  if (percent !== null) bits.push(`${Math.floor(percent)}%`);
   if (Number.isFinite(item.bytesPerSec) && item.bytesPerSec > 0) {
     bits.push(`${formatSize(item.bytesPerSec)}/s`);
   }
   if (Number.isFinite(item.etaSeconds) && item.etaSeconds >= 0) {
     bits.push(t("files.progress.eta", { eta: formatTransferEta(item.etaSeconds) }));
   }
-  return bits.join(" · ") || t("files.progress.preparing");
+  return bits.join(" · ") || labelSftpTransferStatus("running");
+}
+
+function sftpTransferMetaText(item) {
+  if (item.status === "error" && item.error?.message) return item.error.message;
+  const bits = [];
+  if (Number.isFinite(item.total) && item.total > 0) {
+    bits.push(`${formatSize(item.bytesDone)} / ${formatSize(item.total)}`);
+  } else if (item.bytesDone > 0) {
+    bits.push(formatSize(item.bytesDone));
+  }
+  if (Number.isFinite(item.filesTotal) && item.filesTotal > 0) {
+    bits.push(
+      t("files.transfer.files_progress", {
+        done: Number.isFinite(item.filesDone) ? item.filesDone : 0,
+        total: item.filesTotal,
+      }),
+    );
+  }
+  if (item.status === "running" && item.currentFile) {
+    bits.push(basename(item.currentFile));
+  }
+  if (bits.length === 0 && item.status === "running") {
+    return t("files.progress.preparing");
+  }
+  return bits.join(" · ");
 }
 
 function isSftpTransferTerminal(item) {
@@ -3008,13 +3060,162 @@ async function retrySftpTransfer(item) {
   }
 }
 
+function sftpTransferOrderWeight(item) {
+  switch (item?.status) {
+    case "running":
+      return 0;
+    case "queued":
+      return 1;
+    case "error":
+      return 2;
+    case "cancelled":
+      return 3;
+    default:
+      return 4;
+  }
+}
+
 function sortSftpTransferItems() {
   return Array.from(sftpTransferItems.values()).sort((a, b) => {
-    const aTerminal = isSftpTransferTerminal(a);
-    const bTerminal = isSftpTransferTerminal(b);
-    if (aTerminal !== bTerminal) return aTerminal ? 1 : -1;
+    const weight = sftpTransferOrderWeight(a) - sftpTransferOrderWeight(b);
+    if (weight !== 0) return weight;
     return (b.updatedAt || 0) - (a.updatedAt || 0);
   });
+}
+
+const SFTP_TRANSFER_KIND_ICONS = {
+  upload:
+    '<svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5"></path><path d="m5.5 11.5 6.5-6.5 6.5 6.5"></path></svg>',
+  download:
+    '<svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"></path><path d="m5.5 12.5 6.5 6.5 6.5-6.5"></path></svg>',
+  copy: '<svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8.5h13"></path><path d="m13.5 4.5 4 4-4 4"></path><path d="M20 15.5H7"></path><path d="m10.5 11.5-4 4 4 4"></path></svg>',
+};
+
+function buildSftpTransferRow(item) {
+  const terminal = isSftpTransferTerminal(item);
+  const row = document.createElement("div");
+  row.className = `sftp-transfer-row status-${item.status || "running"}`;
+
+  const icon = document.createElement("div");
+  icon.className = "sftp-transfer-icon";
+  icon.setAttribute("aria-hidden", "true");
+  icon.innerHTML = SFTP_TRANSFER_KIND_ICONS[item.kind] || SFTP_TRANSFER_KIND_ICONS.copy;
+
+  const body = document.createElement("div");
+  body.className = "sftp-transfer-body";
+
+  const top = document.createElement("div");
+  top.className = "sftp-transfer-top";
+  const name = document.createElement("span");
+  name.className = "sftp-transfer-name";
+  name.textContent = sftpTransferTitle(item);
+  name.title = `${item.source || ""} → ${item.destination || ""}`;
+  const stats = document.createElement("span");
+  stats.className = "sftp-transfer-stats";
+  stats.textContent = sftpTransferStatsText(item);
+  top.append(name, stats);
+
+  const progress = document.createElement("div");
+  progress.className = "sftp-transfer-progress";
+  const progressBar = document.createElement("div");
+  progressBar.className = "sftp-transfer-progress-bar";
+  const percent = sftpTransferPercent(item);
+  if (item.status === "success") {
+    progressBar.style.width = "100%";
+  } else if (percent !== null) {
+    progressBar.style.width = `${percent}%`;
+  } else if (item.status === "running") {
+    progress.classList.add("indeterminate");
+  } else {
+    progressBar.style.width = "0%";
+  }
+  progress.appendChild(progressBar);
+
+  const meta = document.createElement("div");
+  meta.className = `sftp-transfer-meta${item.status === "error" ? " is-error" : ""}`;
+  const metaText = sftpTransferMetaText(item);
+  meta.textContent = metaText;
+  meta.title = metaText;
+
+  body.append(top, progress, meta);
+
+  const actions = document.createElement("div");
+  actions.className = "sftp-transfer-actions";
+  if (canRetrySftpTransfer(item)) {
+    const retryButton = document.createElement("button");
+    retryButton.type = "button";
+    retryButton.className = "sftp-transfer-retry";
+    retryButton.textContent = t("files.transfer.retry");
+    retryButton.addEventListener("click", async () => {
+      await retrySftpTransfer(item);
+    });
+    actions.appendChild(retryButton);
+  }
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "sftp-transfer-cancel";
+  button.innerHTML =
+    '<svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10"></path><path d="M17 7 7 17"></path></svg>';
+  if (terminal) {
+    button.setAttribute("aria-label", t("files.transfer.dismiss"));
+    button.title = t("files.transfer.dismiss");
+    button.addEventListener("click", () => {
+      clearSftpTransferDismissTimer(item.transferId);
+      sftpTransferItems.delete(item.transferId);
+      renderSftpTransferDock();
+    });
+  } else {
+    button.setAttribute("aria-label", t("files.button.cancel"));
+    button.title = t("files.button.cancel");
+    button.addEventListener("click", async () => {
+      try {
+        await invoke("sftp_cancel_transfer", { transferId: item.transferId });
+      } catch (e) {
+        showToast(String(e), "error", 3200);
+      }
+    });
+  }
+  actions.appendChild(button);
+
+  row.append(icon, body, actions);
+  return row;
+}
+
+function renderSftpTransferHeader(items) {
+  const active = items.filter((item) => !isSftpTransferTerminal(item));
+  const finished = items.length - active.length;
+
+  if (sftpTransferTitleEl) {
+    sftpTransferTitleEl.textContent = t("files.transfer.title");
+  }
+  if (sftpTransferSummaryEl) {
+    const bits = [];
+    if (active.length > 0) {
+      bits.push(t("files.transfer.active_count", { count: active.length }));
+      const speed = active.reduce(
+        (sum, item) =>
+          sum +
+          (Number.isFinite(item.bytesPerSec) && item.status === "running" ? item.bytesPerSec : 0),
+        0,
+      );
+      if (speed > 0) bits.push(`${formatSize(speed)}/s`);
+    } else if (finished > 0) {
+      bits.push(t("files.transfer.done_count", { count: finished }));
+    }
+    sftpTransferSummaryEl.textContent = bits.join(" · ");
+  }
+  if (sftpTransferClearBtn) {
+    sftpTransferClearBtn.hidden = finished === 0;
+    sftpTransferClearBtn.textContent = t("files.transfer.clear_finished");
+  }
+  if (sftpTransferCollapseBtn) {
+    sftpTransferCollapseBtn.setAttribute("aria-expanded", String(!sftpTransferDockCollapsed));
+    const label = sftpTransferDockCollapsed
+      ? t("files.transfer.expand")
+      : t("files.transfer.collapse");
+    sftpTransferCollapseBtn.title = label;
+    sftpTransferCollapseBtn.setAttribute("aria-label", label);
+  }
 }
 
 function renderSftpTransferDock() {
@@ -3029,109 +3230,37 @@ function renderSftpTransferDock() {
     sftpTransferHideTimer = null;
   }
 
+  renderSftpTransferHeader(items);
+  sftpTransferDock.classList.toggle("collapsed", sftpTransferDockCollapsed);
+
   sftpTransferList.innerHTML = "";
-  for (const item of items) {
-    const row = document.createElement("div");
-    const terminal = isSftpTransferTerminal(item);
-    row.className = `sftp-transfer-row${terminal ? " is-terminal" : ""}${
-      item.status === "error" ? " is-error" : item.status === "success" ? " is-success" : ""
-    }${item.status === "cancelled" ? " is-cancelled" : ""}`;
-
-    const leading = document.createElement("div");
-    leading.className = "sftp-transfer-leading";
-
-    const icon = document.createElement("div");
-    icon.className = "sftp-transfer-icon";
-    icon.setAttribute("aria-hidden", "true");
-    icon.innerHTML =
-      '<svg class="zt-icon" viewBox="0 0 24 24"><path d="M7 3.5h6l4 4V20a.5.5 0 0 1-.5.5h-9A1.5 1.5 0 0 1 6 19V5a1.5 1.5 0 0 1 1-1.5z"></path><path d="M13 3.5V8h4.5"></path></svg>';
-
-    const copy = document.createElement("div");
-    copy.className = "sftp-transfer-copy";
-
-    const headline = document.createElement("div");
-    headline.className = "sftp-transfer-headline";
-
-    const name = document.createElement("div");
-    name.className = "sftp-transfer-name";
-    const baseName = basename(item.currentFile || item.source || item.destination || "");
-    name.textContent = baseName || item.destination || item.source || `#${item.transferId}`;
-    name.title = `${item.source || ""} -> ${item.destination || ""}`;
-
-    const status = document.createElement("div");
-    status.className = "sftp-transfer-status";
-    status.textContent = labelSftpTransferStatus(item.status);
-
-    const meta = document.createElement("div");
-    meta.className = `sftp-transfer-meta${item.error ? " is-error" : ""}`;
-    const metaText = item.error?.message || summarizeSftpTransfer(item);
-    meta.textContent = metaText;
-    meta.title = metaText;
-
-    headline.append(name, status);
-    copy.append(headline, meta);
-    leading.append(icon, copy);
-
-    const railWrap = document.createElement("div");
-    railWrap.className = "sftp-transfer-rail";
-    const progress = document.createElement("div");
-    progress.className = "sftp-transfer-progress";
-    const progressBar = document.createElement("div");
-    progressBar.className = "sftp-transfer-progress-bar";
-    if (Number.isFinite(item.total) && item.total > 0) {
-      const percent = Math.max(0, Math.min(100, (item.bytesDone / item.total) * 100));
-      progressBar.style.width = `${percent}%`;
-    } else {
-      progress.classList.add("indeterminate");
-      progressBar.style.width = "42%";
+  if (!sftpTransferDockCollapsed) {
+    for (const item of items) {
+      sftpTransferList.appendChild(buildSftpTransferRow(item));
     }
-    progress.appendChild(progressBar);
-    railWrap.appendChild(progress);
-
-    const actions = document.createElement("div");
-    actions.className = "sftp-transfer-actions";
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "sftp-transfer-cancel";
-    button.innerHTML =
-      '<svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10"></path><path d="M17 7 7 17"></path></svg>';
-    if (canRetrySftpTransfer(item)) {
-      const retryButton = document.createElement("button");
-      retryButton.type = "button";
-      retryButton.className = "sftp-transfer-retry";
-      retryButton.textContent = t("files.transfer.retry");
-      retryButton.addEventListener("click", async () => {
-        await retrySftpTransfer(item);
-      });
-      actions.appendChild(retryButton);
-    }
-    if (terminal) {
-      button.setAttribute("aria-label", t("files.transfer.dismiss"));
-      button.title = t("files.transfer.dismiss");
-      button.addEventListener("click", () => {
-        clearSftpTransferDismissTimer(item.transferId);
-        sftpTransferItems.delete(item.transferId);
-        renderSftpTransferDock();
-      });
-    } else {
-      button.setAttribute("aria-label", t("files.button.cancel"));
-      button.title = t("files.button.cancel");
-      button.addEventListener("click", async () => {
-        try {
-          await invoke("sftp_cancel_transfer", { transferId: item.transferId });
-        } catch (e) {
-          showToast(String(e), "error", 3200);
-        }
-      });
-    }
-    actions.appendChild(button);
-
-    row.append(leading, railWrap, actions);
-    sftpTransferList.appendChild(row);
   }
 
   sftpTransferDock.hidden = false;
   requestAnimationFrame(() => sftpTransferDock.classList.add("show"));
+}
+
+if (sftpTransferCollapseBtn) {
+  sftpTransferCollapseBtn.addEventListener("click", () => {
+    sftpTransferDockCollapsed = !sftpTransferDockCollapsed;
+    renderSftpTransferDock();
+  });
+}
+
+if (sftpTransferClearBtn) {
+  sftpTransferClearBtn.addEventListener("click", () => {
+    for (const [transferId, item] of Array.from(sftpTransferItems.entries())) {
+      if (isSftpTransferTerminal(item)) {
+        clearSftpTransferDismissTimer(transferId);
+        sftpTransferItems.delete(transferId);
+      }
+    }
+    renderSftpTransferDock();
+  });
 }
 
 listen("sftp:progress", (ev) => {
@@ -3152,7 +3281,8 @@ listen("sftp:progress", (ev) => {
   const existing = sftpTransferItems.get(transferId);
   sftpTransferItems.set(transferId, {
     transferId,
-    kind: payload.kind === "upload" ? "upload" : "download",
+    kind:
+      payload.kind === "upload" ? "upload" : payload.kind === "copy" ? "copy" : "download",
     status: "running",
     source: String(payload.source || ""),
     destination: String(payload.destination || ""),
@@ -3161,6 +3291,8 @@ listen("sftp:progress", (ev) => {
     bytesPerSec: Number.isFinite(payload.bytesPerSec) ? Number(payload.bytesPerSec) : null,
     etaSeconds: Number.isFinite(payload.etaSeconds) ? Number(payload.etaSeconds) : null,
     currentFile: payload.currentFile ? String(payload.currentFile) : null,
+    filesDone: Number.isFinite(payload.filesDone) ? Number(payload.filesDone) : null,
+    filesTotal: Number.isFinite(payload.filesTotal) ? Number(payload.filesTotal) : null,
     error: null,
     retryPlan: existing?.retryPlan || null,
     eventSource: "progress",
@@ -3177,6 +3309,8 @@ listen("sftp:transfer", (ev) => {
   const bytesPerSecRaw = payload.bytesPerSec ?? payload.bytes_per_sec;
   const etaSecondsRaw = payload.etaSeconds ?? payload.eta_seconds;
   const currentFileRaw = payload.currentFile ?? payload.current_file;
+  const filesDoneRaw = payload.filesDone ?? payload.files_done;
+  const filesTotalRaw = payload.filesTotal ?? payload.files_total;
   const item = {
     transferId,
     kind: String(payload.kind || "download"),
@@ -3188,6 +3322,8 @@ listen("sftp:transfer", (ev) => {
     bytesPerSec: Number.isFinite(bytesPerSecRaw) ? Number(bytesPerSecRaw) : null,
     etaSeconds: Number.isFinite(etaSecondsRaw) ? Number(etaSecondsRaw) : null,
     currentFile: currentFileRaw ? String(currentFileRaw) : null,
+    filesDone: Number.isFinite(filesDoneRaw) ? Number(filesDoneRaw) : null,
+    filesTotal: Number.isFinite(filesTotalRaw) ? Number(filesTotalRaw) : null,
     error: payload.error
       ? {
           code: String(payload.error.code || "OTHER"),

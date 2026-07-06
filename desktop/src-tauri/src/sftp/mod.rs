@@ -13,8 +13,8 @@ use crate::editor::{
 };
 use crate::file_dto::{kind_str, DirEntryDto, FilePermissionModeDto};
 use crate::sftp::file::{
-    download_remote_file_to_local, is_retryable_transfer_error, upload_local_path_to_remote_once,
-    upload_reader_to_remote_atomic, upload_slice_to_remote_atomic,
+    download_remote_file_to_local, ensure_remote_target_available, is_retryable_transfer_error,
+    upload_local_path_to_remote_once, upload_reader_to_remote_atomic, upload_slice_to_remote_atomic,
 };
 use crate::sftp::path::{
     detect_local_kind, detect_remote_kind, is_remote_path_within, remote_join_path, CopyNodeKind,
@@ -280,10 +280,15 @@ pub async fn sftp_upload(
     local: String,
     remote: String,
 ) -> Result<u64, String> {
-    let sftp = lookup_sftp(&state, sftp_id)?;
     let host_id = lookup_sftp_host_id(&state, sftp_id)?;
     let metadata = std::fs::metadata(&local).map_err(|e| format!("stating {local}: {e}"))?;
     let size_hint = Some(metadata.len());
+    with_resilient_panel_sftp(&state, sftp_id, |sftp| {
+        let remote = remote.clone();
+        async move { ensure_remote_target_available(sftp.as_ref(), &remote).await }
+    })
+    .await?;
+    let sftp = lookup_sftp(&state, sftp_id)?;
     let (transfer_id, cancel) = register_transfer(
         &state,
         &app_handle,
@@ -313,7 +318,7 @@ pub async fn sftp_upload(
                 &remote,
                 size_hint,
                 false,
-                false,
+                true,
                 cancel_for_body.clone(),
                 &mut progress_cb,
             )
@@ -338,7 +343,7 @@ pub async fn sftp_upload(
                         &remote,
                         size_hint,
                         false,
-                        false,
+                        true,
                         cancel_for_body,
                         &mut progress_cb,
                     )
@@ -364,10 +369,15 @@ pub async fn sftp_upload_bytes(
     data: Vec<u8>,
     source_label: Option<String>,
 ) -> Result<u64, String> {
-    let sftp = lookup_sftp(&state, sftp_id)?;
     let host_id = lookup_sftp_host_id(&state, sftp_id)?;
     let size_hint = Some(data.len() as u64);
     let source = source_label.unwrap_or_else(|| format!("dragged-bytes({})", data.len()));
+    with_resilient_panel_sftp(&state, sftp_id, |sftp| {
+        let remote = remote.clone();
+        async move { ensure_remote_target_available(sftp.as_ref(), &remote).await }
+    })
+    .await?;
+    let sftp = lookup_sftp(&state, sftp_id)?;
     let (transfer_id, cancel) = register_transfer(
         &state,
         &app_handle,
@@ -398,7 +408,7 @@ pub async fn sftp_upload_bytes(
                 &mut cursor,
                 size_hint,
                 false,
-                false,
+                true,
                 cancel_for_body.clone(),
                 &mut progress_cb,
             )
@@ -423,7 +433,7 @@ pub async fn sftp_upload_bytes(
                         &mut cursor,
                         size_hint,
                         false,
-                        false,
+                        true,
                         cancel_for_body,
                         &mut progress_cb,
                     )

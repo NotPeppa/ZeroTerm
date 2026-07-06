@@ -10,8 +10,8 @@ use tracing::warn;
 use zeroterm_ssh::Sftp;
 
 use crate::sftp::file::{
-    download_remote_file_to_local, is_retryable_transfer_error, upload_local_path_to_remote_once,
-    upload_reader_to_remote_atomic,
+    download_remote_file_to_local, ensure_remote_target_available, is_retryable_transfer_error,
+    upload_local_path_to_remote_once, upload_reader_to_remote_atomic,
 };
 use crate::sftp::path::{
     detect_local_kind, detect_remote_kind, normalize_remote_path, remote_join_path, CopyNodeKind,
@@ -454,6 +454,7 @@ pub(crate) async fn copy_local_tree_to_local(
 
                     if let Some(sink) = &sink_opt {
                         sink.set_total(total_bytes);
+                        sink.set_files_total(file_jobs.len() as u64);
                     }
 
                     let issues = Arc::new(issues);
@@ -482,7 +483,11 @@ pub(crate) async fn copy_local_tree_to_local(
                     .buffer_unordered(DIR_DOWNLOAD_CONCURRENCY);
                     while let Some(res) = stream.next().await {
                         match res {
-                            Ok(()) => {}
+                            Ok(()) => {
+                                if let Some(sink) = &sink_opt {
+                                    sink.note_file_done();
+                                }
+                            }
                             Err((_path, err)) if is_fatal_tree_error(&err) => return Err(err),
                             Err((path, err)) => record_transfer_issue(&issues, path, err),
                         }
@@ -691,7 +696,7 @@ async fn run_local_to_remote_upload_workers(
                     Some(s) => ProgressMode::Aggregate(s),
                     None => ProgressMode::None,
                 };
-                stream_local_file_to_remote(
+                match stream_local_file_to_remote(
                     Arc::clone(&target_sftp),
                     child_src.clone(),
                     child_dst,
@@ -701,15 +706,17 @@ async fn run_local_to_remote_upload_workers(
                     progress,
                 )
                 .await
-                .map_err(|err| (child_src.display().to_string(), err))
-                .or_else(|(path, err)| {
-                    if is_fatal_tree_error(&err) {
-                        Err(err)
-                    } else {
-                        record_transfer_issue(&issues, path, err);
-                        Ok(())
+                {
+                    Ok(()) => {
+                        if let Some(sink) = &sink_opt {
+                            sink.note_file_done();
+                        }
                     }
-                })?;
+                    Err(err) if is_fatal_tree_error(&err) => return Err(err),
+                    Err(err) => {
+                        record_transfer_issue(&issues, child_src.display().to_string(), err)
+                    }
+                }
             }
             Ok::<(), String>(())
         });
@@ -779,7 +786,7 @@ async fn run_remote_to_remote_upload_workers(
                     Some(s) => ProgressMode::Aggregate(s),
                     None => ProgressMode::None,
                 };
-                stream_remote_file_to_remote(
+                match stream_remote_file_to_remote(
                     Arc::clone(&source_sftp),
                     child_src.clone(),
                     Arc::clone(&target_sftp),
@@ -791,15 +798,15 @@ async fn run_remote_to_remote_upload_workers(
                     progress,
                 )
                 .await
-                .map_err(|err| (child_src.clone(), err))
-                .or_else(|(path, err)| {
-                    if is_fatal_tree_error(&err) {
-                        Err(err)
-                    } else {
-                        record_transfer_issue(&issues, path, err);
-                        Ok(())
+                {
+                    Ok(()) => {
+                        if let Some(sink) = &sink_opt {
+                            sink.note_file_done();
+                        }
                     }
-                })?;
+                    Err(err) if is_fatal_tree_error(&err) => return Err(err),
+                    Err(err) => record_transfer_issue(&issues, child_src, err),
+                }
             }
             Ok::<(), String>(())
         });
@@ -843,6 +850,10 @@ async fn stream_local_file_to_remote(
     let size_hint = Some(metadata.len());
     match progress {
         ProgressMode::Standalone { app, state } => {
+            if !skip_overwrite_check && !overwrite {
+                ensure_remote_target_available(target_sftp.as_ref(), &target).await?;
+            }
+            let skip_overwrite_check = true;
             let (transfer_id, cancel) = register_transfer(
                 state,
                 app,
@@ -1068,6 +1079,7 @@ pub(crate) async fn copy_local_tree_to_remote(
 
                     if let Some(sink) = &sink_opt {
                         sink.set_total(plan.total_bytes);
+                        sink.set_files_total(plan.file_jobs.len() as u64);
                     }
 
                     let (worker_sftps, _worker_handles) = build_upload_worker_pool(
@@ -1211,6 +1223,7 @@ pub(crate) async fn copy_remote_tree_to_local(
 
                     if let Some(sink) = &sink_opt {
                         sink.set_total(total_bytes);
+                        sink.set_files_total(file_jobs.len() as u64);
                     }
 
                     let issues = Arc::new(issues);
@@ -1243,7 +1256,11 @@ pub(crate) async fn copy_remote_tree_to_local(
                     .buffer_unordered(DIR_DOWNLOAD_CONCURRENCY);
                     while let Some(res) = stream.next().await {
                         match res {
-                            Ok(()) => {}
+                            Ok(()) => {
+                                if let Some(sink) = &sink_opt {
+                                    sink.note_file_done();
+                                }
+                            }
                             Err((_path, err)) if is_fatal_tree_error(&err) => return Err(err),
                             Err((path, err)) => record_transfer_issue(&issues, path, err),
                         }
@@ -1321,6 +1338,10 @@ async fn stream_remote_file_to_remote(
 ) -> Result<(), String> {
     match progress {
         ProgressMode::Standalone { app, state } => {
+            if !skip_overwrite_check && !overwrite {
+                ensure_remote_target_available(target_sftp.as_ref(), &target).await?;
+            }
+            let skip_overwrite_check = true;
             let size_hint = source_sftp.stat(&source).await.ok().map(|m| m.size);
             let (transfer_id, cancel) = register_transfer(
                 state,
@@ -1569,6 +1590,7 @@ pub(crate) async fn copy_remote_tree_to_remote(
 
                     if let Some(sink) = &sink_opt {
                         sink.set_total(plan.total_bytes);
+                        sink.set_files_total(plan.file_jobs.len() as u64);
                     }
 
                     let (target_workers, _worker_handles) = build_upload_worker_pool(

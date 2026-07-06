@@ -59,6 +59,23 @@ async fn remote_path_exists(
     }
 }
 
+/// Probe the destination before a transfer is registered so an expected
+/// conflict surfaces as a plain command error instead of a failed transfer
+/// in the dock. Callers that pass this check should skip the in-transfer
+/// overwrite check (`skip_overwrite_check = true`) to avoid a second stat.
+pub(crate) async fn ensure_remote_target_available(
+    sftp: &zeroterm_ssh::Sftp,
+    target: &str,
+) -> Result<(), String> {
+    if remote_path_exists(sftp, target).await.map_err(ssh_error)? {
+        return Err(ssh_error(zeroterm_ssh::SshError::Sftp {
+            kind: zeroterm_ssh::SftpErrorKind::AlreadyExists,
+            message: format!("destination already exists: {target}"),
+        }));
+    }
+    Ok(())
+}
+
 async fn finalize_remote_upload_target(
     sftp: &zeroterm_ssh::Sftp,
     temp_path: &str,

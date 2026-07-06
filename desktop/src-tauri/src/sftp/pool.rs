@@ -222,6 +222,14 @@ impl SftpPool {
             unreachable!("finish_channel_open only handles opening reservations");
         };
 
+        // Frees the Opening slot if the open fails or this future is dropped,
+        // so a failed open never permanently consumes host channel quota.
+        let mut opening_guard = OpeningGuard {
+            host: &host,
+            channel_id,
+            completed: false,
+        };
+
         let sftp = self.open_sftp_for_host(&host).await?;
 
         let mut state = host.state.lock().unwrap();
@@ -233,6 +241,8 @@ impl SftpPool {
                 leased: !pinned,
             },
         );
+        drop(state);
+        opening_guard.completed = true;
 
         Ok(PanelChannel { channel_id, sftp })
     }
@@ -377,6 +387,27 @@ enum ChannelEntry {
 enum ChannelReservation {
     Ready { channel_id: u64, sftp: Arc<Sftp> },
     Opening { channel_id: u64 },
+}
+
+/// Removes an `Opening` placeholder from the host pool unless the open
+/// completed, covering both error returns and cancelled futures.
+struct OpeningGuard<'a> {
+    host: &'a HostPool,
+    channel_id: u64,
+    completed: bool,
+}
+
+impl Drop for OpeningGuard<'_> {
+    fn drop(&mut self) {
+        if !self.completed {
+            self.host
+                .state
+                .lock()
+                .unwrap()
+                .channels
+                .remove(&self.channel_id);
+        }
+    }
 }
 
 pub(crate) struct PanelChannel {

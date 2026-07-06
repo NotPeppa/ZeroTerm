@@ -1216,6 +1216,23 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
                         </article>
                       </div>
                       <section id="sftp-transfer-dock" class="sftp-transfer-dock" hidden aria-live="polite">
+                        <header class="sftp-transfer-header">
+                          <button
+                            id="sftp-transfer-collapse"
+                            class="sftp-transfer-collapse"
+                            type="button"
+                            aria-expanded="true"
+                          >
+                            <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                              <path d="m6 14 6-6 6 6"></path>
+                            </svg>
+                          </button>
+                          <span id="sftp-transfer-title" class="sftp-transfer-title">Transfers</span>
+                          <span id="sftp-transfer-summary" class="sftp-transfer-summary"></span>
+                          <button id="sftp-transfer-clear" class="sftp-transfer-clear" type="button" hidden>
+                            Clear finished
+                          </button>
+                        </header>
                         <div id="sftp-transfer-list" class="sftp-transfer-list"></div>
                       </section>
                       <div id="files-context-menu" class="files-context-menu" hidden>
