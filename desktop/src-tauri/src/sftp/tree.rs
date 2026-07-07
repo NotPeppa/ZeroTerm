@@ -1,10 +1,8 @@
 use std::collections::HashSet;
-use std::collections::VecDeque;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use futures_util::stream::StreamExt;
 use tauri::{AppHandle, Manager};
 use tracing::warn;
 use zeroterm_ssh::Sftp;
@@ -34,6 +32,11 @@ const DIR_DOWNLOAD_CONCURRENCY: usize = 4;
 /// uploads one file at a time; this keeps concurrency without interleaving
 /// multiple file writes on a single fragile channel.
 const DIR_UPLOAD_WORKERS: usize = 3;
+
+/// Bounded queue for recursive tree jobs. This keeps huge trees from building
+/// an unbounded in-memory job list while still letting traversal stay ahead of
+/// active transfers by a small amount.
+const TREE_JOB_QUEUE_BOUND: usize = 64;
 
 #[derive(Debug, Clone)]
 pub(crate) struct TransferIssue {
@@ -94,23 +97,6 @@ pub(crate) fn finish_transfer_issues(issues: &Mutex<Vec<TransferIssue>>) -> Resu
     }
 }
 
-pub(crate) fn merge_transfer_issue_result(
-    issues: &Mutex<Vec<TransferIssue>>,
-    worker_result: Result<(), String>,
-) -> Result<(), String> {
-    match (finish_transfer_issues(issues), worker_result) {
-        (_, Err(err)) => Err(err),
-        (Err(summary), Ok(())) => Err(summary),
-        (Ok(()), Ok(())) => Ok(()),
-    }
-}
-
-pub(crate) struct PlannedTreeCopy<Job> {
-    pub(crate) file_jobs: Vec<Job>,
-    pub(crate) total_bytes: u64,
-    pub(crate) issues: Vec<TransferIssue>,
-}
-
 pub(crate) async fn ensure_remote_dir_exists(sftp: &Sftp, path: &str) -> Result<bool, String> {
     match sftp.create_dir(path).await {
         Ok(()) => Ok(true),
@@ -145,27 +131,40 @@ pub(crate) async fn remote_existing_names(
         .map(|entries| entries.into_iter().map(|entry| entry.name).collect())
 }
 
-pub(crate) async fn plan_local_to_remote_copy<F>(
-    source: &Path,
-    target: &str,
-    target_sftp: &Sftp,
+fn tree_transfer_cancelled(sink_opt: &Option<Arc<TransferSink>>) -> bool {
+    sink_opt
+        .as_ref()
+        .is_some_and(|sink| sink.cancel_token().is_cancelled())
+}
+
+fn note_tree_file_discovered(sink_opt: &Option<Arc<TransferSink>>, size: u64, current_file: &str) {
+    if let Some(sink) = sink_opt {
+        sink.add_total_bytes(size);
+        sink.add_files_total(1);
+        sink.note_path(current_file);
+    }
+}
+
+async fn produce_local_to_remote_jobs(
+    source: PathBuf,
+    target: String,
+    target_sftp: Arc<zeroterm_ssh::Sftp>,
     overwrite: bool,
-    note_path: Option<&F>,
-) -> Result<PlannedTreeCopy<(PathBuf, String)>, String>
-where
-    F: Fn(&str) + Send + Sync + ?Sized,
-{
-    let issues = Mutex::new(Vec::<TransferIssue>::new());
-    let mut file_jobs = Vec::new();
-    let mut total_bytes: u64 = 0;
-    let mut stack: Vec<(PathBuf, String, bool)> =
-        vec![(source.to_path_buf(), target.to_string(), false)];
+    tx: tokio::sync::mpsc::Sender<(PathBuf, String)>,
+    issues: Arc<Mutex<Vec<TransferIssue>>>,
+    sink_opt: Option<Arc<TransferSink>>,
+) -> Result<(), String> {
+    let mut stack: Vec<(PathBuf, String, bool)> = vec![(source, target, false)];
 
     while let Some((src_dir, dst_dir, dst_fresh)) = stack.pop() {
-        if let Some(note) = note_path {
-            note(&src_dir.display().to_string());
+        if tree_transfer_cancelled(&sink_opt) {
+            return Ok(());
         }
-        let existing = match remote_existing_names(target_sftp, &dst_dir, dst_fresh).await {
+        if let Some(sink) = &sink_opt {
+            sink.note_path(&src_dir.display().to_string());
+        }
+        let existing = match remote_existing_names(target_sftp.as_ref(), &dst_dir, dst_fresh).await
+        {
             Ok(existing) => existing,
             Err(err) => {
                 if is_fatal_tree_error(&err) {
@@ -187,6 +186,9 @@ where
             }
         };
         for item in rd {
+            if tree_transfer_cancelled(&sink_opt) {
+                return Ok(());
+            }
             let entry = match item {
                 Ok(entry) => entry,
                 Err(e) => {
@@ -218,13 +220,16 @@ where
                         );
                         continue;
                     }
-                    if let Ok(meta) = entry.metadata() {
-                        total_bytes = total_bytes.saturating_add(meta.len());
-                    }
-                    file_jobs.push((child_src, child_dst));
+                    let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                    note_tree_file_discovered(&sink_opt, size, &child_src.display().to_string());
+                    tx.send((child_src, child_dst))
+                        .await
+                        .map_err(|_| "transfer worker stopped".to_string())?;
                 }
                 CopyNodeKind::Dir => {
-                    let fresh = match ensure_remote_dir_exists(target_sftp, &child_dst).await {
+                    let fresh = match ensure_remote_dir_exists(target_sftp.as_ref(), &child_dst)
+                        .await
+                    {
                         Ok(fresh) => fresh,
                         Err(err) => {
                             if is_fatal_tree_error(&err) {
@@ -240,44 +245,26 @@ where
         }
     }
 
-    Ok(PlannedTreeCopy {
-        file_jobs,
-        total_bytes,
-        issues: issues.into_inner().unwrap(),
-    })
+    Ok(())
 }
 
-pub(crate) async fn plan_remote_to_remote_copy<F>(
-    source: &str,
-    target: &str,
-    source_sftp: &Sftp,
-    target_sftp: &Sftp,
-    overwrite: bool,
-    note_path: Option<&F>,
-) -> Result<PlannedTreeCopy<(String, String)>, String>
-where
-    F: Fn(&str) + Send + Sync + ?Sized,
-{
-    let issues = Mutex::new(Vec::<TransferIssue>::new());
-    let mut file_jobs = Vec::new();
-    let mut total_bytes: u64 = 0;
-    let mut stack: Vec<(String, String, bool)> =
-        vec![(source.to_string(), target.to_string(), false)];
+async fn produce_remote_to_local_jobs(
+    source_sftp: Arc<zeroterm_ssh::Sftp>,
+    source: String,
+    target: PathBuf,
+    tx: tokio::sync::mpsc::Sender<(String, PathBuf)>,
+    issues: Arc<Mutex<Vec<TransferIssue>>>,
+    sink_opt: Option<Arc<TransferSink>>,
+) -> Result<(), String> {
+    let mut stack: Vec<(String, PathBuf)> = vec![(source, target)];
 
-    while let Some((src_dir, dst_dir, dst_fresh)) = stack.pop() {
-        if let Some(note) = note_path {
-            note(&src_dir);
+    while let Some((src_dir, dst_dir)) = stack.pop() {
+        if tree_transfer_cancelled(&sink_opt) {
+            return Ok(());
         }
-        let existing = match remote_existing_names(target_sftp, &dst_dir, dst_fresh).await {
-            Ok(existing) => existing,
-            Err(err) => {
-                if is_fatal_tree_error(&err) {
-                    return Err(err);
-                }
-                record_transfer_issue(&issues, src_dir.clone(), err);
-                continue;
-            }
-        };
+        if let Some(sink) = &sink_opt {
+            sink.note_path(&src_dir);
+        }
         let entries = match source_sftp.list(&src_dir).await {
             Ok(entries) => entries,
             Err(err) => {
@@ -290,6 +277,93 @@ where
             }
         };
         for entry in entries {
+            if tree_transfer_cancelled(&sink_opt) {
+                return Ok(());
+            }
+            if entry.name == "." || entry.name == ".." {
+                continue;
+            }
+            let child_src = remote_join_path(&src_dir, &entry.name);
+            let child_dst = dst_dir.join(&entry.name);
+            let kind = match detect_remote_kind(&child_src, entry.kind) {
+                Ok(kind) => kind,
+                Err(err) => {
+                    record_transfer_issue(&issues, child_src.clone(), err);
+                    continue;
+                }
+            };
+            match kind {
+                CopyNodeKind::File => {
+                    note_tree_file_discovered(&sink_opt, entry.size, &child_src);
+                    tx.send((child_src, child_dst))
+                        .await
+                        .map_err(|_| "transfer worker stopped".to_string())?;
+                }
+                CopyNodeKind::Dir => {
+                    if tokio::fs::metadata(&child_dst).await.is_err() {
+                        if let Err(e) = tokio::fs::create_dir_all(&child_dst).await {
+                            let err = format!("mkdir {}: {e}", child_dst.display());
+                            if is_fatal_tree_error(&err) {
+                                return Err(err);
+                            }
+                            record_transfer_issue(&issues, child_src.clone(), err);
+                            continue;
+                        }
+                    }
+                    stack.push((child_src, child_dst));
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn produce_remote_to_remote_jobs(
+    source_sftp: Arc<zeroterm_ssh::Sftp>,
+    source: String,
+    target_sftp: Arc<zeroterm_ssh::Sftp>,
+    target: String,
+    overwrite: bool,
+    tx: tokio::sync::mpsc::Sender<(String, String)>,
+    issues: Arc<Mutex<Vec<TransferIssue>>>,
+    sink_opt: Option<Arc<TransferSink>>,
+) -> Result<(), String> {
+    let mut stack: Vec<(String, String, bool)> = vec![(source, target, false)];
+
+    while let Some((src_dir, dst_dir, dst_fresh)) = stack.pop() {
+        if tree_transfer_cancelled(&sink_opt) {
+            return Ok(());
+        }
+        if let Some(sink) = &sink_opt {
+            sink.note_path(&src_dir);
+        }
+        let existing = match remote_existing_names(target_sftp.as_ref(), &dst_dir, dst_fresh).await
+        {
+            Ok(existing) => existing,
+            Err(err) => {
+                if is_fatal_tree_error(&err) {
+                    return Err(err);
+                }
+                record_transfer_issue(&issues, src_dir.clone(), err);
+                continue;
+            }
+        };
+        let entries = match source_sftp.as_ref().list(&src_dir).await {
+            Ok(entries) => entries,
+            Err(err) => {
+                let err = ssh_error(err);
+                if is_fatal_tree_error(&err) {
+                    return Err(err);
+                }
+                record_transfer_issue(&issues, src_dir.clone(), err);
+                continue;
+            }
+        };
+        for entry in entries {
+            if tree_transfer_cancelled(&sink_opt) {
+                return Ok(());
+            }
             if entry.name == "." || entry.name == ".." {
                 continue;
             }
@@ -312,31 +386,110 @@ where
                         );
                         continue;
                     }
-                    total_bytes = total_bytes.saturating_add(entry.size);
-                    file_jobs.push((child_src, child_dst));
+                    note_tree_file_discovered(&sink_opt, entry.size, &child_src);
+                    tx.send((child_src, child_dst))
+                        .await
+                        .map_err(|_| "transfer worker stopped".to_string())?;
                 }
                 CopyNodeKind::Dir => {
-                    let fresh = match ensure_remote_dir_exists(target_sftp, &child_dst).await {
-                        Ok(fresh) => fresh,
-                        Err(err) => {
-                            if is_fatal_tree_error(&err) {
-                                return Err(err);
+                    let fresh =
+                        match ensure_remote_dir_exists(target_sftp.as_ref(), &child_dst).await {
+                            Ok(fresh) => fresh,
+                            Err(err) => {
+                                if is_fatal_tree_error(&err) {
+                                    return Err(err);
+                                }
+                                record_transfer_issue(&issues, child_src.clone(), err);
+                                continue;
                             }
-                            record_transfer_issue(&issues, child_src.clone(), err);
-                            continue;
-                        }
-                    };
+                        };
                     stack.push((child_src, child_dst, fresh));
                 }
             }
         }
     }
 
-    Ok(PlannedTreeCopy {
-        file_jobs,
-        total_bytes,
-        issues: issues.into_inner().unwrap(),
-    })
+    Ok(())
+}
+
+async fn produce_local_to_local_jobs(
+    source: PathBuf,
+    target: PathBuf,
+    tx: tokio::sync::mpsc::Sender<(PathBuf, PathBuf)>,
+    issues: Arc<Mutex<Vec<TransferIssue>>>,
+    sink_opt: Option<Arc<TransferSink>>,
+) -> Result<(), String> {
+    let mut stack: Vec<(PathBuf, PathBuf)> = vec![(source, target)];
+
+    while let Some((src_dir, dst_dir)) = stack.pop() {
+        if tree_transfer_cancelled(&sink_opt) {
+            return Ok(());
+        }
+        if let Some(sink) = &sink_opt {
+            sink.note_path(&src_dir.display().to_string());
+        }
+        let rd = match fs::read_dir(&src_dir) {
+            Ok(rd) => rd,
+            Err(e) => {
+                let err = format!("read_dir {}: {e}", src_dir.display());
+                if is_fatal_tree_error(&err) {
+                    return Err(err);
+                }
+                record_transfer_issue(&issues, src_dir.display().to_string(), err);
+                continue;
+            }
+        };
+        for item in rd {
+            if tree_transfer_cancelled(&sink_opt) {
+                return Ok(());
+            }
+            let entry = match item {
+                Ok(entry) => entry,
+                Err(e) => {
+                    let err = format!("read_dir entry {}: {e}", src_dir.display());
+                    if is_fatal_tree_error(&err) {
+                        return Err(err);
+                    }
+                    record_transfer_issue(&issues, src_dir.display().to_string(), err);
+                    continue;
+                }
+            };
+            let name = entry.file_name();
+            let child_src = entry.path();
+            let child_dst = dst_dir.join(&name);
+            let kind = match detect_local_kind(&child_src) {
+                Ok(kind) => kind,
+                Err(err) => {
+                    record_transfer_issue(&issues, child_src.display().to_string(), err);
+                    continue;
+                }
+            };
+            match kind {
+                CopyNodeKind::File => {
+                    let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                    note_tree_file_discovered(&sink_opt, size, &child_src.display().to_string());
+                    tx.send((child_src, child_dst))
+                        .await
+                        .map_err(|_| "transfer worker stopped".to_string())?;
+                }
+                CopyNodeKind::Dir => {
+                    if tokio::fs::metadata(&child_dst).await.is_err() {
+                        if let Err(e) = tokio::fs::create_dir_all(&child_dst).await {
+                            let err = format!("mkdir {}: {e}", child_dst.display());
+                            if is_fatal_tree_error(&err) {
+                                return Err(err);
+                            }
+                            record_transfer_issue(&issues, child_src.display().to_string(), err);
+                            continue;
+                        }
+                    }
+                    stack.push((child_src, child_dst));
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 pub(crate) async fn copy_local_tree_to_local(
@@ -375,129 +528,84 @@ pub(crate) async fn copy_local_tree_to_local(
                 source.display().to_string(),
                 target.display().to_string(),
                 move |sink_opt| async move {
-                    let issues = Mutex::new(Vec::<TransferIssue>::new());
-                    let mut file_jobs: Vec<(PathBuf, PathBuf)> = Vec::new();
-                    let mut total_bytes: u64 = 0;
-                    let mut stack: Vec<(PathBuf, PathBuf)> = vec![(source.clone(), target.clone())];
-                    while let Some((src_dir, dst_dir)) = stack.pop() {
-                        if let Some(sink) = &sink_opt {
-                            sink.note_path(&src_dir.display().to_string());
-                        }
-                        let rd = match fs::read_dir(&src_dir) {
-                            Ok(rd) => rd,
-                            Err(e) => {
-                                let err = format!("read_dir {}: {e}", src_dir.display());
-                                if is_fatal_tree_error(&err) {
-                                    return Err(err);
-                                }
-                                record_transfer_issue(&issues, src_dir.display().to_string(), err);
-                                continue;
-                            }
-                        };
-                        for item in rd {
-                            let entry = match item {
-                                Ok(entry) => entry,
-                                Err(e) => {
-                                    let err = format!("read_dir entry {}: {e}", src_dir.display());
-                                    if is_fatal_tree_error(&err) {
-                                        return Err(err);
-                                    }
-                                    record_transfer_issue(
-                                        &issues,
-                                        src_dir.display().to_string(),
-                                        err,
-                                    );
-                                    continue;
-                                }
-                            };
-                            let name = entry.file_name();
-                            let child_src = entry.path();
-                            let child_dst = dst_dir.join(&name);
-                            let kind = match detect_local_kind(&child_src) {
-                                Ok(kind) => kind,
-                                Err(err) => {
-                                    record_transfer_issue(
-                                        &issues,
-                                        child_src.display().to_string(),
-                                        err,
-                                    );
-                                    continue;
-                                }
-                            };
-                            match kind {
-                                CopyNodeKind::File => {
-                                    if let Ok(meta) = entry.metadata() {
-                                        total_bytes = total_bytes.saturating_add(meta.len());
-                                    }
-                                    file_jobs.push((child_src, child_dst));
-                                }
-                                CopyNodeKind::Dir => {
-                                    if !child_dst.exists() {
-                                        if let Err(e) = fs::create_dir_all(&child_dst) {
-                                            let err = format!("mkdir {}: {e}", child_dst.display());
-                                            if is_fatal_tree_error(&err) {
-                                                return Err(err);
-                                            }
-                                            record_transfer_issue(
-                                                &issues,
-                                                child_src.display().to_string(),
-                                                err,
-                                            );
-                                            continue;
-                                        }
-                                    }
-                                    stack.push((child_src, child_dst));
-                                }
-                            }
-                        }
+                    let issues = Arc::new(Mutex::new(Vec::<TransferIssue>::new()));
+                    let (tx, rx) = tokio::sync::mpsc::channel(TREE_JOB_QUEUE_BOUND);
+                    let producer = produce_local_to_local_jobs(
+                        source,
+                        target,
+                        tx,
+                        Arc::clone(&issues),
+                        sink_opt.clone(),
+                    );
+                    let worker = run_local_to_local_copy_workers_stream(
+                        rx,
+                        Arc::clone(&issues),
+                        overwrite,
+                        sink_opt,
+                    );
+                    let (producer_result, worker_result) = tokio::join!(producer, worker);
+                    match (producer_result, worker_result) {
+                        (Err(err), _) | (_, Err(err)) => Err(err),
+                        (Ok(()), Ok(())) => finish_transfer_issues(&issues),
                     }
-
-                    if let Some(sink) = &sink_opt {
-                        sink.set_total(total_bytes);
-                        sink.set_files_total(file_jobs.len() as u64);
-                    }
-
-                    let issues = Arc::new(issues);
-                    let mut stream = futures_util::stream::iter(file_jobs.into_iter().map(
-                        |(child_src, child_dst)| {
-                            let sink_opt = sink_opt.clone();
-                            async move {
-                                if let Some(s) = &sink_opt {
-                                    s.note_path(&child_src.display().to_string());
-                                }
-                                let progress = match sink_opt {
-                                    Some(s) => ProgressMode::Aggregate(s),
-                                    None => ProgressMode::None,
-                                };
-                                stream_local_file_to_local(
-                                    child_src.clone(),
-                                    child_dst,
-                                    overwrite,
-                                    progress,
-                                )
-                                .await
-                                .map_err(|err| (child_src.display().to_string(), err))
-                            }
-                        },
-                    ))
-                    .buffer_unordered(DIR_DOWNLOAD_CONCURRENCY);
-                    while let Some(res) = stream.next().await {
-                        match res {
-                            Ok(()) => {
-                                if let Some(sink) = &sink_opt {
-                                    sink.note_file_done();
-                                }
-                            }
-                            Err((_path, err)) if is_fatal_tree_error(&err) => return Err(err),
-                            Err((path, err)) => record_transfer_issue(&issues, path, err),
-                        }
-                    }
-                    finish_transfer_issues(&issues)
                 },
             )
             .await
         }
     }
+}
+
+async fn run_local_to_local_copy_workers_stream(
+    rx: tokio::sync::mpsc::Receiver<(PathBuf, PathBuf)>,
+    issues: Arc<Mutex<Vec<TransferIssue>>>,
+    overwrite: bool,
+    sink_opt: Option<Arc<TransferSink>>,
+) -> Result<(), String> {
+    let queue = Arc::new(tokio::sync::Mutex::new(rx));
+    let mut joins = tokio::task::JoinSet::new();
+
+    for _ in 0..DIR_DOWNLOAD_CONCURRENCY {
+        let queue = Arc::clone(&queue);
+        let sink_opt = sink_opt.clone();
+        let issues = Arc::clone(&issues);
+        joins.spawn(async move {
+            loop {
+                if tree_transfer_cancelled(&sink_opt) {
+                    break;
+                }
+                let next = {
+                    let mut queue = queue.lock().await;
+                    queue.recv().await
+                };
+                let Some((child_src, child_dst)) = next else {
+                    break;
+                };
+                if let Some(sink) = &sink_opt {
+                    sink.note_path(&child_src.display().to_string());
+                }
+                let progress = match sink_opt.clone() {
+                    Some(s) => ProgressMode::Aggregate(s),
+                    None => ProgressMode::None,
+                };
+                match stream_local_file_to_local(child_src.clone(), child_dst, overwrite, progress)
+                    .await
+                {
+                    Ok(()) => {
+                        if let Some(sink) = &sink_opt {
+                            sink.note_file_done();
+                        }
+                    }
+                    Err(err) if is_fatal_tree_error(&err) => return Err(err),
+                    Err(err) => {
+                        record_transfer_issue(&issues, child_src.display().to_string(), err)
+                    }
+                }
+            }
+            Ok::<(), String>(())
+        });
+    }
+
+    join_tree_workers(joins, &sink_opt).await
 }
 
 async fn stream_local_file_to_local(
@@ -626,48 +734,146 @@ where
     Ok(done)
 }
 
-pub(crate) async fn build_upload_worker_pool(
+async fn build_streaming_worker_pool(
     primary: Arc<zeroterm_ssh::Sftp>,
     progress_ctx: Option<(&AppHandle, &AppState)>,
-    target_host_id: Option<&str>,
+    host_id: Option<&str>,
+    desired_workers: usize,
+    worker_kind: &'static str,
 ) -> (Vec<Arc<zeroterm_ssh::Sftp>>, Vec<SftpChannelGuard>) {
-    let mut workers = vec![primary];
+    let mut workers = Vec::new();
     let mut extra_handles = Vec::new();
 
-    let (Some((app, state)), Some(host_id)) = (progress_ctx, target_host_id) else {
-        return (workers, extra_handles);
-    };
-
-    for worker_index in 1..DIR_UPLOAD_WORKERS {
-        match open_ephemeral_sftp(state, app, host_id).await {
-            Ok(handle) => {
-                workers.push(handle.sftp());
-                extra_handles.push(handle);
-            }
-            Err(err) => {
-                warn!(
-                    host_id = %host_id,
-                    worker_index,
-                    error = %err,
-                    "failed to open extra SFTP upload worker; continuing with fewer workers"
-                );
-                break;
+    if let (Some((app, state)), Some(host_id)) = (progress_ctx, host_id) {
+        for worker_index in 0..desired_workers {
+            match open_ephemeral_sftp(state, app, host_id).await {
+                Ok(handle) => {
+                    workers.push(handle.sftp());
+                    extra_handles.push(handle);
+                }
+                Err(err) => {
+                    warn!(
+                        host_id = %host_id,
+                        worker_index,
+                        worker_kind,
+                        error = %err,
+                        "failed to open streaming SFTP worker; continuing with fewer workers"
+                    );
+                    break;
+                }
             }
         }
+    }
+
+    if workers.is_empty() {
+        workers.push(primary);
     }
 
     (workers, extra_handles)
 }
 
-async fn run_local_to_remote_upload_workers(
-    file_jobs: Vec<(PathBuf, String)>,
+pub(crate) async fn build_streaming_upload_worker_pool(
+    primary: Arc<zeroterm_ssh::Sftp>,
+    progress_ctx: Option<(&AppHandle, &AppState)>,
+    target_host_id: Option<&str>,
+) -> (Vec<Arc<zeroterm_ssh::Sftp>>, Vec<SftpChannelGuard>) {
+    build_streaming_worker_pool(
+        primary,
+        progress_ctx,
+        target_host_id,
+        DIR_UPLOAD_WORKERS,
+        "upload",
+    )
+    .await
+}
+
+async fn build_streaming_download_worker_pool(
+    primary: Arc<zeroterm_ssh::Sftp>,
+    progress_ctx: Option<(&AppHandle, &AppState)>,
+    source_host_id: Option<&str>,
+) -> (Vec<Arc<zeroterm_ssh::Sftp>>, Vec<SftpChannelGuard>) {
+    build_streaming_worker_pool(
+        primary,
+        progress_ctx,
+        source_host_id,
+        DIR_DOWNLOAD_CONCURRENCY,
+        "download",
+    )
+    .await
+}
+
+async fn build_same_host_remote_copy_worker_pairs(
+    primary_source: Arc<zeroterm_ssh::Sftp>,
+    primary_target: Arc<zeroterm_ssh::Sftp>,
+    progress_ctx: Option<(&AppHandle, &AppState)>,
+    host_id: Option<&str>,
+) -> Result<
+    (
+        Vec<Arc<zeroterm_ssh::Sftp>>,
+        Vec<Arc<zeroterm_ssh::Sftp>>,
+        Vec<SftpChannelGuard>,
+    ),
+    String,
+> {
+    let desired_workers = DIR_UPLOAD_WORKERS.min(DIR_DOWNLOAD_CONCURRENCY);
+    let mut source_workers = Vec::new();
+    let mut target_workers = Vec::new();
+    let mut handles = Vec::new();
+
+    if let (Some((app, state)), Some(host_id)) = (progress_ctx, host_id) {
+        for worker_index in 0..desired_workers {
+            let source_handle = match open_ephemeral_sftp(state, app, host_id).await {
+                Ok(handle) => handle,
+                Err(err) => {
+                    warn!(
+                        host_id = %host_id,
+                        worker_index,
+                        error = %err,
+                        "failed to open dedicated source SFTP worker for same-host remote copy"
+                    );
+                    break;
+                }
+            };
+            let target_handle = match open_ephemeral_sftp(state, app, host_id).await {
+                Ok(handle) => handle,
+                Err(err) => {
+                    warn!(
+                        host_id = %host_id,
+                        worker_index,
+                        error = %err,
+                        "failed to open dedicated target SFTP worker for same-host remote copy"
+                    );
+                    break;
+                }
+            };
+            source_workers.push(source_handle.sftp());
+            target_workers.push(target_handle.sftp());
+            handles.push(source_handle);
+            handles.push(target_handle);
+        }
+
+        if source_workers.is_empty() {
+            return Err(string_error(format!(
+                "not enough SFTP channels for same-host remote copy on host {host_id}; close another SFTP panel or wait for other transfers to finish"
+            )));
+        }
+    } else {
+        source_workers.push(primary_source);
+        target_workers.push(primary_target);
+    }
+
+    Ok((source_workers, target_workers, handles))
+}
+
+async fn run_local_to_remote_upload_workers_stream(
+    rx: tokio::sync::mpsc::Receiver<(PathBuf, String)>,
+    issues: Arc<Mutex<Vec<TransferIssue>>>,
     workers: Vec<Arc<zeroterm_ssh::Sftp>>,
     overwrite: bool,
     retry_host_id: Option<String>,
     sink_opt: Option<Arc<TransferSink>>,
 ) -> Result<(), String> {
-    let queue = Arc::new(tokio::sync::Mutex::new(VecDeque::from(file_jobs)));
-    let issues = Arc::new(Mutex::new(Vec::<TransferIssue>::new()));
+    let queue = Arc::new(tokio::sync::Mutex::new(rx));
     let mut joins = tokio::task::JoinSet::new();
 
     for target_sftp in workers {
@@ -677,104 +883,128 @@ async fn run_local_to_remote_upload_workers(
         let retry_host_id = retry_host_id.clone();
         joins.spawn(async move {
             loop {
-                if let Some(sink) = &sink_opt {
-                    if sink.cancel_token().is_cancelled() {
-                        break;
-                    }
+                if tree_transfer_cancelled(&sink_opt) {
+                    break;
                 }
                 let next = {
                     let mut queue = queue.lock().await;
-                    queue.pop_front()
+                    queue.recv().await
                 };
                 let Some((child_src, child_dst)) = next else {
                     break;
                 };
-                if let Some(sink) = &sink_opt {
-                    sink.note_path(&child_src.display().to_string());
-                }
-                let progress = match sink_opt.clone() {
-                    Some(s) => ProgressMode::Aggregate(s),
-                    None => ProgressMode::None,
-                };
-                match stream_local_file_to_remote(
+                run_one_local_to_remote_upload_job(
                     Arc::clone(&target_sftp),
-                    child_src.clone(),
+                    child_src,
                     child_dst,
                     overwrite,
-                    true,
                     retry_host_id.as_deref(),
-                    progress,
+                    sink_opt.clone(),
+                    Arc::clone(&issues),
                 )
-                .await
-                {
-                    Ok(()) => {
-                        if let Some(sink) = &sink_opt {
-                            sink.note_file_done();
-                        }
-                    }
-                    Err(err) if is_fatal_tree_error(&err) => return Err(err),
-                    Err(err) => {
-                        record_transfer_issue(&issues, child_src.display().to_string(), err)
-                    }
-                }
+                .await?;
             }
             Ok::<(), String>(())
         });
     }
 
+    join_tree_workers(joins, &sink_opt).await
+}
+
+async fn run_one_local_to_remote_upload_job(
+    target_sftp: Arc<zeroterm_ssh::Sftp>,
+    child_src: PathBuf,
+    child_dst: String,
+    overwrite: bool,
+    retry_host_id: Option<&str>,
+    sink_opt: Option<Arc<TransferSink>>,
+    issues: Arc<Mutex<Vec<TransferIssue>>>,
+) -> Result<(), String> {
+    if let Some(sink) = &sink_opt {
+        sink.note_path(&child_src.display().to_string());
+    }
+    let progress = match sink_opt.clone() {
+        Some(s) => ProgressMode::Aggregate(s),
+        None => ProgressMode::None,
+    };
+    match stream_local_file_to_remote(
+        target_sftp,
+        child_src.clone(),
+        child_dst,
+        overwrite,
+        true,
+        retry_host_id,
+        progress,
+    )
+    .await
+    {
+        Ok(()) => {
+            if let Some(sink) = &sink_opt {
+                sink.note_file_done();
+            }
+            Ok(())
+        }
+        Err(err) if is_fatal_tree_error(&err) => Err(err),
+        Err(err) => {
+            record_transfer_issue(&issues, child_src.display().to_string(), err);
+            Ok(())
+        }
+    }
+}
+
+async fn join_tree_workers(
+    mut joins: tokio::task::JoinSet<Result<(), String>>,
+    sink_opt: &Option<Arc<TransferSink>>,
+) -> Result<(), String> {
     while let Some(result) = joins.join_next().await {
         match result {
             Ok(Ok(())) => {}
             Ok(Err(err)) => {
-                if let Some(sink) = &sink_opt {
+                if let Some(sink) = sink_opt {
                     sink.cancel.cancel();
                 }
                 joins.shutdown().await;
                 return Err(err);
             }
             Err(err) => {
-                if let Some(sink) = &sink_opt {
+                if let Some(sink) = sink_opt {
                     sink.cancel.cancel();
                 }
                 joins.shutdown().await;
-                return Err(format!("upload worker task failed: {err}"));
+                return Err(format!("transfer worker task failed: {err}"));
             }
         }
     }
-
-    finish_transfer_issues(&issues)
+    Ok(())
 }
 
-async fn run_remote_to_remote_upload_workers(
-    file_jobs: Vec<(String, String)>,
-    source_sftp: Arc<zeroterm_ssh::Sftp>,
+async fn run_remote_to_remote_upload_workers_stream(
+    rx: tokio::sync::mpsc::Receiver<(String, String)>,
+    issues: Arc<Mutex<Vec<TransferIssue>>>,
+    source_workers: Vec<Arc<zeroterm_ssh::Sftp>>,
     target_workers: Vec<Arc<zeroterm_ssh::Sftp>>,
     overwrite: bool,
     source_host_id: Option<String>,
     target_host_id: Option<String>,
     sink_opt: Option<Arc<TransferSink>>,
 ) -> Result<(), String> {
-    let queue = Arc::new(tokio::sync::Mutex::new(VecDeque::from(file_jobs)));
-    let issues = Arc::new(Mutex::new(Vec::<TransferIssue>::new()));
+    let queue = Arc::new(tokio::sync::Mutex::new(rx));
     let mut joins = tokio::task::JoinSet::new();
 
-    for target_sftp in target_workers {
+    for (source_sftp, target_sftp) in source_workers.into_iter().zip(target_workers.into_iter()) {
         let queue = Arc::clone(&queue);
         let sink_opt = sink_opt.clone();
-        let source_sftp = Arc::clone(&source_sftp);
         let issues = Arc::clone(&issues);
         let source_host_id = source_host_id.clone();
         let target_host_id = target_host_id.clone();
         joins.spawn(async move {
             loop {
-                if let Some(sink) = &sink_opt {
-                    if sink.cancel_token().is_cancelled() {
-                        break;
-                    }
+                if tree_transfer_cancelled(&sink_opt) {
+                    break;
                 }
                 let next = {
                     let mut queue = queue.lock().await;
-                    queue.pop_front()
+                    queue.recv().await
                 };
                 let Some((child_src, child_dst)) = next else {
                     break;
@@ -812,27 +1042,7 @@ async fn run_remote_to_remote_upload_workers(
         });
     }
 
-    while let Some(result) = joins.join_next().await {
-        match result {
-            Ok(Ok(())) => {}
-            Ok(Err(err)) => {
-                if let Some(sink) = &sink_opt {
-                    sink.cancel.cancel();
-                }
-                joins.shutdown().await;
-                return Err(err);
-            }
-            Err(err) => {
-                if let Some(sink) = &sink_opt {
-                    sink.cancel.cancel();
-                }
-                joins.shutdown().await;
-                return Err(format!("copy worker task failed: {err}"));
-            }
-        }
-    }
-
-    finish_transfer_issues(&issues)
+    join_tree_workers(joins, &sink_opt).await
 }
 
 async fn stream_local_file_to_remote(
@@ -1062,41 +1272,37 @@ pub(crate) async fn copy_local_tree_to_remote(
                 source.display().to_string(),
                 target.clone(),
                 move |sink_opt| async move {
-                    let note_path = |path: &str| {
-                        if let Some(sink) = &sink_opt {
-                            sink.note_path(path);
-                        }
-                    };
-                    let plan = plan_local_to_remote_copy(
-                        &source,
-                        &target,
-                        target_sftp.as_ref(),
-                        overwrite,
-                        Some(&note_path),
-                    )
-                    .await?;
-                    let issues = Mutex::new(plan.issues);
+                    let issues = Arc::new(Mutex::new(Vec::<TransferIssue>::new()));
+                    let (tx, rx) = tokio::sync::mpsc::channel(TREE_JOB_QUEUE_BOUND);
 
-                    if let Some(sink) = &sink_opt {
-                        sink.set_total(plan.total_bytes);
-                        sink.set_files_total(plan.file_jobs.len() as u64);
-                    }
-
-                    let (worker_sftps, _worker_handles) = build_upload_worker_pool(
+                    let (worker_sftps, _worker_handles) = build_streaming_upload_worker_pool(
                         Arc::clone(&target_sftp),
                         worker_progress_ctx,
                         target_host_id.as_deref(),
                     )
                     .await;
-                    let worker_result = run_local_to_remote_upload_workers(
-                        plan.file_jobs,
+                    let producer = produce_local_to_remote_jobs(
+                        source,
+                        target,
+                        Arc::clone(&target_sftp),
+                        overwrite,
+                        tx,
+                        Arc::clone(&issues),
+                        sink_opt.clone(),
+                    );
+                    let worker = run_local_to_remote_upload_workers_stream(
+                        rx,
+                        Arc::clone(&issues),
                         worker_sftps,
                         overwrite,
                         target_host_id.clone(),
-                        sink_opt,
-                    )
-                    .await;
-                    merge_transfer_issue_result(&issues, worker_result)
+                        sink_opt.clone(),
+                    );
+                    let (producer_result, worker_result) = tokio::join!(producer, worker);
+                    match (producer_result, worker_result) {
+                        (Err(err), _) | (_, Err(err)) => Err(err),
+                        (Ok(()), Ok(())) => finish_transfer_issues(&issues),
+                    }
                 },
             )
             .await
@@ -1122,6 +1328,67 @@ async fn stream_one_remote_file_to_local(
     )
     .await
     .map(|_| ())
+}
+
+async fn run_remote_to_local_download_workers_stream(
+    rx: tokio::sync::mpsc::Receiver<(String, PathBuf)>,
+    issues: Arc<Mutex<Vec<TransferIssue>>>,
+    source_workers: Vec<Arc<zeroterm_ssh::Sftp>>,
+    overwrite: bool,
+    source_host_id: Option<String>,
+    sink_opt: Option<Arc<TransferSink>>,
+) -> Result<(), String> {
+    let queue = Arc::new(tokio::sync::Mutex::new(rx));
+    let mut joins = tokio::task::JoinSet::new();
+
+    for source_sftp in source_workers {
+        let queue = Arc::clone(&queue);
+        let sink_opt = sink_opt.clone();
+        let source_host_id = source_host_id.clone();
+        let issues = Arc::clone(&issues);
+        joins.spawn(async move {
+            loop {
+                if tree_transfer_cancelled(&sink_opt) {
+                    break;
+                }
+                let next = {
+                    let mut queue = queue.lock().await;
+                    queue.recv().await
+                };
+                let Some((child_src, child_dst)) = next else {
+                    break;
+                };
+                if let Some(sink) = &sink_opt {
+                    sink.note_path(&child_src);
+                }
+                let progress = match sink_opt.clone() {
+                    Some(s) => ProgressMode::Aggregate(s),
+                    None => ProgressMode::None,
+                };
+                match stream_one_remote_file_to_local(
+                    Arc::clone(&source_sftp),
+                    child_src.clone(),
+                    child_dst,
+                    overwrite,
+                    source_host_id.as_deref(),
+                    progress,
+                )
+                .await
+                {
+                    Ok(()) => {
+                        if let Some(sink) = &sink_opt {
+                            sink.note_file_done();
+                        }
+                    }
+                    Err(err) if is_fatal_tree_error(&err) => return Err(err),
+                    Err(err) => record_transfer_issue(&issues, child_src, err),
+                }
+            }
+            Ok::<(), String>(())
+        });
+    }
+
+    join_tree_workers(joins, &sink_opt).await
 }
 
 pub(crate) async fn copy_remote_tree_to_local(
@@ -1159,6 +1426,7 @@ pub(crate) async fn copy_remote_tree_to_local(
             let source_sftp = Arc::clone(source_sftp);
             let source = source.to_string();
             let target = target.to_path_buf();
+            let worker_progress_ctx = progress_ctx;
 
             run_tree_transfer(
                 progress_ctx,
@@ -1166,106 +1434,36 @@ pub(crate) async fn copy_remote_tree_to_local(
                 source.clone(),
                 target.display().to_string(),
                 move |sink_opt| async move {
-                    let issues = Mutex::new(Vec::<TransferIssue>::new());
-                    let mut file_jobs: Vec<(String, PathBuf)> = Vec::new();
-                    let mut total_bytes: u64 = 0;
-                    let mut stack: Vec<(String, PathBuf)> = vec![(source.clone(), target.clone())];
-                    while let Some((src_dir, dst_dir)) = stack.pop() {
-                        if let Some(sink) = &sink_opt {
-                            sink.note_path(&src_dir);
-                        }
-                        let entries = match source_sftp.list(&src_dir).await {
-                            Ok(entries) => entries,
-                            Err(err) => {
-                                let err = ssh_error(err);
-                                if is_fatal_tree_error(&err) {
-                                    return Err(err);
-                                }
-                                record_transfer_issue(&issues, src_dir.clone(), err);
-                                continue;
-                            }
-                        };
-                        for entry in entries {
-                            if entry.name == "." || entry.name == ".." {
-                                continue;
-                            }
-                            let child_src = remote_join_path(&src_dir, &entry.name);
-                            let child_dst = dst_dir.join(&entry.name);
-                            let kind = match detect_remote_kind(&child_src, entry.kind) {
-                                Ok(kind) => kind,
-                                Err(err) => {
-                                    record_transfer_issue(&issues, child_src.clone(), err);
-                                    continue;
-                                }
-                            };
-                            match kind {
-                                CopyNodeKind::File => {
-                                    total_bytes = total_bytes.saturating_add(entry.size);
-                                    file_jobs.push((child_src, child_dst));
-                                }
-                                CopyNodeKind::Dir => {
-                                    if tokio::fs::metadata(&child_dst).await.is_err() {
-                                        if let Err(e) = tokio::fs::create_dir_all(&child_dst).await
-                                        {
-                                            let err = format!("mkdir {}: {e}", child_dst.display());
-                                            if is_fatal_tree_error(&err) {
-                                                return Err(err);
-                                            }
-                                            record_transfer_issue(&issues, child_src.clone(), err);
-                                            continue;
-                                        }
-                                    }
-                                    stack.push((child_src, child_dst));
-                                }
-                            }
-                        }
+                    let issues = Arc::new(Mutex::new(Vec::<TransferIssue>::new()));
+                    let (tx, rx) = tokio::sync::mpsc::channel(TREE_JOB_QUEUE_BOUND);
+                    let producer = produce_remote_to_local_jobs(
+                        Arc::clone(&source_sftp),
+                        source,
+                        target,
+                        tx,
+                        Arc::clone(&issues),
+                        sink_opt.clone(),
+                    );
+                    let (source_workers, _source_worker_handles) =
+                        build_streaming_download_worker_pool(
+                            Arc::clone(&source_sftp),
+                            worker_progress_ctx,
+                            source_host_id.as_deref(),
+                        )
+                        .await;
+                    let worker = run_remote_to_local_download_workers_stream(
+                        rx,
+                        Arc::clone(&issues),
+                        source_workers,
+                        overwrite,
+                        source_host_id,
+                        sink_opt,
+                    );
+                    let (producer_result, worker_result) = tokio::join!(producer, worker);
+                    match (producer_result, worker_result) {
+                        (Err(err), _) | (_, Err(err)) => Err(err),
+                        (Ok(()), Ok(())) => finish_transfer_issues(&issues),
                     }
-
-                    if let Some(sink) = &sink_opt {
-                        sink.set_total(total_bytes);
-                        sink.set_files_total(file_jobs.len() as u64);
-                    }
-
-                    let issues = Arc::new(issues);
-                    let mut stream = futures_util::stream::iter(file_jobs.into_iter().map(
-                        |(child_src, child_dst)| {
-                            let sink_opt = sink_opt.clone();
-                            let source_sftp = Arc::clone(&source_sftp);
-                            let source_host_id = source_host_id.clone();
-                            async move {
-                                if let Some(s) = &sink_opt {
-                                    s.note_path(&child_src);
-                                }
-                                let progress = match sink_opt {
-                                    Some(s) => ProgressMode::Aggregate(s),
-                                    None => ProgressMode::None,
-                                };
-                                stream_one_remote_file_to_local(
-                                    source_sftp,
-                                    child_src.clone(),
-                                    child_dst,
-                                    overwrite,
-                                    source_host_id.as_deref(),
-                                    progress,
-                                )
-                                .await
-                                .map_err(|err| (child_src, err))
-                            }
-                        },
-                    ))
-                    .buffer_unordered(DIR_DOWNLOAD_CONCURRENCY);
-                    while let Some(res) = stream.next().await {
-                        match res {
-                            Ok(()) => {
-                                if let Some(sink) = &sink_opt {
-                                    sink.note_file_done();
-                                }
-                            }
-                            Err((_path, err)) if is_fatal_tree_error(&err) => return Err(err),
-                            Err((path, err)) => record_transfer_issue(&issues, path, err),
-                        }
-                    }
-                    finish_transfer_issues(&issues)
                 },
             )
             .await
@@ -1288,9 +1486,11 @@ where
     P: FnMut(zeroterm_ssh::ProgressTick) + Send,
 {
     let (mut writer, mut reader) = tokio::io::duplex(zeroterm_ssh::DEFAULT_CHUNK * 2);
+    let pipe_cancel = cancel.child_token();
 
     let dl_source = source.clone();
-    let dl_cancel = cancel.clone();
+    let dl_cancel = pipe_cancel.clone();
+    let cancel_upload = pipe_cancel.clone();
     let download = async move {
         let res = source_sftp
             .download_to_writer_parallel(
@@ -1302,27 +1502,56 @@ where
                 |_| {},
             )
             .await;
+        if res.is_err() {
+            cancel_upload.cancel();
+        }
         drop(writer);
         res
     };
 
+    let ul_cancel = pipe_cancel.clone();
+    let cancel_download = pipe_cancel;
     let upload = async move {
-        upload_reader_to_remote_atomic(
+        let res = upload_reader_to_remote_atomic(
             target_sftp.as_ref(),
             &target,
             &mut reader,
             size_hint,
             overwrite,
             skip_overwrite_check,
-            cancel,
+            ul_cancel,
             progress_cb,
         )
-        .await
+        .await;
+        if res.is_err() {
+            cancel_download.cancel();
+        }
+        res
     };
 
     let (dl, ul) = tokio::join!(download, upload);
-    dl?;
-    ul
+    remote_pipe_result(dl, ul)
+}
+
+fn remote_pipe_result(
+    download: Result<u64, zeroterm_ssh::SshError>,
+    upload: Result<u64, zeroterm_ssh::SshError>,
+) -> Result<u64, zeroterm_ssh::SshError> {
+    match (download, upload) {
+        (Ok(_), Ok(bytes)) => Ok(bytes),
+        (Err(err), Ok(_)) | (Ok(_), Err(err)) => Err(err),
+        (Err(download_err), Err(upload_err)) => {
+            if is_ssh_cancelled(&download_err) && !is_ssh_cancelled(&upload_err) {
+                Err(upload_err)
+            } else {
+                Err(download_err)
+            }
+        }
+    }
+}
+
+fn is_ssh_cancelled(err: &zeroterm_ssh::SshError) -> bool {
+    matches!(err, zeroterm_ssh::SshError::Cancelled)
 }
 
 async fn stream_remote_file_to_remote(
@@ -1572,44 +1801,73 @@ pub(crate) async fn copy_remote_tree_to_remote(
                 source.clone(),
                 target.clone(),
                 move |sink_opt| async move {
-                    let note_path = |path: &str| {
-                        if let Some(sink) = &sink_opt {
-                            sink.note_path(path);
-                        }
-                    };
-                    let plan = plan_remote_to_remote_copy(
-                        &source,
-                        &target,
-                        source_sftp.as_ref(),
-                        target_sftp.as_ref(),
-                        overwrite,
-                        Some(&note_path),
-                    )
-                    .await?;
-                    let issues = Mutex::new(plan.issues);
-
-                    if let Some(sink) = &sink_opt {
-                        sink.set_total(plan.total_bytes);
-                        sink.set_files_total(plan.file_jobs.len() as u64);
-                    }
-
-                    let (target_workers, _worker_handles) = build_upload_worker_pool(
-                        Arc::clone(&target_sftp),
-                        worker_progress_ctx,
-                        target_host_id.as_deref(),
-                    )
-                    .await;
-                    let worker_result = run_remote_to_remote_upload_workers(
-                        plan.file_jobs,
+                    let issues = Arc::new(Mutex::new(Vec::<TransferIssue>::new()));
+                    let (tx, rx) = tokio::sync::mpsc::channel(TREE_JOB_QUEUE_BOUND);
+                    let producer = produce_remote_to_remote_jobs(
                         Arc::clone(&source_sftp),
+                        source,
+                        Arc::clone(&target_sftp),
+                        target,
+                        overwrite,
+                        tx,
+                        Arc::clone(&issues),
+                        sink_opt.clone(),
+                    );
+                    let same_host_copy = source_host_id.is_some()
+                        && target_host_id.is_some()
+                        && source_host_id == target_host_id;
+                    let (source_workers, target_workers, _worker_handles) = if same_host_copy {
+                        let (source_workers, target_workers, handles) =
+                            build_same_host_remote_copy_worker_pairs(
+                                Arc::clone(&source_sftp),
+                                Arc::clone(&target_sftp),
+                                worker_progress_ctx,
+                                source_host_id.as_deref(),
+                            )
+                            .await?;
+                        (source_workers, target_workers, handles)
+                    } else {
+                        let (target_workers, target_handles) = build_streaming_upload_worker_pool(
+                            Arc::clone(&target_sftp),
+                            worker_progress_ctx,
+                            target_host_id.as_deref(),
+                        )
+                        .await;
+                        let (source_workers, source_handles) =
+                            build_streaming_download_worker_pool(
+                                Arc::clone(&source_sftp),
+                                worker_progress_ctx,
+                                source_host_id.as_deref(),
+                            )
+                            .await;
+                        let mut handles = source_handles;
+                        handles.extend(target_handles);
+                        (source_workers, target_workers, handles)
+                    };
+                    let worker_count = source_workers.len().min(target_workers.len());
+                    if worker_count == 0 {
+                        return Err(string_error(
+                            "no SFTP worker channels available for remote copy",
+                        ));
+                    }
+                    let source_workers = source_workers.into_iter().take(worker_count).collect();
+                    let target_workers = target_workers.into_iter().take(worker_count).collect();
+
+                    let worker = run_remote_to_remote_upload_workers_stream(
+                        rx,
+                        Arc::clone(&issues),
+                        source_workers,
                         target_workers,
                         overwrite,
                         source_host_id.clone(),
                         target_host_id.clone(),
                         sink_opt,
-                    )
-                    .await;
-                    merge_transfer_issue_result(&issues, worker_result)
+                    );
+                    let (producer_result, worker_result) = tokio::join!(producer, worker);
+                    match (producer_result, worker_result) {
+                        (Err(err), _) | (_, Err(err)) => Err(err),
+                        (Ok(()), Ok(())) => finish_transfer_issues(&issues),
+                    }
                 },
             )
             .await
@@ -1617,38 +1875,84 @@ pub(crate) async fn copy_remote_tree_to_remote(
     }
 }
 
-pub(crate) async fn sftp_remove_dir_recursive(sftp: &Sftp, path: &str) -> Result<(), String> {
+fn normalize_removable_remote_dir(path: &str) -> Result<String, String> {
     let root = normalize_remote_path(path);
     if root == "/" {
         return Err(string_error("refusing to delete remote root directory `/`"));
     }
+    Ok(root)
+}
 
-    let mut stack: Vec<(String, bool)> = vec![(root, false)];
-    while let Some((current, visited)) = stack.pop() {
-        if visited {
-            sftp.remove_dir(&current).await.map_err(ssh_error)?;
-            continue;
-        }
+pub(crate) async fn sftp_remove_dir_recursive(
+    sftp: &Sftp,
+    path: &str,
+    progress_ctx: Option<(&AppHandle, &AppState)>,
+) -> Result<(), String> {
+    let root = normalize_removable_remote_dir(path)?;
+    let source_label = root.clone();
 
-        stack.push((current.clone(), true));
-        let entries = sftp.list(&current).await.map_err(ssh_error)?;
-        for entry in entries {
-            if entry.name == "." || entry.name == ".." {
-                continue;
+    run_tree_transfer(
+        progress_ctx,
+        "delete",
+        source_label,
+        String::new(),
+        move |sink_opt| async move {
+            if let Some(sink) = &sink_opt {
+                sink.add_files_total(1);
+                sink.note_path(&root);
             }
-            let child = remote_join_path(&current, &entry.name);
-            match entry.kind {
-                zeroterm_ssh::FileKind::Dir => stack.push((child, false)),
-                zeroterm_ssh::FileKind::File
-                | zeroterm_ssh::FileKind::Symlink
-                | zeroterm_ssh::FileKind::Other => {
-                    sftp.remove_file(&child).await.map_err(ssh_error)?;
+
+            let mut stack: Vec<(String, bool)> = vec![(root, false)];
+            while let Some((current, visited)) = stack.pop() {
+                if tree_transfer_cancelled(&sink_opt) {
+                    return Err(string_error("transfer cancelled"));
+                }
+                if let Some(sink) = &sink_opt {
+                    sink.note_path(&current);
+                }
+
+                if visited {
+                    sftp.remove_dir(&current).await.map_err(ssh_error)?;
+                    if let Some(sink) = &sink_opt {
+                        sink.note_file_done();
+                    }
+                    continue;
+                }
+
+                stack.push((current.clone(), true));
+                let entries = sftp.list(&current).await.map_err(ssh_error)?;
+                for entry in entries {
+                    if tree_transfer_cancelled(&sink_opt) {
+                        return Err(string_error("transfer cancelled"));
+                    }
+                    if entry.name == "." || entry.name == ".." {
+                        continue;
+                    }
+                    let child = remote_join_path(&current, &entry.name);
+                    if let Some(sink) = &sink_opt {
+                        sink.add_files_total(1);
+                    }
+                    match entry.kind {
+                        zeroterm_ssh::FileKind::Dir => stack.push((child, false)),
+                        zeroterm_ssh::FileKind::File
+                        | zeroterm_ssh::FileKind::Symlink
+                        | zeroterm_ssh::FileKind::Other => {
+                            if let Some(sink) = &sink_opt {
+                                sink.note_path(&child);
+                            }
+                            sftp.remove_file(&child).await.map_err(ssh_error)?;
+                            if let Some(sink) = &sink_opt {
+                                sink.note_file_done();
+                            }
+                        }
+                    }
                 }
             }
-        }
-    }
 
-    Ok(())
+            Ok(())
+        },
+    )
+    .await
 }
 
 fn display_issue_error(error: &str) -> String {
@@ -1680,6 +1984,21 @@ mod tests {
     fn structured_channel_closed_is_fatal() {
         let err = ipc_error("CHANNEL_CLOSED", "channel closed by remote");
         assert!(is_fatal_tree_error(&err));
+    }
+
+    #[test]
+    fn removable_remote_dir_rejects_root_after_normalization() {
+        for path in ["/", "", "/tmp/..", "/../../"] {
+            let err = normalize_removable_remote_dir(path).expect_err("root must be rejected");
+            let parsed = parse_ipc_error(&err).expect("structured error");
+            assert_eq!(parsed.code, "OTHER");
+            assert!(parsed.message.contains("refusing to delete remote root"));
+        }
+
+        assert_eq!(
+            normalize_removable_remote_dir("/var/log/../tmp").expect("valid path"),
+            "/var/tmp"
+        );
     }
 
     #[test]
@@ -1717,22 +2036,6 @@ mod tests {
     }
 
     #[test]
-    fn merge_transfer_issue_result_prefers_worker_error() {
-        let issues = Mutex::new(vec![TransferIssue {
-            path: "/tmp/skipped".to_string(),
-            error: string_error("permission denied: /tmp/skipped"),
-        }]);
-        let err = merge_transfer_issue_result(
-            &issues,
-            Err(ipc_error("CHANNEL_CLOSED", "channel closed by remote")),
-        )
-        .expect_err("worker error should win");
-        let parsed = parse_ipc_error(&err).expect("structured error");
-        assert_eq!(parsed.code, "CHANNEL_CLOSED");
-        assert_eq!(parsed.message, "channel closed by remote");
-    }
-
-    #[test]
     fn contextualize_error_preserves_structured_code() {
         let err = contextualize_error(
             "copy failed for /src/file".to_string(),
@@ -1760,5 +2063,36 @@ mod tests {
             parsed.message,
             "copy failed for /src/file; destination: destination already exists: /dst/file"
         );
+    }
+
+    #[test]
+    fn remote_pipe_result_prefers_real_error_over_peer_cancel() {
+        let upload_err = zeroterm_ssh::SshError::Sftp {
+            kind: zeroterm_ssh::SftpErrorKind::PermissionDenied,
+            message: "permission denied: /dst/file".to_string(),
+        };
+        let err = remote_pipe_result(Err(zeroterm_ssh::SshError::Cancelled), Err(upload_err))
+            .expect_err("upload error should win over cancellation");
+        assert!(matches!(
+            err,
+            zeroterm_ssh::SshError::Sftp {
+                kind: zeroterm_ssh::SftpErrorKind::PermissionDenied,
+                ..
+            }
+        ));
+
+        let download_err = zeroterm_ssh::SshError::Sftp {
+            kind: zeroterm_ssh::SftpErrorKind::ChannelClosed,
+            message: "channel closed by remote".to_string(),
+        };
+        let err = remote_pipe_result(Err(download_err), Err(zeroterm_ssh::SshError::Cancelled))
+            .expect_err("download error should win over cancellation");
+        assert!(matches!(
+            err,
+            zeroterm_ssh::SshError::Sftp {
+                kind: zeroterm_ssh::SftpErrorKind::ChannelClosed,
+                ..
+            }
+        ));
     }
 }

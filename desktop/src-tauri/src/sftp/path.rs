@@ -1,5 +1,6 @@
+use std::ffi::OsString;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use zeroterm_ssh::FileKind;
 
@@ -24,19 +25,18 @@ pub(crate) fn normalize_remote_path(path: &str) -> String {
     if raw.is_empty() || raw == "/" {
         return "/".to_string();
     }
-    let mut out = String::from("/");
-    let mut first = true;
+    let mut parts: Vec<&str> = Vec::new();
     for seg in raw.split('/').filter(|s| !s.is_empty() && *s != ".") {
-        if !first {
-            out.push('/');
+        if seg == ".." {
+            parts.pop();
+        } else {
+            parts.push(seg);
         }
-        first = false;
-        out.push_str(seg);
     }
-    if out.is_empty() {
+    if parts.is_empty() {
         "/".to_string()
     } else {
-        out
+        format!("/{}", parts.join("/"))
     }
 }
 
@@ -47,6 +47,63 @@ pub(crate) fn is_remote_path_within(path: &str, parent: &str) -> bool {
         return n_path != "/";
     }
     n_path == n_parent || n_path.starts_with(&(n_parent.clone() + "/"))
+}
+
+fn resolve_local_path_for_containment(path: &Path) -> Result<PathBuf, String> {
+    let original = path.to_path_buf();
+    let mut cursor = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map_err(|e| string_error(format!("resolve current directory: {e}")))?
+            .join(path)
+    };
+    let mut missing_tail: Vec<OsString> = Vec::new();
+
+    loop {
+        match fs::canonicalize(&cursor) {
+            Ok(mut resolved) => {
+                for segment in missing_tail.iter().rev() {
+                    if segment == "." {
+                        continue;
+                    }
+                    if segment == ".." {
+                        resolved.pop();
+                    } else {
+                        resolved.push(segment);
+                    }
+                }
+                return Ok(resolved);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                let Some(name) = cursor.file_name().map(|name| name.to_os_string()) else {
+                    return Err(string_error(format!(
+                        "resolve local path {}: {e}",
+                        original.display()
+                    )));
+                };
+                missing_tail.push(name);
+                if !cursor.pop() {
+                    return Err(string_error(format!(
+                        "resolve local path {}: {e}",
+                        original.display()
+                    )));
+                }
+            }
+            Err(e) => {
+                return Err(string_error(format!(
+                    "resolve local path {}: {e}",
+                    original.display()
+                )));
+            }
+        }
+    }
+}
+
+pub(crate) fn is_local_path_within(path: &Path, parent: &Path) -> Result<bool, String> {
+    let resolved_path = resolve_local_path_for_containment(path)?;
+    let resolved_parent = resolve_local_path_for_containment(parent)?;
+    Ok(resolved_path == resolved_parent || resolved_path.starts_with(&resolved_parent))
 }
 
 pub(crate) fn detect_local_kind(path: &Path) -> Result<CopyNodeKind, String> {
@@ -95,6 +152,13 @@ mod tests {
     }
 
     #[test]
+    fn normalize_remote_path_resolves_parent_segments() {
+        assert_eq!(normalize_remote_path("/var/log/../tmp"), "/var/tmp");
+        assert_eq!(normalize_remote_path("/tmp/.."), "/");
+        assert_eq!(normalize_remote_path("/../../"), "/");
+    }
+
+    #[test]
     fn remote_path_within_checks_descendants() {
         assert!(is_remote_path_within("/var/log/nginx", "/var/log"));
         assert!(is_remote_path_within("/var/log", "/var/log"));
@@ -113,5 +177,54 @@ mod tests {
         assert_eq!(remote_join_path("/", "tmp"), "/tmp");
         assert_eq!(remote_join_path("/var/log", "app.log"), "/var/log/app.log");
         assert_eq!(remote_join_path("/var/log/", "app.log"), "/var/log/app.log");
+    }
+
+    fn unique_test_dir(name: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "zeroterm-sftp-path-{name}-{}-{nanos}",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn local_path_within_resolves_missing_child_and_parent_segments() {
+        let root = unique_test_dir("within");
+        let source = root.join("src");
+        let sibling = root.join("src-sibling");
+        fs::create_dir_all(&source).expect("create source");
+        fs::create_dir_all(&sibling).expect("create sibling");
+
+        let nested = source.join("missing").join("child");
+        assert!(is_local_path_within(&nested, &source).expect("nested containment"));
+        assert!(
+            is_local_path_within(&source.join("..").join("src").join("child"), &source)
+                .expect("parent segment containment")
+        );
+        assert!(!is_local_path_within(&sibling, &source).expect("sibling containment"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_path_within_resolves_symlinked_parent() {
+        let root = unique_test_dir("symlink");
+        let real = root.join("real");
+        let source = real.join("src");
+        let link = root.join("link-to-real");
+        fs::create_dir_all(&source).expect("create source");
+        std::os::unix::fs::symlink(&real, &link).expect("create symlink");
+
+        let target_via_link = link.join("src").join("child");
+        assert!(
+            is_local_path_within(&target_via_link, &source).expect("symlink containment"),
+            "target through a symlinked parent should still be recognized inside source"
+        );
+
+        let _ = fs::remove_dir_all(root);
     }
 }

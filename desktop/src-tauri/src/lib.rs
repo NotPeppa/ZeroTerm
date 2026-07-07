@@ -54,6 +54,16 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState::new())
         .setup(|app| {
+            match sftp::file::cleanup_local_sftp_temp_files(app.handle()) {
+                Ok(removed) if removed > 0 => {
+                    tracing::info!(removed, "cleaned stale local SFTP temp files");
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::warn!(error = %e, "failed to clean stale local SFTP temp files");
+                }
+            }
+
             if let Some(win) = app.get_webview_window("main") {
                 // Open at the user's saved startup size, or the default if
                 // none is saved / the file is unreadable. Applied while the

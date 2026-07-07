@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+use tokio::sync::Mutex as AsyncMutex;
 use zeroterm_ssh::{ConnectConfig, Session, Sftp};
 
 use crate::sftp::{parse_ipc_error, ssh_error, string_error};
@@ -79,14 +80,11 @@ impl SftpPool {
         let Some(host) = self.hosts.lock().unwrap().get(host_id).cloned() else {
             return false;
         };
-        let removed = host
-            .state
-            .lock()
-            .unwrap()
-            .channels
-            .remove(&channel_id)
-            .is_some();
-        removed
+        let removed = host.remove_channel(channel_id, 0);
+        if matches!(removed, Some(false)) {
+            self.prune_idle_host(host_id, &host);
+        }
+        removed.is_some()
     }
 
     pub(crate) async fn refresh_channel(
@@ -143,6 +141,17 @@ impl SftpPool {
             .clone();
         host.update_config(cfg, jump_cfg);
         host
+    }
+
+    fn prune_idle_host(&self, host_id: &str, host: &Arc<HostPool>) {
+        if !host.is_idle() {
+            return;
+        }
+        host.invalidate_connection();
+        let mut hosts = self.hosts.lock().unwrap();
+        if host.is_idle() {
+            hosts.remove(host_id);
+        }
     }
 
     fn reserve_panel_channel(&self, host: &Arc<HostPool>) -> Result<ChannelReservation, String> {
@@ -285,12 +294,14 @@ fn is_retryable_session_open_error(err: &str) -> bool {
 struct HostPool {
     host_id: String,
     state: Mutex<HostState>,
+    connect_lock: AsyncMutex<()>,
 }
 
 impl HostPool {
     fn new(host_id: String, cfg: ConnectConfig, jump_cfg: Option<ConnectConfig>) -> Self {
         Self {
             host_id,
+            connect_lock: AsyncMutex::new(()),
             state: Mutex::new(HostState {
                 cfg,
                 jump_cfg,
@@ -309,52 +320,49 @@ impl HostPool {
     }
 
     async fn connect_session(&self) -> Result<Arc<Session>, String> {
-        loop {
-            let connect_plan = {
-                let mut state = self.state.lock().unwrap();
-                if let Some(session) = state.session.clone() {
-                    return Ok(session);
-                }
-                if state.connecting {
-                    None
-                } else {
-                    state.connecting = true;
-                    Some((state.cfg.clone(), state.jump_cfg.clone()))
-                }
-            };
-
-            let Some((cfg, jump_cfg)) = connect_plan else {
-                tokio::task::yield_now().await;
-                continue;
-            };
-
-            let connected = match jump_cfg {
-                Some(jump_cfg) => {
-                    let jump_session =
-                        Arc::new(Session::connect(jump_cfg).await.map_err(ssh_error)?);
-                    let session = Arc::new(
-                        Session::connect_via(cfg, jump_session.as_ref())
-                            .await
-                            .map_err(ssh_error)?,
-                    );
-                    Ok::<_, String>((session, Some(jump_session)))
-                }
-                None => {
-                    let session = Arc::new(Session::connect(cfg).await.map_err(ssh_error)?);
-                    Ok((session, None))
-                }
-            };
-
-            let mut state = self.state.lock().unwrap();
-            state.connecting = false;
-            match connected {
-                Ok((session, jump_session)) => {
-                    state.session = Some(session.clone());
-                    state.jump_session = jump_session;
-                    return Ok(session);
-                }
-                Err(err) => return Err(err),
+        {
+            let state = self.state.lock().unwrap();
+            if let Some(session) = state.session.clone() {
+                return Ok(session);
             }
+        }
+
+        let _connect_guard = self.connect_lock.lock().await;
+        let (cfg, jump_cfg) = {
+            let mut state = self.state.lock().unwrap();
+            if let Some(session) = state.session.clone() {
+                return Ok(session);
+            }
+            state.connecting = true;
+            (state.cfg.clone(), state.jump_cfg.clone())
+        };
+
+        let connected = match jump_cfg {
+            Some(jump_cfg) => match Session::connect(jump_cfg).await.map_err(ssh_error) {
+                Ok(jump_session) => {
+                    let jump_session = Arc::new(jump_session);
+                    Session::connect_via(cfg, jump_session.as_ref())
+                        .await
+                        .map(|session| (Arc::new(session), Some(jump_session)))
+                        .map_err(ssh_error)
+                }
+                Err(err) => Err(err),
+            },
+            None => Session::connect(cfg)
+                .await
+                .map(|session| (Arc::new(session), None))
+                .map_err(ssh_error),
+        };
+
+        let mut state = self.state.lock().unwrap();
+        state.connecting = false;
+        match connected {
+            Ok((session, jump_session)) => {
+                state.session = Some(session.clone());
+                state.jump_session = jump_session;
+                Ok(session)
+            }
+            Err(err) => Err(err),
         }
     }
 
@@ -363,6 +371,20 @@ impl HostPool {
         state.session = None;
         state.jump_session = None;
         state.connecting = false;
+    }
+
+    fn remove_channel(&self, channel_id: u64, retained_refs: usize) -> Option<bool> {
+        let entry = self.state.lock().unwrap().channels.remove(&channel_id)?;
+        let has_external_refs = match &entry {
+            ChannelEntry::Ready { sftp, .. } => Arc::strong_count(sftp) > retained_refs + 1,
+            ChannelEntry::Opening => false,
+        };
+        Some(has_external_refs)
+    }
+
+    fn is_idle(&self) -> bool {
+        let state = self.state.lock().unwrap();
+        !state.connecting && state.channels.is_empty()
     }
 }
 
@@ -429,12 +451,23 @@ impl SftpChannelGuard {
 
 impl Drop for SftpChannelGuard {
     fn drop(&mut self) {
-        let mut state = self.host.state.lock().unwrap();
-        if let Some(ChannelEntry::Ready { pinned, leased, .. }) =
-            state.channels.get_mut(&self.channel_id)
-        {
-            if !*pinned {
-                *leased = false;
+        let should_remove = {
+            let mut state = self.host.state.lock().unwrap();
+            match state.channels.get_mut(&self.channel_id) {
+                Some(ChannelEntry::Ready { pinned, leased, .. }) if !*pinned => {
+                    *leased = false;
+                    true
+                }
+                _ => false,
+            }
+        };
+        if should_remove {
+            let has_external_refs = self
+                .host
+                .remove_channel(self.channel_id, 1)
+                .unwrap_or(false);
+            if !has_external_refs && self.host.is_idle() {
+                self.host.invalidate_connection();
             }
         }
     }

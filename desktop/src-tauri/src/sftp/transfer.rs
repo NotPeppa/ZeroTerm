@@ -235,6 +235,10 @@ fn transfer_error_from_message(message: String) -> TransferErrorDto {
     }
 }
 
+fn is_watchdog_timeout_message(message: &str) -> bool {
+    message.to_ascii_lowercase().contains("transfer stalled")
+}
+
 struct TransferRecord {
     token: CancellationToken,
     event: TransferEvent,
@@ -284,7 +288,10 @@ pub(crate) async fn acquire_transfer_slot(
         .clone()
         .acquire_owned()
         .await
-        .map_err(|_| "transfer queue is shutting down".to_string())?;
+        .map_err(|_| {
+            state.transfer_manager.remove(transfer_id);
+            "transfer queue is shutting down".to_string()
+        })?;
     state.transfer_manager.mark_running(app_handle, transfer_id);
     Ok(permit)
 }
@@ -358,12 +365,16 @@ impl TransferSink {
         })
     }
 
-    pub(crate) fn set_total(&self, total: u64) {
-        self.total.store(total, Ordering::SeqCst);
+    pub(crate) fn add_total_bytes(&self, delta: u64) {
+        if delta > 0 {
+            self.total.fetch_add(delta, Ordering::SeqCst);
+        }
     }
 
-    pub(crate) fn set_files_total(&self, total: u64) {
-        self.files_total.store(total, Ordering::SeqCst);
+    pub(crate) fn add_files_total(&self, delta: u64) {
+        if delta > 0 {
+            self.files_total.fetch_add(delta, Ordering::SeqCst);
+        }
     }
 
     /// Count one file as fully transferred. Emission piggybacks on the next
@@ -555,7 +566,7 @@ impl TransferSink {
                 if total > 0 { Some(total) } else { None },
             ),
             Err(message) => {
-                if self.cancel.is_cancelled() {
+                if self.cancel.is_cancelled() && !is_watchdog_timeout_message(&message) {
                     manager.cancel(&self.app_handle, self.transfer_id);
                 } else {
                     manager.finish_error(
@@ -676,6 +687,7 @@ where
     struct ProgressState {
         last_emit_at: Instant,
         last_emit_bytes: u64,
+        last_total: Option<u64>,
         last_activity_at: Instant,
         has_baseline: bool,
     }
@@ -685,6 +697,7 @@ where
     let progress_state = Arc::new(Mutex::new(ProgressState {
         last_emit_at: Instant::now(),
         last_emit_bytes: 0,
+        last_total: None,
         last_activity_at: Instant::now(),
         has_baseline: false,
     }));
@@ -698,6 +711,9 @@ where
         let mut s = progress_state.lock().unwrap();
         let is_done = matches!(tick.total, Some(t) if tick.bytes_done >= t);
         s.last_activity_at = now;
+        if tick.total.is_some() {
+            s.last_total = tick.total;
+        }
 
         if s.has_baseline
             && now.duration_since(s.last_emit_at) < Duration::from_millis(100)
@@ -783,6 +799,9 @@ where
                 };
                 if idle >= IDLE_TIMEOUT {
                     let last_bytes = watchdog_state.lock().unwrap().last_emit_bytes;
+                    if let Some(token) = transfer_manager.token(transfer_id) {
+                        token.cancel();
+                    }
                     warn!(
                         transfer_id,
                         idle_secs = idle.as_secs(),
@@ -802,6 +821,7 @@ where
         Ok(n) => *n,
         Err(_) => watchdog_state.lock().unwrap().last_emit_bytes,
     };
+    let final_total = watchdog_state.lock().unwrap().last_total;
     let _ = app_handle.emit(
         "sftp:progress",
         TransferProgressEvent {
@@ -810,7 +830,7 @@ where
             source,
             destination,
             bytes_done: final_bytes,
-            total: None,
+            total: final_total,
             bytes_per_sec: None,
             eta_seconds: None,
             finished: true,
@@ -820,11 +840,12 @@ where
         },
     );
     match &outcome {
-        Ok(_) => transfer_manager.finish_success(app_handle, transfer_id, final_bytes, None),
+        Ok(_) => transfer_manager.finish_success(app_handle, transfer_id, final_bytes, final_total),
         Err(message) => {
             if transfer_manager
                 .token(transfer_id)
                 .is_some_and(|token| token.is_cancelled())
+                && !is_watchdog_timeout_message(message)
             {
                 transfer_manager.cancel(app_handle, transfer_id);
             } else {
@@ -832,7 +853,7 @@ where
                     app_handle,
                     transfer_id,
                     final_bytes,
-                    None,
+                    final_total,
                     message.clone(),
                 );
             }
@@ -865,5 +886,13 @@ mod tests {
         let error = transfer_error_from_message("destination already exists: /tmp/a".to_string());
         assert_eq!(error.code, "ALREADY_EXISTS");
         assert_eq!(error.message, "destination already exists: /tmp/a");
+    }
+
+    #[test]
+    fn transfer_stall_is_timeout_error_not_user_cancel() {
+        let message = "transfer stalled: no progress for 180 seconds";
+        let error = transfer_error_from_message(message.to_string());
+        assert_eq!(error.code, "TIMEOUT");
+        assert!(is_watchdog_timeout_message(message));
     }
 }

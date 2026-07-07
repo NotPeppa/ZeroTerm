@@ -681,6 +681,7 @@ const I18N = {
     "files.permissions.exec": "Execute",
     "files.progress.uploading": "Uploading",
     "files.progress.downloading": "Downloading",
+    "files.progress.deleting": "Deleting",
     "files.progress.eta": "ETA {eta}",
     "files.progress.preparing": "Preparing transfer...",
     "files.button.cancel": "Cancel",
@@ -700,6 +701,7 @@ const I18N = {
     "files.transfer.collapse": "Collapse",
     "files.transfer.expand": "Expand",
     "files.transfer.files_progress": "{done}/{total} files",
+    "files.transfer.items_progress": "{done}/{total} items",
     "editor.title": "Edit Remote File",
     "editor.title.dirty": "Edit Remote File *",
     "editor.hint.default": "Supports common UTF-8 text files. Press Ctrl/Cmd + S to save.",
@@ -1567,6 +1569,7 @@ const I18N = {
     "files.permissions.exec": "执行",
     "files.progress.uploading": "上传中",
     "files.progress.downloading": "下载中",
+    "files.progress.deleting": "删除中",
     "files.progress.eta": "剩余 {eta}",
     "files.progress.preparing": "正在准备传输...",
     "files.button.cancel": "取消",
@@ -1586,6 +1589,7 @@ const I18N = {
     "files.transfer.collapse": "收起",
     "files.transfer.expand": "展开",
     "files.transfer.files_progress": "文件 {done}/{total}",
+    "files.transfer.items_progress": "项目 {done}/{total}",
     "editor.title": "编辑远程文件",
     "editor.title.dirty": "编辑远程文件 *",
     "editor.hint.default": "支持常见 UTF-8 文本文件。按 Ctrl/Cmd + S 保存。",
@@ -2685,6 +2689,18 @@ function formatTransferEta(seconds) {
   return remMin > 0 ? `${hours}h ${remMin}m` : `${hours}h`;
 }
 
+function finiteTransferNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function normalizeSftpTransferKind(kind) {
+  const raw = String(kind || "download");
+  return raw === "upload" || raw === "download" || raw === "copy" || raw === "delete"
+    ? raw
+    : "download";
+}
+
 function sftpTransferPercent(item) {
   if (!Number.isFinite(item.total) || item.total <= 0) return null;
   return Math.max(0, Math.min(100, (item.bytesDone / item.total) * 100));
@@ -2722,7 +2738,7 @@ function sftpTransferMetaText(item) {
   }
   if (Number.isFinite(item.filesTotal) && item.filesTotal > 0) {
     bits.push(
-      t("files.transfer.files_progress", {
+      t(item.kind === "delete" ? "files.transfer.items_progress" : "files.transfer.files_progress", {
         done: Number.isFinite(item.filesDone) ? item.filesDone : 0,
         total: item.filesTotal,
       }),
@@ -2732,6 +2748,7 @@ function sftpTransferMetaText(item) {
     bits.push(basename(item.currentFile));
   }
   if (bits.length === 0 && item.status === "running") {
+    if (item.kind === "delete") return t("files.progress.deleting");
     return t("files.progress.preparing");
   }
   return bits.join(" · ");
@@ -3089,6 +3106,8 @@ const SFTP_TRANSFER_KIND_ICONS = {
   download:
     '<svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"></path><path d="m5.5 12.5 6.5 6.5 6.5-6.5"></path></svg>',
   copy: '<svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8.5h13"></path><path d="m13.5 4.5 4 4-4 4"></path><path d="M20 15.5H7"></path><path d="m10.5 11.5-4 4 4 4"></path></svg>',
+  delete:
+    '<svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M6 7l1 14h10l1-14"></path><path d="M9 7V4h6v3"></path></svg>',
 };
 
 function buildSftpTransferRow(item) {
@@ -3279,20 +3298,25 @@ listen("sftp:progress", (ev) => {
 
   clearSftpTransferDismissTimer(transferId);
   const existing = sftpTransferItems.get(transferId);
+  const bytesDone = finiteTransferNumber(payload.bytesDone) ?? 0;
+  const total = finiteTransferNumber(payload.total);
+  const bytesPerSec = finiteTransferNumber(payload.bytesPerSec);
+  const etaSeconds = finiteTransferNumber(payload.etaSeconds);
+  const filesDone = finiteTransferNumber(payload.filesDone);
+  const filesTotal = finiteTransferNumber(payload.filesTotal);
   sftpTransferItems.set(transferId, {
     transferId,
-    kind:
-      payload.kind === "upload" ? "upload" : payload.kind === "copy" ? "copy" : "download",
+    kind: normalizeSftpTransferKind(payload.kind),
     status: "running",
     source: String(payload.source || ""),
     destination: String(payload.destination || ""),
-    bytesDone: Number(payload.bytesDone) || 0,
-    total: Number.isFinite(payload.total) ? Number(payload.total) : null,
-    bytesPerSec: Number.isFinite(payload.bytesPerSec) ? Number(payload.bytesPerSec) : null,
-    etaSeconds: Number.isFinite(payload.etaSeconds) ? Number(payload.etaSeconds) : null,
+    bytesDone,
+    total,
+    bytesPerSec,
+    etaSeconds,
     currentFile: payload.currentFile ? String(payload.currentFile) : null,
-    filesDone: Number.isFinite(payload.filesDone) ? Number(payload.filesDone) : null,
-    filesTotal: Number.isFinite(payload.filesTotal) ? Number(payload.filesTotal) : null,
+    filesDone,
+    filesTotal,
     error: null,
     retryPlan: existing?.retryPlan || null,
     eventSource: "progress",
@@ -3311,19 +3335,25 @@ listen("sftp:transfer", (ev) => {
   const currentFileRaw = payload.currentFile ?? payload.current_file;
   const filesDoneRaw = payload.filesDone ?? payload.files_done;
   const filesTotalRaw = payload.filesTotal ?? payload.files_total;
+  const bytesDone = finiteTransferNumber(payload.bytesDone ?? payload.bytes_done) ?? 0;
+  const total = finiteTransferNumber(payload.total);
+  const bytesPerSec = finiteTransferNumber(bytesPerSecRaw);
+  const etaSeconds = finiteTransferNumber(etaSecondsRaw);
+  const filesDone = finiteTransferNumber(filesDoneRaw);
+  const filesTotal = finiteTransferNumber(filesTotalRaw);
   const item = {
     transferId,
-    kind: String(payload.kind || "download"),
+    kind: normalizeSftpTransferKind(payload.kind),
     status: String(payload.status || "running"),
     source: String(payload.source || ""),
     destination: String(payload.destination || ""),
-    bytesDone: Number(payload.bytesDone ?? payload.bytes_done) || 0,
-    total: Number.isFinite(payload.total) ? Number(payload.total) : null,
-    bytesPerSec: Number.isFinite(bytesPerSecRaw) ? Number(bytesPerSecRaw) : null,
-    etaSeconds: Number.isFinite(etaSecondsRaw) ? Number(etaSecondsRaw) : null,
+    bytesDone,
+    total,
+    bytesPerSec,
+    etaSeconds,
     currentFile: currentFileRaw ? String(currentFileRaw) : null,
-    filesDone: Number.isFinite(filesDoneRaw) ? Number(filesDoneRaw) : null,
-    filesTotal: Number.isFinite(filesTotalRaw) ? Number(filesTotalRaw) : null,
+    filesDone,
+    filesTotal,
     error: payload.error
       ? {
           code: String(payload.error.code || "OTHER"),
@@ -3332,7 +3362,7 @@ listen("sftp:transfer", (ev) => {
       : null,
     retryPlan: sftpTransferItems.get(transferId)?.retryPlan
       || claimPendingSftpRetryPlan(
-        String(payload.kind || "download"),
+        normalizeSftpTransferKind(payload.kind),
         String(payload.source || ""),
         String(payload.destination || ""),
       ),

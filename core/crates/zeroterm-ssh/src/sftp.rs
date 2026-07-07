@@ -530,32 +530,7 @@ fn map_status_code(status: StatusCode, message: &str) -> SftpErrorKind {
 }
 
 fn infer_kind_from_message(message: &str) -> SftpErrorKind {
-    let lower = message.trim().to_ascii_lowercase();
-    if lower.contains("no such file")
-        || lower.contains("not found")
-        || lower.contains("does not exist")
-    {
-        SftpErrorKind::NotFound
-    } else if lower.contains("permission denied") {
-        SftpErrorKind::PermissionDenied
-    } else if lower.contains("already exists") || lower.contains("file exists") {
-        SftpErrorKind::AlreadyExists
-    } else if lower.contains("not a directory") {
-        SftpErrorKind::NotADirectory
-    } else if lower.contains("unsupported") {
-        SftpErrorKind::Unsupported
-    } else if lower.contains("channel closed")
-        || lower.contains("broken pipe")
-        || lower.contains("connection reset")
-        || lower.contains("connection lost")
-        || lower.contains("no connection")
-    {
-        SftpErrorKind::ChannelClosed
-    } else if lower.contains("timeout") || lower.contains("timed out") {
-        SftpErrorKind::Timeout
-    } else {
-        SftpErrorKind::Other
-    }
+    SftpErrorKind::infer_from_message(message)
 }
 
 fn io_other(msg: &str) -> std::io::Error {
@@ -611,6 +586,34 @@ mod tests {
         assert_eq!(
             infer_kind_from_message("server said nope"),
             SftpErrorKind::Other
+        );
+    }
+
+    #[test]
+    fn infer_kind_from_message_handles_errno_and_localized_messages() {
+        assert_eq!(
+            infer_kind_from_message("No such file or directory (os error 2)"),
+            SftpErrorKind::NotFound
+        );
+        assert_eq!(
+            infer_kind_from_message("拒绝访问: /root/secret"),
+            SftpErrorKind::PermissionDenied
+        );
+        assert_eq!(
+            infer_kind_from_message("FileExists: /tmp/app.log"),
+            SftpErrorKind::AlreadyExists
+        );
+        assert_eq!(
+            infer_kind_from_message("不是目录: /tmp/file/name"),
+            SftpErrorKind::NotADirectory
+        );
+        assert_eq!(
+            infer_kind_from_message("is a directory (os error 21)"),
+            SftpErrorKind::Unsupported
+        );
+        assert_eq!(
+            infer_kind_from_message("Connection reset by peer (os error 104)"),
+            SftpErrorKind::ChannelClosed
         );
     }
 }

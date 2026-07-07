@@ -13,11 +13,13 @@ use crate::editor::{
 };
 use crate::file_dto::{kind_str, DirEntryDto, FilePermissionModeDto};
 use crate::sftp::file::{
-    download_remote_file_to_local, ensure_remote_target_available, is_retryable_transfer_error,
-    upload_local_path_to_remote_once, upload_reader_to_remote_atomic, upload_slice_to_remote_atomic,
+    cleanup_stale_remote_temp_entries, download_remote_file_to_local,
+    ensure_remote_target_available, is_retryable_transfer_error, upload_local_path_to_remote_once,
+    upload_reader_to_remote_atomic, upload_slice_to_remote_atomic,
 };
 use crate::sftp::path::{
-    detect_local_kind, detect_remote_kind, is_remote_path_within, remote_join_path, CopyNodeKind,
+    detect_local_kind, detect_remote_kind, is_local_path_within, is_remote_path_within,
+    remote_join_path, CopyNodeKind,
 };
 use crate::sftp::transfer::{
     acquire_transfer_slot, forget_transfer, register_transfer, run_with_progress, ProgressMode,
@@ -44,30 +46,11 @@ pub(crate) struct IpcErrorDto {
 }
 
 pub(crate) fn classify_error_message(message: &str) -> &'static str {
-    let lower = message.to_ascii_lowercase();
-    if lower.contains("already exists") {
-        "ALREADY_EXISTS"
-    } else if lower.contains("permission denied") {
-        "PERMISSION_DENIED"
-    } else if lower.contains("not found") || lower.contains("no such file") {
-        "NOT_FOUND"
-    } else if lower.contains("not a directory") {
-        "NOT_A_DIRECTORY"
-    } else if lower.contains("unsupported") || lower.contains("not a regular file") {
-        "UNSUPPORTED"
-    } else if lower.contains("timeout") || lower.contains("timed out") {
-        "TIMEOUT"
-    } else if lower.contains("cancelled") || lower.contains("canceled") {
+    let lower = message.to_lowercase();
+    if lower.contains("cancelled") || lower.contains("canceled") {
         "CANCELLED"
-    } else if lower.contains("channel closed")
-        || lower.contains("broken pipe")
-        || lower.contains("connection lost")
-        || lower.contains("connection reset")
-        || lower.contains("session closed")
-    {
-        "CHANNEL_CLOSED"
     } else {
-        "OTHER"
+        SftpErrorKind::infer_from_message(message).code()
     }
 }
 
@@ -228,6 +211,9 @@ pub async fn sftp_list(
         async move { sftp.list(&path).await.map_err(ssh_error) }
     })
     .await?;
+    if let Ok(sftp) = lookup_sftp(&state, sftp_id) {
+        cleanup_stale_remote_temp_entries(sftp.as_ref(), &path, &mut entries).await;
+    }
     entries.sort_by(|a, b| {
         let kind_order = |k: FileKind| match k {
             FileKind::Dir => 0,
@@ -586,14 +572,12 @@ pub async fn sftp_remove(
 #[tauri::command]
 pub async fn sftp_remove_dir(
     state: State<'_, AppState>,
+    app_handle: AppHandle,
     sftp_id: u64,
     path: String,
 ) -> Result<(), String> {
-    with_resilient_panel_sftp(&state, sftp_id, |sftp| {
-        let path = path.clone();
-        async move { sftp_remove_dir_recursive(&sftp, &path).await }
-    })
-    .await
+    let sftp = lookup_sftp(&state, sftp_id)?;
+    sftp_remove_dir_recursive(&sftp, &path, Some((&app_handle, &state))).await
 }
 
 #[tauri::command]
@@ -653,7 +637,7 @@ pub async fn sftp_copy_entry_between_panes(
             let dst = dst_dir.join(&source_name);
 
             let root_kind = detect_local_kind(&src)?;
-            if root_kind == CopyNodeKind::Dir && dst.starts_with(&src) {
+            if root_kind == CopyNodeKind::Dir && is_local_path_within(&dst, &src)? {
                 return Err(string_error("cannot copy a directory into itself"));
             }
             copy_local_tree_to_local(
@@ -757,6 +741,18 @@ mod tests {
             "CHANNEL_CLOSED"
         );
         assert_eq!(classify_error_message("transfer timed out"), "TIMEOUT");
+        assert_eq!(
+            classify_error_message("FileExists: /tmp/app.log"),
+            "ALREADY_EXISTS"
+        );
+        assert_eq!(
+            classify_error_message("拒绝访问: /root/secret"),
+            "PERMISSION_DENIED"
+        );
+        assert_eq!(
+            classify_error_message("is a directory (os error 21)"),
+            "UNSUPPORTED"
+        );
     }
 
     #[test]

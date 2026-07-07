@@ -1,15 +1,21 @@
+use std::collections::HashSet;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 
 use serde::Serialize;
 use tauri::Manager;
 use tracing::warn;
 
+use crate::sftp::path::remote_join_path;
 use crate::sftp::transfer::{
     acquire_transfer_slot, forget_transfer, register_transfer, run_with_progress, ProgressMode,
 };
 use crate::sftp::{open_ephemeral_sftp, parse_ipc_error, ssh_error, string_error};
 use crate::state::AppState;
+
+const STALE_SFTP_TEMP_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -36,6 +42,151 @@ fn unique_sibling_path(target: &Path, tag: &str) -> PathBuf {
 fn unique_remote_temp_path(target: &str, tag: &str) -> String {
     let unique = uuid::Uuid::new_v4().to_string();
     format!("{target}.zeroterm-{tag}-{unique}")
+}
+
+fn is_zeroterm_local_transfer_temp_name(name: &str) -> bool {
+    (name.contains(".zeroterm-download-") || name.contains(".zeroterm-backup-"))
+        && name.ends_with(".part")
+}
+
+fn is_zeroterm_remote_transfer_temp_name(name: &str) -> bool {
+    [".zeroterm-part-", ".zeroterm-backup-"]
+        .iter()
+        .any(|marker| {
+            name.rfind(marker)
+                .map(|idx| uuid::Uuid::parse_str(&name[idx + marker.len()..]).is_ok())
+                .unwrap_or(false)
+        })
+}
+
+fn is_stale_modified_time(modified: SystemTime, now: SystemTime) -> bool {
+    now.duration_since(modified)
+        .map(|age| age >= STALE_SFTP_TEMP_TTL)
+        .unwrap_or(false)
+}
+
+fn cleanup_old_files_in_dir<F>(dir: &Path, mut should_consider: F) -> Result<usize, String>
+where
+    F: FnMut(&str) -> bool,
+{
+    let Ok(read_dir) = fs::read_dir(dir) else {
+        return Ok(0);
+    };
+    let now = SystemTime::now();
+    let mut removed = 0usize;
+    for item in read_dir {
+        let entry = match item {
+            Ok(entry) => entry,
+            Err(err) => {
+                warn!(path = %dir.display(), error = %err, "failed to read SFTP temp dir entry");
+                continue;
+            }
+        };
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !should_consider(&name) {
+            continue;
+        }
+        let metadata = match entry.metadata() {
+            Ok(metadata) if metadata.is_file() => metadata,
+            Ok(_) => continue,
+            Err(err) => {
+                warn!(path = %path.display(), error = %err, "failed to stat SFTP temp file");
+                continue;
+            }
+        };
+        let Ok(modified) = metadata.modified() else {
+            continue;
+        };
+        if !is_stale_modified_time(modified, now) {
+            continue;
+        }
+        match fs::remove_file(&path) {
+            Ok(()) => removed += 1,
+            Err(err) => {
+                warn!(path = %path.display(), error = %err, "failed to remove stale SFTP temp file");
+            }
+        }
+    }
+    Ok(removed)
+}
+
+pub(crate) fn cleanup_local_sftp_temp_files(
+    app_handle: &tauri::AppHandle,
+) -> Result<usize, String> {
+    let mut removed = 0usize;
+
+    let app_cache_dir = app_handle
+        .path()
+        .app_cache_dir()
+        .map_err(|e| format!("resolve app cache dir: {e}"))?;
+    removed += cleanup_old_files_in_dir(&app_cache_dir.join("sftp-upload-stage"), |_| true)?;
+
+    removed +=
+        cleanup_old_files_in_dir(&std::env::temp_dir().join("zeroterm-open-with"), |_| true)?;
+
+    Ok(removed)
+}
+
+fn cleanup_stale_local_transfer_temps_for_target(target: &Path) {
+    let Some(parent) = target.parent() else {
+        return;
+    };
+    if let Err(err) = cleanup_old_files_in_dir(parent, is_zeroterm_local_transfer_temp_name) {
+        warn!(
+            path = %parent.display(),
+            error = %err,
+            "failed to clean local SFTP transfer temp files"
+        );
+    }
+}
+
+pub(crate) async fn cleanup_stale_remote_temp_entries(
+    sftp: &zeroterm_ssh::Sftp,
+    dir: &str,
+    entries: &mut Vec<zeroterm_ssh::DirEntry>,
+) {
+    let now_ms = match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
+        Ok(dur) => dur.as_millis() as i64,
+        Err(_) => return,
+    };
+    let ttl_ms = STALE_SFTP_TEMP_TTL.as_millis() as i64;
+    let mut removed_names = HashSet::new();
+
+    for entry in entries.iter() {
+        if entry.kind != zeroterm_ssh::FileKind::File
+            || !is_zeroterm_remote_transfer_temp_name(&entry.name)
+        {
+            continue;
+        }
+        let Some(modified_ms) = entry.modified_unix_ms else {
+            continue;
+        };
+        if now_ms.saturating_sub(modified_ms) < ttl_ms {
+            continue;
+        }
+
+        let remote_path = remote_join_path(dir, &entry.name);
+        match sftp.remove_file(&remote_path).await {
+            Ok(()) => {
+                removed_names.insert(entry.name.clone());
+            }
+            Err(err) if is_remote_not_found(&err) => {
+                removed_names.insert(entry.name.clone());
+            }
+            Err(err) => {
+                warn!(
+                    path = %remote_path,
+                    error = %err,
+                    "failed to remove stale remote SFTP temp file"
+                );
+            }
+        }
+    }
+
+    if !removed_names.is_empty() {
+        entries.retain(|entry| !removed_names.contains(&entry.name));
+    }
 }
 
 fn is_remote_not_found(err: &zeroterm_ssh::SshError) -> bool {
@@ -84,6 +235,25 @@ async fn finalize_remote_upload_target(
 ) -> Result<(), zeroterm_ssh::SshError> {
     if !overwrite || !remote_path_exists(sftp, target).await? {
         return sftp.rename(temp_path, target).await;
+    }
+
+    let target_meta = sftp.stat(target).await?;
+    if target_meta.kind != zeroterm_ssh::FileKind::File {
+        return Err(zeroterm_ssh::SshError::Sftp {
+            kind: zeroterm_ssh::SftpErrorKind::Unsupported,
+            message: format!("destination is not a regular file: {target}"),
+        });
+    }
+
+    match sftp.rename(temp_path, target).await {
+        Ok(()) => return Ok(()),
+        Err(err) => {
+            let temp_still_exists = remote_path_exists(sftp, temp_path).await.unwrap_or(false);
+            let target_still_exists = remote_path_exists(sftp, target).await.unwrap_or(false);
+            if !temp_still_exists || !target_still_exists {
+                return Err(err);
+            }
+        }
     }
 
     let backup_path = unique_remote_temp_path(target, "backup");
@@ -300,6 +470,32 @@ async fn finalize_download_target(
         });
     }
 
+    let target_meta = tokio::fs::metadata(target).await.map_err(|e| {
+        format!(
+            "stating destination before overwrite {}: {e}",
+            target.display()
+        )
+    })?;
+    if !target_meta.is_file() {
+        return Err(string_error(format!(
+            "destination is not a regular file: {}",
+            target.display()
+        )));
+    }
+
+    match tokio::fs::rename(temp_path, target).await {
+        Ok(()) => return Ok(()),
+        Err(err) => {
+            if !temp_path.exists() || !target.exists() {
+                return Err(format!(
+                    "rename {} -> {}: {err}",
+                    temp_path.display(),
+                    target.display()
+                ));
+            }
+        }
+    }
+
     let backup_path = unique_sibling_path(target, "backup");
     tokio::fs::rename(target, &backup_path).await.map_err(|e| {
         format!(
@@ -340,6 +536,7 @@ pub(crate) async fn download_remote_file_to_local(
         )));
     }
 
+    cleanup_stale_local_transfer_temps_for_target(&target);
     let temp_path = unique_sibling_path(&target, "download");
     let result = match progress {
         ProgressMode::Standalone { app, state } => {
@@ -552,5 +749,35 @@ mod tests {
         let temp = unique_remote_temp_path("/var/log/app.log", "part");
         assert!(temp.starts_with("/var/log/app.log.zeroterm-part-"));
         assert_ne!(temp, "/var/log/app.log");
+    }
+
+    #[test]
+    fn temp_name_detection_is_zero_term_specific() {
+        let remote = format!("app.log.zeroterm-part-{}", uuid::Uuid::new_v4());
+        assert!(is_zeroterm_remote_transfer_temp_name(&remote));
+        assert!(!is_zeroterm_remote_transfer_temp_name(
+            "app.log.zeroterm-part-not-a-uuid"
+        ));
+        assert!(!is_zeroterm_remote_transfer_temp_name("user.zeroterm-note"));
+
+        assert!(is_zeroterm_local_transfer_temp_name(
+            ".app.log.zeroterm-download-123-abc.part"
+        ));
+        assert!(is_zeroterm_local_transfer_temp_name(
+            ".app.log.zeroterm-backup-123-abc.part"
+        ));
+        assert!(!is_zeroterm_local_transfer_temp_name(
+            ".app.log.zeroterm-download-123-abc"
+        ));
+    }
+
+    #[test]
+    fn stale_temp_detection_uses_ttl() {
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(48 * 60 * 60);
+        assert!(is_stale_modified_time(
+            now - STALE_SFTP_TEMP_TTL - Duration::from_secs(1),
+            now
+        ));
+        assert!(!is_stale_modified_time(now - Duration::from_secs(60), now));
     }
 }
