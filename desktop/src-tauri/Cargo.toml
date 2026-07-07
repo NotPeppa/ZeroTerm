@@ -1,6 +1,6 @@
 [package]
 name = "zeroterm-desktop"
-version = "0.1.9"
+version = "0.1.10"
 description = "ZeroTerm desktop app"
 edition = "2021"
 license = "MIT OR Apache-2.0"
