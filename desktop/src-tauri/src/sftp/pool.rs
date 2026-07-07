@@ -8,7 +8,20 @@ use zeroterm_ssh::{ConnectConfig, Session, Sftp};
 
 use crate::sftp::{ipc_error, parse_ipc_error, ssh_error, string_error};
 
-pub(crate) const MAX_SFTP_CHANNELS_PER_HOST: usize = 4;
+/// Per-host cap on concurrently open SFTP channels. A directory transfer
+/// takes up to five (panel + primary + 3 workers); keeping one spare below
+/// OpenSSH's default `MaxSessions 10` lets ad-hoc single-file operations
+/// proceed while a tree copy runs. Servers with a lower limit simply fail
+/// the extra opens, which the worker pools already tolerate.
+pub(crate) const MAX_SFTP_CHANNELS_PER_HOST: usize = 6;
+
+/// Structured code for "this host's channel quota is exhausted". Callers can
+/// fall back to sharing an existing channel instead of failing the operation.
+pub(crate) const CHANNEL_LIMIT_CODE: &str = "CHANNEL_LIMIT";
+
+pub(crate) fn is_channel_limit_error(err: &str) -> bool {
+    parse_ipc_error(err).is_some_and(|parsed| parsed.code == CHANNEL_LIMIT_CODE)
+}
 
 /// Wall-clock cap on opening the SFTP subsystem over a pooled session.
 /// A half-open TCP connection otherwise hangs until the SSH keepalive
@@ -186,10 +199,10 @@ impl SftpPool {
         }
 
         if state.channels.len() >= MAX_SFTP_CHANNELS_PER_HOST {
-            return Err(string_error(format!(
-                "sftp channel limit reached for host {}",
-                host.host_id
-            )));
+            return Err(ipc_error(
+                CHANNEL_LIMIT_CODE,
+                format!("sftp channel limit reached for host {}", host.host_id),
+            ));
         }
 
         let channel_id = self.next_channel_id.fetch_add(1, Ordering::SeqCst);
@@ -221,10 +234,10 @@ impl SftpPool {
         }
 
         if state.channels.len() >= MAX_SFTP_CHANNELS_PER_HOST {
-            return Err(string_error(format!(
-                "sftp channel limit reached for host {}",
-                host.host_id
-            )));
+            return Err(ipc_error(
+                CHANNEL_LIMIT_CODE,
+                format!("sftp channel limit reached for host {}", host.host_id),
+            ));
         }
 
         let channel_id = self.next_channel_id.fetch_add(1, Ordering::SeqCst);
@@ -520,5 +533,17 @@ mod tests {
         assert!(is_retryable_session_open_error("connection reset by peer"));
         assert!(is_retryable_session_open_error("session closed"));
         assert!(!is_retryable_session_open_error("bad username or password"));
+    }
+
+    #[test]
+    fn channel_limit_error_is_detected_by_code_only() {
+        let err = ipc_error(
+            CHANNEL_LIMIT_CODE,
+            "sftp channel limit reached for host h1",
+        );
+        assert!(is_channel_limit_error(&err));
+        assert!(!is_retryable_session_open_error(&err));
+        assert!(!is_channel_limit_error(&ipc_error("TIMEOUT", "timed out")));
+        assert!(!is_channel_limit_error("sftp channel limit reached"));
     }
 }

@@ -273,6 +273,34 @@ Follow-up fixes applied after a code review of the refactored subsystem:
 - The legacy `sftp:progress` emission was removed backend and frontend;
   `sftp:transfer` is the single event stream.
 
+## Hardening Pass 2 (2026-07-07, after live testing)
+
+Live directory-upload testing surfaced three coupled failures: no overwrite
+prompt for same-name folders, a mid-file stall, and "sftp channel limit
+reached" right after cancelling the stalled transfer.
+
+- Root cause of the stall: russh-sftp pipelines WRITE requests outside its
+  timed request path (acks drain lazily, no `request_timeout` applies), so
+  one lost ack hung the upload forever. Uploads now fail with a retryable
+  `TIMEOUT` after 90s without any write acknowledgement
+  (`WRITE_STALL_TIMEOUT` in `core/crates/zeroterm-ssh/src/sftp.rs`); the
+  per-file retry then takes a fresh channel. READs already go through the
+  timed request path.
+- Cancellation now interrupts in-flight reads/writes via `tokio::select!`
+  instead of only being checked between chunks — a cancelled transfer
+  unwinds immediately and releases its pooled channels instead of pinning
+  them until the 180s watchdog.
+- Channel quota: raised `MAX_SFTP_CHANNELS_PER_HOST` 4 → 6 (a tree copy
+  holds up to five, one slot stays free for ad-hoc operations). Quota
+  exhaustion is now the structured `CHANNEL_LIMIT` code; single-entry pane
+  copies fall back to sharing the panel channel instead of failing, and the
+  same-host remote-copy worker builder falls back to the primary channels
+  instead of hard-erroring.
+- Directory copies now check the destination root before transferring
+  (all four directions): a same-name folder yields `ALREADY_EXISTS` up
+  front, which drives the existing frontend overwrite prompt, instead of
+  silently merging and reporting skipped files afterwards.
+
 ## Summary
 
 What is done:

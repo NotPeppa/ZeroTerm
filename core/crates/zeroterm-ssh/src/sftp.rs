@@ -17,6 +17,7 @@
 //! overhead, small enough that progress updates feel responsive.
 
 use std::io::SeekFrom;
+use std::time::Duration;
 
 use russh_sftp::client::error::Error as SftpClientError;
 use russh_sftp::client::SftpSession;
@@ -99,6 +100,28 @@ pub const DEFAULT_DOWNLOAD_PARALLELISM: usize = 8;
 
 const MIN_CHUNK_SIZE: usize = 1024;
 
+/// Cap on the best-effort file-handle shutdown issued when a transfer is
+/// cancelled mid-request: the handle may be the very thing that's hung.
+const ABORT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Pipelined SFTP WRITEs are not covered by the client's per-request
+/// timeout: acknowledgements are drained lazily outside the timed request
+/// path, so one lost ack would hang an upload forever. Zero ack progress
+/// for this long means the channel is effectively dead — fail the file
+/// with a retryable timeout so callers can retry on a fresh channel.
+/// (READs go through the timed request path and don't need this.)
+const WRITE_STALL_TIMEOUT: Duration = Duration::from_secs(90);
+
+fn write_stall_error(what: &str) -> SshError {
+    SshError::Sftp {
+        kind: SftpErrorKind::Timeout,
+        message: format!(
+            "sftp {what} stalled for {}s without server acknowledgement",
+            WRITE_STALL_TIMEOUT.as_secs()
+        ),
+    }
+}
+
 /// Live SFTP channel. Drop closes the underlying SSH channel.
 pub struct Sftp {
     inner: SftpSession,
@@ -180,18 +203,27 @@ impl Sftp {
         });
 
         loop {
-            if cancel.is_cancelled() {
-                return Err(SshError::Cancelled);
-            }
-            let n = file.read(&mut buf).await?;
+            let n = tokio::select! {
+                biased;
+                _ = cancel.cancelled() => return Err(SshError::Cancelled),
+                n = file.read(&mut buf) => n?,
+            };
             if n == 0 {
                 break;
             }
-            dest.write_all(&buf[..n]).await?;
+            tokio::select! {
+                biased;
+                _ = cancel.cancelled() => return Err(SshError::Cancelled),
+                r = dest.write_all(&buf[..n]) => r?,
+            }
             bytes_done += n as u64;
             on_progress(ProgressTick { bytes_done, total });
         }
-        dest.flush().await?;
+        tokio::select! {
+            biased;
+            _ = cancel.cancelled() => return Err(SshError::Cancelled),
+            r = dest.flush() => r?,
+        }
         Ok(bytes_done)
     }
 
@@ -284,15 +316,22 @@ impl Sftp {
                 let cancel = cancel.clone();
 
                 join.spawn(async move {
-                    if cancel.is_cancelled() {
-                        return Err(SshError::Cancelled);
-                    }
-                    f.seek(SeekFrom::Start(offset)).await?;
-                    let mut buf = vec![0u8; want];
-                    match read_fully(&mut f, &mut buf).await {
-                        Ok(n) if n == want => Ok((offset, buf, f)),
-                        Ok(_) => Err(SshError::Io(io_other("remote file shrank during download"))),
-                        Err(e) => Err(SshError::Io(e)),
+                    let work = async {
+                        f.seek(SeekFrom::Start(offset)).await?;
+                        let mut buf = vec![0u8; want];
+                        match read_fully(&mut f, &mut buf).await {
+                            Ok(n) if n == want => Ok((offset, buf, f)),
+                            Ok(_) => {
+                                Err(SshError::Io(io_other("remote file shrank during download")))
+                            }
+                            Err(e) => Err(SshError::Io(e)),
+                        }
+                    };
+                    tokio::pin!(work);
+                    tokio::select! {
+                        biased;
+                        _ = cancel.cancelled() => Err(SshError::Cancelled),
+                        r = &mut work => r,
                     }
                 });
             }
@@ -330,7 +369,14 @@ impl Sftp {
                         "sftp download window completed out of order",
                     )));
                 }
-                dest.write_all(&data).await?;
+                // `dest` may be a bounded pipe (remote→remote copy) whose
+                // reader has stalled; stay cancellable while it applies
+                // backpressure.
+                tokio::select! {
+                    biased;
+                    _ = cancel.cancelled() => return Err(SshError::Cancelled),
+                    r = dest.write_all(&data) => r?,
+                }
                 write_pos += data.len() as u64;
                 bytes_done += data.len() as u64;
                 on_progress(ProgressTick {
@@ -339,12 +385,21 @@ impl Sftp {
                 });
             }
         }
-        dest.flush().await?;
+        tokio::select! {
+            biased;
+            _ = cancel.cancelled() => return Err(SshError::Cancelled),
+            r = dest.flush() => r?,
+        }
         Ok(bytes_done)
     }
     /// shape as [`Self::download_to_writer`]; supply `size_hint` if you
     /// know how many bytes are coming so the progress UI can show a
     /// percentage.
+    ///
+    /// Cancellation interrupts in-flight reads/writes, not just the gaps
+    /// between chunks: a hung WRITE (dead server, stalled flow control)
+    /// otherwise pins the whole transfer — and every pooled channel its
+    /// caller holds — until a request timeout fires.
     pub async fn upload_from_reader<R, F>(
         &self,
         remote: &str,
@@ -372,24 +427,45 @@ impl Sftp {
             total: size_hint,
         });
 
+        // Best-effort close on the cancel path. The handle may be the very
+        // thing that's hung, so don't let the cleanup hang too.
+        async fn abort_upload<T>(file: &mut T) -> Result<u64, SshError>
+        where
+            T: tokio::io::AsyncWrite + Unpin,
+        {
+            let _ = tokio::time::timeout(ABORT_SHUTDOWN_TIMEOUT, file.shutdown()).await;
+            Err(SshError::Cancelled)
+        }
+
         loop {
-            if cancel.is_cancelled() {
-                // Best-effort: shut the file handle so the partial upload
-                // doesn't keep an open channel.
-                let _ = file.shutdown().await;
-                return Err(SshError::Cancelled);
-            }
-            let n = src.read(&mut buf).await?;
+            let n = tokio::select! {
+                biased;
+                _ = cancel.cancelled() => return abort_upload(&mut file).await,
+                n = src.read(&mut buf) => n?,
+            };
             if n == 0 {
                 break;
             }
             let mut written = 0;
             while written < n {
-                if cancel.is_cancelled() {
-                    let _ = file.shutdown().await;
-                    return Err(SshError::Cancelled);
-                }
-                let accepted = file.write(&buf[written..n]).await?;
+                let accepted = tokio::select! {
+                    biased;
+                    _ = cancel.cancelled() => return abort_upload(&mut file).await,
+                    accepted = tokio::time::timeout(
+                        WRITE_STALL_TIMEOUT,
+                        file.write(&buf[written..n]),
+                    ) => match accepted {
+                        Ok(accepted) => accepted?,
+                        Err(_) => {
+                            let _ = tokio::time::timeout(
+                                ABORT_SHUTDOWN_TIMEOUT,
+                                file.shutdown(),
+                            )
+                            .await;
+                            return Err(write_stall_error("write"));
+                        }
+                    },
+                };
                 if accepted == 0 {
                     let _ = file.shutdown().await;
                     return Err(std::io::Error::from(std::io::ErrorKind::WriteZero).into());
@@ -402,7 +478,16 @@ impl Sftp {
                 });
             }
         }
-        file.shutdown().await?;
+        // Shutdown drains every pipelined write ack — the same lazily-drained
+        // path as above, so it needs the same stall guard.
+        tokio::select! {
+            biased;
+            _ = cancel.cancelled() => return abort_upload(&mut file).await,
+            r = tokio::time::timeout(WRITE_STALL_TIMEOUT, file.shutdown()) => match r {
+                Ok(r) => r?,
+                Err(_) => return Err(write_stall_error("close")),
+            },
+        }
         // Every queued write has now been acknowledged by the remote. Emit
         // once more so callers can distinguish "queued" from fully complete.
         on_progress(ProgressTick {

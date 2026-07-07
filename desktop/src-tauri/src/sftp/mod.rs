@@ -36,7 +36,7 @@ pub(crate) mod path;
 pub(crate) mod pool;
 pub(crate) mod transfer;
 pub(crate) mod tree;
-use pool::SftpChannelGuard;
+use pool::{is_channel_limit_error, SftpChannelGuard};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -125,6 +125,46 @@ pub(crate) async fn open_ephemeral_sftp(
         .sftp_pool
         .acquire_channel(host_id.to_string(), cfg, jump_cfg)
         .await
+}
+
+/// A channel for a transfer, plus the guard keeping it leased when it came
+/// from the pool. When the host is at its channel quota this falls back to
+/// the panel's own pinned channel (`_guard: None`): SFTP multiplexes
+/// concurrent requests safely on one channel, it's just slower than a
+/// dedicated one — better than failing the transfer outright.
+pub(crate) struct TransferChannel {
+    sftp: Arc<zeroterm_ssh::Sftp>,
+    _guard: Option<SftpChannelGuard>,
+}
+
+impl TransferChannel {
+    pub(crate) fn sftp(&self) -> Arc<zeroterm_ssh::Sftp> {
+        Arc::clone(&self.sftp)
+    }
+}
+
+pub(crate) async fn acquire_transfer_sftp(
+    state: &AppState,
+    app_handle: &AppHandle,
+    sftp_id: u64,
+) -> Result<TransferChannel, String> {
+    let host_id = lookup_sftp_host_id(state, sftp_id)?;
+    match open_ephemeral_sftp(state, app_handle, &host_id).await {
+        Ok(guard) => Ok(TransferChannel {
+            sftp: guard.sftp(),
+            _guard: Some(guard),
+        }),
+        Err(err) if is_channel_limit_error(&err) => {
+            warn!(
+                sftp_id,
+                host_id = %host_id,
+                "sftp channel quota exhausted, sharing the panel channel for this transfer"
+            );
+            let sftp = lookup_sftp(state, sftp_id)?;
+            Ok(TransferChannel { sftp, _guard: None })
+        }
+        Err(err) => Err(err),
+    }
 }
 
 #[tauri::command]
@@ -678,6 +718,12 @@ pub async fn sftp_copy_entry_between_panes(
             if root_kind == CopyNodeKind::Dir && is_local_path_within(&dst, &src)? {
                 return Err(string_error("cannot copy a directory into itself"));
             }
+            if root_kind == CopyNodeKind::Dir && !overwrite && dst.exists() {
+                return Err(string_error(format!(
+                    "destination already exists: {}",
+                    dst.display()
+                )));
+            }
             copy_local_tree_to_local(
                 &src,
                 &dst,
@@ -690,10 +736,13 @@ pub async fn sftp_copy_entry_between_panes(
         (None, Some(dst_id)) => {
             let src = PathBuf::from(&source_path);
             let dst_host_id = lookup_sftp_host_id(&state, dst_id)?;
-            let dst_guard = open_ephemeral_sftp(&state, &app_handle, &dst_host_id).await?;
-            let dst_sftp = dst_guard.sftp();
+            let dst_channel = acquire_transfer_sftp(&state, &app_handle, dst_id).await?;
+            let dst_sftp = dst_channel.sftp();
             let dst = remote_join_path(&destination_dir, &source_name);
             let root_kind = detect_local_kind(&src)?;
+            if root_kind == CopyNodeKind::Dir && !overwrite {
+                ensure_remote_target_available(dst_sftp.as_ref(), &dst).await?;
+            }
             copy_local_tree_to_remote(
                 &src,
                 &dst_sftp,
@@ -707,12 +756,18 @@ pub async fn sftp_copy_entry_between_panes(
         }
         (Some(src_id), None) => {
             let src_host_id = lookup_sftp_host_id(&state, src_id)?;
-            let src_guard = open_ephemeral_sftp(&state, &app_handle, &src_host_id).await?;
-            let src_sftp = src_guard.sftp();
+            let src_channel = acquire_transfer_sftp(&state, &app_handle, src_id).await?;
+            let src_sftp = src_channel.sftp();
             let dst_dir = PathBuf::from(&destination_dir);
             let dst = dst_dir.join(&source_name);
             let meta = src_sftp.stat(&source_path).await.map_err(ssh_error)?;
             let root_kind = detect_remote_kind(&source_path, meta.kind)?;
+            if root_kind == CopyNodeKind::Dir && !overwrite && dst.exists() {
+                return Err(string_error(format!(
+                    "destination already exists: {}",
+                    dst.display()
+                )));
+            }
             copy_remote_tree_to_local(
                 &src_sftp,
                 &source_path,
@@ -727,10 +782,10 @@ pub async fn sftp_copy_entry_between_panes(
         (Some(src_id), Some(dst_id)) => {
             let src_host_id = lookup_sftp_host_id(&state, src_id)?;
             let dst_host_id = lookup_sftp_host_id(&state, dst_id)?;
-            let src_guard = open_ephemeral_sftp(&state, &app_handle, &src_host_id).await?;
-            let dst_guard = open_ephemeral_sftp(&state, &app_handle, &dst_host_id).await?;
-            let src_sftp = src_guard.sftp();
-            let dst_sftp = dst_guard.sftp();
+            let src_channel = acquire_transfer_sftp(&state, &app_handle, src_id).await?;
+            let dst_channel = acquire_transfer_sftp(&state, &app_handle, dst_id).await?;
+            let src_sftp = src_channel.sftp();
+            let dst_sftp = dst_channel.sftp();
             let dst = remote_join_path(&destination_dir, &source_name);
 
             let meta = src_sftp.stat(&source_path).await.map_err(ssh_error)?;
@@ -741,6 +796,9 @@ pub async fn sftp_copy_entry_between_panes(
                 && is_remote_path_within(&dst, &source_path)
             {
                 return Err(string_error("cannot copy a directory into itself"));
+            }
+            if root_kind == CopyNodeKind::Dir && !overwrite {
+                ensure_remote_target_available(dst_sftp.as_ref(), &dst).await?;
             }
             copy_remote_tree_to_remote(
                 &src_sftp,

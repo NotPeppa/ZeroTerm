@@ -850,9 +850,15 @@ async fn build_same_host_remote_copy_worker_pairs(
         }
 
         if source_workers.is_empty() {
-            return Err(string_error(format!(
-                "not enough SFTP channels for same-host remote copy on host {host_id}; close another SFTP panel or wait for other transfers to finish"
-            )));
+            // Quota exhausted (or opens failing): fall back to one pair on
+            // the primary channels rather than failing the copy. Concurrent
+            // requests multiplex safely on a shared channel, just slower.
+            warn!(
+                host_id = ?host_id,
+                "no dedicated channel pairs for same-host remote copy; sharing primary channels"
+            );
+            source_workers.push(primary_source);
+            target_workers.push(primary_target);
         }
     } else {
         source_workers.push(primary_source);
