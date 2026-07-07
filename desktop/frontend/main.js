@@ -2878,7 +2878,7 @@ function requireConnectedRetryPane(key) {
   return pane;
 }
 
-function buildUploadRetryPlan(pane, localPath, remotePath) {
+function buildUploadRetryPlan(pane, localPath, remotePath, overwrite = false) {
   return {
     matchKind: "upload",
     source: localPath,
@@ -2888,9 +2888,23 @@ function buildUploadRetryPlan(pane, localPath, remotePath) {
       paneKey: pane.key,
       localPath,
       remotePath,
+      overwrite,
       refreshPaneKeys: [pane.key],
     },
   };
+}
+
+function uploadLocalPathToPane(pane, localPath, remotePath, overwrite = false) {
+  return invokeSftpTransferWithRetry(
+    buildUploadRetryPlan(pane, localPath, remotePath, overwrite),
+    () =>
+      invoke("sftp_upload", {
+        sftpId: pane.sftpId,
+        local: localPath,
+        remote: remotePath,
+        overwrite,
+      }),
+  );
 }
 
 async function refreshRetryPlanPanes(paneKeys = []) {
@@ -2910,15 +2924,7 @@ async function executeSftpTransferRetryPlan(plan) {
   switch (plan?.action) {
     case "uploadLocal": {
       const pane = requireConnectedRetryPane(plan.paneKey);
-      await invokeSftpTransferWithRetry(
-        buildUploadRetryPlan(pane, plan.localPath, plan.remotePath),
-        () =>
-          invoke("sftp_upload", {
-            sftpId: pane.sftpId,
-            local: plan.localPath,
-            remote: plan.remotePath,
-          }),
-      );
+      await uploadLocalPathToPane(pane, plan.localPath, plan.remotePath, Boolean(plan.overwrite));
       await refreshRetryPlanPanes(plan.refreshPaneKeys);
       return;
     }
@@ -2936,6 +2942,7 @@ async function executeSftpTransferRetryPlan(plan) {
               paneKey: plan.paneKey,
               file: plan.file,
               remotePath: plan.remotePath,
+              overwrite: Boolean(plan.overwrite),
               refreshPaneKeys: plan.refreshPaneKeys,
             },
           },
@@ -2944,6 +2951,7 @@ async function executeSftpTransferRetryPlan(plan) {
               sftpId: pane.sftpId,
               local: staging.absolutePath,
               remote: plan.remotePath,
+              overwrite: Boolean(plan.overwrite),
             }),
         );
       } finally {
@@ -3047,6 +3055,7 @@ async function executeSftpTransferRetryPlan(plan) {
             remote: plan.remotePath,
             data: plan.data,
             sourceLabel: plan.sourceLabel,
+            overwrite: Boolean(plan.overwrite),
           }),
       );
       await refreshRetryPlanPanes(plan.refreshPaneKeys);
@@ -3282,49 +3291,6 @@ if (sftpTransferClearBtn) {
   });
 }
 
-listen("sftp:progress", (ev) => {
-  const payload = ev?.payload || {};
-  const transferId = Number(payload.transferId);
-  if (!Number.isFinite(transferId)) return;
-
-  if (payload.finished) {
-    const item = sftpTransferItems.get(transferId);
-    if (!item || item.eventSource !== "transfer") {
-      sftpTransferItems.delete(transferId);
-    }
-    renderSftpTransferDock();
-    return;
-  }
-
-  clearSftpTransferDismissTimer(transferId);
-  const existing = sftpTransferItems.get(transferId);
-  const bytesDone = finiteTransferNumber(payload.bytesDone) ?? 0;
-  const total = finiteTransferNumber(payload.total);
-  const bytesPerSec = finiteTransferNumber(payload.bytesPerSec);
-  const etaSeconds = finiteTransferNumber(payload.etaSeconds);
-  const filesDone = finiteTransferNumber(payload.filesDone);
-  const filesTotal = finiteTransferNumber(payload.filesTotal);
-  sftpTransferItems.set(transferId, {
-    transferId,
-    kind: normalizeSftpTransferKind(payload.kind),
-    status: "running",
-    source: String(payload.source || ""),
-    destination: String(payload.destination || ""),
-    bytesDone,
-    total,
-    bytesPerSec,
-    etaSeconds,
-    currentFile: payload.currentFile ? String(payload.currentFile) : null,
-    filesDone,
-    filesTotal,
-    error: null,
-    retryPlan: existing?.retryPlan || null,
-    eventSource: "progress",
-    updatedAt: Date.now(),
-  });
-  renderSftpTransferDock();
-});
-
 listen("sftp:transfer", (ev) => {
   const payload = ev?.payload || {};
   const transferId = Number(payload.transferId ?? payload.transfer_id);
@@ -3366,7 +3332,6 @@ listen("sftp:transfer", (ev) => {
         String(payload.source || ""),
         String(payload.destination || ""),
       ),
-    eventSource: "transfer",
     updatedAt: Date.now(),
   };
   sftpTransferItems.set(transferId, item);
@@ -15953,38 +15918,50 @@ async function uploadDroppedPayloadToPane(pane, payload) {
     try {
       const nativePath = typeof item.file?.path === "string" ? item.file.path : "";
       if (nativePath) {
-        await invokeSftpTransferWithRetry(
-          buildUploadRetryPlan(pane, nativePath, remotePath),
-          () =>
-            invoke("sftp_upload", {
-              sftpId: pane.sftpId,
-              local: nativePath,
-              remote: remotePath,
-            }),
-        );
+        try {
+          await uploadLocalPathToPane(pane, nativePath, remotePath, false);
+        } catch (e) {
+          const err = normalizeSftpError(e);
+          if (err.code !== "ALREADY_EXISTS") throw err;
+          const ok = await showNativeConfirm(t("files.confirm.overwrite", { path: remotePath }));
+          if (!ok) continue;
+          await uploadLocalPathToPane(pane, nativePath, remotePath, true);
+        }
       } else {
         const staging = await stageBrowserFileForUpload(item.file);
         try {
-          await invokeSftpTransferWithRetry(
-            {
-              matchKind: "upload",
-              source: staging.absolutePath,
-              destination: remotePath,
-              retry: {
-                action: "uploadBrowserFile",
-                paneKey: pane.key,
-                file: item.file,
-                remotePath,
-                refreshPaneKeys: [pane.key],
+          const uploadStaged = (overwrite) =>
+            invokeSftpTransferWithRetry(
+              {
+                matchKind: "upload",
+                source: staging.absolutePath,
+                destination: remotePath,
+                retry: {
+                  action: "uploadBrowserFile",
+                  paneKey: pane.key,
+                  file: item.file,
+                  remotePath,
+                  overwrite,
+                  refreshPaneKeys: [pane.key],
+                },
               },
-            },
-            () =>
-              invoke("sftp_upload", {
-                sftpId: pane.sftpId,
-                local: staging.absolutePath,
-                remote: remotePath,
-              }),
-          );
+              () =>
+                invoke("sftp_upload", {
+                  sftpId: pane.sftpId,
+                  local: staging.absolutePath,
+                  remote: remotePath,
+                  overwrite,
+                }),
+            );
+          try {
+            await uploadStaged(false);
+          } catch (e) {
+            const err = normalizeSftpError(e);
+            if (err.code !== "ALREADY_EXISTS") throw err;
+            const ok = await showNativeConfirm(t("files.confirm.overwrite", { path: remotePath }));
+            if (!ok) continue;
+            await uploadStaged(true);
+          }
         } finally {
           try {
             await invoke("local_remove", { path: staging.absolutePath });
@@ -17228,17 +17205,18 @@ async function sftpUpload(pane) {
   const paths = Array.isArray(local) ? local.map(String) : [String(local)];
   for (const path of paths) {
     const name = basename(path);
+    const remotePath = joinPanePath(pane, name);
     try {
-      const remotePath = joinPanePath(pane, name);
-      const n = await invokeSftpTransferWithRetry(
-        buildUploadRetryPlan(pane, path, remotePath),
-        () =>
-          invoke("sftp_upload", {
-            sftpId: pane.sftpId,
-            local: path,
-            remote: remotePath,
-          }),
-      );
+      let n;
+      try {
+        n = await uploadLocalPathToPane(pane, path, remotePath, false);
+      } catch (e) {
+        const err = normalizeSftpError(e);
+        if (err.code !== "ALREADY_EXISTS") throw err;
+        const ok = await showNativeConfirm(t("files.confirm.overwrite", { path: remotePath }));
+        if (!ok) continue;
+        n = await uploadLocalPathToPane(pane, path, remotePath, true);
+      }
       pane.statusEl.textContent = t("files.status.uploaded_one", { name, size: formatSize(n) });
     } catch (e) {
       pane.statusEl.textContent = t("files.error.upload_failed_for", {
@@ -17278,28 +17256,40 @@ async function sftpCopyEntry(pane, entry) {
     });
     const data = Array.from(new TextEncoder().encode(doc.content));
     const sourceLabel = `copy:${sourcePath}`;
-    await invokeSftpTransferWithRetry(
-      {
-        matchKind: "upload",
-        source: sourceLabel,
-        destination: targetPath,
-        retry: {
-          action: "uploadBytes",
-          paneKey: pane.key,
-          remotePath: targetPath,
-          data,
-          sourceLabel,
-          refreshPaneKeys: targetDir === pane.path ? [pane.key] : [],
+    const uploadCopyBytes = (overwrite) =>
+      invokeSftpTransferWithRetry(
+        {
+          matchKind: "upload",
+          source: sourceLabel,
+          destination: targetPath,
+          retry: {
+            action: "uploadBytes",
+            paneKey: pane.key,
+            remotePath: targetPath,
+            data,
+            sourceLabel,
+            overwrite,
+            refreshPaneKeys: targetDir === pane.path ? [pane.key] : [],
+          },
         },
-      },
-      () =>
-        invoke("sftp_upload_bytes", {
-          sftpId: pane.sftpId,
-          remote: targetPath,
-          data,
-          sourceLabel,
-        }),
-    );
+        () =>
+          invoke("sftp_upload_bytes", {
+            sftpId: pane.sftpId,
+            remote: targetPath,
+            data,
+            sourceLabel,
+            overwrite,
+          }),
+      );
+    try {
+      await uploadCopyBytes(false);
+    } catch (e) {
+      const err = normalizeSftpError(e);
+      if (err.code !== "ALREADY_EXISTS") throw err;
+      const ok = await showNativeConfirm(t("files.confirm.overwrite", { path: targetPath }));
+      if (!ok) return;
+      await uploadCopyBytes(true);
+    }
     pane.statusEl.textContent = t("files.status.copied_to", { name: entry.name, path: targetDir });
     if (targetDir === pane.path) {
       await navigateSftpPane(pane, pane.path);

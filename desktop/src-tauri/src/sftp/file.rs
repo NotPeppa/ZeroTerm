@@ -548,7 +548,7 @@ pub(crate) async fn download_remote_file_to_local(
                 app,
                 "download",
                 source.clone(),
-                destination.clone(),
+                destination,
                 None,
             );
             let _permit = acquire_transfer_slot(state, app, transfer_id).await?;
@@ -557,9 +557,6 @@ pub(crate) async fn download_remote_file_to_local(
                 app,
                 state,
                 transfer_id,
-                "download",
-                source.clone(),
-                destination,
                 move |progress_cb| async move {
                     let mut progress_cb = progress_cb;
                     let first = download_remote_file_to_temp_once(

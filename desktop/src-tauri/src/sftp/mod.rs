@@ -265,15 +265,19 @@ pub async fn sftp_upload(
     sftp_id: u64,
     local: String,
     remote: String,
+    overwrite: Option<bool>,
 ) -> Result<u64, String> {
+    let overwrite = overwrite.unwrap_or(false);
     let host_id = lookup_sftp_host_id(&state, sftp_id)?;
     let metadata = std::fs::metadata(&local).map_err(|e| format!("stating {local}: {e}"))?;
     let size_hint = Some(metadata.len());
-    with_resilient_panel_sftp(&state, sftp_id, |sftp| {
-        let remote = remote.clone();
-        async move { ensure_remote_target_available(sftp.as_ref(), &remote).await }
-    })
-    .await?;
+    if !overwrite {
+        with_resilient_panel_sftp(&state, sftp_id, |sftp| {
+            let remote = remote.clone();
+            async move { ensure_remote_target_available(sftp.as_ref(), &remote).await }
+        })
+        .await?;
+    }
     let sftp = lookup_sftp(&state, sftp_id)?;
     let (transfer_id, cancel) = register_transfer(
         &state,
@@ -293,9 +297,6 @@ pub async fn sftp_upload(
         &app_handle,
         &state,
         transfer_id,
-        "upload",
-        local.clone(),
-        remote.clone(),
         move |progress_cb| async move {
             let mut progress_cb = progress_cb;
             let first = upload_local_path_to_remote_once(
@@ -303,7 +304,7 @@ pub async fn sftp_upload(
                 Path::new(&local),
                 &remote,
                 size_hint,
-                false,
+                overwrite,
                 true,
                 cancel_for_body.clone(),
                 &mut progress_cb,
@@ -328,7 +329,7 @@ pub async fn sftp_upload(
                         Path::new(&local),
                         &remote,
                         size_hint,
-                        false,
+                        overwrite,
                         true,
                         cancel_for_body,
                         &mut progress_cb,
@@ -354,21 +355,35 @@ pub async fn sftp_upload_bytes(
     remote: String,
     data: Vec<u8>,
     source_label: Option<String>,
+    overwrite: Option<bool>,
 ) -> Result<u64, String> {
+    // Inline byte arrays ride the JSON IPC channel; anything bigger must go
+    // through `prepare_staging_upload_path` + `sftp_upload`. Shares the
+    // editor's hard cap since the in-app copy/edit flows are the callers.
+    if data.len() as u64 > HARD_TEXT_EDIT_MAX_BYTES {
+        return Err(string_error(format!(
+            "inline byte upload is {} bytes, above limit {} bytes; use a staged file upload instead",
+            data.len(),
+            HARD_TEXT_EDIT_MAX_BYTES
+        )));
+    }
+    let overwrite = overwrite.unwrap_or(false);
     let host_id = lookup_sftp_host_id(&state, sftp_id)?;
     let size_hint = Some(data.len() as u64);
     let source = source_label.unwrap_or_else(|| format!("dragged-bytes({})", data.len()));
-    with_resilient_panel_sftp(&state, sftp_id, |sftp| {
-        let remote = remote.clone();
-        async move { ensure_remote_target_available(sftp.as_ref(), &remote).await }
-    })
-    .await?;
+    if !overwrite {
+        with_resilient_panel_sftp(&state, sftp_id, |sftp| {
+            let remote = remote.clone();
+            async move { ensure_remote_target_available(sftp.as_ref(), &remote).await }
+        })
+        .await?;
+    }
     let sftp = lookup_sftp(&state, sftp_id)?;
     let (transfer_id, cancel) = register_transfer(
         &state,
         &app_handle,
         "upload",
-        source.clone(),
+        source,
         remote.clone(),
         size_hint,
     );
@@ -383,9 +398,6 @@ pub async fn sftp_upload_bytes(
         &app_handle,
         &state,
         transfer_id,
-        "upload",
-        source,
-        remote.clone(),
         move |progress_cb| async move {
             let mut progress_cb = progress_cb;
             let first = upload_reader_to_remote_atomic(
@@ -393,7 +405,7 @@ pub async fn sftp_upload_bytes(
                 &remote,
                 &mut cursor,
                 size_hint,
-                false,
+                overwrite,
                 true,
                 cancel_for_body.clone(),
                 &mut progress_cb,
@@ -418,7 +430,7 @@ pub async fn sftp_upload_bytes(
                         &remote,
                         &mut cursor,
                         size_hint,
-                        false,
+                        overwrite,
                         true,
                         cancel_for_body,
                         &mut progress_cb,
@@ -576,8 +588,34 @@ pub async fn sftp_remove_dir(
     sftp_id: u64,
     path: String,
 ) -> Result<(), String> {
+    let (host_id, channel_id) = lookup_sftp_channel_info(&state, sftp_id)?;
     let sftp = lookup_sftp(&state, sftp_id)?;
-    sftp_remove_dir_recursive(&sftp, &path, Some((&app_handle, &state))).await
+    match sftp_remove_dir_recursive(&sftp, &path, Some((&app_handle, &state))).await {
+        Ok(()) => Ok(()),
+        Err(err) if is_retryable_transfer_error(&err) => {
+            warn!(
+                sftp_id,
+                host_id = %host_id,
+                channel_id,
+                error = %err,
+                "recursive delete lost its channel, refreshing and retrying once"
+            );
+            let refreshed = state
+                .sftp_pool
+                .refresh_channel(&host_id, channel_id)
+                .await?;
+            match refreshed.stat(&path).await {
+                // The failed attempt may have finished server-side (e.g. a
+                // timeout after the final rmdir was processed): gone is done.
+                Err(SshError::Sftp {
+                    kind: SftpErrorKind::NotFound,
+                    ..
+                }) => Ok(()),
+                _ => sftp_remove_dir_recursive(&refreshed, &path, Some((&app_handle, &state))).await,
+            }
+        }
+        Err(err) => Err(err),
+    }
 }
 
 #[tauri::command]

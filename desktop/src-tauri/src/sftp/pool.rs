@@ -1,13 +1,20 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use tokio::sync::Mutex as AsyncMutex;
 use zeroterm_ssh::{ConnectConfig, Session, Sftp};
 
-use crate::sftp::{parse_ipc_error, ssh_error, string_error};
+use crate::sftp::{ipc_error, parse_ipc_error, ssh_error, string_error};
 
 pub(crate) const MAX_SFTP_CHANNELS_PER_HOST: usize = 4;
+
+/// Wall-clock cap on opening the SFTP subsystem over a pooled session.
+/// A half-open TCP connection otherwise hangs until the SSH keepalive
+/// gives up (~90s); failing faster lets the open path fall back to a
+/// fresh connection via the retry in `open_sftp_for_host`.
+const SFTP_OPEN_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub(crate) struct SftpPool {
     hosts: Mutex<HashMap<String, Arc<HostPool>>>,
@@ -113,7 +120,11 @@ impl SftpPool {
             }
         };
 
-        host.invalidate_connection();
+        // Try the existing pooled session first: a channel-level failure
+        // (single dead SFTP channel) must not tear down the shared session
+        // that other panel/transfer channels on this host still use. If the
+        // session itself is dead, the open below fails or times out with a
+        // retryable error and `open_sftp_for_host` reconnects from scratch.
         let sftp = self.open_sftp_for_host(&host).await?;
 
         let mut state = host.state.lock().unwrap();
@@ -261,10 +272,19 @@ impl SftpPool {
         loop {
             attempts += 1;
             let session = host.connect_session().await?;
-            match session.sftp().await {
+            let opened = match tokio::time::timeout(SFTP_OPEN_TIMEOUT, session.sftp()).await {
+                Ok(result) => result.map_err(ssh_error),
+                Err(_) => Err(ipc_error(
+                    "TIMEOUT",
+                    format!(
+                        "timed out opening sftp channel after {}s",
+                        SFTP_OPEN_TIMEOUT.as_secs()
+                    ),
+                )),
+            };
+            match opened {
                 Ok(sftp) => return Ok(Arc::new(sftp)),
                 Err(err) => {
-                    let err = ssh_error(err);
                     if attempts < 2 && is_retryable_session_open_error(&err) {
                         host.invalidate_connection();
                         continue;

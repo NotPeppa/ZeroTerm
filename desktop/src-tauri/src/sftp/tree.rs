@@ -646,9 +646,6 @@ async fn stream_local_file_to_local(
                 app,
                 state,
                 transfer_id,
-                "copy",
-                source.display().to_string(),
-                target.display().to_string(),
                 move |progress_cb| async move {
                     copy_local_file_chunked(&src, &dst, total, cancel_for_body, progress_cb)
                         .await
@@ -1078,9 +1075,6 @@ async fn stream_local_file_to_remote(
                 app,
                 state,
                 transfer_id,
-                "copy",
-                source.display().to_string(),
-                target.clone(),
                 move |progress_cb| async move {
                     let mut progress_cb = progress_cb;
                     let first = upload_local_path_to_remote_once(
@@ -1586,9 +1580,6 @@ async fn stream_remote_file_to_remote(
                 app,
                 state,
                 transfer_id,
-                "copy",
-                source.clone(),
-                target.clone(),
                 move |progress_cb| async move {
                     let mut progress_cb = progress_cb;
                     let first = pipe_remote_file_to_remote(
@@ -1876,6 +1867,14 @@ pub(crate) async fn copy_remote_tree_to_remote(
 }
 
 fn normalize_removable_remote_dir(path: &str) -> Result<String, String> {
+    // `normalize_remote_path` treats every input as absolute, so a relative
+    // path would be silently rewritten to a root-level one before deletion.
+    // Refuse instead of guessing what the caller meant.
+    if !path.trim().starts_with('/') {
+        return Err(string_error(format!(
+            "refusing to delete non-absolute remote path `{path}`"
+        )));
+    }
     let root = normalize_remote_path(path);
     if root == "/" {
         return Err(string_error("refusing to delete remote root directory `/`"));
@@ -1988,7 +1987,7 @@ mod tests {
 
     #[test]
     fn removable_remote_dir_rejects_root_after_normalization() {
-        for path in ["/", "", "/tmp/..", "/../../"] {
+        for path in ["/", "/tmp/..", "/../../"] {
             let err = normalize_removable_remote_dir(path).expect_err("root must be rejected");
             let parsed = parse_ipc_error(&err).expect("structured error");
             assert_eq!(parsed.code, "OTHER");
@@ -1998,6 +1997,22 @@ mod tests {
         assert_eq!(
             normalize_removable_remote_dir("/var/log/../tmp").expect("valid path"),
             "/var/tmp"
+        );
+    }
+
+    #[test]
+    fn removable_remote_dir_rejects_relative_paths() {
+        for path in ["", "foo", "foo/bar", "./foo", "../foo"] {
+            let err =
+                normalize_removable_remote_dir(path).expect_err("relative path must be rejected");
+            let parsed = parse_ipc_error(&err).expect("structured error");
+            assert_eq!(parsed.code, "OTHER");
+            assert!(parsed.message.contains("non-absolute remote path"));
+        }
+
+        assert_eq!(
+            normalize_removable_remote_dir(" /var/log ").expect("trimmed absolute path"),
+            "/var/log"
         );
     }
 

@@ -244,23 +244,6 @@ struct TransferRecord {
     event: TransferEvent,
 }
 
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct TransferProgressEvent {
-    pub transfer_id: u64,
-    pub kind: &'static str,
-    pub source: String,
-    pub destination: String,
-    pub bytes_done: u64,
-    pub total: Option<u64>,
-    pub bytes_per_sec: Option<u64>,
-    pub eta_seconds: Option<u64>,
-    pub finished: bool,
-    pub current_file: Option<String>,
-    pub files_done: Option<u64>,
-    pub files_total: Option<u64>,
-}
-
 pub(crate) fn register_transfer(
     state: &AppState,
     app_handle: &AppHandle,
@@ -307,9 +290,6 @@ pub(crate) enum ProgressMode<'a> {
 
 pub(crate) struct TransferSink {
     transfer_id: u64,
-    kind: &'static str,
-    source: String,
-    destination: String,
     total: std::sync::atomic::AtomicU64,
     bytes_done: std::sync::atomic::AtomicU64,
     files_total: std::sync::atomic::AtomicU64,
@@ -340,15 +320,12 @@ impl TransferSink {
             state,
             &app_handle,
             kind,
-            source.clone(),
-            destination.clone(),
+            source,
+            destination,
             if total > 0 { Some(total) } else { None },
         );
         Arc::new(Self {
             transfer_id,
-            kind,
-            source,
-            destination,
             total: std::sync::atomic::AtomicU64::new(total),
             bytes_done: std::sync::atomic::AtomicU64::new(0),
             files_total: std::sync::atomic::AtomicU64::new(0),
@@ -411,23 +388,6 @@ impl TransferSink {
         } else {
             Some(current_file.to_string())
         };
-        let _ = self.app_handle.emit(
-            "sftp:progress",
-            TransferProgressEvent {
-                transfer_id: self.transfer_id,
-                kind: self.kind,
-                source: self.source.clone(),
-                destination: self.destination.clone(),
-                bytes_done,
-                total: if total > 0 { Some(total) } else { None },
-                bytes_per_sec,
-                eta_seconds,
-                finished: false,
-                current_file: current_file.clone(),
-                files_done,
-                files_total,
-            },
-        );
         self.app_handle
             .state::<AppState>()
             .transfer_manager
@@ -539,24 +499,6 @@ impl TransferSink {
     pub(crate) fn emit_finished(&self, result: Result<(), String>) {
         let bytes_done = self.bytes_done.load(Ordering::SeqCst);
         let total = self.total.load(Ordering::Relaxed);
-        let (files_done, files_total) = self.file_counts();
-        let _ = self.app_handle.emit(
-            "sftp:progress",
-            TransferProgressEvent {
-                transfer_id: self.transfer_id,
-                kind: self.kind,
-                source: self.source.clone(),
-                destination: self.destination.clone(),
-                bytes_done,
-                total: if total > 0 { Some(total) } else { None },
-                bytes_per_sec: None,
-                eta_seconds: None,
-                finished: true,
-                current_file: None,
-                files_done,
-                files_total,
-            },
-        );
         let manager = &self.app_handle.state::<AppState>().transfer_manager;
         match result {
             Ok(()) => manager.finish_success(
@@ -672,9 +614,6 @@ pub(crate) async fn run_with_progress<F, Fut, E>(
     app_handle: &AppHandle,
     state: &AppState,
     transfer_id: u64,
-    kind: &'static str,
-    source: String,
-    destination: String,
     body: F,
 ) -> Result<u64, String>
 where
@@ -703,8 +642,6 @@ where
     }));
     let watchdog_state = progress_state.clone();
     let app_handle_for_cb = app_handle.clone();
-    let source_for_cb = source.clone();
-    let dest_for_cb = destination.clone();
 
     let cb: Box<dyn FnMut(zeroterm_ssh::ProgressTick) + Send> = Box::new(move |tick| {
         let now = Instant::now();
@@ -746,23 +683,6 @@ where
         s.has_baseline = true;
         drop(s);
 
-        let _ = app_handle_for_cb.emit(
-            "sftp:progress",
-            TransferProgressEvent {
-                transfer_id,
-                kind,
-                source: source_for_cb.clone(),
-                destination: dest_for_cb.clone(),
-                bytes_done: tick.bytes_done,
-                total: tick.total,
-                bytes_per_sec,
-                eta_seconds,
-                finished: false,
-                current_file: None,
-                files_done: None,
-                files_total: None,
-            },
-        );
         transfer_manager_for_cb.progress(
             &app_handle_for_cb,
             transfer_id,
@@ -822,23 +742,6 @@ where
         Err(_) => watchdog_state.lock().unwrap().last_emit_bytes,
     };
     let final_total = watchdog_state.lock().unwrap().last_total;
-    let _ = app_handle.emit(
-        "sftp:progress",
-        TransferProgressEvent {
-            transfer_id,
-            kind,
-            source,
-            destination,
-            bytes_done: final_bytes,
-            total: final_total,
-            bytes_per_sec: None,
-            eta_seconds: None,
-            finished: true,
-            current_file: None,
-            files_done: None,
-            files_total: None,
-        },
-    );
     match &outcome {
         Ok(_) => transfer_manager.finish_success(app_handle, transfer_id, final_bytes, final_total),
         Err(message) => {

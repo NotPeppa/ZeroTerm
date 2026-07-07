@@ -135,8 +135,8 @@ Commands (frontend → backend):
 | `sftp_open` | `{ hostId }` | `sftpId: number` (separate SSH connection from shell) |
 | `sftp_close` | `{ sftpId }` | — |
 | `sftp_list` | `{ sftpId, path }` | `DirEntryDto[] = { name, kind: "file"\|"dir"\|"symlink"\|"other", size }` |
-| `sftp_download` | `{ sftpId, remote, local }` | bytes written. Streams in 32 KiB chunks; progress flows back via `sftp:progress` events |
-| `sftp_upload` | `{ sftpId, local, remote }` | bytes uploaded. Same streaming + progress shape |
+| `sftp_download` | `{ sftpId, remote, local, overwrite? }` | bytes written. Streams in chunks; progress flows back via `sftp:transfer` events |
+| `sftp_upload` | `{ sftpId, local, remote, overwrite? }` | bytes uploaded. Same streaming + progress shape; `overwrite: true` replaces an existing file atomically |
 | `sftp_remove` | `{ sftpId, path }` | — (file only) |
 | `sftp_remove_dir` | `{ sftpId, path }` | — |
 | `sftp_rename` | `{ sftpId, from, to }` | — |
@@ -154,8 +154,7 @@ Events (backend → frontend):
 | `session:data` | `{ sessionId, data: number[] }` (PTY bytes) |
 | `session:closed` | `{ sessionId, exitCode?, message? }` |
 | `host-key-prompt` | `{ requestId, kind: "unknown"\|"mismatch", host, port, keyType, fingerprint, stored? }` |
-| `sftp:progress` | `{ transferId, kind: "download"\|"upload", source, destination, bytesDone, total?, finished }` (throttled to ~10/s; one final event with `finished=true`) |
-| `sftp:transfer` | `{ transferId, kind, status: "queued"\|"running"\|"success"\|"error"\|"cancelled", source, destination, bytesDone, total?, bytesPerSec?, etaSeconds?, currentFile?, error?: { code, message } }` |
+| `sftp:transfer` | `{ transferId, kind, status: "queued"\|"running"\|"success"\|"error"\|"cancelled", source, destination, bytesDone, total?, bytesPerSec?, etaSeconds?, currentFile?, filesDone?, filesTotal?, error?: { code, message } }` (progress updates throttled to ~10/s) |
 
 ### Session task
 

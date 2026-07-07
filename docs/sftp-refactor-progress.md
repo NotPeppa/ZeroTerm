@@ -1,6 +1,6 @@
 # SFTP Refactor Progress
 
-Last updated: 2026-07-05
+Last updated: 2026-07-07
 
 This file tracks implementation progress for the SFTP subsystem refactor.
 It is separate from `docs/manual-desktop-sftp-test.md`, which is a manual
@@ -93,7 +93,8 @@ Implemented:
 - Added bounded transfer queue via semaphore
 - Added independent transfer cancellation by transfer id
 - Added `sftp:transfer` event payload with status and structured error
-- Kept `sftp:progress` compatibility path
+- Removed the legacy `sftp:progress` event (2026-07-07): `sftp:transfer` now
+  carries all progress fields and is the only transfer event
 - Moved throttling / ETA / idle watchdog behavior into the new transfer layer
 - Unified tree-copy logic under `sftp/tree.rs`
 - Implemented atomic upload via temp remote file + rename
@@ -251,6 +252,26 @@ These are the main remaining items:
   - `connect.rs` now owns shared SSH connection-chain setup and session connect
     helpers used by terminal sessions, SFTP, and forwarding
   - add more backend module-level docs/comments for maintainability
+
+## Hardening Pass (2026-07-07)
+
+Follow-up fixes applied after a code review of the refactored subsystem:
+
+- `SftpPool::refresh_channel` no longer tears down the shared host session
+  up front; it reuses the live session and only reconnects when the SFTP
+  open itself fails with a retryable error. SFTP subsystem opens are now
+  bounded by a 30s timeout so half-open TCP connections fail over quickly.
+- Recursive remote delete rejects non-absolute paths instead of silently
+  rewriting them to root-level paths, and retries once on a refreshed
+  channel after a retryable disconnect (tolerating "already fully deleted").
+- `sftp_upload` / `sftp_upload_bytes` accept an optional `overwrite` flag
+  that reuses the atomic temp+rename(+backup) replace path; the frontend
+  upload flows (picker, drag/drop, in-pane copy) now prompt to overwrite on
+  `ALREADY_EXISTS` instead of failing outright.
+- `sftp_upload_bytes` enforces the 8 MiB editor hard cap; larger payloads
+  must use the staged-file upload path.
+- The legacy `sftp:progress` emission was removed backend and frontend;
+  `sftp:transfer` is the single event stream.
 
 ## Summary
 
