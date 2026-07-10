@@ -15313,16 +15313,14 @@ async function pickKeyFile() {
 }
 
 async function buildKeyAuth() {
-  if (editingHostId && !hfKeyPem) {
-    showHostError(t("host_editor.error.pick_new_key"));
-    return null;
-  }
   if (!editingHostId && !hfKeyPem) {
     showHostError(t("host_editor.error.pick_key_first"));
     return null;
   }
   return {
     type: "private_key",
+    // On edit, omit the key unless the user explicitly selected a
+    // replacement. The backend preserves the stored key in that case.
     key_pem: hfKeyPem,
     passphrase: hfKeyPassphrase.value || null,
   };

@@ -2597,7 +2597,9 @@ pub enum HostAuthInput {
         value: String,
     },
     PrivateKey {
-        key_pem: String,
+        /// Omitted when editing an existing key-authenticated host without
+        /// replacing its private key.
+        key_pem: Option<String>,
         passphrase: Option<String>,
     },
     Agent,
@@ -2765,7 +2767,7 @@ impl HostInput {
                     key_pem,
                     passphrase,
                 } => zeroterm_app::HostAuth::PrivateKey {
-                    key_pem,
+                    key_pem: key_pem.unwrap_or_default(),
                     passphrase,
                 },
                 HostAuthInput::Agent => zeroterm_app::HostAuth::Agent,
@@ -2851,6 +2853,12 @@ impl PortForwardRuleInput {
 pub async fn save_host(state: State<'_, AppState>, input: HostInput) -> Result<String, String> {
     let (app, manager) = clone_app_and_sync(&state)?;
     let h = input.into_app_host(String::new());
+    if matches!(
+        &h.auth,
+        zeroterm_app::HostAuth::PrivateKey { key_pem, .. } if key_pem.trim().is_empty()
+    ) {
+        return Err("private key is required".to_string());
+    }
     let id = app.save_host(&h).map_err(|e| e.to_string())?;
     manager.schedule_debounced_sync_for_all(app);
     Ok(id)
@@ -2872,6 +2880,21 @@ pub async fn update_host(
     let mut new_host = input.into_app_host(id);
     if new_host.os_type.is_none() {
         new_host.os_type = existing.os_type;
+    }
+    if matches!(
+        &new_host.auth,
+        zeroterm_app::HostAuth::PrivateKey { key_pem, .. } if key_pem.trim().is_empty()
+    ) {
+        new_host.auth = match (new_host.auth, existing.auth) {
+            (
+                zeroterm_app::HostAuth::PrivateKey { passphrase, .. },
+                zeroterm_app::HostAuth::PrivateKey { key_pem, .. },
+            ) => zeroterm_app::HostAuth::PrivateKey {
+                key_pem,
+                passphrase,
+            },
+            _ => return Err("private key is required".to_string()),
+        };
     }
     app.update_host(&new_host).map_err(|e| e.to_string())?;
     manager.schedule_debounced_sync_for_all(app);
