@@ -489,8 +489,15 @@ impl Session {
         let session = russh_sftp::client::SftpSession::new_with_config(
             channel.into_stream(),
             russh_sftp::client::Config {
-                max_packet_len: 1024 * 1024,
-                max_concurrent_writes: 16,
+                // SFTP v3 servers, especially embedded implementations,
+                // commonly limit WRITE data to 32 KiB without advertising
+                // `limits@openssh.com`. Sending our former 1 MiB packets
+                // left their final write acknowledgement pending forever.
+                max_packet_len: 32 * 1024,
+                // Keep the pipeline deliberately shallow. Some embedded SFTP
+                // servers stop acknowledging a full 16-request window, which
+                // makes even sub-megabyte uploads hang at finalization.
+                max_concurrent_writes: 4,
                 // Per-request timeout. 30s was too aggressive for slow
                 // servers and large directory listings — a timed-out
                 // request leaves an orphaned response that desyncs the

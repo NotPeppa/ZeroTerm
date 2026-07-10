@@ -3678,6 +3678,7 @@ fn detect_os_type_from_os_release(content: &str) -> Option<String> {
     None
 }
 
+#[allow(dead_code)]
 async fn detect_remote_os_type(sftp: &zeroterm_ssh::Sftp) -> Option<String> {
     for path in ["/etc/os-release", "/usr/lib/os-release"] {
         if let Ok(bytes) = sftp.download_to_vec(path).await {
@@ -3702,6 +3703,7 @@ async fn detect_remote_os_type(sftp: &zeroterm_ssh::Sftp) -> Option<String> {
     None
 }
 
+#[allow(dead_code)]
 fn persist_host_os_type(state: &AppState, host_id: &str, os_type: &str) -> Result<(), String> {
     let app_lock = state.app.lock().unwrap();
     let app = app_lock.as_ref().ok_or("vault is locked")?;
@@ -3719,6 +3721,7 @@ fn persist_host_os_type(state: &AppState, host_id: &str, os_type: &str) -> Resul
     app.update_host(&host).map_err(|e| e.to_string())
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct HostOsTypeUpdatedEvent {
@@ -3726,6 +3729,7 @@ struct HostOsTypeUpdatedEvent {
     os_type: String,
 }
 
+#[allow(dead_code)]
 pub(crate) async fn detect_and_persist_host_os_type_from_sftp(
     app_handle: AppHandle,
     host_id: String,
@@ -4680,8 +4684,16 @@ pub async fn local_list(path: String) -> Result<Vec<DirEntryDto>, String> {
         let entry = item.map_err(|e| format!("read_dir entry {}: {e}", pb.display()))?;
         let name = entry.file_name().to_string_lossy().to_string();
         let full = entry.path();
-        let meta = fs::symlink_metadata(&full)
-            .map_err(|e| format!("symlink_metadata {}: {e}", full.display()))?;
+        // Windows may return reserved devices such as `nul` while walking a
+        // directory. They cannot be stat'ed as normal paths (`ERROR_INVALID_FUNCTION`),
+        // so omit that one unusable entry instead of failing the whole listing.
+        let meta = match fs::symlink_metadata(&full) {
+            Ok(meta) => meta,
+            Err(error) => {
+                warn!(path = %full.display(), error = %error, "skipping unreadable local directory entry");
+                continue;
+            }
+        };
         let ft = meta.file_type();
         let kind = local_kind_str(&ft);
         let size = if ft.is_file() { meta.len() } else { 0 };

@@ -8,12 +8,10 @@ use zeroterm_ssh::{ConnectConfig, Session, Sftp};
 
 use crate::sftp::{ipc_error, parse_ipc_error, ssh_error, string_error};
 
-/// Per-host cap on concurrently open SFTP channels. A directory transfer
-/// takes up to five (panel + primary + 3 workers); keeping one spare below
-/// OpenSSH's default `MaxSessions 10` lets ad-hoc single-file operations
-/// proceed while a tree copy runs. Servers with a lower limit simply fail
-/// the extra opens, which the worker pools already tolerate.
-pub(crate) const MAX_SFTP_CHANNELS_PER_HOST: usize = 6;
+/// One SFTP channel per host is the compatibility default. `russh-sftp`
+/// multiplexes requests safely, while several embedded SSH servers close the
+/// whole connection when a second session channel is opened.
+pub(crate) const MAX_SFTP_CHANNELS_PER_HOST: usize = 1;
 
 /// Structured code for "this host's channel quota is exhausted". Callers can
 /// fall back to sharing an existing channel instead of failing the operation.
@@ -52,9 +50,15 @@ impl SftpPool {
         cfg: ConnectConfig,
         jump_cfg: Option<ConnectConfig>,
     ) -> Result<PanelChannel, String> {
+        let pool_host_id = host_id.clone();
         let host = self.upsert_host(host_id, cfg, jump_cfg);
+        self.refresh_if_session_closed(&pool_host_id, &host).await?;
+        let _channel_open_guard = host.channel_open_lock.lock().await;
         let reservation = self.reserve_panel_channel(&host)?;
-        self.finish_channel_open(host, reservation, true).await
+        match reservation {
+            ChannelReservation::Ready { channel_id, sftp } => Ok(PanelChannel { channel_id, sftp }),
+            reservation => self.finish_channel_open(host.clone(), reservation, true).await,
+        }
     }
 
     pub(crate) async fn acquire_channel(
@@ -63,11 +67,14 @@ impl SftpPool {
         cfg: ConnectConfig,
         jump_cfg: Option<ConnectConfig>,
     ) -> Result<SftpChannelGuard, String> {
+        let pool_host_id = host_id.clone();
         let host = self.upsert_host(host_id, cfg, jump_cfg);
+        self.refresh_if_session_closed(&pool_host_id, &host).await?;
+        let _channel_open_guard = host.channel_open_lock.lock().await;
         let reservation = match self.reserve_transient_channel(&host)? {
             ChannelReservation::Ready { channel_id, sftp } => {
                 return Ok(SftpChannelGuard {
-                    host,
+                    host: host.clone(),
                     channel_id,
                     sftp,
                 });
@@ -78,7 +85,7 @@ impl SftpPool {
             .finish_channel_open(host.clone(), reservation, false)
             .await?;
         Ok(SftpChannelGuard {
-            host,
+            host: host.clone(),
             channel_id: panel.channel_id,
             sftp: panel.sftp,
         })
@@ -100,7 +107,7 @@ impl SftpPool {
         let Some(host) = self.hosts.lock().unwrap().get(host_id).cloned() else {
             return false;
         };
-        let removed = host.remove_channel(channel_id, 0);
+        let removed = host.release_panel_channel(channel_id);
         if matches!(removed, Some(false)) {
             self.prune_idle_host(host_id, &host);
         }
@@ -115,11 +122,16 @@ impl SftpPool {
         let Some(host) = self.hosts.lock().unwrap().get(host_id).cloned() else {
             return Err(string_error(format!("no sftp host pool for {host_id}")));
         };
+        let _channel_open_guard = host.channel_open_lock.lock().await;
 
-        let (pinned, leased) = {
+        let (panel_refs, borrower_refs) = {
             let state = host.state.lock().unwrap();
             match state.channels.get(&channel_id) {
-                Some(ChannelEntry::Ready { pinned, leased, .. }) => (*pinned, *leased),
+                Some(ChannelEntry::Ready {
+                    panel_refs,
+                    borrower_refs,
+                    ..
+                }) => (*panel_refs, *borrower_refs),
                 Some(ChannelEntry::Opening) => {
                     return Err(string_error(format!(
                         "sftp channel {channel_id} is still opening"
@@ -133,11 +145,10 @@ impl SftpPool {
             }
         };
 
-        // Try the existing pooled session first: a channel-level failure
-        // (single dead SFTP channel) must not tear down the shared session
-        // that other panel/transfer channels on this host still use. If the
-        // session itself is dead, the open below fails or times out with a
-        // retryable error and `open_sftp_for_host` reconnects from scratch.
+        // Reconnect over a fresh TCP session before opening the replacement.
+        // Keep the old entry until the new channel is ready so existing panel
+        // handles never become dangling if the reconnect fails.
+        host.invalidate_connection();
         let sftp = self.open_sftp_for_host(&host).await?;
 
         let mut state = host.state.lock().unwrap();
@@ -145,8 +156,8 @@ impl SftpPool {
             channel_id,
             ChannelEntry::Ready {
                 sftp: Arc::clone(&sftp),
-                pinned,
-                leased,
+                panel_refs,
+                borrower_refs,
             },
         );
         Ok(sftp)
@@ -178,23 +189,40 @@ impl SftpPool {
         }
     }
 
+    /// A `Channel send error` means russh's client task has already exited.
+    /// Refresh the shared SFTP channel before a retry borrows it again.
+    async fn refresh_if_session_closed(
+        &self,
+        host_id: &str,
+        host: &Arc<HostPool>,
+    ) -> Result<(), String> {
+        if !host.session_is_closed() {
+            return Ok(());
+        }
+        if let Some(channel_id) = host.first_ready_channel_id() {
+            self.refresh_channel(host_id, channel_id).await?;
+        }
+        Ok(())
+    }
+
     fn reserve_panel_channel(&self, host: &Arc<HostPool>) -> Result<ChannelReservation, String> {
         let mut state = host.state.lock().unwrap();
 
         for (&channel_id, entry) in state.channels.iter_mut() {
             if let ChannelEntry::Ready {
                 sftp,
-                pinned,
-                leased,
+                panel_refs,
+                ..
             } = entry
             {
-                if !*pinned && !*leased {
-                    *pinned = true;
-                    return Ok(ChannelReservation::Ready {
-                        channel_id,
-                        sftp: Arc::clone(sftp),
-                    });
-                }
+                // A number of embedded SSH servers allow only one session
+                // channel. Panels can safely multiplex SFTP requests through
+                // one channel, so share it instead of opening a second one.
+                *panel_refs += 1;
+                return Ok(ChannelReservation::Ready {
+                    channel_id,
+                    sftp: Arc::clone(sftp),
+                });
             }
         }
 
@@ -219,17 +247,15 @@ impl SftpPool {
         for (&channel_id, entry) in state.channels.iter_mut() {
             if let ChannelEntry::Ready {
                 sftp,
-                pinned,
-                leased,
+                borrower_refs,
+                ..
             } = entry
             {
-                if !*pinned && !*leased {
-                    *leased = true;
-                    return Ok(ChannelReservation::Ready {
-                        channel_id,
-                        sftp: Arc::clone(sftp),
-                    });
-                }
+                *borrower_refs += 1;
+                return Ok(ChannelReservation::Ready {
+                    channel_id,
+                    sftp: Arc::clone(sftp),
+                });
             }
         }
 
@@ -249,7 +275,7 @@ impl SftpPool {
         &self,
         host: Arc<HostPool>,
         reservation: ChannelReservation,
-        pinned: bool,
+        panel: bool,
     ) -> Result<PanelChannel, String> {
         let ChannelReservation::Opening { channel_id } = reservation else {
             unreachable!("finish_channel_open only handles opening reservations");
@@ -270,8 +296,8 @@ impl SftpPool {
             channel_id,
             ChannelEntry::Ready {
                 sftp: Arc::clone(&sftp),
-                pinned,
-                leased: !pinned,
+                panel_refs: usize::from(panel),
+                borrower_refs: usize::from(!panel),
             },
         );
         drop(state);
@@ -311,7 +337,8 @@ impl SftpPool {
 
 fn is_retryable_session_open_error(err: &str) -> bool {
     if let Some(parsed) = parse_ipc_error(err) {
-        return matches!(parsed.code.as_str(), "CHANNEL_CLOSED" | "TIMEOUT");
+        return matches!(parsed.code.as_str(), "CHANNEL_CLOSED" | "TIMEOUT")
+            || is_retryable_session_open_error(&parsed.message);
     }
 
     let lower = err.to_ascii_lowercase();
@@ -329,6 +356,9 @@ struct HostPool {
     host_id: String,
     state: Mutex<HostState>,
     connect_lock: AsyncMutex<()>,
+    /// Serializes SFTP subsystem opens so concurrent panes do not create
+    /// multiple SSH session channels before one becomes ready.
+    channel_open_lock: AsyncMutex<()>,
 }
 
 impl HostPool {
@@ -336,6 +366,7 @@ impl HostPool {
         Self {
             host_id,
             connect_lock: AsyncMutex::new(()),
+            channel_open_lock: AsyncMutex::new(()),
             state: Mutex::new(HostState {
                 cfg,
                 jump_cfg,
@@ -353,11 +384,30 @@ impl HostPool {
         state.jump_cfg = jump_cfg;
     }
 
+    fn session_is_closed(&self) -> bool {
+        self.state
+            .lock()
+            .unwrap()
+            .session
+            .as_ref()
+            .is_some_and(|session| session.is_closed())
+    }
+
+    fn first_ready_channel_id(&self) -> Option<u64> {
+        self.state.lock().unwrap().channels.iter().find_map(
+            |(&channel_id, entry)| matches!(entry, ChannelEntry::Ready { .. }).then_some(channel_id),
+        )
+    }
+
     async fn connect_session(&self) -> Result<Arc<Session>, String> {
         {
-            let state = self.state.lock().unwrap();
+            let mut state = self.state.lock().unwrap();
             if let Some(session) = state.session.clone() {
-                return Ok(session);
+                if !session.is_closed() {
+                    return Ok(session);
+                }
+                state.session = None;
+                state.jump_session = None;
             }
         }
 
@@ -365,7 +415,11 @@ impl HostPool {
         let (cfg, jump_cfg) = {
             let mut state = self.state.lock().unwrap();
             if let Some(session) = state.session.clone() {
-                return Ok(session);
+                if !session.is_closed() {
+                    return Ok(session);
+                }
+                state.session = None;
+                state.jump_session = None;
             }
             state.connecting = true;
             (state.cfg.clone(), state.jump_cfg.clone())
@@ -407,10 +461,58 @@ impl HostPool {
         state.connecting = false;
     }
 
-    fn remove_channel(&self, channel_id: u64, retained_refs: usize) -> Option<bool> {
-        let entry = self.state.lock().unwrap().channels.remove(&channel_id)?;
+    /// Release one panel's reference. A shared SFTP channel remains live
+    /// until the last panel closes it.
+    fn release_panel_channel(&self, channel_id: u64) -> Option<bool> {
+        let mut state = self.state.lock().unwrap();
+        let should_remove = match state.channels.get_mut(&channel_id) {
+            Some(ChannelEntry::Ready {
+                panel_refs,
+                borrower_refs,
+                ..
+            }) if *panel_refs > 0 => {
+                *panel_refs -= 1;
+                *panel_refs == 0 && *borrower_refs == 0
+            }
+            _ => return None,
+        };
+
+        if !should_remove {
+            // The channel is still shared by another panel.
+            return Some(true);
+        }
+
+        let entry = state.channels.remove(&channel_id)?;
         let has_external_refs = match &entry {
-            ChannelEntry::Ready { sftp, .. } => Arc::strong_count(sftp) > retained_refs + 1,
+            ChannelEntry::Ready { sftp, .. } => Arc::strong_count(sftp) > 1,
+            ChannelEntry::Opening => false,
+        };
+        Some(has_external_refs)
+    }
+
+    /// Release a transfer worker's borrowed reference. Borrowers share the
+    /// live SFTP channel rather than opening extra SSH session channels.
+    fn release_borrower_channel(&self, channel_id: u64) -> Option<bool> {
+        let mut state = self.state.lock().unwrap();
+        let should_remove = match state.channels.get_mut(&channel_id) {
+            Some(ChannelEntry::Ready {
+                panel_refs,
+                borrower_refs,
+                ..
+            }) if *borrower_refs > 0 => {
+                *borrower_refs -= 1;
+                *panel_refs == 0 && *borrower_refs == 0
+            }
+            _ => return None,
+        };
+
+        if !should_remove {
+            return Some(true);
+        }
+
+        let entry = state.channels.remove(&channel_id)?;
+        let has_external_refs = match &entry {
+            ChannelEntry::Ready { sftp, .. } => Arc::strong_count(sftp) > 1,
             ChannelEntry::Opening => false,
         };
         Some(has_external_refs)
@@ -435,8 +537,10 @@ enum ChannelEntry {
     Opening,
     Ready {
         sftp: Arc<Sftp>,
-        pinned: bool,
-        leased: bool,
+        /// Number of file panels sharing this channel.
+        panel_refs: usize,
+        /// Number of transfer workers temporarily borrowing this channel.
+        borrower_refs: usize,
     },
 }
 
@@ -485,21 +589,7 @@ impl SftpChannelGuard {
 
 impl Drop for SftpChannelGuard {
     fn drop(&mut self) {
-        let should_remove = {
-            let mut state = self.host.state.lock().unwrap();
-            match state.channels.get_mut(&self.channel_id) {
-                Some(ChannelEntry::Ready { pinned, leased, .. }) if !*pinned => {
-                    *leased = false;
-                    true
-                }
-                _ => false,
-            }
-        };
-        if should_remove {
-            let has_external_refs = self
-                .host
-                .remove_channel(self.channel_id, 1)
-                .unwrap_or(false);
+        if let Some(has_external_refs) = self.host.release_borrower_channel(self.channel_id) {
             if !has_external_refs && self.host.is_idle() {
                 self.host.invalidate_connection();
             }
@@ -521,6 +611,10 @@ mod tests {
         assert!(is_retryable_session_open_error(&ipc_error(
             "TIMEOUT",
             "timed out opening sftp"
+        )));
+        assert!(is_retryable_session_open_error(&ipc_error(
+            "OTHER",
+            "ssh protocol error: Channel send error"
         )));
         assert!(!is_retryable_session_open_error(&ipc_error(
             "PERMISSION_DENIED",

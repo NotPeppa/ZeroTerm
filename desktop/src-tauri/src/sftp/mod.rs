@@ -76,6 +76,10 @@ pub(crate) fn ssh_error(err: SshError) -> String {
     match err {
         SshError::Cancelled => ipc_error("CANCELLED", err.to_string()),
         SshError::ChannelClosed => ipc_error("CHANNEL_CLOSED", err.to_string()),
+        SshError::Sftp {
+            kind: SftpErrorKind::Other,
+            message,
+        } => ipc_error(classify_error_message(&message), message),
         SshError::Sftp { kind, message } => ipc_error(map_sftp_kind(kind), message),
         other => {
             let message = other.to_string();
@@ -103,33 +107,13 @@ pub async fn sftp_open(
         .await?;
 
     let sftp_id = state.next_sftp_id.fetch_add(1, Ordering::SeqCst);
-    let should_detect_os = {
-        let mut handles = state.sftp_handles.lock().unwrap();
-        handles.insert(
-            sftp_id,
-            SftpHandle {
-                host_id: host_id.clone(),
-                channel_id: channel.channel_id,
-            },
-        );
-        handles.values().filter(|handle| handle.host_id == host_id).count() == 1
-    };
-
-    // System detection is cosmetic. Reuse the first opened SFTP channel
-    // instead of opening another SSH connection alongside the file panel.
-    if should_detect_os {
-        let detect_app_handle = app_handle.clone();
-        let detect_host_id = host_id.clone();
-        let detect_sftp = channel.sftp;
-        tokio::spawn(async move {
-            crate::commands::detect_and_persist_host_os_type_from_sftp(
-                detect_app_handle,
-                detect_host_id,
-                detect_sftp,
-            )
-            .await;
-        });
-    }
+    state.sftp_handles.lock().unwrap().insert(
+        sftp_id,
+        SftpHandle {
+            host_id,
+            channel_id: channel.channel_id,
+        },
+    );
 
     info!(sftp_id, "sftp ready");
     Ok(sftp_id)
@@ -892,5 +876,15 @@ mod tests {
         let parsed = parse_ipc_error(&payload).expect("ipc payload");
         assert_eq!(parsed.code, "PERMISSION_DENIED");
         assert_eq!(parsed.message, "permission denied: /root");
+    }
+
+    #[test]
+    fn ssh_error_recovers_disconnect_from_generic_sftp_kind() {
+        let payload = ssh_error(SshError::Sftp {
+            kind: SftpErrorKind::Other,
+            message: "ssh protocol error: Channel send error".to_string(),
+        });
+        let parsed = parse_ipc_error(&payload).expect("ipc payload");
+        assert_eq!(parsed.code, "CHANNEL_CLOSED");
     }
 }

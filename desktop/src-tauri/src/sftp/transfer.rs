@@ -120,11 +120,16 @@ impl TransferManager {
             let Some(record) = transfers.get_mut(&transfer_id) else {
                 return;
             };
-            record.event.status = "running";
+            // A full byte count means the client has queued the last SFTP
+            // write, not that the remote file is committed. Uploads still
+            // need to drain acknowledgements, close the temporary file, and
+            // rename it into place atomically.
+            let finalizing = matches!(total, Some(total) if bytes_done >= total);
+            record.event.status = if finalizing { "finalizing" } else { "running" };
             record.event.bytes_done = bytes_done;
             record.event.total = total;
-            record.event.bytes_per_sec = bytes_per_sec;
-            record.event.eta_seconds = eta_seconds;
+            record.event.bytes_per_sec = if finalizing { None } else { bytes_per_sec };
+            record.event.eta_seconds = if finalizing { None } else { eta_seconds };
             record.event.current_file = current_file;
             record.event.files_done = files_done;
             record.event.files_total = files_total;

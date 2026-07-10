@@ -86,10 +86,12 @@ pub struct ProgressTick {
 /// links while still remaining responsive to cancel / progress updates.
 pub const DEFAULT_CHUNK: usize = 512 * 1024;
 
-/// Default upload read-buffer size. The underlying SFTP writer splits this by
-/// the negotiated server write limit and keeps multiple WRITE requests in
-/// flight, so this can stay large without delaying progress.
-pub const DEFAULT_UPLOAD_CHUNK: usize = DEFAULT_CHUNK;
+/// Conservative upload packet size for broad SFTP-server compatibility.
+/// Some embedded servers accept a large SSH channel write but never
+/// acknowledge an oversized SFTP WRITE, leaving the final file close stuck.
+/// With four requests in flight this keeps a 128 KiB window without
+/// overwhelming older or embedded SFTP servers.
+pub const DEFAULT_UPLOAD_CHUNK: usize = 32 * 1024;
 
 /// Default number of READ requests kept in flight against a single file
 /// during a parallel download. A single-flight SFTP read is bounded by

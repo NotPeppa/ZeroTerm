@@ -344,7 +344,8 @@ pub(crate) async fn upload_slice_to_remote_atomic(
 
 pub(crate) fn is_retryable_transfer_error(err: &str) -> bool {
     if let Some(parsed) = parse_ipc_error(err) {
-        return matches!(parsed.code.as_str(), "CHANNEL_CLOSED" | "TIMEOUT");
+        return matches!(parsed.code.as_str(), "CHANNEL_CLOSED" | "TIMEOUT")
+            || is_retryable_transfer_error(&parsed.message);
     }
 
     let lower = err.to_ascii_lowercase();
@@ -715,6 +716,9 @@ mod tests {
         assert!(is_retryable_transfer_error(&payload));
 
         let payload = crate::sftp::ipc_error("TIMEOUT", "transfer timed out");
+        assert!(is_retryable_transfer_error(&payload));
+
+        let payload = crate::sftp::ipc_error("OTHER", "ssh protocol error: Channel send error");
         assert!(is_retryable_transfer_error(&payload));
 
         let payload = crate::sftp::ipc_error("PERMISSION_DENIED", "permission denied");

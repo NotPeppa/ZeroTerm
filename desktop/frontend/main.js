@@ -59,18 +59,14 @@ function localPaneHasEntryAtPath(pane, directoryPath, entryName) {
     && pane.entries.some((entry) => entry.name === entryName);
 }
 
-async function showNativeConfirm(message, title = null) {
-  try {
-    const result = await invoke("plugin:dialog|message", {
-      title,
-      message,
-      kind: "warning",
-      buttons: "OkCancel",
-    });
-    return result === "Ok" || result === "Yes";
-  } catch {
-    return confirm(message);
-  }
+function showOverwriteConfirm(path) {
+  return openConfirmDialog({
+    title: t("files.confirm.overwrite.title"),
+    message: t("files.confirm.overwrite", { path }),
+    okText: t("files.button.overwrite"),
+    cancelText: t("files.button.cancel"),
+    danger: false,
+  });
 }
 
 async function planOverwriteForLocalPath(path, options = {}) {
@@ -87,14 +83,19 @@ async function planOverwriteForLocalPath(path, options = {}) {
     }
   }
   if (!exists) return { proceed: true, overwrite: false };
-  const ok = await showNativeConfirm(t("files.confirm.overwrite", { path }));
+  const ok = await showOverwriteConfirm(path);
   return { proceed: ok, overwrite: ok };
 }
 
 function normalizeSftpError(error) {
   if (error && typeof error === "object") {
-    const code = String(error.code || error.kind || "OTHER").toUpperCase();
     const message = String(error.message || error.error || "");
+    const reportedCode = String(error.code || error.kind || "OTHER").toUpperCase();
+    // Some older backend paths serialize a dead SSH sender as OTHER. Recover
+    // this known disconnect from its message so the panel's retry logic runs.
+    const code = reportedCode === "OTHER" && /channel send error|channel closed|session closed|broken pipe/i.test(message)
+      ? "CHANNEL_CLOSED"
+      : reportedCode;
     return { code, message };
   }
 
@@ -125,6 +126,7 @@ function normalizeSftpError(error) {
     code = "CANCELLED";
   } else if (
     lower.includes("channel closed")
+    || lower.includes("channel send error")
     || lower.includes("session closed")
     || lower.includes("broken pipe")
   ) {
@@ -685,8 +687,11 @@ const I18N = {
     "files.progress.eta": "ETA {eta}",
     "files.progress.preparing": "Preparing transfer...",
     "files.button.cancel": "Cancel",
+    "files.button.overwrite": "Overwrite",
+    "files.confirm.overwrite.title": "Replace existing file?",
     "files.transfer.queued": "Queued",
     "files.transfer.running": "Running",
+    "files.transfer.finalizing": "Finalizing…",
     "files.transfer.success": "Done",
     "files.transfer.error": "Failed",
     "files.transfer.cancelled": "Cancelled",
@@ -1573,8 +1578,11 @@ const I18N = {
     "files.progress.eta": "剩余 {eta}",
     "files.progress.preparing": "正在准备传输...",
     "files.button.cancel": "取消",
+    "files.button.overwrite": "覆盖",
+    "files.confirm.overwrite.title": "覆盖已有文件？",
     "files.transfer.queued": "排队中",
     "files.transfer.running": "传输中",
+    "files.transfer.finalizing": "正在完成…",
     "files.transfer.success": "已完成",
     "files.transfer.error": "失败",
     "files.transfer.cancelled": "已取消",
@@ -2849,6 +2857,8 @@ function labelSftpTransferStatus(status) {
       return t("files.transfer.queued");
     case "running":
       return t("files.transfer.running");
+    case "finalizing":
+      return t("files.transfer.finalizing");
     case "success":
       return t("files.transfer.success");
     case "error":
@@ -8299,7 +8309,7 @@ function closeConfirmDialog(result) {
   resolve(Boolean(result));
 }
 
-function openConfirmDialog({ title, message = "", okText = "OK", cancelText = "Cancel" } = {}) {
+function openConfirmDialog({ title, message = "", okText = "OK", cancelText = "Cancel", danger = true } = {}) {
   if (confirmResolver) closeConfirmDialog(false);
   return new Promise((resolve) => {
     if (!confirmOverlay || !confirmTitle || !confirmMessage || !confirmOkButton || !confirmCancelButton) {
@@ -8311,6 +8321,8 @@ function openConfirmDialog({ title, message = "", okText = "OK", cancelText = "C
     confirmMessage.textContent = message;
     confirmOkButton.textContent = okText;
     confirmCancelButton.textContent = cancelText;
+    confirmOkButton.classList.toggle("confirm-danger-text", danger);
+    confirmOkButton.classList.toggle("primary", !danger);
     confirmOverlay.hidden = false;
     requestAnimationFrame(() => confirmOkButton.focus());
   });
@@ -15546,6 +15558,8 @@ function buildSftpPane(key) {
     navToken: 0,
     followLockedByUser: false,
     autoConnectQueue: Promise.resolve(),
+    connectingPromise: null,
+    connectingHostId: null,
   };
 }
 
@@ -15582,6 +15596,8 @@ function buildTerminalSftpPane() {
     navToken: 0,
     followLockedByUser: false,
     autoConnectQueue: Promise.resolve(),
+    connectingPromise: null,
+    connectingHostId: null,
     terminalSidePane: true,
   };
 }
@@ -15923,7 +15939,7 @@ async function uploadDroppedPayloadToPane(pane, payload) {
         } catch (e) {
           const err = normalizeSftpError(e);
           if (err.code !== "ALREADY_EXISTS") throw err;
-          const ok = await showNativeConfirm(t("files.confirm.overwrite", { path: remotePath }));
+          const ok = await showOverwriteConfirm(remotePath);
           if (!ok) continue;
           await uploadLocalPathToPane(pane, nativePath, remotePath, true);
         }
@@ -15958,7 +15974,7 @@ async function uploadDroppedPayloadToPane(pane, payload) {
           } catch (e) {
             const err = normalizeSftpError(e);
             if (err.code !== "ALREADY_EXISTS") throw err;
-            const ok = await showNativeConfirm(t("files.confirm.overwrite", { path: remotePath }));
+            const ok = await showOverwriteConfirm(remotePath);
             if (!ok) continue;
             await uploadStaged(true);
           }
@@ -16072,7 +16088,7 @@ async function copyDraggedEntriesToPane(sourcePane, targetPane, targetDir) {
     } catch (e) {
       const err = normalizeSftpError(e);
       if (!item.overwrite && err.code === "ALREADY_EXISTS") {
-        const ok = await showNativeConfirm(t("files.confirm.overwrite", { path: item.destinationPath }));
+        const ok = await showOverwriteConfirm(item.destinationPath);
         if (ok) {
           try {
             await invokeSftpTransferWithRetry(
@@ -16434,6 +16450,21 @@ function getPrimarySelectedEntry(pane) {
 }
 
 async function connectSftpPane(pane, host) {
+  if (pane.connectingPromise) {
+    if (pane.connectingHostId === host.id) return pane.connectingPromise;
+    await pane.connectingPromise;
+    return connectSftpPane(pane, host);
+  }
+
+  pane.connectingHostId = host.id;
+  pane.connectingPromise = connectSftpPaneNow(pane, host).finally(() => {
+    pane.connectingPromise = null;
+    pane.connectingHostId = null;
+  });
+  return pane.connectingPromise;
+}
+
+async function connectSftpPaneNow(pane, host) {
   await disconnectSftpPane(pane);
   pane.localConnected = false;
   pane.statusEl.textContent = t("sftp.status.connecting");
@@ -16448,7 +16479,8 @@ async function connectSftpPane(pane, host) {
     pane.statusEl.textContent = t("sftp.status.connected", { name: host.name });
     await navigateSftpPane(pane, "/", { source: "system" });
   } catch (e) {
-    pane.statusEl.textContent = t("sftp.error.connect_failed", { error: e });
+    const err = normalizeSftpError(e);
+    pane.statusEl.textContent = t("sftp.error.connect_failed", { error: err.message });
   }
   updateSftpConnectButtons();
 }
@@ -16947,7 +16979,7 @@ async function sftpDownloadFile(pane, entry) {
   } catch (e) {
     const err = normalizeSftpError(e);
     if (!plan.overwrite && err.code === "ALREADY_EXISTS") {
-      const ok = await showNativeConfirm(t("files.confirm.overwrite", { path: destinationPath }));
+      const ok = await showOverwriteConfirm(destinationPath);
         if (ok) {
           try {
             pane.statusEl.textContent = t("files.progress.downloading");
@@ -17030,7 +17062,7 @@ async function sftpDownloadFile(pane, entry) {
   } catch (e) {
     const err = normalizeSftpError(e);
     if (!plan.overwrite && err.code === "ALREADY_EXISTS") {
-      const ok = await showNativeConfirm(t("files.confirm.overwrite", { path: local }));
+      const ok = await showOverwriteConfirm(local);
       if (ok) {
         try {
           pane.statusEl.textContent = t("files.progress.downloading");
@@ -17213,7 +17245,7 @@ async function sftpUpload(pane) {
       } catch (e) {
         const err = normalizeSftpError(e);
         if (err.code !== "ALREADY_EXISTS") throw err;
-        const ok = await showNativeConfirm(t("files.confirm.overwrite", { path: remotePath }));
+        const ok = await showOverwriteConfirm(remotePath);
         if (!ok) continue;
         n = await uploadLocalPathToPane(pane, path, remotePath, true);
       }
@@ -17286,7 +17318,7 @@ async function sftpCopyEntry(pane, entry) {
     } catch (e) {
       const err = normalizeSftpError(e);
       if (err.code !== "ALREADY_EXISTS") throw err;
-      const ok = await showNativeConfirm(t("files.confirm.overwrite", { path: targetPath }));
+      const ok = await showOverwriteConfirm(targetPath);
       if (!ok) return;
       await uploadCopyBytes(true);
     }
