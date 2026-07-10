@@ -349,6 +349,7 @@ pub(crate) fn is_retryable_transfer_error(err: &str) -> bool {
 
     let lower = err.to_ascii_lowercase();
     lower.contains("channel closed")
+        || lower.contains("channel send error")
         || lower.contains("broken pipe")
         || lower.contains("connection lost")
         || lower.contains("connection reset")

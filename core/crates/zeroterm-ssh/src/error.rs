@@ -115,6 +115,11 @@ impl SftpErrorKind {
             &lower,
             &[
                 "channel closed",
+                // russh reports this when its client task has exited and a
+                // request (such as opening the SFTP subsystem) can no
+                // longer be queued. It is a disconnected session, not a
+                // protocol feature error, so callers can reconnect safely.
+                "channel send error",
                 "broken pipe",
                 "connection reset",
                 "connection lost",

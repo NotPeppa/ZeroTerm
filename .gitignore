@@ -12,6 +12,7 @@ target/
 .DS_Store
 Thumbs.db
 .claude/
+.codex/
 
 # Local env
 .env

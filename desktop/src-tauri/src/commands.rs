@@ -35,7 +35,7 @@ use zeroterm_app::{App, HostAuth, SyncBackend, SyncProfile};
 use zeroterm_ssh::{HostKeyPolicy, KnownHosts, PtySize, Session};
 
 use crate::connect::{
-    build_connect_chain_for_host, build_connect_chain_for_host_strict, connect_host_sessions,
+    build_connect_chain_for_host, connect_host_sessions,
 };
 use crate::editor::{
     decode_editor_text, normalize_text_edit_limit, RemoteTextFileDto, HARD_TEXT_EDIT_MAX_BYTES,
@@ -3627,7 +3627,6 @@ async fn start_host_forwards(
     Ok((forwards, summaries))
 }
 
-#[allow(dead_code)]
 fn parse_os_release_value(raw: &str) -> &str {
     let v = raw.trim();
     if v.len() >= 2 {
@@ -3638,7 +3637,6 @@ fn parse_os_release_value(raw: &str) -> &str {
     v
 }
 
-#[allow(dead_code)]
 fn detect_os_type_from_os_release(content: &str) -> Option<String> {
     let mut id: Option<String> = None;
     let mut id_like: Option<String> = None;
@@ -3680,10 +3678,7 @@ fn detect_os_type_from_os_release(content: &str) -> Option<String> {
     None
 }
 
-#[allow(dead_code)]
-async fn detect_remote_os_type(session: &mut Session) -> Option<String> {
-    let sftp = session.sftp().await.ok()?;
-
+async fn detect_remote_os_type(sftp: &zeroterm_ssh::Sftp) -> Option<String> {
     for path in ["/etc/os-release", "/usr/lib/os-release"] {
         if let Ok(bytes) = sftp.download_to_vec(path).await {
             if let Ok(text) = String::from_utf8(bytes) {
@@ -3707,7 +3702,6 @@ async fn detect_remote_os_type(session: &mut Session) -> Option<String> {
     None
 }
 
-#[allow(dead_code)]
 fn persist_host_os_type(state: &AppState, host_id: &str, os_type: &str) -> Result<(), String> {
     let app_lock = state.app.lock().unwrap();
     let app = app_lock.as_ref().ok_or("vault is locked")?;
@@ -3732,44 +3726,12 @@ struct HostOsTypeUpdatedEvent {
     os_type: String,
 }
 
-async fn detect_and_persist_host_os_type(app_handle: AppHandle, host_id: String) {
-    let (host, cfg, jump_cfg) = {
-        let state = app_handle.state::<AppState>();
-        match build_connect_chain_for_host_strict(&state, &host_id) {
-            Ok(v) => v,
-            Err(e) => {
-                debug!(host_id = %host_id, error = %e, "skip os detect: build chain failed");
-                return;
-            }
-        }
-    };
-
-    let (jump_session, mut session) = match jump_cfg {
-        Some(jcfg) => match Session::connect(jcfg).await {
-            Ok(j) => match Session::connect_via(cfg, &j).await {
-                Ok(s) => (Some(j), s),
-                Err(e) => {
-                    debug!(host_id = %host_id, error = %e, "skip os detect: connect via jump failed");
-                    return;
-                }
-            },
-            Err(e) => {
-                debug!(host_id = %host_id, error = %e, "skip os detect: jump connect failed");
-                return;
-            }
-        },
-        None => match Session::connect(cfg).await {
-            Ok(s) => (None, s),
-            Err(e) => {
-                debug!(host_id = %host_id, error = %e, "skip os detect: direct connect failed");
-                return;
-            }
-        },
-    };
-
-    let detected = detect_remote_os_type(&mut session).await;
-    drop(session);
-    drop(jump_session);
+pub(crate) async fn detect_and_persist_host_os_type_from_sftp(
+    app_handle: AppHandle,
+    host_id: String,
+    sftp: Arc<zeroterm_ssh::Sftp>,
+) {
+    let detected = detect_remote_os_type(sftp.as_ref()).await;
 
     let Some(os_type) = detected else {
         debug!(host_id = %host_id, "os detect produced no result");
@@ -3784,11 +3746,11 @@ async fn detect_and_persist_host_os_type(app_handle: AppHandle, host_id: String)
         }
     }
 
+    info!(host_id, "detected and persisted host os type");
     let _ = app_handle.emit(
         "host:os_type_updated",
         HostOsTypeUpdatedEvent { host_id, os_type },
     );
-    info!(host = %host.name, "detected and persisted host os type");
 }
 
 #[tauri::command]
@@ -3848,14 +3810,6 @@ pub async fn connect_host(
     );
 
     info!(session_id, "session ready");
-
-    // Best-effort background OS detection and persistence so host badges
-    // can update without requiring app restart.
-    let os_detect_handle = app_handle.clone();
-    let os_detect_host_id = host_id.clone();
-    tokio::spawn(async move {
-        detect_and_persist_host_os_type(os_detect_handle, os_detect_host_id).await;
-    });
 
     Ok(session_id)
 }

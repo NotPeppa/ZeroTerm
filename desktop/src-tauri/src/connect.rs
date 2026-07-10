@@ -54,44 +54,6 @@ pub(crate) fn build_connect_chain_for_host(
     Ok((host, cfg, jump_cfg))
 }
 
-pub(crate) fn build_connect_chain_for_host_strict(
-    state: &AppState,
-    host_id: &str,
-) -> Result<ConnectChain, String> {
-    let app_lock = state.app.lock().unwrap();
-    let app = app_lock.as_ref().ok_or("vault is locked")?;
-
-    let host = app
-        .find_host_by_id(host_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("no host with id {host_id}"))?;
-
-    let known_hosts = KnownHosts::at_default()
-        .ok_or_else(|| "could not locate $HOME for known_hosts".to_string())?;
-
-    let cfg = app.connect_config(
-        &host,
-        HostKeyPolicy::Strict(known_hosts.clone()),
-        Some(Duration::from_secs(15)),
-    );
-
-    let jump_cfg = if let Some(jump_id) = host.proxy_jump_host_id.as_deref() {
-        let jump_host = app
-            .find_host_by_id(jump_id)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("ProxyJump host id '{jump_id}' not found in vault"))?;
-        Some(app.connect_config(
-            &jump_host,
-            HostKeyPolicy::Strict(known_hosts),
-            Some(Duration::from_secs(15)),
-        ))
-    } else {
-        None
-    };
-
-    Ok((host, cfg, jump_cfg))
-}
-
 pub(crate) async fn connect_host_sessions(
     cfg: ConnectConfig,
     jump_cfg: Option<ConnectConfig>,

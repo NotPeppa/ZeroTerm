@@ -103,13 +103,33 @@ pub async fn sftp_open(
         .await?;
 
     let sftp_id = state.next_sftp_id.fetch_add(1, Ordering::SeqCst);
-    state.sftp_handles.lock().unwrap().insert(
-        sftp_id,
-        SftpHandle {
-            host_id,
-            channel_id: channel.channel_id,
-        },
-    );
+    let should_detect_os = {
+        let mut handles = state.sftp_handles.lock().unwrap();
+        handles.insert(
+            sftp_id,
+            SftpHandle {
+                host_id: host_id.clone(),
+                channel_id: channel.channel_id,
+            },
+        );
+        handles.values().filter(|handle| handle.host_id == host_id).count() == 1
+    };
+
+    // System detection is cosmetic. Reuse the first opened SFTP channel
+    // instead of opening another SSH connection alongside the file panel.
+    if should_detect_os {
+        let detect_app_handle = app_handle.clone();
+        let detect_host_id = host_id.clone();
+        let detect_sftp = channel.sftp;
+        tokio::spawn(async move {
+            crate::commands::detect_and_persist_host_os_type_from_sftp(
+                detect_app_handle,
+                detect_host_id,
+                detect_sftp,
+            )
+            .await;
+        });
+    }
 
     info!(sftp_id, "sftp ready");
     Ok(sftp_id)
@@ -834,6 +854,10 @@ mod tests {
         assert_eq!(classify_error_message("not a directory"), "NOT_A_DIRECTORY");
         assert_eq!(
             classify_error_message("channel closed by remote"),
+            "CHANNEL_CLOSED"
+        );
+        assert_eq!(
+            classify_error_message("ssh protocol error: Channel send error"),
             "CHANNEL_CLOSED"
         );
         assert_eq!(classify_error_message("transfer timed out"), "TIMEOUT");
