@@ -32,7 +32,7 @@ use quick_xml::Reader;
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{Method, StatusCode};
 
-use crate::adapter::{ObjectMeta, SyncAdapter};
+use crate::adapter::{validate_repo_relative_path, ObjectMeta, SyncAdapter};
 use crate::error::Error;
 use crate::repo::REPO_DIR;
 
@@ -527,6 +527,7 @@ fn parse_propfind(xml: &str, server_prefix: &str) -> Result<Vec<ObjectMeta>, Err
                     if !cur_is_collection && !cur_href.is_empty() {
                         let rel = href_to_rel(&cur_href, server_prefix);
                         if !rel.is_empty() {
+                            validate_repo_relative_path(&rel)?;
                             out.push(ObjectMeta {
                                 path: rel,
                                 size: cur_size.unwrap_or(0),
@@ -754,6 +755,12 @@ mod tests {
             ),
             "events/2024-03/ev-foo.json"
         );
+    }
+
+    #[test]
+    fn propfind_rejects_traversal_paths() {
+        let xml = r#"<multistatus xmlns="DAV:"><response><href>/dav/zeroterm/zeroterm-sync/events/../manifest.json</href><propstat><prop><getcontentlength>1</getcontentlength></prop></propstat></response></multistatus>"#;
+        assert!(parse_propfind(xml, "/dav/zeroterm/zeroterm-sync/").is_err());
     }
 
     #[test]

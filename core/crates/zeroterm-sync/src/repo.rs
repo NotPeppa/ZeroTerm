@@ -142,7 +142,7 @@ fn year_month(unix_ms: i64) -> (u32, u32) {
     // Lightweight days-since-epoch → (Y, M) conversion. Good through 2400
     // and gives stable bucket names independent of the local timezone.
     // Algorithm: Howard Hinnant's `civil_from_days` (variant Rata Die).
-    let days = (unix_ms.max(0) / 86_400_000) as i64 + 719_468; // 1970-01-01 → 719468
+    let days = unix_ms.max(0) / 86_400_000 + 719_468; // 1970-01-01 → 719468
     let era = if days >= 0 { days } else { days - 146_096 } / 146_097;
     let doe = (days - era * 146_097) as u32; // [0, 146097)
     let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;

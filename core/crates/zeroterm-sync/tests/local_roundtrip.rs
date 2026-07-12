@@ -169,13 +169,12 @@ async fn idempotent_sync_does_not_redo_events() {
     engine_a.sync_once().await.unwrap();
 
     engine_b.join_repo("pw").await.unwrap();
-    let r1 = engine_b.sync_once().await.unwrap();
+    let _r1 = engine_b.sync_once().await.unwrap();
     let r2 = engine_b.sync_once().await.unwrap();
     assert_eq!(r2.upserts_applied, 0, "redundant apply on second sync");
     assert_eq!(r2.events_pushed, 0);
-    // r1 may or may not report extra applies (join already covered the
+    // The first sync may or may not report extra applies (join already covered the
     // initial replay) — what we care about is `r2 == steady-state`.
-    drop(r1);
 }
 
 #[tokio::test(flavor = "current_thread")]

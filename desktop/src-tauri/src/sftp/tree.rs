@@ -12,7 +12,8 @@ use crate::sftp::file::{
     upload_local_path_to_remote_once, upload_reader_to_remote_atomic,
 };
 use crate::sftp::path::{
-    detect_local_kind, detect_remote_kind, normalize_remote_path, remote_join_path, CopyNodeKind,
+    detect_local_kind, detect_remote_kind, normalize_remote_path, remote_join_path,
+    validate_remote_leaf_name, validate_remote_leaf_name_for_local, CopyNodeKind,
 };
 use crate::sftp::pool::SftpChannelGuard;
 use crate::sftp::transfer::{
@@ -281,7 +282,8 @@ async fn produce_remote_to_local_jobs(
             if tree_transfer_cancelled(&sink_opt) {
                 return Ok(());
             }
-            if entry.name == "." || entry.name == ".." {
+            if let Err(err) = validate_remote_leaf_name_for_local(&entry.name) {
+                record_transfer_issue(&issues, src_dir.clone(), err);
                 continue;
             }
             let child_src = remote_join_path(&src_dir, &entry.name);
@@ -320,6 +322,7 @@ async fn produce_remote_to_local_jobs(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn produce_remote_to_remote_jobs(
     source_sftp: Arc<zeroterm_ssh::Sftp>,
     source: String,
@@ -365,7 +368,8 @@ async fn produce_remote_to_remote_jobs(
             if tree_transfer_cancelled(&sink_opt) {
                 return Ok(());
             }
-            if entry.name == "." || entry.name == ".." {
+            if let Err(err) = validate_remote_leaf_name(&entry.name) {
+                record_transfer_issue(&issues, src_dir.clone(), err);
                 continue;
             }
             let child_src = remote_join_path(&src_dir, &entry.name);
@@ -982,6 +986,7 @@ async fn join_tree_workers(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_remote_to_remote_upload_workers_stream(
     rx: tokio::sync::mpsc::Receiver<(String, String)>,
     issues: Arc<Mutex<Vec<TransferIssue>>>,
@@ -995,7 +1000,7 @@ async fn run_remote_to_remote_upload_workers_stream(
     let queue = Arc::new(tokio::sync::Mutex::new(rx));
     let mut joins = tokio::task::JoinSet::new();
 
-    for (source_sftp, target_sftp) in source_workers.into_iter().zip(target_workers.into_iter()) {
+    for (source_sftp, target_sftp) in source_workers.into_iter().zip(target_workers) {
         let queue = Arc::clone(&queue);
         let sink_opt = sink_opt.clone();
         let issues = Arc::clone(&issues);
@@ -1472,6 +1477,7 @@ pub(crate) async fn copy_remote_tree_to_local(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn pipe_remote_file_to_remote<P>(
     source_sftp: Arc<zeroterm_ssh::Sftp>,
     source: String,
@@ -1555,6 +1561,7 @@ fn is_ssh_cancelled(err: &zeroterm_ssh::SshError) -> bool {
     matches!(err, zeroterm_ssh::SshError::Cancelled)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn stream_remote_file_to_remote(
     source_sftp: Arc<zeroterm_ssh::Sftp>,
     source: String,
@@ -1754,6 +1761,7 @@ async fn stream_remote_file_to_remote(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn copy_remote_tree_to_remote(
     source_sftp: &Arc<zeroterm_ssh::Sftp>,
     source: &str,
@@ -1931,9 +1939,7 @@ pub(crate) async fn sftp_remove_dir_recursive(
                     if tree_transfer_cancelled(&sink_opt) {
                         return Err(string_error("transfer cancelled"));
                     }
-                    if entry.name == "." || entry.name == ".." {
-                        continue;
-                    }
+                    validate_remote_leaf_name(&entry.name)?;
                     let child = remote_join_path(&current, &entry.name);
                     if let Some(sink) = &sink_opt {
                         sink.add_files_total(1);

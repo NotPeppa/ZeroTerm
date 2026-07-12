@@ -20,6 +20,14 @@ pub const KEY_LEN: usize = 32;
 /// XChaCha20 nonce length in bytes.
 pub const NONCE_LEN: usize = 24;
 
+/// Resource ceilings for persisted/untrusted Argon2 parameters. Vault files
+/// and sync keyrings carry these values, so accepting arbitrary `u32`s would
+/// let a corrupted or hostile file request impractical memory/CPU during
+/// unlock. These limits remain comfortably above ZeroTerm's defaults.
+pub const MAX_ARGON2_MEMORY_KIB: u32 = 256 * 1024;
+pub const MAX_ARGON2_ITERATIONS: u32 = 10;
+pub const MAX_ARGON2_LANES: u32 = 16;
+
 /// A 32-byte symmetric key that auto-zeroes on drop.
 pub type SymmetricKey = Zeroizing<[u8; KEY_LEN]>;
 
@@ -102,6 +110,12 @@ pub fn derive_key_argon2id(
     salt: &[u8],
     params: Argon2Params,
 ) -> Result<SymmetricKey, CryptoError> {
+    if params.m_cost > MAX_ARGON2_MEMORY_KIB
+        || params.t_cost > MAX_ARGON2_ITERATIONS
+        || params.p_cost > MAX_ARGON2_LANES
+    {
+        return Err(CryptoError::InvalidParams);
+    }
     let argon_params = Params::new(params.m_cost, params.t_cost, params.p_cost, Some(KEY_LEN))
         .map_err(|e| {
             tracing::error!(error = ?e, "invalid Argon2 params");
@@ -234,6 +248,30 @@ mod tests {
             Argon2Params::from_bytes(&[0u8; 8]),
             Err(CryptoError::InvalidLength)
         ));
+    }
+
+    #[test]
+    fn argon2_rejects_resource_exhaustion_parameters() {
+        let salt = b"sixteen-byte-slt";
+        for params in [
+            Argon2Params {
+                m_cost: MAX_ARGON2_MEMORY_KIB + 1,
+                ..fast_params()
+            },
+            Argon2Params {
+                t_cost: MAX_ARGON2_ITERATIONS + 1,
+                ..fast_params()
+            },
+            Argon2Params {
+                p_cost: MAX_ARGON2_LANES + 1,
+                ..fast_params()
+            },
+        ] {
+            assert!(matches!(
+                derive_key_argon2id(b"pw", salt, params),
+                Err(CryptoError::InvalidParams)
+            ));
+        }
     }
 
     #[test]

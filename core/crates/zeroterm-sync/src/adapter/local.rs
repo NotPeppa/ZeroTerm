@@ -109,6 +109,10 @@ impl SyncAdapter for LocalAdapter {
                 let mut rd = fs::read_dir(&dir).await?;
                 while let Some(ent) = rd.next_entry().await? {
                     let path = ent.path();
+                    let file_type = ent.file_type().await?;
+                    if file_type.is_symlink() {
+                        continue;
+                    }
                     let m = ent.metadata().await?;
                     if m.is_dir() {
                         stack.push(path);
@@ -123,6 +127,10 @@ impl SyncAdapter for LocalAdapter {
             let mut rd = fs::read_dir(&base).await?;
             while let Some(ent) = rd.next_entry().await? {
                 let path = ent.path();
+                let file_type = ent.file_type().await?;
+                if file_type.is_symlink() {
+                    continue;
+                }
                 let m = ent.metadata().await?;
                 if m.is_dir() {
                     continue;
@@ -307,5 +315,19 @@ mod tests {
         let m = a.stat("keyring.json").await.unwrap().unwrap();
         assert_eq!(m.size, 4);
         assert_eq!(m.path, "keyring.json");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn recursive_list_does_not_follow_directory_symlinks() {
+        let (d, a) = adapter();
+        let outside = d.path().join("outside");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("secret.ztlog"), b"secret").unwrap();
+        std::fs::create_dir_all(a.repo_dir().join("events")).unwrap();
+        std::os::unix::fs::symlink(&outside, a.repo_dir().join("events/link")).unwrap();
+
+        let listed = a.list("events", true).await.unwrap();
+        assert!(listed.is_empty());
     }
 }

@@ -809,7 +809,7 @@ fn read_ai_sessions_from_disk() -> Result<Vec<AiSessionItem>, String> {
         .into_iter()
         .filter_map(normalize_ai_session_item)
         .collect();
-    items.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    items.sort_by_key(|item| std::cmp::Reverse(item.updated_at));
     items.truncate(AI_SESSION_MAX_ITEMS);
     Ok(items)
 }
@@ -1266,7 +1266,7 @@ pub async fn save_ai_session(input: SaveAiSessionInput) -> Result<AiSessionItem,
     let mut items = read_ai_sessions_from_disk()?;
     items.retain(|existing| existing.id != item.id);
     items.insert(0, item.clone());
-    items.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    items.sort_by_key(|item| std::cmp::Reverse(item.updated_at));
     items.truncate(AI_SESSION_MAX_ITEMS);
     write_ai_sessions_to_disk(&items)?;
     Ok(item)
@@ -2790,10 +2790,6 @@ pub struct HostFull {
     pub user: String,
     pub auth_type: &'static str,
     pub os_type: Option<String>,
-    /// Only populated for `password` auth — keys never leave the vault
-    /// over IPC for editing (you can replace the key but not view it).
-    pub password: Option<String>,
-    pub key_passphrase: Option<String>,
     /// Structured forwards for the editor.
     pub forwards: Vec<ForwardSpecIO>,
     pub proxy_jump_host_id: Option<String>,
@@ -2859,6 +2855,9 @@ pub async fn save_host(state: State<'_, AppState>, input: HostInput) -> Result<S
     ) {
         return Err("private key is required".to_string());
     }
+    if matches!(&h.auth, zeroterm_app::HostAuth::Password { value } if value.is_empty()) {
+        return Err("password is required".to_string());
+    }
     let id = app.save_host(&h).map_err(|e| e.to_string())?;
     manager.schedule_debounced_sync_for_all(app);
     Ok(id)
@@ -2881,20 +2880,37 @@ pub async fn update_host(
     if new_host.os_type.is_none() {
         new_host.os_type = existing.os_type;
     }
-    if matches!(
-        &new_host.auth,
-        zeroterm_app::HostAuth::PrivateKey { key_pem, .. } if key_pem.trim().is_empty()
-    ) {
-        new_host.auth = match (new_host.auth, existing.auth) {
-            (
-                zeroterm_app::HostAuth::PrivateKey { passphrase, .. },
-                zeroterm_app::HostAuth::PrivateKey { key_pem, .. },
-            ) => zeroterm_app::HostAuth::PrivateKey {
+    match (&mut new_host.auth, &existing.auth) {
+        (
+            zeroterm_app::HostAuth::Password { value },
+            zeroterm_app::HostAuth::Password {
+                value: existing_value,
+            },
+        ) if value.is_empty() => value.clone_from(existing_value),
+        (
+            zeroterm_app::HostAuth::PrivateKey {
                 key_pem,
                 passphrase,
             },
-            _ => return Err("private key is required".to_string()),
-        };
+            zeroterm_app::HostAuth::PrivateKey {
+                key_pem: existing_key,
+                passphrase: existing_passphrase,
+            },
+        ) if key_pem.trim().is_empty() => {
+            key_pem.clone_from(existing_key);
+            if passphrase.as_deref().unwrap_or_default().is_empty() {
+                passphrase.clone_from(existing_passphrase);
+            }
+        }
+        (zeroterm_app::HostAuth::Password { value }, _) if value.is_empty() => {
+            return Err("password is required".to_string());
+        }
+        (zeroterm_app::HostAuth::PrivateKey { key_pem, .. }, _)
+            if key_pem.trim().is_empty() =>
+        {
+            return Err("private key is required".to_string());
+        }
+        _ => {}
     }
     app.update_host(&new_host).map_err(|e| e.to_string())?;
     manager.schedule_debounced_sync_for_all(app);
@@ -3229,10 +3245,10 @@ pub async fn get_host(state: State<'_, AppState>, id: String) -> Result<HostFull
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("no host with id {id}"))?;
 
-    let (auth_type, password, key_passphrase) = match &h.auth {
-        zeroterm_app::HostAuth::Password { value } => ("password", Some(value.clone()), None),
-        zeroterm_app::HostAuth::PrivateKey { passphrase, .. } => ("key", None, passphrase.clone()),
-        zeroterm_app::HostAuth::Agent => ("agent", None, None),
+    let auth_type = match &h.auth {
+        zeroterm_app::HostAuth::Password { .. } => "password",
+        zeroterm_app::HostAuth::PrivateKey { .. } => "key",
+        zeroterm_app::HostAuth::Agent => "agent",
     };
 
     Ok(HostFull {
@@ -3243,8 +3259,6 @@ pub async fn get_host(state: State<'_, AppState>, id: String) -> Result<HostFull
         user: h.user,
         auth_type,
         os_type: h.os_type,
-        password,
-        key_passphrase,
         forwards: h.forwards.iter().map(ForwardSpecIO::from_app).collect(),
         proxy_jump_host_id: h.proxy_jump_host_id,
         group_id: h.group_id,
@@ -3652,10 +3666,11 @@ async fn start_host_forwards(
 
 fn parse_os_release_value(raw: &str) -> &str {
     let v = raw.trim();
-    if v.len() >= 2 {
-        if (v.starts_with('"') && v.ends_with('"')) || (v.starts_with('\'') && v.ends_with('\'')) {
-            return &v[1..v.len() - 1];
-        }
+    if v.len() >= 2
+        && ((v.starts_with('"') && v.ends_with('"'))
+            || (v.starts_with('\'') && v.ends_with('\'')))
+    {
+        return &v[1..v.len() - 1];
     }
     v
 }
@@ -4019,6 +4034,7 @@ pub async fn migrate_port_forward_rules(state: State<'_, AppState>) -> Result<us
 /// picked up. A user stop cancels `cancel`, which drops everything (freeing the
 /// local ports) and ends the task. Every transition emits `port-forward:changed`
 /// so the UI reflects active / reconnecting / stopped live.
+#[allow(clippy::too_many_arguments)]
 fn spawn_port_forward_supervisor(
     app_handle: AppHandle,
     id: u64,
@@ -4310,6 +4326,7 @@ pub async fn connect_quick_host(
 }
 
 #[tauri::command]
+#[allow(clippy::needless_return)]
 pub async fn open_local_terminal() -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
@@ -4751,8 +4768,19 @@ pub async fn local_remove(path: String) -> Result<(), String> {
     fs::remove_file(&path).map_err(|e| format!("remove file {}: {e}", path))
 }
 
+fn validate_local_removable_dir(path: &Path) -> Result<(), String> {
+    if !path.is_absolute() || path.parent().is_none() {
+        return Err(format!(
+            "refusing to recursively remove unsafe directory: {}",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn local_remove_dir(path: String) -> Result<(), String> {
+    validate_local_removable_dir(Path::new(&path))?;
     fs::remove_dir_all(&path).map_err(|e| format!("remove dir {}: {e}", path))
 }
 
@@ -4762,6 +4790,7 @@ pub async fn local_rename(from: String, to: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+#[allow(clippy::needless_return)]
 pub async fn local_permission_mode(path: String) -> Result<FilePermissionModeDto, String> {
     let meta = fs::metadata(&path).map_err(|e| format!("stat {}: {e}", path))?;
     #[cfg(unix)]
@@ -4822,6 +4851,7 @@ pub async fn temp_open_path(file_name: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+#[allow(clippy::needless_return)]
 pub async fn open_with_app(file_path: String, app_path: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
@@ -4869,4 +4899,17 @@ pub async fn list_system_fonts() -> Result<Vec<SystemFontDto>, String> {
         .into_iter()
         .map(|family| SystemFontDto { family })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recursive_local_delete_rejects_relative_and_root_paths() {
+        assert!(validate_local_removable_dir(Path::new(".")).is_err());
+        #[cfg(unix)]
+        assert!(validate_local_removable_dir(Path::new("/")).is_err());
+        assert!(validate_local_removable_dir(&std::env::temp_dir().join("child")).is_ok());
+    }
 }

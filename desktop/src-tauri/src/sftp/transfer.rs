@@ -9,7 +9,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
-use crate::sftp::{classify_error_message, parse_ipc_error};
+use crate::sftp::{classify_error_message, ipc_error, parse_ipc_error};
 use crate::state::AppState;
 
 #[derive(Debug, Clone, Serialize)]
@@ -271,15 +271,22 @@ pub(crate) async fn acquire_transfer_slot(
     app_handle: &AppHandle,
     transfer_id: u64,
 ) -> Result<tokio::sync::OwnedSemaphorePermit, String> {
-    let permit = state
-        .transfer_slots
-        .clone()
-        .acquire_owned()
-        .await
-        .map_err(|_| {
+    let Some(cancel) = state.transfer_manager.token(transfer_id) else {
+        return Err(ipc_error("CANCELLED", "transfer no longer exists"));
+    };
+    let acquire = state.transfer_slots.clone().acquire_owned();
+    tokio::pin!(acquire);
+    let permit = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => {
             state.transfer_manager.remove(transfer_id);
-            "transfer queue is shutting down".to_string()
-        })?;
+            return Err(ipc_error("CANCELLED", "transfer cancelled while queued"));
+        }
+        result = &mut acquire => result.map_err(|_| {
+            state.transfer_manager.remove(transfer_id);
+            ipc_error("CHANNEL_CLOSED", "transfer queue is shutting down")
+        })?,
+    };
     state.transfer_manager.mark_running(app_handle, transfer_id);
     Ok(permit)
 }

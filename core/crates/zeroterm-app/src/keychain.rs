@@ -176,10 +176,7 @@ impl KeychainStore {
     /// during migration. Returns the value if the old item exists.
     fn read_legacy(user: &str) -> Option<String> {
         let entry = keyring::Entry::new(SERVICE, user).ok()?;
-        match entry.get_password() {
-            Ok(v) => Some(v),
-            _ => None,
-        }
+        entry.get_password().ok()
     }
 
     /// Best-effort delete of a legacy per-item entry after migration.
@@ -255,6 +252,12 @@ impl KeychainStore {
         let mut inner = self.inner.lock().unwrap();
         inner.loaded = false;
         inner.secrets = None;
+    }
+}
+
+impl Default for KeychainStore {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

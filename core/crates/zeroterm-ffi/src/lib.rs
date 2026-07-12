@@ -133,7 +133,7 @@ mod tests {
         fresh(&zt, dir.path());
 
         // Vault doesn't exist yet → must short-circuit to false, not error.
-        assert_eq!(zt.try_keychain_unlock().unwrap(), false);
+        assert!(!zt.try_keychain_unlock().unwrap());
     }
 
     #[test]
@@ -146,6 +146,6 @@ mod tests {
         // nothing for this brand-new tempdir path, so try should miss.
         zt.create("pw".into(), false).unwrap();
         zt.lock();
-        assert_eq!(zt.try_keychain_unlock().unwrap(), false);
+        assert!(!zt.try_keychain_unlock().unwrap());
     }
 }

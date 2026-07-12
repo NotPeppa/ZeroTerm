@@ -3710,7 +3710,7 @@ async function renderMetricsPanel(options = {}) {
     if (token !== metricsRefreshToken || terminalActiveSidePanel !== "metrics") return;
     terminalMetricsBody.classList.remove("metrics-loading");
     if (silent && terminalMetricsBody.querySelector(".metrics-card")) return;
-    terminalMetricsBody.innerHTML = `<div class="terminal-side-empty"><strong>${t("metrics.error", { error: String(e) })}</strong><p>${escapeMetricText(pane.host?.name || pane.host?.host || "Local")}</p></div>`;
+    terminalMetricsBody.innerHTML = `<div class="terminal-side-empty"><strong>${escapeMetricText(t("metrics.error", { error: String(e) }))}</strong><p>${escapeMetricText(pane.host?.name || pane.host?.host || "Local")}</p></div>`;
   }
 }
 
@@ -4354,7 +4354,7 @@ function renderTerminalCommandSnippets() {
     heading.type = "button";
     heading.className = "terminal-snippet-group-title";
     heading.setAttribute("aria-expanded", expanded ? "true" : "false");
-    heading.innerHTML = `<span class="terminal-snippet-group-label">${group}</span><span class="terminal-snippet-group-meta"><span class="terminal-snippet-group-count">${items.length}</span><span class="terminal-snippet-group-chevron">${expanded ? "▾" : "▸"}</span></span>`;
+    heading.innerHTML = `<span class="terminal-snippet-group-label">${escapeMetricText(group)}</span><span class="terminal-snippet-group-meta"><span class="terminal-snippet-group-count">${items.length}</span><span class="terminal-snippet-group-chevron">${expanded ? "▾" : "▸"}</span></span>`;
     heading.addEventListener("click", () => {
       terminalSnippetGroupExpanded[group] = !expanded;
       saveTerminalSnippetGroupState();

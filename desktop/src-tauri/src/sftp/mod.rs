@@ -213,6 +213,16 @@ pub(crate) fn lookup_sftp_host_id(state: &AppState, sftp_id: u64) -> Result<Stri
         .ok_or_else(|| format!("no sftp handle with id {sftp_id}"))
 }
 
+fn remote_directory_copy_targets_source(
+    source_host_id: &str,
+    destination_host_id: &str,
+    source_path: &str,
+    destination_path: &str,
+) -> bool {
+    source_host_id == destination_host_id
+        && is_remote_path_within(destination_path, source_path)
+}
+
 pub(crate) async fn with_resilient_panel_sftp<T, F, Fut>(
     state: &AppState,
     sftp_id: u64,
@@ -796,8 +806,12 @@ pub async fn sftp_copy_entry_between_panes(
             let root_kind = detect_remote_kind(&source_path, meta.kind)?;
 
             if root_kind == CopyNodeKind::Dir
-                && src_id == dst_id
-                && is_remote_path_within(&dst, &source_path)
+                && remote_directory_copy_targets_source(
+                    &src_host_id,
+                    &dst_host_id,
+                    &source_path,
+                    &dst,
+                )
             {
                 return Err(string_error("cannot copy a directory into itself"));
             }
@@ -857,6 +871,22 @@ mod tests {
             classify_error_message("is a directory (os error 21)"),
             "UNSUPPORTED"
         );
+    }
+
+    #[test]
+    fn remote_directory_self_copy_is_detected_across_panels_on_same_host() {
+        assert!(remote_directory_copy_targets_source(
+            "host-1",
+            "host-1",
+            "/srv/data",
+            "/srv/data/archive/data",
+        ));
+        assert!(!remote_directory_copy_targets_source(
+            "host-1",
+            "host-2",
+            "/srv/data",
+            "/srv/data/archive/data",
+        ));
     }
 
     #[test]

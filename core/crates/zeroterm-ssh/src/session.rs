@@ -446,8 +446,7 @@ impl Session {
         port: u32,
     ) -> Result<u32, SshError> {
         let handle = Arc::get_mut(&mut self.handle).ok_or_else(|| {
-            SshError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            SshError::Io(std::io::Error::other(
                 "cannot request remote forward after SSH handle was cloned",
             ))
         })?;
@@ -527,7 +526,7 @@ impl Session {
         while let Some(msg) = channel.wait().await {
             match msg {
                 ChannelMsg::Data { data } => stdout.extend_from_slice(&data),
-                ChannelMsg::ExtendedData { data, ext } if ext == 1 => {
+                ChannelMsg::ExtendedData { data, ext: 1 } => {
                     stderr.extend_from_slice(&data)
                 }
                 ChannelMsg::ExitStatus { exit_status } => code = exit_status,

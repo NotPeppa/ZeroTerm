@@ -20,6 +20,34 @@ pub(crate) fn remote_join_path(base: &str, leaf: &str) -> String {
     }
 }
 
+/// Validate a name returned by a remote directory listing before using it as
+/// a path component. Directory entry names are untrusted server input; path
+/// separators (including Windows' separator) could otherwise escape a local
+/// download target or make recursive operations address a sibling path.
+pub(crate) fn validate_remote_leaf_name(name: &str) -> Result<(), String> {
+    if name.is_empty()
+        || name == "."
+        || name == ".."
+        || name.contains('/')
+        || name.contains('\0')
+    {
+        return Err(string_error(format!(
+            "invalid remote directory entry name: {name:?}"
+        )));
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_remote_leaf_name_for_local(name: &str) -> Result<(), String> {
+    validate_remote_leaf_name(name)?;
+    if std::path::MAIN_SEPARATOR != '/' && name.contains(std::path::MAIN_SEPARATOR) {
+        return Err(string_error(format!(
+            "remote directory entry is not a safe local file name: {name:?}"
+        )));
+    }
+    Ok(())
+}
+
 pub(crate) fn normalize_remote_path(path: &str) -> String {
     let raw = path.trim();
     if raw.is_empty() || raw == "/" {
@@ -177,6 +205,25 @@ mod tests {
         assert_eq!(remote_join_path("/", "tmp"), "/tmp");
         assert_eq!(remote_join_path("/var/log", "app.log"), "/var/log/app.log");
         assert_eq!(remote_join_path("/var/log/", "app.log"), "/var/log/app.log");
+    }
+
+    #[test]
+    fn remote_leaf_name_rejects_path_traversal_and_separators() {
+        for invalid in [
+            "",
+            ".",
+            "..",
+            "../escape",
+            "dir/file",
+            "bad\0name",
+        ] {
+            assert!(
+                validate_remote_leaf_name(invalid).is_err(),
+                "accepted invalid remote leaf {invalid:?}"
+            );
+        }
+        assert!(validate_remote_leaf_name("normal file.txt").is_ok());
+        assert!(validate_remote_leaf_name("back\\slash").is_ok());
     }
 
     fn unique_test_dir(name: &str) -> PathBuf {

@@ -624,6 +624,23 @@ fn io_other(msg: &str) -> std::io::Error {
     std::io::Error::other(msg.to_string())
 }
 
+/// Read until `buf` is full or EOF. Returns the number of bytes actually
+/// read; a value less than `buf.len()` means EOF was hit early.
+async fn read_fully<R>(reader: &mut R, buf: &mut [u8]) -> std::io::Result<usize>
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    let mut filled = 0;
+    while filled < buf.len() {
+        let n = reader.read(&mut buf[filled..]).await?;
+        if n == 0 {
+            break;
+        }
+        filled += n;
+    }
+    Ok(filled)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -703,21 +720,4 @@ mod tests {
             SftpErrorKind::ChannelClosed
         );
     }
-}
-
-/// Read until `buf` is full or EOF. Returns the number of bytes actually
-/// read; a value less than `buf.len()` means EOF was hit early.
-async fn read_fully<R>(reader: &mut R, buf: &mut [u8]) -> std::io::Result<usize>
-where
-    R: tokio::io::AsyncRead + Unpin,
-{
-    let mut filled = 0;
-    while filled < buf.len() {
-        let n = reader.read(&mut buf[filled..]).await?;
-        if n == 0 {
-            break;
-        }
-        filled += n;
-    }
-    Ok(filled)
 }

@@ -8,7 +8,7 @@ use serde::Serialize;
 use tauri::Manager;
 use tracing::warn;
 
-use crate::sftp::path::remote_join_path;
+use crate::sftp::path::{remote_join_path, validate_remote_leaf_name};
 use crate::sftp::transfer::{
     acquire_transfer_slot, forget_transfer, register_transfer, run_with_progress, ProgressMode,
 };
@@ -156,6 +156,7 @@ pub(crate) async fn cleanup_stale_remote_temp_entries(
     for entry in entries.iter() {
         if entry.kind != zeroterm_ssh::FileKind::File
             || !is_zeroterm_remote_transfer_temp_name(&entry.name)
+            || validate_remote_leaf_name(&entry.name).is_err()
         {
             continue;
         }
@@ -270,6 +271,7 @@ async fn finalize_remote_upload_target(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn upload_reader_to_remote_atomic<R, F>(
     sftp: &zeroterm_ssh::Sftp,
     target: &str,
@@ -359,6 +361,7 @@ pub(crate) fn is_retryable_transfer_error(err: &str) -> bool {
         || lower.contains("timeout")
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn upload_local_path_to_remote_once<F>(
     sftp: &zeroterm_ssh::Sftp,
     source: &Path,

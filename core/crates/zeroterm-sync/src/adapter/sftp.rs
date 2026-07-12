@@ -20,7 +20,7 @@ use async_trait::async_trait;
 
 use zeroterm_ssh::{FileKind, Session, Sftp, SftpErrorKind, SshError};
 
-use crate::adapter::{ObjectMeta, SyncAdapter};
+use crate::adapter::{validate_repo_relative_path, ObjectMeta, SyncAdapter};
 use crate::error::Error;
 use crate::repo::REPO_DIR;
 
@@ -206,6 +206,7 @@ impl SftpAdapter {
                 if e.name == "." || e.name == ".." {
                     continue;
                 }
+                validate_repo_relative_path(&e.name)?;
                 let full = format!("{dir}/{}", e.name);
                 match e.kind {
                     FileKind::Dir => {
@@ -213,14 +214,14 @@ impl SftpAdapter {
                             stack.push(full);
                         }
                     }
-                    FileKind::File | FileKind::Symlink => {
+                    FileKind::File => {
                         out.push(RemoteEntry {
                             full_path: full,
                             size: e.size,
                             modified_unix_ms: e.modified_unix_ms.unwrap_or(0),
                         });
                     }
-                    FileKind::Other => {}
+                    FileKind::Symlink | FileKind::Other => {}
                 }
             }
         }
@@ -406,6 +407,7 @@ impl SyncAdapter for SftpAdapter {
                 if e.name == "." || e.name == ".." {
                     continue;
                 }
+                validate_repo_relative_path(&e.name)?;
                 let full = format!("{dir}/{}", e.name);
                 match e.kind {
                     FileKind::Dir => stack.push(full),

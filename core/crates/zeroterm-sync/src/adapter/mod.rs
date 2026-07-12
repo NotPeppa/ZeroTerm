@@ -21,6 +21,22 @@ use async_trait::async_trait;
 
 use crate::error::Error;
 
+/// Validate paths obtained from an untrusted backend listing before they are
+/// fed back into read/rename/delete operations. Sync repository keys always
+/// use forward-slash-separated normal components.
+pub(crate) fn validate_repo_relative_path(path: &str) -> Result<(), Error> {
+    if path.starts_with('/')
+        || path.contains('\\')
+        || path.contains('\0')
+        || path
+            .split('/')
+            .any(|part| part.is_empty() || part == "." || part == "..")
+    {
+        return Err(Error::Corrupt);
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone)]
 pub struct ObjectMeta {
     /// Repo-relative path, using `/` as the separator regardless of OS.
@@ -90,3 +106,23 @@ pub use s3::{S3Adapter, S3Config};
 pub use sftp::SftpAdapter;
 #[cfg(feature = "webdav-backend")]
 pub use webdav::{WebDavAdapter, WebDavConfig};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repo_paths_reject_traversal_and_platform_separators() {
+        for invalid in [
+            "",
+            "/manifest.json",
+            "events/../manifest.json",
+            "events//file.ztlog",
+            "events\\file.ztlog",
+            "bad\0name",
+        ] {
+            assert!(validate_repo_relative_path(invalid).is_err(), "{invalid:?}");
+        }
+        assert!(validate_repo_relative_path("events/2026-07/file.ztlog").is_ok());
+    }
+}

@@ -17,7 +17,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
-use zeroterm_ssh::{HostKeyPolicy, Session};
+use zeroterm_ssh::{HostKeyPolicy, KnownHosts, Session};
 use zeroterm_sync::adapter::{LocalAdapter, SftpAdapter};
 use zeroterm_sync::engine::{DeviceInfo, SyncEngine, SyncReport};
 use zeroterm_sync::error::Error as SyncErrorKind;
@@ -26,6 +26,16 @@ use zeroterm_sync::local_store::{LocalRecord, LocalRecordStore};
 use crate::{App, AppError};
 
 const SYNC_PROFILE_KIND: &str = "sync_profile";
+
+fn sync_host_key_policy() -> Result<HostKeyPolicy, AppError> {
+    KnownHosts::at_default()
+        .map(HostKeyPolicy::Strict)
+        .ok_or_else(|| {
+            AppError::SyncConfig(
+                "cannot resolve ~/.ssh/known_hosts for secure SFTP sync".to_string(),
+            )
+        })
+}
 
 /// Persisted backend configuration. Tagged on `backend` so future
 /// variants slot in without breaking already-serialized rows.
@@ -303,7 +313,7 @@ pub fn local_device_id() -> String {
 }
 
 pub fn local_device_name() -> String {
-    hostname_display_name().unwrap_or_else(|| hostname_best_effort())
+    hostname_display_name().unwrap_or_else(hostname_best_effort)
 }
 
 fn hostname_display_name() -> Option<String> {
@@ -448,12 +458,10 @@ impl App {
 
                 let cfg = self.connect_config(
                     &host,
-                    // AcceptAll for sync: we don't have an interactive
-                    // host-key prompt here, and the sync passphrase
-                    // (not the SSH host key) is what guards record
-                    // confidentiality. M7+ should plumb a non-interactive
-                    // KnownHosts-only policy through.
-                    HostKeyPolicy::AcceptAll,
+                    // Background sync cannot prompt safely. Require the host
+                    // to have been trusted through a normal interactive
+                    // connection first, then enforce that exact key here.
+                    sync_host_key_policy()?,
                     Some(Duration::from_secs(15)),
                 );
 
@@ -465,7 +473,7 @@ impl App {
                     })?;
                     Some(self.connect_config(
                         &jump_host,
-                        HostKeyPolicy::AcceptAll,
+                        sync_host_key_policy()?,
                         Some(Duration::from_secs(15)),
                     ))
                 } else {

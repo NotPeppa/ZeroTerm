@@ -395,7 +395,7 @@ async fn handle_socks(
 }
 
 fn io_err<E: Into<String>>(msg: E) -> std::io::Error {
-    std::io::Error::new(std::io::ErrorKind::Other, msg.into())
+    std::io::Error::other(msg.into())
 }
 
 // Keep types we need in this module accessible.

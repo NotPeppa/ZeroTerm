@@ -555,7 +555,7 @@ async fn cmd_sftp(args: &Args, vault_path: &Path, action: &SftpAction) -> Result
     };
 
     info!(host = %cfg.host, port = cfg.port, "connecting (sftp)");
-    let (jump_session, mut session) = match jump_cfg {
+    let (jump_session, session) = match jump_cfg {
         Some(jcfg) => {
             let j = Session::connect(jcfg).await.context("jump connect")?;
             let t = Session::connect_via(cfg, &j)
