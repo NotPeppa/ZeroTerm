@@ -1364,6 +1364,24 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
         </div>
       </div>
 
+      <div id="host-secret-reveal-overlay" class="overlay" hidden>
+        <div class="dialog">
+          <h3>验证主密码</h3>
+          <p class="muted tiny">请输入当前主密码后显示已保存的凭据。</p>
+          <form id="host-secret-reveal-form">
+            <label>
+              <span>主密码</span>
+              <input id="host-secret-reveal-password" type="password" autocomplete="current-password" required />
+            </label>
+            <p id="host-secret-reveal-error" class="error" hidden></p>
+            <div class="dialog-actions">
+              <button id="host-secret-reveal-cancel" type="button">取消</button>
+              <button type="submit" class="primary">确认并显示</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
       <div id="quick-connect-overlay" class="overlay" hidden>
         <div class="dialog">
           <h3 id="quick-connect-title">Quick connect</h3>

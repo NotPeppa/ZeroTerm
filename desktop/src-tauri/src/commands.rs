@@ -2796,6 +2796,13 @@ pub struct HostFull {
     pub group_id: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum HostCredentialKind {
+    Password,
+    KeyPassphrase,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PortForwardStatus {
@@ -3263,6 +3270,52 @@ pub async fn get_host(state: State<'_, AppState>, id: String) -> Result<HostFull
         proxy_jump_host_id: h.proxy_jump_host_id,
         group_id: h.group_id,
     })
+}
+
+/// Reveal one stored host credential only after the user has re-entered the
+/// vault master password. The regular host-editor read path deliberately
+/// never returns secret material over IPC.
+#[tauri::command]
+pub async fn reveal_host_credential(
+    state: State<'_, AppState>,
+    id: String,
+    kind: HostCredentialKind,
+    master_password: String,
+) -> Result<String, String> {
+    if master_password.is_empty() {
+        return Err("master password is required".to_string());
+    }
+    if state.app.lock().unwrap().is_none() {
+        return Err("vault is locked".to_string());
+    }
+    let path = zeroterm_app::default_vault_path()
+        .ok_or_else(|| "no default vault path on this OS".to_string())?;
+
+    tokio::task::spawn_blocking(move || {
+        let app = App::open(path, &master_password)
+            .map_err(|_| "master password verification failed".to_string())?;
+        let host = app
+            .find_host_by_id(&id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("no host with id {id}"))?;
+        match (kind, host.auth) {
+            (HostCredentialKind::Password, HostAuth::Password { value }) => Ok(value),
+            (HostCredentialKind::KeyPassphrase, HostAuth::PrivateKey { passphrase: Some(value), .. }) => {
+                Ok(value)
+            }
+            (HostCredentialKind::KeyPassphrase, HostAuth::PrivateKey { passphrase: None, .. }) => {
+                Err("this private key has no saved passphrase".to_string())
+            }
+            (HostCredentialKind::Password, _) => {
+                Err("this host does not use password authentication".to_string())
+            }
+            (HostCredentialKind::KeyPassphrase, _) => {
+                Err("this host does not use private-key authentication".to_string())
+            }
+        }
+    })
+    .await
+    .map_err(|e| format!("credential verification task failed: {e}"))?
 }
 
 // --------------------------------------------------------------------------

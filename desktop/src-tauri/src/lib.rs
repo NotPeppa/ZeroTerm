@@ -146,6 +146,7 @@ pub fn run() {
             commands::delete_port_forward_rule,
             commands::migrate_port_forward_rules,
             commands::get_host,
+            commands::reveal_host_credential,
             commands::list_host_groups,
             commands::create_host_group,
             commands::update_host_group,

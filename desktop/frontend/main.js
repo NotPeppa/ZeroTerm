@@ -14982,10 +14982,16 @@ let hfForwardsList = document.getElementById("hf-forwards");
 const hfForwardAdd = document.getElementById("hf-forward-add");
 const hostError = document.getElementById("host-edit-error");
 const hostReadonly = document.getElementById("host-edit-readonly");
+const hostSecretRevealOverlay = document.getElementById("host-secret-reveal-overlay");
+const hostSecretRevealForm = document.getElementById("host-secret-reveal-form");
+const hostSecretRevealPassword = document.getElementById("host-secret-reveal-password");
+const hostSecretRevealError = document.getElementById("host-secret-reveal-error");
+const hostSecretRevealCancel = document.getElementById("host-secret-reveal-cancel");
 
 let editingHostId = null;
 let hfKeyPem = null;
 let hfForwards = [];
+let resolveHostSecretReveal = null;
 
 hfAuthType.addEventListener("change", () => syncAuthSections());
 hfKeyPick.addEventListener("click", pickKeyFile);
@@ -14999,16 +15005,77 @@ function syncPasswordToggleButton(button, visible, labels) {
   button.setAttribute("aria-label", title);
 }
 
-hfPasswordToggle?.addEventListener("click", () => {
+hfPasswordToggle?.addEventListener("click", async () => {
+  if (!hfPassword.value && editingHostId) {
+    await revealHostCredential("password");
+    return;
+  }
   const show = hfPassword.type === "password";
   hfPassword.type = show ? "text" : "password";
   syncPasswordToggleButton(hfPasswordToggle, show, { show: "显示密码", hide: "隐藏密码" });
 });
-hfKeyPassphraseToggle?.addEventListener("click", () => {
+hfKeyPassphraseToggle?.addEventListener("click", async () => {
+  if (!hfKeyPassphrase.value && editingHostId) {
+    await revealHostCredential("keyPassphrase");
+    return;
+  }
   const show = hfKeyPassphrase.type === "password";
   hfKeyPassphrase.type = show ? "text" : "password";
   syncPasswordToggleButton(hfKeyPassphraseToggle, show, { show: "显示口令", hide: "隐藏口令" });
 });
+
+function closeHostSecretReveal(masterPassword = null) {
+  hostSecretRevealOverlay.hidden = true;
+  hostSecretRevealPassword.value = "";
+  const resolve = resolveHostSecretReveal;
+  resolveHostSecretReveal = null;
+  resolve?.(masterPassword);
+}
+
+function requestHostSecretRevealPassword() {
+  hostSecretRevealError.hidden = true;
+  hostSecretRevealError.textContent = "";
+  hostSecretRevealPassword.value = "";
+  hostSecretRevealOverlay.hidden = false;
+  hostSecretRevealPassword.focus();
+  return new Promise((resolve) => {
+    resolveHostSecretReveal = resolve;
+  });
+}
+
+hostSecretRevealCancel?.addEventListener("click", () => closeHostSecretReveal());
+hostSecretRevealForm?.addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  const password = hostSecretRevealPassword.value;
+  if (!password) {
+    hostSecretRevealError.textContent = "请输入主密码。";
+    hostSecretRevealError.hidden = false;
+    return;
+  }
+  closeHostSecretReveal(password);
+});
+
+async function revealHostCredential(kind) {
+  if (!editingHostId) return;
+  const masterPassword = await requestHostSecretRevealPassword();
+  if (masterPassword === null) return;
+  try {
+    const credential = await invoke("reveal_host_credential", {
+      id: editingHostId,
+      kind,
+      masterPassword,
+    });
+    const input = kind === "password" ? hfPassword : hfKeyPassphrase;
+    const toggle = kind === "password" ? hfPasswordToggle : hfKeyPassphraseToggle;
+    input.value = credential;
+    input.type = "text";
+    syncPasswordToggleButton(toggle, true, kind === "password"
+      ? { show: "显示密码", hide: "隐藏密码" }
+      : { show: "显示口令", hide: "隐藏口令" });
+  } catch (e) {
+    showHostError(String(e));
+  }
+}
 settingsSyncPasswordToggle?.addEventListener("click", () => {
   if (!settingsSyncPassword) return;
   const show = settingsSyncPassword.type === "password";
@@ -15057,6 +15124,8 @@ async function openHostEditor(id = null, defaultGroupId = "") {
   hfKeyStatus.textContent = t("host_editor.key.none");
   hfPassword.value = "";
   hfKeyPassphrase.value = "";
+  hfPassword.placeholder = id ? "已保存；点击眼睛并验证主密码后显示" : "";
+  hfKeyPassphrase.placeholder = id ? "已保存；点击眼睛并验证主密码后显示" : "";
   if (hfPassword) hfPassword.type = "password";
   if (hfKeyPassphrase) hfKeyPassphrase.type = "password";
   syncPasswordToggleButton(hfPasswordToggle, false, { show: "显示密码", hide: "隐藏密码" });
@@ -15109,6 +15178,7 @@ async function openHostEditor(id = null, defaultGroupId = "") {
 }
 
 function closeHostEditor() {
+  if (!hostSecretRevealOverlay.hidden) closeHostSecretReveal();
   hostOverlay.hidden = true;
   editingHostId = null;
   hfKeyPem = null;
