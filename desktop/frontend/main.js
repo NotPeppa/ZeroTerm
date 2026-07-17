@@ -5959,63 +5959,8 @@ function getActiveTerminalSnapshot(maxLines = 160) {
   return rows.join("\n").trim();
 }
 
-function isNonPublicIpv4(ip) {
-  const parts = ip.split(".").map((v) => Number(v));
-  if (parts.length !== 4 || parts.some((v) => !Number.isInteger(v) || v < 0 || v > 255)) return false;
-  const [a, b] = parts;
-  return a === 10
-    || a === 127
-    || (a === 172 && b >= 16 && b <= 31)
-    || (a === 192 && b === 168)
-    || (a === 169 && b === 254)
-    || (a === 100 && b >= 64 && b <= 127)
-    || a === 0;
-}
-
-function isNonPublicIpv6(ip) {
-  const normalized = String(ip || "").toLowerCase();
-  return normalized === "::1"
-    || normalized === "::"
-    || normalized.startsWith("fe8")
-    || normalized.startsWith("fe9")
-    || normalized.startsWith("fea")
-    || normalized.startsWith("feb")
-    || normalized.startsWith("fc")
-    || normalized.startsWith("fd");
-}
-
-function looksLikeClockTime(value) {
-  return /^\d{1,2}:\d{2}:\d{2}$/.test(String(value || ""));
-}
-
-function redactSensitiveText(text) {
-  let out = String(text || "");
-  out = out.replace(/\b(?:sk|pk|rk|ak)-[A-Za-z0-9_\-]{16,}\b/g, "[REDACTED_API_KEY]");
-  out = out.replace(/\b(?:ghp|gho|ghu|ghs|github_pat)_[A-Za-z0-9_]{16,}\b/g, "[REDACTED_GITHUB_TOKEN]");
-  out = out.replace(/\b(?:xox[baprs]-)[A-Za-z0-9-]{16,}\b/g, "[REDACTED_SLACK_TOKEN]");
-  out = out.replace(/\b(AKIA|ASIA)[A-Z0-9]{16}\b/g, "[REDACTED_AWS_KEY]");
-  out = out.replace(/\b(?:Bearer|Token|Authorization:)\s+[^\s]+/gi, "$1 [REDACTED_SECRET]");
-  out = out.replace(/\b(password|passwd|pwd|secret|token|api[_-]?key)\s*=\s*([^\s"']+)/gi, "$1=[REDACTED_SECRET]");
-  out = out.replace(/\b([0-9a-f]{2}:){5}[0-9a-f]{2}\b/gi, "[REDACTED_MAC]");
-  out = out.replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "[REDACTED_UUID]");
-  out = out.replace(/\b(?:[A-Z0-9][A-Z0-9_-]{7,})(?:\b)/g, (match) => {
-    if (/^[0-9]+$/.test(match)) return match;
-    if (/^\d{2,4}(?:[-_]\d{2,6})+$/.test(match)) return match;
-    return match.length >= 12 ? "[REDACTED_ID]" : match;
-  });
-  out = out.replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, (ip) => isNonPublicIpv4(ip) ? ip : "[REDACTED_PUBLIC_IP]");
-  out = out.replace(/(?<![\w:])(?:[0-9a-f]{1,4}:){2,7}[0-9a-f]{0,4}(?:%[\w.-]+)?(?![\w:])/gi, (ip) => {
-    if (looksLikeClockTime(ip)) return ip;
-    const plain = ip.replace(/%.*$/, "");
-    return isNonPublicIpv6(plain) ? ip : "[REDACTED_PUBLIC_IPV6]";
-  });
-  out = out.replace(/(?<![\w:])::(?:[0-9a-f]{1,4}:){0,6}[0-9a-f]{0,4}(?:%[\w.-]+)?(?![\w:])/gi, (ip) => {
-    const plain = ip.replace(/%.*$/, "");
-    return isNonPublicIpv6(plain) ? ip : "[REDACTED_PUBLIC_IPV6]";
-  });
-  out = out.replace(/(^|\s)([\w.-]+@[A-Za-z0-9_.-]+)(?=[:#$]\s?)/g, "$1[REDACTED_HOST_PROMPT]");
-  return out;
-}
+// 终端内容脱敏实现在 redact.js(经典脚本,先于本模块加载),便于 Node 单测复用
+const { redactSensitiveText } = globalThis.ZeroTermRedact;
 
 function buildAiTerminalContext() {
   const snapshot = getActiveTerminalSnapshot();
