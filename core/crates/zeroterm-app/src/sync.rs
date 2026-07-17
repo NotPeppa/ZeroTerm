@@ -27,12 +27,26 @@ use crate::{App, AppError};
 
 const SYNC_PROFILE_KIND: &str = "sync_profile";
 
+/// Optional known_hosts path for platforms without `$HOME` (Android).
+/// Set via [`set_sync_known_hosts_path`] from the mobile FFI layer.
+static SYNC_KNOWN_HOSTS_PATH: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
+
+/// Point SFTP sync host-key checks at a specific known_hosts file.
+/// Pass `None` to revert to `$HOME/.ssh/known_hosts`.
+pub fn set_sync_known_hosts_path(path: Option<PathBuf>) {
+    *SYNC_KNOWN_HOSTS_PATH.lock().unwrap() = path;
+}
+
 fn sync_host_key_policy() -> Result<HostKeyPolicy, AppError> {
+    if let Some(p) = SYNC_KNOWN_HOSTS_PATH.lock().unwrap().clone() {
+        return Ok(HostKeyPolicy::Strict(KnownHosts::new(p)));
+    }
     KnownHosts::at_default()
         .map(HostKeyPolicy::Strict)
         .ok_or_else(|| {
             AppError::SyncConfig(
-                "cannot resolve ~/.ssh/known_hosts for secure SFTP sync".to_string(),
+                "cannot resolve known_hosts for SFTP sync; call setDataDir first on mobile"
+                    .to_string(),
             )
         })
 }

@@ -17,6 +17,20 @@ pub struct HostSummary {
     pub port: u16,
     pub user: String,
     pub auth_kind: AuthKind,
+    pub group_id: Option<String>,
+}
+
+/// Full host for edit forms. Credentials are returned so the mobile UI
+/// can re-save; treat as sensitive in the host process.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct HostDetail {
+    pub id: String,
+    pub name: String,
+    pub host: String,
+    pub port: u16,
+    pub user: String,
+    pub auth: HostAuthInput,
+    pub group_id: Option<String>,
 }
 
 #[derive(Debug, Clone, uniffi::Enum)]
@@ -26,15 +40,16 @@ pub enum AuthKind {
     Agent,
 }
 
-/// Input for [`crate::ZeroTerm::save_host`]. `id` is assigned by the
-/// vault on insert, so callers don't supply one.
+/// Input for save/update host. When `id` is set, update; otherwise insert.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct HostInput {
+    pub id: Option<String>,
     pub name: String,
     pub host: String,
     pub port: u16,
     pub user: String,
     pub auth: HostAuthInput,
+    pub group_id: Option<String>,
 }
 
 #[derive(Debug, Clone, uniffi::Enum)]
@@ -47,6 +62,27 @@ pub enum HostAuthInput {
         passphrase: Option<String>,
     },
     Agent,
+}
+
+/// Vault command snippet (kind `snippet`).
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct SnippetRecord {
+    pub id: String,
+    pub title: String,
+    pub command: String,
+    /// Free-form group label; empty = ungrouped.
+    pub group: String,
+    pub sort_order: i32,
+}
+
+/// Create/update input. When `id` is set, update; otherwise insert.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct SnippetInput {
+    pub id: Option<String>,
+    pub title: String,
+    pub command: String,
+    pub group: String,
+    pub sort_order: i32,
 }
 
 /// Information about a server's offered host key, surfaced to the
@@ -85,12 +121,35 @@ pub(crate) fn host_to_summary(h: zeroterm_app::Host) -> HostSummary {
             zeroterm_app::HostAuth::PrivateKey { .. } => AuthKind::PrivateKey,
             zeroterm_app::HostAuth::Agent => AuthKind::Agent,
         },
+        group_id: h.group_id,
+    }
+}
+
+pub(crate) fn host_to_detail(h: zeroterm_app::Host) -> HostDetail {
+    HostDetail {
+        id: h.id,
+        name: h.name,
+        host: h.host,
+        port: h.port,
+        user: h.user,
+        auth: match h.auth {
+            zeroterm_app::HostAuth::Password { value } => HostAuthInput::Password { value },
+            zeroterm_app::HostAuth::PrivateKey {
+                key_pem,
+                passphrase,
+            } => HostAuthInput::PrivateKey {
+                key_pem,
+                passphrase,
+            },
+            zeroterm_app::HostAuth::Agent => HostAuthInput::Agent,
+        },
+        group_id: h.group_id,
     }
 }
 
 pub(crate) fn host_input_to_host(input: HostInput) -> zeroterm_app::Host {
     zeroterm_app::Host {
-        id: String::new(),
+        id: input.id.unwrap_or_default(),
         name: input.name,
         host: input.host,
         port: input.port,
@@ -107,11 +166,10 @@ pub(crate) fn host_input_to_host(input: HostInput) -> zeroterm_app::Host {
             HostAuthInput::Agent => zeroterm_app::HostAuth::Agent,
         },
         os_type: None,
-        // FFI doesn't (yet) accept forward / ProxyJump configuration —
-        // saved hosts coming from the FFI side are forward-less. Edit
-        // via CLI to add them.
+        // Forwards / ProxyJump: preserve on update via get+merge in facade;
+        // new hosts from FFI are forward-less (edit on desktop/CLI).
         forwards: Vec::new(),
         proxy_jump_host_id: None,
-        group_id: None,
+        group_id: input.group_id,
     }
 }

@@ -5,10 +5,12 @@
 //! commands.
 //!
 //! Coverage:
-//!   - Vault: unlock / create / lock / status, host CRUD
+//!   - Vault: unlock / create / lock / status, host CRUD, snippets CRUD
 //!   - Session: connect (async), input, resize, disconnect
-//!   - Foreign callbacks: SessionListener for PTY data, HostKeyPromptCallback
-//!     for trust dialogs
+//!   - Terminal: VT emulator (feed / takeDamage / resize / snapshot)
+//!   - SFTP: open/list/mkdir/rename/remove + download/upload with progress
+//!   - Sync: profiles, create/join repo, syncNow, conflicts
+//!   - Foreign callbacks: SessionListener, HostKeyPromptCallback, TransferListener
 //!   - Error: FfiError with stable, language-friendly variants
 
 uniffi::setup_scaffolding!("zeroterm");
@@ -16,12 +18,24 @@ uniffi::setup_scaffolding!("zeroterm");
 mod error;
 mod facade;
 mod listener;
+mod sftp;
+mod sync_api;
+mod term;
 mod types;
 
 pub use error::FfiError;
 pub use facade::ZeroTerm;
 pub use listener::{HostKeyPromptCallback, SessionListener};
-pub use types::{AuthKind, HostAuthInput, HostInput, HostKeyInfo, HostSummary, VaultStatus};
+pub use sftp::{SftpDirEntry, SftpFileKind, TransferListener, TransferProgress};
+pub use sync_api::{
+    ConflictRecord, SyncBackendKind, SyncOutcomeRecord, SyncProfileInput, SyncProfileSummary,
+    SyncStatusRecord,
+};
+pub use term::{DamageFrame, DamageLine, TermCell, Terminal};
+pub use types::{
+    AuthKind, HostAuthInput, HostDetail, HostInput, HostKeyInfo, HostSummary, SnippetInput,
+    SnippetRecord, VaultStatus,
+};
 
 #[cfg(test)]
 mod tests {
@@ -30,6 +44,10 @@ mod tests {
 
     fn fresh(zt: &ZeroTerm, dir: &std::path::Path) {
         zt.set_vault_path(dir.join("v.sqlite").to_string_lossy().to_string());
+    }
+
+    fn with_data_dir(zt: &ZeroTerm, dir: &std::path::Path) {
+        zt.set_data_dir(dir.to_string_lossy().to_string());
     }
 
     #[test]
@@ -49,11 +67,13 @@ mod tests {
 
         let id = zt
             .save_host(HostInput {
+                id: None,
                 name: "prod".into(),
                 host: "10.0.0.1".into(),
                 port: 22,
                 user: "deploy".into(),
                 auth: HostAuthInput::Password { value: "p".into() },
+                group_id: None,
             })
             .unwrap();
         let hosts = zt.list_hosts().unwrap();
@@ -147,5 +167,68 @@ mod tests {
         zt.create("pw".into(), false).unwrap();
         zt.lock();
         assert!(!zt.try_keychain_unlock().unwrap());
+    }
+
+    #[test]
+    fn set_data_dir_drives_default_vault_path() {
+        let dir = tempdir().unwrap();
+        let zt = ZeroTerm::new();
+        with_data_dir(&zt, dir.path());
+
+        let status = zt.vault_status().unwrap();
+        assert!(!status.exists);
+        assert!(status.path.ends_with("zeroterm.vault"));
+
+        zt.create("hunter2".into(), false).unwrap();
+        assert!(dir.path().join("zeroterm.vault").exists());
+        assert!(zt.vault_status().unwrap().unlocked);
+    }
+
+    #[test]
+    fn get_and_update_host() {
+        let dir = tempdir().unwrap();
+        let zt = ZeroTerm::new();
+        fresh(&zt, dir.path());
+        zt.create("pw".into(), false).unwrap();
+
+        let id = zt
+            .save_host(HostInput {
+                id: None,
+                name: "box".into(),
+                host: "1.2.3.4".into(),
+                port: 22,
+                user: "root".into(),
+                auth: HostAuthInput::Password {
+                    value: "secret".into(),
+                },
+                group_id: None,
+            })
+            .unwrap();
+
+        let detail = zt.get_host(id.clone()).unwrap();
+        assert_eq!(detail.name, "box");
+        assert!(matches!(
+            detail.auth,
+            HostAuthInput::Password { value } if value == "secret"
+        ));
+
+        zt.save_host(HostInput {
+            id: Some(id.clone()),
+            name: "box2".into(),
+            host: "5.6.7.8".into(),
+            port: 2222,
+            user: "admin".into(),
+            auth: HostAuthInput::Password {
+                value: "new".into(),
+            },
+            group_id: None,
+        })
+        .unwrap();
+
+        let detail = zt.get_host(id).unwrap();
+        assert_eq!(detail.name, "box2");
+        assert_eq!(detail.host, "5.6.7.8");
+        assert_eq!(detail.port, 2222);
+        assert_eq!(detail.user, "admin");
     }
 }

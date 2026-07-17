@@ -8,18 +8,48 @@ iOS) and Kotlin (Android, JVM).
 **Both batches done.** What's exposed:
 
 ### Vault + hosts (sync)
-- `ZeroTerm` Object: `new`, `setVaultPath`, `lock`
+- `ZeroTerm` Object: `new`, `setVaultPath`, `setDataDir`, `lock`
 - Vault lifecycle: `vaultStatus`, `unlock(password, remember)`,
   `create(password, remember)`, `tryKeychainUnlock` (returns Bool),
   `forgetKeychain`
-- Host CRUD: `listHosts`, `saveHost`, `deleteHost`
+- Host CRUD: `listHosts`, `getHost`, `saveHost` (insert or update when
+  `HostInput.id` set; preserves forwards/jump), `deleteHost`
+- `HostInput` / `HostSummary` include optional `groupId`
+- Snippets (batch-5): `listSnippets`, `getSnippet`, `saveSnippet`,
+  `deleteSnippet`, `renameSnippetGroup`, `deleteSnippetGroup`
+- Sync (batch-6): `listSyncProfiles`, `saveSyncProfile`,
+  `deleteSyncProfile`, `syncCreateRepo`, `syncJoinRepo`, `syncNow`,
+  `syncStatus`, `listOpenConflicts`, `resolveConflict`
+  (backends: local_folder / sftp / webdav / s3; secrets in OS keychain)
+- Mobile: call `setDataDir(filesDir)` at startup so vault defaults to
+  `{dataDir}/zeroterm.vault` and known_hosts to `{dataDir}/known_hosts`
+  (required on Android where `$HOME` is unavailable)
 
 ### Session (async)
 - `connectHost(hostId, cols, rows, listener, hostKeyPrompt)` — opens PTY shell
+- `connectDirect(host, port, user, auth, cols, rows, listener, hostKeyPrompt)`
+  — Quick Connect without saving to vault
 - `sendInput(sessionId, data)`
 - `resizeSession(sessionId, cols, rows)`
 - `disconnectSession(sessionId)`
 - `respondHostKey(requestId, accept)`
+
+### SFTP (batch-4)
+- `sftpOpen(hostId, hostKeyPrompt) -> sftpId`
+- `sftpClose(sftpId)`
+- `sftpList(sftpId, path) -> [SftpDirEntry]`
+- `sftpMkdir` / `sftpRename` / `sftpRemove` / `sftpRemoveDir` (non-recursive)
+- `sftpDownload(sftpId, remote, localPath, overwrite, listener) -> transferId`
+- `sftpUpload(sftpId, localPath, remote, overwrite, listener) -> transferId`
+- `sftpCancelTransfer(transferId)`
+- Foreign: `TransferListener.onTransfer(TransferProgress)`
+
+### Terminal (batch-7, `zeroterm-term` / alacritty_terminal)
+- `Terminal` Object: `new(cols, rows, scrollback)`, `feed(bytes)`,
+  `resize(cols, rows)`, `cols`/`rows`, `scrollDisplay(delta)`,
+  `scrollToBottom`, `displayOffset`, `viewportText`,
+  `takeDamage() -> DamageFrame?`, `snapshot() -> DamageFrame`
+- Records: `TermCell { ch, fg, bg, flags }`, `DamageLine`, `DamageFrame`
 
 ### Foreign callbacks (`with_foreign`)
 - `SessionListener` — `onData(bytes)`, `onClosed(exitCode?, message?)`
@@ -32,8 +62,9 @@ iOS) and Kotlin (Android, JVM).
 
 ### Error
 `FfiError` with `vaultLocked` / `authenticationFailed` /
-`notInitialized` / `alreadyExists` / `notFound { message }` /
-`other { message }`.
+`notInitialized` / `alreadyExists` / `notFound { detail }` /
+`other { detail }` (field is `detail` not `message`, to avoid
+Kotlin `Throwable.message` collisions).
 
 ## Building
 

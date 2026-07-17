@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Simple ">" chevron as placeholder brand mark -->
+    <path
+        android:fillColor="#5B9DFF"
+        android:pathData="M34,28 L74,54 L34,80 L34,68 L56,54 L34,40 Z" />
+</vector>

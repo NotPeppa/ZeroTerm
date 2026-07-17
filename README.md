@@ -4,7 +4,7 @@
 
 ZeroTerm 是一款面向开发者和运维的严肃终端工具。SSH/SFTP 协议栈、加密 vault、同步引擎全部用 Rust 写一遍，桌面端用 Tauri 2 + xterm.js 承载，移动端通过 uniffi 复用同一套核心。
 
-当前版本：**v0.1.10**（桌面端 macOS / Windows 已可用；移动端 FFI 绑定就绪，App 待实现）。
+当前版本：**v0.1.11**（桌面端 macOS / Windows 已可用；Android 客户端 M0–M7 主路径可用：终端 / SFTP / 片段 / WebDAV·SFTP·S3 同步）。
 
 ---
 
@@ -93,9 +93,11 @@ ZeroTerm/
 ├── desktop/                   # Tauri 2 桌面应用
 │   ├── frontend/              # 原生 HTML/JS + xterm.js
 │   └── src-tauri/             # Tauri 后端（commands / session / state）
+├── android/                   # Kotlin + Compose Android 客户端（RFC-003）
 ├── docs/                      # 手动测试记录（SFTP / WebDAV / S3）
 ├── RFC-001-architecture.md    # 整体架构 RFC
-└── RFC-002-sync-design.md     # 多端同步设计 RFC
+├── RFC-002-sync-design.md     # 多端同步设计 RFC
+└── RFC-003-android.md         # Android 设计 RFC
 ```
 
 ---

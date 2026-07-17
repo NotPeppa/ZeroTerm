@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ZeroTerm</string>
+    <string name="session_service_channel">SSH sessions</string>
+    <string name="session_service_title">ZeroTerm sessions active</string>
+</resources>

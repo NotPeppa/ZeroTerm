@@ -9,6 +9,7 @@ members = [
     "crates/zeroterm-app",
     "crates/zeroterm-ffi",
     "crates/zeroterm-sync",
+    "crates/zeroterm-term",
 ]
 
 [workspace.package]
@@ -71,6 +72,10 @@ uuid = { version = "1.10", features = ["v7"] }
 
 # FFI
 uniffi = { version = "0.28", features = ["cli", "tokio"] }
+
+# Terminal emulator (Apache-2.0) — pin like russh
+# Vendored 0.24.2: tty/event_loop disabled on Android (openpty NDK break).
+alacritty_terminal = { path = "vendor/alacritty_terminal", default-features = false }
 
 # Dev
 tempfile = "3"

@@ -20,8 +20,8 @@ pub use host_group::HostGroup;
 pub use port_forward::PortForwardRule;
 pub use snippet::Snippet;
 pub use sync::{
-    local_device_id, ConflictResolution, ConflictView, SyncBackend, SyncJoinOutcome, SyncManager,
-    SyncOutcome, SyncProfile, SyncStatus,
+    local_device_id, set_sync_known_hosts_path, ConflictResolution, ConflictView, SyncBackend,
+    SyncJoinOutcome, SyncManager, SyncOutcome, SyncProfile, SyncStatus,
 };
 
 // Re-exported so consumers can pattern-match on the inner vault error

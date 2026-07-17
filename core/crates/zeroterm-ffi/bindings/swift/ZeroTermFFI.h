@@ -272,6 +272,13 @@ typedef void (*UniffiCallbackInterfaceSessionListenerMethod1)(uint64_t, RustBuff
     );
 
 #endif
+#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_TRANSFER_LISTENER_METHOD0
+#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_TRANSFER_LISTENER_METHOD0
+typedef void (*UniffiCallbackInterfaceTransferListenerMethod0)(uint64_t, RustBuffer, void* _Nonnull, 
+        RustCallStatus *_Nonnull uniffiCallStatus
+    );
+
+#endif
 #ifndef UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_HOST_KEY_PROMPT_CALLBACK
 #define UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_HOST_KEY_PROMPT_CALLBACK
 typedef struct UniffiVTableCallbackInterfaceHostKeyPromptCallback {
@@ -287,6 +294,14 @@ typedef struct UniffiVTableCallbackInterfaceSessionListener {
     UniffiCallbackInterfaceSessionListenerMethod1 _Nonnull onClosed;
     UniffiCallbackInterfaceFree _Nonnull uniffiFree;
 } UniffiVTableCallbackInterfaceSessionListener;
+
+#endif
+#ifndef UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_TRANSFER_LISTENER
+#define UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_TRANSFER_LISTENER
+typedef struct UniffiVTableCallbackInterfaceTransferListener {
+    UniffiCallbackInterfaceTransferListenerMethod0 _Nonnull onTransfer;
+    UniffiCallbackInterfaceFree _Nonnull uniffiFree;
+} UniffiVTableCallbackInterfaceTransferListener;
 
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_CLONE_HOSTKEYPROMPTCALLBACK
@@ -334,6 +349,91 @@ void uniffi_zeroterm_ffi_fn_method_sessionlistener_on_data(void*_Nonnull ptr, Ru
 void uniffi_zeroterm_ffi_fn_method_sessionlistener_on_closed(void*_Nonnull ptr, RustBuffer exit_code, RustBuffer message, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_CLONE_TERMINAL
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_CLONE_TERMINAL
+void*_Nonnull uniffi_zeroterm_ffi_fn_clone_terminal(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_FREE_TERMINAL
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_FREE_TERMINAL
+void uniffi_zeroterm_ffi_fn_free_terminal(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_CONSTRUCTOR_TERMINAL_NEW
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_CONSTRUCTOR_TERMINAL_NEW
+void*_Nonnull uniffi_zeroterm_ffi_fn_constructor_terminal_new(uint16_t cols, uint16_t rows, uint32_t scrollback, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_TERMINAL_COLS
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_TERMINAL_COLS
+uint16_t uniffi_zeroterm_ffi_fn_method_terminal_cols(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_TERMINAL_DISPLAY_OFFSET
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_TERMINAL_DISPLAY_OFFSET
+uint32_t uniffi_zeroterm_ffi_fn_method_terminal_display_offset(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_TERMINAL_FEED
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_TERMINAL_FEED
+void uniffi_zeroterm_ffi_fn_method_terminal_feed(void*_Nonnull ptr, RustBuffer data, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_TERMINAL_RESIZE
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_TERMINAL_RESIZE
+void uniffi_zeroterm_ffi_fn_method_terminal_resize(void*_Nonnull ptr, uint16_t cols, uint16_t rows, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_TERMINAL_ROWS
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_TERMINAL_ROWS
+uint16_t uniffi_zeroterm_ffi_fn_method_terminal_rows(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_TERMINAL_SCROLL_DISPLAY
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_TERMINAL_SCROLL_DISPLAY
+void uniffi_zeroterm_ffi_fn_method_terminal_scroll_display(void*_Nonnull ptr, int32_t delta, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_TERMINAL_SCROLL_TO_BOTTOM
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_TERMINAL_SCROLL_TO_BOTTOM
+void uniffi_zeroterm_ffi_fn_method_terminal_scroll_to_bottom(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_TERMINAL_SNAPSHOT
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_TERMINAL_SNAPSHOT
+RustBuffer uniffi_zeroterm_ffi_fn_method_terminal_snapshot(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_TERMINAL_TAKE_DAMAGE
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_TERMINAL_TAKE_DAMAGE
+RustBuffer uniffi_zeroterm_ffi_fn_method_terminal_take_damage(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_TERMINAL_VIEWPORT_TEXT
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_TERMINAL_VIEWPORT_TEXT
+RustBuffer uniffi_zeroterm_ffi_fn_method_terminal_viewport_text(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_CLONE_TRANSFERLISTENER
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_CLONE_TRANSFERLISTENER
+void*_Nonnull uniffi_zeroterm_ffi_fn_clone_transferlistener(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_FREE_TRANSFERLISTENER
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_FREE_TRANSFERLISTENER
+void uniffi_zeroterm_ffi_fn_free_transferlistener(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_INIT_CALLBACK_VTABLE_TRANSFERLISTENER
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_INIT_CALLBACK_VTABLE_TRANSFERLISTENER
+void uniffi_zeroterm_ffi_fn_init_callback_vtable_transferlistener(UniffiVTableCallbackInterfaceTransferListener* _Nonnull vtable
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_TRANSFERLISTENER_ON_TRANSFER
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_TRANSFERLISTENER_ON_TRANSFER
+void uniffi_zeroterm_ffi_fn_method_transferlistener_on_transfer(void*_Nonnull ptr, RustBuffer event, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_CLONE_ZEROTERM
 #define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_CLONE_ZEROTERM
 void*_Nonnull uniffi_zeroterm_ffi_fn_clone_zeroterm(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
@@ -348,6 +448,11 @@ void uniffi_zeroterm_ffi_fn_free_zeroterm(void*_Nonnull ptr, RustCallStatus *_No
 #define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_CONSTRUCTOR_ZEROTERM_NEW
 void*_Nonnull uniffi_zeroterm_ffi_fn_constructor_zeroterm_new(RustCallStatus *_Nonnull out_status
     
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_CONNECT_DIRECT
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_CONNECT_DIRECT
+uint64_t uniffi_zeroterm_ffi_fn_method_zeroterm_connect_direct(void*_Nonnull ptr, RustBuffer host, uint16_t port, RustBuffer user, RustBuffer auth, uint16_t cols, uint16_t rows, void*_Nonnull listener, void*_Nonnull host_key_prompt
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_CONNECT_HOST
@@ -365,6 +470,21 @@ void uniffi_zeroterm_ffi_fn_method_zeroterm_create(void*_Nonnull ptr, RustBuffer
 void uniffi_zeroterm_ffi_fn_method_zeroterm_delete_host(void*_Nonnull ptr, RustBuffer id, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_DELETE_SNIPPET
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_DELETE_SNIPPET
+void uniffi_zeroterm_ffi_fn_method_zeroterm_delete_snippet(void*_Nonnull ptr, RustBuffer id, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_DELETE_SNIPPET_GROUP
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_DELETE_SNIPPET_GROUP
+uint32_t uniffi_zeroterm_ffi_fn_method_zeroterm_delete_snippet_group(void*_Nonnull ptr, RustBuffer group, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_DELETE_SYNC_PROFILE
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_DELETE_SYNC_PROFILE
+void uniffi_zeroterm_ffi_fn_method_zeroterm_delete_sync_profile(void*_Nonnull ptr, RustBuffer id, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_DISCONNECT_SESSION
 #define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_DISCONNECT_SESSION
 uint64_t uniffi_zeroterm_ffi_fn_method_zeroterm_disconnect_session(void*_Nonnull ptr, uint64_t session_id
@@ -375,9 +495,34 @@ uint64_t uniffi_zeroterm_ffi_fn_method_zeroterm_disconnect_session(void*_Nonnull
 void uniffi_zeroterm_ffi_fn_method_zeroterm_forget_keychain(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_GET_HOST
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_GET_HOST
+RustBuffer uniffi_zeroterm_ffi_fn_method_zeroterm_get_host(void*_Nonnull ptr, RustBuffer id, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_GET_SNIPPET
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_GET_SNIPPET
+RustBuffer uniffi_zeroterm_ffi_fn_method_zeroterm_get_snippet(void*_Nonnull ptr, RustBuffer id, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_LIST_HOSTS
 #define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_LIST_HOSTS
 RustBuffer uniffi_zeroterm_ffi_fn_method_zeroterm_list_hosts(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_LIST_OPEN_CONFLICTS
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_LIST_OPEN_CONFLICTS
+RustBuffer uniffi_zeroterm_ffi_fn_method_zeroterm_list_open_conflicts(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_LIST_SNIPPETS
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_LIST_SNIPPETS
+RustBuffer uniffi_zeroterm_ffi_fn_method_zeroterm_list_snippets(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_LIST_SYNC_PROFILES
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_LIST_SYNC_PROFILES
+RustBuffer uniffi_zeroterm_ffi_fn_method_zeroterm_list_sync_profiles(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_LOCK
@@ -385,9 +530,19 @@ RustBuffer uniffi_zeroterm_ffi_fn_method_zeroterm_list_hosts(void*_Nonnull ptr, 
 void uniffi_zeroterm_ffi_fn_method_zeroterm_lock(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_RENAME_SNIPPET_GROUP
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_RENAME_SNIPPET_GROUP
+uint32_t uniffi_zeroterm_ffi_fn_method_zeroterm_rename_snippet_group(void*_Nonnull ptr, RustBuffer old, RustBuffer new, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_RESIZE_SESSION
 #define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_RESIZE_SESSION
 uint64_t uniffi_zeroterm_ffi_fn_method_zeroterm_resize_session(void*_Nonnull ptr, uint64_t session_id, uint16_t cols, uint16_t rows
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_RESOLVE_CONFLICT
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_RESOLVE_CONFLICT
+void uniffi_zeroterm_ffi_fn_method_zeroterm_resolve_conflict(void*_Nonnull ptr, RustBuffer conflict_id, int8_t keep_local, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_RESPOND_HOST_KEY
@@ -400,14 +555,99 @@ void uniffi_zeroterm_ffi_fn_method_zeroterm_respond_host_key(void*_Nonnull ptr, 
 RustBuffer uniffi_zeroterm_ffi_fn_method_zeroterm_save_host(void*_Nonnull ptr, RustBuffer host, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SAVE_SNIPPET
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SAVE_SNIPPET
+RustBuffer uniffi_zeroterm_ffi_fn_method_zeroterm_save_snippet(void*_Nonnull ptr, RustBuffer input, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SAVE_SYNC_PROFILE
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SAVE_SYNC_PROFILE
+RustBuffer uniffi_zeroterm_ffi_fn_method_zeroterm_save_sync_profile(void*_Nonnull ptr, RustBuffer input, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SEND_INPUT
 #define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SEND_INPUT
 uint64_t uniffi_zeroterm_ffi_fn_method_zeroterm_send_input(void*_Nonnull ptr, uint64_t session_id, RustBuffer data
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SET_DATA_DIR
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SET_DATA_DIR
+void uniffi_zeroterm_ffi_fn_method_zeroterm_set_data_dir(void*_Nonnull ptr, RustBuffer path, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SET_VAULT_PATH
 #define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SET_VAULT_PATH
 void uniffi_zeroterm_ffi_fn_method_zeroterm_set_vault_path(void*_Nonnull ptr, RustBuffer path, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SFTP_CANCEL_TRANSFER
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SFTP_CANCEL_TRANSFER
+void uniffi_zeroterm_ffi_fn_method_zeroterm_sftp_cancel_transfer(void*_Nonnull ptr, uint64_t transfer_id, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SFTP_CLOSE
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SFTP_CLOSE
+uint64_t uniffi_zeroterm_ffi_fn_method_zeroterm_sftp_close(void*_Nonnull ptr, uint64_t sftp_id
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SFTP_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SFTP_DOWNLOAD
+uint64_t uniffi_zeroterm_ffi_fn_method_zeroterm_sftp_download(void*_Nonnull ptr, uint64_t sftp_id, RustBuffer remote, RustBuffer local_path, int8_t overwrite, void*_Nonnull listener
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SFTP_LIST
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SFTP_LIST
+uint64_t uniffi_zeroterm_ffi_fn_method_zeroterm_sftp_list(void*_Nonnull ptr, uint64_t sftp_id, RustBuffer path
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SFTP_MKDIR
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SFTP_MKDIR
+uint64_t uniffi_zeroterm_ffi_fn_method_zeroterm_sftp_mkdir(void*_Nonnull ptr, uint64_t sftp_id, RustBuffer path
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SFTP_OPEN
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SFTP_OPEN
+uint64_t uniffi_zeroterm_ffi_fn_method_zeroterm_sftp_open(void*_Nonnull ptr, RustBuffer host_id, void*_Nonnull host_key_prompt
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SFTP_REMOVE
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SFTP_REMOVE
+uint64_t uniffi_zeroterm_ffi_fn_method_zeroterm_sftp_remove(void*_Nonnull ptr, uint64_t sftp_id, RustBuffer path
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SFTP_REMOVE_DIR
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SFTP_REMOVE_DIR
+uint64_t uniffi_zeroterm_ffi_fn_method_zeroterm_sftp_remove_dir(void*_Nonnull ptr, uint64_t sftp_id, RustBuffer path
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SFTP_RENAME
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SFTP_RENAME
+uint64_t uniffi_zeroterm_ffi_fn_method_zeroterm_sftp_rename(void*_Nonnull ptr, uint64_t sftp_id, RustBuffer from, RustBuffer to
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SFTP_UPLOAD
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SFTP_UPLOAD
+uint64_t uniffi_zeroterm_ffi_fn_method_zeroterm_sftp_upload(void*_Nonnull ptr, uint64_t sftp_id, RustBuffer local_path, RustBuffer remote, int8_t overwrite, void*_Nonnull listener
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SYNC_CREATE_REPO
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SYNC_CREATE_REPO
+uint64_t uniffi_zeroterm_ffi_fn_method_zeroterm_sync_create_repo(void*_Nonnull ptr, RustBuffer profile_id, RustBuffer passphrase
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SYNC_JOIN_REPO
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SYNC_JOIN_REPO
+uint64_t uniffi_zeroterm_ffi_fn_method_zeroterm_sync_join_repo(void*_Nonnull ptr, RustBuffer profile_id, RustBuffer passphrase
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SYNC_NOW
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SYNC_NOW
+uint64_t uniffi_zeroterm_ffi_fn_method_zeroterm_sync_now(void*_Nonnull ptr, RustBuffer profile_id
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SYNC_STATUS
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_SYNC_STATUS
+uint64_t uniffi_zeroterm_ffi_fn_method_zeroterm_sync_status(void*_Nonnull ptr, RustBuffer profile_id
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_FN_METHOD_ZEROTERM_TRY_KEYCHAIN_UNLOCK
@@ -723,6 +963,78 @@ uint16_t uniffi_zeroterm_ffi_checksum_method_sessionlistener_on_closed(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_TERMINAL_COLS
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_TERMINAL_COLS
+uint16_t uniffi_zeroterm_ffi_checksum_method_terminal_cols(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_TERMINAL_DISPLAY_OFFSET
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_TERMINAL_DISPLAY_OFFSET
+uint16_t uniffi_zeroterm_ffi_checksum_method_terminal_display_offset(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_TERMINAL_FEED
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_TERMINAL_FEED
+uint16_t uniffi_zeroterm_ffi_checksum_method_terminal_feed(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_TERMINAL_RESIZE
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_TERMINAL_RESIZE
+uint16_t uniffi_zeroterm_ffi_checksum_method_terminal_resize(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_TERMINAL_ROWS
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_TERMINAL_ROWS
+uint16_t uniffi_zeroterm_ffi_checksum_method_terminal_rows(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_TERMINAL_SCROLL_DISPLAY
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_TERMINAL_SCROLL_DISPLAY
+uint16_t uniffi_zeroterm_ffi_checksum_method_terminal_scroll_display(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_TERMINAL_SCROLL_TO_BOTTOM
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_TERMINAL_SCROLL_TO_BOTTOM
+uint16_t uniffi_zeroterm_ffi_checksum_method_terminal_scroll_to_bottom(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_TERMINAL_SNAPSHOT
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_TERMINAL_SNAPSHOT
+uint16_t uniffi_zeroterm_ffi_checksum_method_terminal_snapshot(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_TERMINAL_TAKE_DAMAGE
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_TERMINAL_TAKE_DAMAGE
+uint16_t uniffi_zeroterm_ffi_checksum_method_terminal_take_damage(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_TERMINAL_VIEWPORT_TEXT
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_TERMINAL_VIEWPORT_TEXT
+uint16_t uniffi_zeroterm_ffi_checksum_method_terminal_viewport_text(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_TRANSFERLISTENER_ON_TRANSFER
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_TRANSFERLISTENER_ON_TRANSFER
+uint16_t uniffi_zeroterm_ffi_checksum_method_transferlistener_on_transfer(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_CONNECT_DIRECT
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_CONNECT_DIRECT
+uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_connect_direct(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_CONNECT_HOST
 #define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_CONNECT_HOST
 uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_connect_host(void
@@ -741,6 +1053,24 @@ uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_delete_host(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_DELETE_SNIPPET
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_DELETE_SNIPPET
+uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_delete_snippet(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_DELETE_SNIPPET_GROUP
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_DELETE_SNIPPET_GROUP
+uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_delete_snippet_group(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_DELETE_SYNC_PROFILE
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_DELETE_SYNC_PROFILE
+uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_delete_sync_profile(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_DISCONNECT_SESSION
 #define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_DISCONNECT_SESSION
 uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_disconnect_session(void
@@ -753,9 +1083,39 @@ uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_forget_keychain(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_GET_HOST
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_GET_HOST
+uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_get_host(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_GET_SNIPPET
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_GET_SNIPPET
+uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_get_snippet(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_LIST_HOSTS
 #define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_LIST_HOSTS
 uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_list_hosts(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_LIST_OPEN_CONFLICTS
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_LIST_OPEN_CONFLICTS
+uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_list_open_conflicts(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_LIST_SNIPPETS
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_LIST_SNIPPETS
+uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_list_snippets(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_LIST_SYNC_PROFILES
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_LIST_SYNC_PROFILES
+uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_list_sync_profiles(void
     
 );
 #endif
@@ -765,9 +1125,21 @@ uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_lock(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_RENAME_SNIPPET_GROUP
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_RENAME_SNIPPET_GROUP
+uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_rename_snippet_group(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_RESIZE_SESSION
 #define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_RESIZE_SESSION
 uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_resize_session(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_RESOLVE_CONFLICT
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_RESOLVE_CONFLICT
+uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_resolve_conflict(void
     
 );
 #endif
@@ -783,15 +1155,117 @@ uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_save_host(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SAVE_SNIPPET
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SAVE_SNIPPET
+uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_save_snippet(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SAVE_SYNC_PROFILE
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SAVE_SYNC_PROFILE
+uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_save_sync_profile(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SEND_INPUT
 #define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SEND_INPUT
 uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_send_input(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SET_DATA_DIR
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SET_DATA_DIR
+uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_set_data_dir(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SET_VAULT_PATH
 #define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SET_VAULT_PATH
 uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_set_vault_path(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SFTP_CANCEL_TRANSFER
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SFTP_CANCEL_TRANSFER
+uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_sftp_cancel_transfer(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SFTP_CLOSE
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SFTP_CLOSE
+uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_sftp_close(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SFTP_DOWNLOAD
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SFTP_DOWNLOAD
+uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_sftp_download(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SFTP_LIST
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SFTP_LIST
+uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_sftp_list(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SFTP_MKDIR
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SFTP_MKDIR
+uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_sftp_mkdir(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SFTP_OPEN
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SFTP_OPEN
+uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_sftp_open(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SFTP_REMOVE
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SFTP_REMOVE
+uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_sftp_remove(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SFTP_REMOVE_DIR
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SFTP_REMOVE_DIR
+uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_sftp_remove_dir(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SFTP_RENAME
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SFTP_RENAME
+uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_sftp_rename(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SFTP_UPLOAD
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SFTP_UPLOAD
+uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_sftp_upload(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SYNC_CREATE_REPO
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SYNC_CREATE_REPO
+uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_sync_create_repo(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SYNC_JOIN_REPO
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SYNC_JOIN_REPO
+uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_sync_join_repo(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SYNC_NOW
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SYNC_NOW
+uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_sync_now(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SYNC_STATUS
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_SYNC_STATUS
+uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_sync_status(void
     
 );
 #endif
@@ -810,6 +1284,12 @@ uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_unlock(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_VAULT_STATUS
 #define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_METHOD_ZEROTERM_VAULT_STATUS
 uint16_t uniffi_zeroterm_ffi_checksum_method_zeroterm_vault_status(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_CONSTRUCTOR_TERMINAL_NEW
+#define UNIFFI_FFIDEF_UNIFFI_ZEROTERM_FFI_CHECKSUM_CONSTRUCTOR_TERMINAL_NEW
+uint16_t uniffi_zeroterm_ffi_checksum_constructor_terminal_new(void
     
 );
 #endif

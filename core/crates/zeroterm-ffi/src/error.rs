@@ -28,14 +28,16 @@ pub enum FfiError {
     #[error("vault already exists")]
     AlreadyExists,
 
-    #[error("not found: {message}")]
-    NotFound { message: String },
+    // Field name is `detail` (not `message`) so Kotlin bindings don't
+    // collide with Throwable.message under Kotlin 2.0+.
+    #[error("not found: {detail}")]
+    NotFound { detail: String },
 
     /// Catch-all for anything that doesn't fit a more specific case —
-    /// IO errors, malformed records, name collisions, etc. The `message`
+    /// IO errors, malformed records, name collisions, etc. The `detail`
     /// is `Display` of the underlying error.
-    #[error("{message}")]
-    Other { message: String },
+    #[error("{detail}")]
+    Other { detail: String },
 }
 
 pub(crate) fn map_app_error(e: zeroterm_app::AppError) -> FfiError {
@@ -46,19 +48,19 @@ pub(crate) fn map_app_error(e: zeroterm_app::AppError) -> FfiError {
         AppError::Vault(VaultError::AuthenticationFailed) => FfiError::AuthenticationFailed,
         AppError::Vault(VaultError::NotInitialized) => FfiError::NotInitialized,
         AppError::Vault(VaultError::AlreadyExists) => FfiError::AlreadyExists,
-        AppError::Vault(VaultError::NotFound(s)) => FfiError::NotFound { message: s },
-        AppError::HostNotFound(s) => FfiError::NotFound { message: s },
+        AppError::Vault(VaultError::NotFound(s)) => FfiError::NotFound { detail: s },
+        AppError::HostNotFound(s) => FfiError::NotFound { detail: s },
         AppError::HostNameTaken(name) => FfiError::Other {
-            message: format!("host name '{name}' already taken"),
+            detail: format!("host name '{name}' already taken"),
         },
         other => FfiError::Other {
-            message: other.to_string(),
+            detail: other.to_string(),
         },
     }
 }
 
 pub(crate) fn other<E: std::fmt::Display>(e: E) -> FfiError {
     FfiError::Other {
-        message: e.to_string(),
+        detail: e.to_string(),
     }
 }

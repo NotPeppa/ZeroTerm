@@ -17,20 +17,37 @@ use zeroterm_ssh::{ChannelEvent, HostKeyPolicy, KnownHosts, PtySize, Session, Sh
 
 use crate::error::{map_app_error, other, FfiError};
 use crate::listener::{ForeignHostKeyPrompt, HostKeyPromptCallback, PendingMap, SessionListener};
-use crate::types::{host_input_to_host, host_to_summary, HostInput, HostSummary, VaultStatus};
+use crate::types::{
+    host_input_to_host, host_to_detail, host_to_summary, HostAuthInput, HostDetail, HostInput,
+    HostSummary, SnippetInput, SnippetRecord, VaultStatus,
+};
 
 /// Entry point for the FFI surface. Construct one per app process,
 /// store it in a long-lived holder on the host (a singleton, an
 /// `ObservableObject`, etc.).
 #[derive(uniffi::Object)]
 pub struct ZeroTerm {
-    inner: Mutex<Option<zeroterm_app::App>>,
+    /// Arc so sync engines can share the vault-backed store safely.
+    pub(crate) inner: Mutex<Option<Arc<zeroterm_app::App>>>,
     vault_path_override: Mutex<Option<PathBuf>>,
+    /// App-private data directory (Android `filesDir`, iOS Documents, etc.).
+    /// When set: default vault is `{data_dir}/zeroterm.vault` and known_hosts
+    /// is `{data_dir}/known_hosts`. Required on mobile where `$HOME` is missing.
+    data_dir: Mutex<Option<PathBuf>>,
 
     sessions: Arc<Mutex<HashMap<u64, SessionEntry>>>,
     next_session_id: AtomicU64,
 
-    pending_host_key: PendingMap,
+    pub(crate) pending_host_key: PendingMap,
+
+    /// Active SFTP channels (batch-4).
+    pub(crate) sftp_handles: crate::sftp::SftpMap,
+    pub(crate) next_sftp_id: AtomicU64,
+    pub(crate) transfer_cancels: crate::sftp::CancelMap,
+    pub(crate) next_transfer_id: AtomicU64,
+
+    /// Sync engines keyed by profile id (batch-6).
+    pub(crate) sync_manager: Arc<zeroterm_app::SyncManager>,
 }
 
 struct SessionEntry {
@@ -51,9 +68,15 @@ impl ZeroTerm {
         Arc::new(Self {
             inner: Mutex::new(None),
             vault_path_override: Mutex::new(None),
+            data_dir: Mutex::new(None),
             sessions: Arc::new(Mutex::new(HashMap::new())),
             next_session_id: AtomicU64::new(1),
             pending_host_key: Arc::new(Mutex::new(HashMap::new())),
+            sftp_handles: Arc::new(Mutex::new(HashMap::new())),
+            next_sftp_id: AtomicU64::new(1),
+            transfer_cancels: Arc::new(Mutex::new(HashMap::new())),
+            next_transfer_id: AtomicU64::new(1),
+            sync_manager: Arc::new(zeroterm_app::SyncManager::new()),
         })
     }
 
@@ -65,6 +88,23 @@ impl ZeroTerm {
             None
         } else {
             Some(PathBuf::from(path))
+        };
+    }
+
+    /// Set the app data directory used for vault + known_hosts when no
+    /// explicit vault path is set. Pass empty string to clear.
+    ///
+    /// On Android call with `context.filesDir.absolutePath` at startup
+    /// before any vault/session operations.
+    pub fn set_data_dir(&self, path: String) {
+        let mut guard = self.data_dir.lock().unwrap();
+        *guard = if path.is_empty() {
+            zeroterm_app::set_sync_known_hosts_path(None);
+            None
+        } else {
+            let p = PathBuf::from(&path);
+            zeroterm_app::set_sync_known_hosts_path(Some(p.join("known_hosts")));
+            Some(p)
         };
     }
 
@@ -83,7 +123,7 @@ impl ZeroTerm {
 
     pub fn unlock(&self, password: String, remember: bool) -> Result<(), FfiError> {
         let path = self.resolved_vault_path()?;
-        let app = zeroterm_app::App::open(&path, &password).map_err(map_app_error)?;
+        let app = Arc::new(zeroterm_app::App::open(&path, &password).map_err(map_app_error)?);
         *self.inner.lock().unwrap() = Some(app);
         if remember {
             if let Err(e) = zeroterm_app::keychain::save_master_password(&path, &password) {
@@ -96,14 +136,14 @@ impl ZeroTerm {
     pub fn create(&self, password: String, remember: bool) -> Result<(), FfiError> {
         if password.is_empty() {
             return Err(FfiError::Other {
-                message: "password cannot be empty".into(),
+                detail: "password cannot be empty".into(),
             });
         }
         let path = self.resolved_vault_path()?;
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(other)?;
         }
-        let app = zeroterm_app::App::create(&path, &password).map_err(map_app_error)?;
+        let app = Arc::new(zeroterm_app::App::create(&path, &password).map_err(map_app_error)?);
         *self.inner.lock().unwrap() = Some(app);
         if remember {
             if let Err(e) = zeroterm_app::keychain::save_master_password(&path, &password) {
@@ -115,6 +155,7 @@ impl ZeroTerm {
 
     pub fn lock(&self) {
         *self.inner.lock().unwrap() = None;
+        // Drop any live sync engines; re-join after next unlock.
     }
 
     /// Try to unlock the vault using the OS keychain-cached master
@@ -143,7 +184,7 @@ impl ZeroTerm {
         };
         match zeroterm_app::App::open(&path, &pw) {
             Ok(app) => {
-                *self.inner.lock().unwrap() = Some(app);
+                *self.inner.lock().unwrap() = Some(Arc::new(app));
                 Ok(true)
             }
             Err(zeroterm_app::AppError::Vault(zeroterm_app::VaultError::AuthenticationFailed)) => {
@@ -158,7 +199,7 @@ impl ZeroTerm {
     pub fn forget_keychain(&self) -> Result<(), FfiError> {
         let path = self.resolved_vault_path()?;
         zeroterm_app::keychain::forget_master_password(&path).map_err(|e| FfiError::Other {
-            message: e.to_string(),
+            detail: e.to_string(),
         })
     }
 
@@ -171,9 +212,41 @@ impl ZeroTerm {
         Ok(hosts.into_iter().map(host_to_summary).collect())
     }
 
+    pub fn get_host(&self, id: String) -> Result<HostDetail, FfiError> {
+        let guard = self.inner.lock().unwrap();
+        let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
+        let host = app
+            .find_host_by_id(&id)
+            .map_err(map_app_error)?
+            .ok_or_else(|| FfiError::NotFound {
+                detail: id.clone(),
+            })?;
+        Ok(host_to_detail(host))
+    }
+
+    /// Insert a new host (`host.id` ignored / empty) or update when
+    /// `host.id` is set. Forwards / ProxyJump from the existing record
+    /// are preserved on update.
     pub fn save_host(&self, host: HostInput) -> Result<String, FfiError> {
         let guard = self.inner.lock().unwrap();
         let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
+        if let Some(ref id) = host.id {
+            if !id.is_empty() {
+                let existing = app
+                    .find_host_by_id(id)
+                    .map_err(map_app_error)?
+                    .ok_or_else(|| FfiError::NotFound {
+                        detail: id.clone(),
+                    })?;
+                let mut h = host_input_to_host(host);
+                h.id = existing.id;
+                h.forwards = existing.forwards;
+                h.proxy_jump_host_id = existing.proxy_jump_host_id;
+                h.os_type = existing.os_type;
+                app.update_host(&h).map_err(map_app_error)?;
+                return Ok(h.id);
+            }
+        }
         let h = host_input_to_host(host);
         app.save_host(&h).map_err(map_app_error)
     }
@@ -182,6 +255,90 @@ impl ZeroTerm {
         let guard = self.inner.lock().unwrap();
         let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
         app.delete_host(&id).map_err(map_app_error)
+    }
+
+    // -- snippets ---------------------------------------------------------
+
+    pub fn list_snippets(&self) -> Result<Vec<SnippetRecord>, FfiError> {
+        let guard = self.inner.lock().unwrap();
+        let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
+        let list = app.list_snippets().map_err(map_app_error)?;
+        Ok(list
+            .into_iter()
+            .map(|s| SnippetRecord {
+                id: s.id,
+                title: s.title,
+                command: s.command,
+                group: s.group,
+                sort_order: s.sort_order,
+            })
+            .collect())
+    }
+
+    pub fn get_snippet(&self, id: String) -> Result<SnippetRecord, FfiError> {
+        let guard = self.inner.lock().unwrap();
+        let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
+        let s = app
+            .find_snippet_by_id(&id)
+            .map_err(map_app_error)?
+            .ok_or_else(|| FfiError::NotFound {
+                detail: id.clone(),
+            })?;
+        Ok(SnippetRecord {
+            id: s.id,
+            title: s.title,
+            command: s.command,
+            group: s.group,
+            sort_order: s.sort_order,
+        })
+    }
+
+    pub fn save_snippet(&self, input: SnippetInput) -> Result<String, FfiError> {
+        let guard = self.inner.lock().unwrap();
+        let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
+        if let Some(ref id) = input.id {
+            if !id.is_empty() {
+                let snip = zeroterm_app::Snippet {
+                    id: id.clone(),
+                    title: input.title,
+                    command: input.command,
+                    group: input.group,
+                    sort_order: input.sort_order,
+                };
+                app.update_snippet(&snip).map_err(map_app_error)?;
+                return Ok(id.clone());
+            }
+        }
+        let snip = zeroterm_app::Snippet {
+            id: String::new(),
+            title: input.title,
+            command: input.command,
+            group: input.group,
+            sort_order: input.sort_order,
+        };
+        app.save_snippet(&snip).map_err(map_app_error)
+    }
+
+    pub fn delete_snippet(&self, id: String) -> Result<(), FfiError> {
+        let guard = self.inner.lock().unwrap();
+        let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
+        app.delete_snippet(&id).map_err(map_app_error)
+    }
+
+    pub fn rename_snippet_group(&self, old: String, new: String) -> Result<u32, FfiError> {
+        let guard = self.inner.lock().unwrap();
+        let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
+        let n = app
+            .rename_snippet_group(&old, &new)
+            .map_err(map_app_error)?;
+        Ok(n as u32)
+    }
+
+    pub fn delete_snippet_group(&self, group: String) -> Result<u32, FfiError> {
+        let guard = self.inner.lock().unwrap();
+        let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
+        let n = app.delete_snippet_group(&group).map_err(map_app_error)?;
+        Ok(n as u32)
     }
 
     // -- sessions ---------------------------------------------------------
@@ -207,49 +364,58 @@ impl ZeroTerm {
             app.find_host_by_id(&host_id)
                 .map_err(map_app_error)?
                 .ok_or_else(|| FfiError::NotFound {
-                    message: host_id.clone(),
+                    detail: host_id.clone(),
                 })?
         };
+        self.spawn_session(&host, cols, rows, listener, host_key_prompt)
+            .await
+    }
 
-        let known_hosts = KnownHosts::at_default().ok_or_else(|| FfiError::Other {
-            message: "could not locate $HOME for known_hosts".into(),
-        })?;
-        let prompt = Arc::new(ForeignHostKeyPrompt {
-            foreign: host_key_prompt,
-            pending: self.pending_host_key.clone(),
-        });
-        let policy = HostKeyPolicy::Interactive {
-            store: known_hosts,
-            prompt,
-        };
-
-        let cfg = {
+    /// Quick Connect: connect without a saved vault host. Vault must still
+    /// be unlocked (session APIs live on the same object). Host is not
+    /// written to the vault.
+    pub async fn connect_direct(
+        &self,
+        host: String,
+        port: u16,
+        user: String,
+        auth: HostAuthInput,
+        cols: u16,
+        rows: u16,
+        listener: Arc<dyn SessionListener>,
+        host_key_prompt: Arc<dyn HostKeyPromptCallback>,
+    ) -> Result<u64, FfiError> {
+        // Require unlocked vault so mobile clients keep a consistent gate.
+        {
             let guard = self.inner.lock().unwrap();
-            let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
-            app.connect_config(&host, policy, Some(Duration::from_secs(15)))
+            guard.as_ref().ok_or(FfiError::VaultLocked)?;
+        }
+        let ephemeral = zeroterm_app::Host {
+            id: String::new(),
+            name: format!("{user}@{host}"),
+            host,
+            port: if port == 0 { 22 } else { port },
+            user,
+            auth: match auth {
+                HostAuthInput::Password { value } => {
+                    zeroterm_app::HostAuth::Password { value }
+                }
+                HostAuthInput::PrivateKey {
+                    key_pem,
+                    passphrase,
+                } => zeroterm_app::HostAuth::PrivateKey {
+                    key_pem,
+                    passphrase,
+                },
+                HostAuthInput::Agent => zeroterm_app::HostAuth::Agent,
+            },
+            os_type: None,
+            forwards: Vec::new(),
+            proxy_jump_host_id: None,
+            group_id: None,
         };
-
-        info!(host = %host.host, port = host.port, "ffi: connecting");
-        let mut session = Session::connect(cfg).await.map_err(other)?;
-
-        let pty = PtySize::new(cols.max(1), rows.max(1));
-        let channel = session.open_shell(pty).await.map_err(other)?;
-
-        let session_id = self.next_session_id.fetch_add(1, Ordering::SeqCst);
-        let (control_tx, control_rx) = mpsc::channel::<SessionCommand>(64);
-
-        let sessions = self.sessions.clone();
-        tokio::spawn(async move {
-            run_session_task(session_id, session, channel, control_rx, listener, sessions).await;
-        });
-
-        self.sessions
-            .lock()
-            .unwrap()
-            .insert(session_id, SessionEntry { control_tx });
-
-        info!(session_id, "ffi: session ready");
-        Ok(session_id)
+        self.spawn_session(&ephemeral, cols, rows, listener, host_key_prompt)
+            .await
     }
 
     pub async fn send_input(&self, session_id: u64, data: Vec<u8>) -> Result<(), FfiError> {
@@ -257,7 +423,7 @@ impl ZeroTerm {
         tx.send(SessionCommand::Input(data))
             .await
             .map_err(|_| FfiError::Other {
-                message: "session task closed".into(),
+                detail: "session task closed".into(),
             })
     }
 
@@ -295,7 +461,7 @@ impl ZeroTerm {
                 Ok(())
             }
             None => Err(FfiError::NotFound {
-                message: format!("no pending host-key prompt for id {request_id}"),
+                detail: format!("no pending host-key prompt for id {request_id}"),
             }),
         }
     }
@@ -306,12 +472,74 @@ impl ZeroTerm {
 // --------------------------------------------------------------------------
 
 impl ZeroTerm {
+    pub(crate) fn resolved_known_hosts(&self) -> Result<KnownHosts, FfiError> {
+        if let Some(dir) = self.data_dir.lock().unwrap().clone() {
+            if let Err(e) = std::fs::create_dir_all(&dir) {
+                return Err(other(e));
+            }
+            return Ok(KnownHosts::new(dir.join("known_hosts")));
+        }
+        KnownHosts::at_default().ok_or_else(|| FfiError::Other {
+            detail: "could not locate $HOME for known_hosts; call setDataDir first".into(),
+        })
+    }
+
+    async fn spawn_session(
+        &self,
+        host: &zeroterm_app::Host,
+        cols: u16,
+        rows: u16,
+        listener: Arc<dyn SessionListener>,
+        host_key_prompt: Arc<dyn HostKeyPromptCallback>,
+    ) -> Result<u64, FfiError> {
+        let known_hosts = self.resolved_known_hosts()?;
+        let prompt = Arc::new(ForeignHostKeyPrompt {
+            foreign: host_key_prompt,
+            pending: self.pending_host_key.clone(),
+        });
+        let policy = HostKeyPolicy::Interactive {
+            store: known_hosts,
+            prompt,
+        };
+
+        let cfg = {
+            let guard = self.inner.lock().unwrap();
+            let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
+            app.connect_config(host, policy, Some(Duration::from_secs(15)))
+        };
+
+        info!(host = %host.host, port = host.port, "ffi: connecting");
+        let mut session = Session::connect(cfg).await.map_err(other)?;
+
+        let pty = PtySize::new(cols.max(1), rows.max(1));
+        let channel = session.open_shell(pty).await.map_err(other)?;
+
+        let session_id = self.next_session_id.fetch_add(1, Ordering::SeqCst);
+        let (control_tx, control_rx) = mpsc::channel::<SessionCommand>(64);
+
+        let sessions = self.sessions.clone();
+        tokio::spawn(async move {
+            run_session_task(session_id, session, channel, control_rx, listener, sessions).await;
+        });
+
+        self.sessions
+            .lock()
+            .unwrap()
+            .insert(session_id, SessionEntry { control_tx });
+
+        info!(session_id, "ffi: session ready");
+        Ok(session_id)
+    }
+
     fn resolved_vault_path(&self) -> Result<PathBuf, FfiError> {
         if let Some(p) = self.vault_path_override.lock().unwrap().clone() {
             return Ok(p);
         }
+        if let Some(dir) = self.data_dir.lock().unwrap().clone() {
+            return Ok(dir.join("zeroterm.vault"));
+        }
         zeroterm_app::default_vault_path().ok_or(FfiError::Other {
-            message: "no default vault path on this OS".into(),
+            detail: "no default vault path on this OS; call setDataDir first".into(),
         })
     }
 
@@ -322,7 +550,7 @@ impl ZeroTerm {
             .get(&session_id)
             .map(|e| e.control_tx.clone())
             .ok_or_else(|| FfiError::NotFound {
-                message: format!("session {session_id}"),
+                detail: format!("session {session_id}"),
             })
     }
 

@@ -10,14 +10,16 @@ name = "zeroterm_ffi"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [dependencies]
-zeroterm-app = { path = "../zeroterm-app" }
+zeroterm-app = { path = "../zeroterm-app", features = ["webdav-backend", "s3-backend"] }
 zeroterm-vault = { path = "../zeroterm-vault" }
 zeroterm-ssh = { path = "../zeroterm-ssh" }
+zeroterm-term = { path = "../zeroterm-term" }
 
 uniffi = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 async-trait = { workspace = true }
 uuid = { workspace = true }
 

@@ -26,3 +26,13 @@ desktop/src-tauri/gen/
 desktop/node_modules/
 desktop/dist/
 
+# Android
+android/.gradle/
+android/local.properties
+android/**/build/
+android/app/src/main/jniLibs/
+# uniffi bindings under app are build copies; source of truth is core/
+android/app/src/main/java/com/zeroterm/ffi/
+
+# Keep vendored crates (alacritty_terminal Android patch)
+

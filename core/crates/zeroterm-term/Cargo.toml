@@ -1,0 +1,11 @@
+[package]
+name = "zeroterm-term"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "VT terminal emulator wrapper (alacritty_terminal) for mobile FFI"
+
+[dependencies]
+alacritty_terminal = { workspace = true }
+vte = { version = "0.13", default-features = false, features = ["ansi"] }
+unicode-width = "0.1"
