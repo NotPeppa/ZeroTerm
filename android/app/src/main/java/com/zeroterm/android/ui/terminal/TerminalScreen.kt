@@ -30,11 +30,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.VerticalAlignBottom
@@ -42,6 +47,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -66,11 +72,14 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
@@ -85,6 +94,7 @@ import com.zeroterm.android.data.SessionManager
 import com.zeroterm.android.data.SettingsSnapshot
 import com.zeroterm.android.data.ZeroTermRepository
 import com.zeroterm.android.terminal.CustomTerminalTheme
+import com.zeroterm.android.terminal.ExtraKeyId
 import com.zeroterm.android.terminal.TermKeys
 import com.zeroterm.android.terminal.TerminalHostView
 import com.zeroterm.android.terminal.TerminalPalettes
@@ -122,6 +132,8 @@ fun TerminalScreen(
     val frameTick by sessions.frameTick.collectAsState()
     var termView by remember { mutableStateOf<TerminalHostView?>(null) }
     var ctrlSticky by remember { mutableStateOf(false) }
+    var altSticky by remember { mutableStateOf(false) }
+    var shiftSticky by remember { mutableStateOf(false) }
     var lastCols by remember { mutableStateOf(80) }
     var lastRows by remember { mutableStateOf(24) }
     var started by remember { mutableStateOf(false) }
@@ -133,6 +145,9 @@ fun TerminalScreen(
     var toolsPage by remember { mutableStateOf(TerminalToolsPage.Ai) }
     val settingsSnap by (settings?.flow ?: kotlinx.coroutines.flow.flowOf(SettingsSnapshot()))
         .collectAsState(initial = SettingsSnapshot())
+    val enabledExtraKeys = remember(settingsSnap.terminalExtraKeysCsv) {
+        ExtraKeyId.parseCsv(settingsSnap.terminalExtraKeysCsv)
+    }
     val isSystemDark = (context.resources.configuration.uiMode and
         android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
         android.content.res.Configuration.UI_MODE_NIGHT_YES
@@ -480,6 +495,9 @@ fun TerminalScreen(
                     hasSelection = hasSelection,
                     scrolledBack = scrolledBack,
                     ctrlSticky = ctrlSticky,
+                    altSticky = altSticky,
+                    shiftSticky = shiftSticky,
+                    enabledExtraKeys = enabledExtraKeys,
                     lastCols = lastCols,
                     lastRows = lastRows,
                     fontSizeSp = fontSizeSp,
@@ -491,6 +509,8 @@ fun TerminalScreen(
                     termView = termView,
                     onTermViewChanged = { termView = it },
                     onCtrlStickyChanged = { ctrlSticky = it },
+                    onAltStickyChanged = { altSticky = it },
+                    onShiftStickyChanged = { shiftSticky = it },
                     onSelectionChanged = { hasSelection = it },
                     onScrolledBackChanged = { scrolledBack = it },
                     onSizeChanged = { cols, rows -> lastCols = cols; lastRows = rows },
@@ -523,6 +543,9 @@ private fun TerminalContent(
     hasSelection: Boolean,
     scrolledBack: Boolean,
     ctrlSticky: Boolean,
+    altSticky: Boolean,
+    shiftSticky: Boolean,
+    enabledExtraKeys: List<ExtraKeyId>,
     lastCols: Int,
     lastRows: Int,
     fontSizeSp: Float,
@@ -534,6 +557,8 @@ private fun TerminalContent(
     termView: TerminalHostView?,
     onTermViewChanged: (TerminalHostView) -> Unit,
     onCtrlStickyChanged: (Boolean) -> Unit,
+    onAltStickyChanged: (Boolean) -> Unit,
+    onShiftStickyChanged: (Boolean) -> Unit,
     onSelectionChanged: (Boolean) -> Unit,
     onScrolledBackChanged: (Boolean) -> Unit,
     onSizeChanged: (Int, Int) -> Unit,
@@ -552,6 +577,8 @@ private fun TerminalContent(
 ) {
     val scope = rememberCoroutineScope()
     val latestCtrlSticky by rememberUpdatedState(ctrlSticky)
+    val latestAltSticky by rememberUpdatedState(altSticky)
+    val latestShiftSticky by rememberUpdatedState(shiftSticky)
     val latestCols by rememberUpdatedState(lastCols)
     val latestRows by rememberUpdatedState(lastRows)
     // AppBackground already draws the custom image under the whole NavHost.
@@ -634,27 +661,14 @@ private fun TerminalContent(
                 ),
         ) {
             disconnectedMsg?.let { msg ->
-                Surface(
-                    color = MaterialTheme.colorScheme.errorContainer,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Text(
-                            msg,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Button(onClick = onReconnect, enabled = !connecting) {
-                            Text(stringResource(R.string.terminal_reconnect))
-                        }
-                    }
-                }
+                DisconnectBanner(
+                    message = msg,
+                    connecting = connecting,
+                    onReconnect = onReconnect,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                )
             }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 AndroidView(
@@ -674,15 +688,28 @@ private fun TerminalContent(
                                         onScrolledBackChanged(false)
                                         onRefreshPaint()
                                     }
-                                    if (latestCtrlSticky && text.length == 1) {
-                                        val ch = text[0]
+                                    var payload = text
+                                    if (latestCtrlSticky && payload.length == 1) {
+                                        val ch = payload[0]
                                         if (ch in 'a'..'z' || ch in 'A'..'Z') {
                                             sessions.sendInput(TermKeys.ctrl(ch))
                                             onCtrlStickyChanged(false)
+                                            onShiftStickyChanged(false)
                                             return@launch
                                         }
                                     }
-                                    sessions.sendText(text)
+                                    if (latestShiftSticky && payload.length == 1) {
+                                        val ch = payload[0]
+                                        if (ch in 'a'..'z') {
+                                            payload = ch.uppercaseChar().toString()
+                                            onShiftStickyChanged(false)
+                                        }
+                                    }
+                                    if (latestAltSticky && payload.isNotEmpty()) {
+                                        onAltStickyChanged(false)
+                                        payload = "\u001b$payload"
+                                    }
+                                    sessions.sendText(payload)
                                 }
                             }
                             v.onKeyBytes = { bytes ->
@@ -724,19 +751,17 @@ private fun TerminalContent(
                     CircularProgressIndicator(Modifier.align(Alignment.Center))
                 }
                 if (error != null && active == null && disconnectedMsg == null) {
-                    Column(
-                        Modifier.align(Alignment.Center).padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Text(error!!, color = MaterialTheme.colorScheme.error)
-                        Button(
-                            onClick = onReconnect,
-                            enabled = !connecting,
-                            modifier = Modifier.padding(top = 8.dp),
-                        ) {
-                            Text(stringResource(R.string.common_retry))
-                        }
-                    }
+                    DisconnectBanner(
+                        message = error!!,
+                        connecting = connecting,
+                        onReconnect = onReconnect,
+                        title = stringResource(R.string.common_retry),
+                        actionLabel = stringResource(R.string.common_retry),
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(16.dp)
+                            .fillMaxWidth(0.92f),
+                    )
                 }
                 if (active != null) {
                     Box(
@@ -756,10 +781,41 @@ private fun TerminalContent(
                 }
             }
             ExtraKeysBar(
+                enabledKeys = enabledExtraKeys,
                 ctrlSticky = ctrlSticky,
+                altSticky = altSticky,
+                shiftSticky = shiftSticky,
                 onCtrl = { onCtrlStickyChanged(!ctrlSticky) },
-                onBytes = { scope.launch { sessions.sendInput(it) } },
-                onText = { scope.launch { sessions.sendText(it) } },
+                onAlt = { onAltStickyChanged(!altSticky) },
+                onShift = { onShiftStickyChanged(!shiftSticky) },
+                onBytes = { bytes ->
+                    scope.launch {
+                        // Shift+Tab → reverse tab
+                        if (latestShiftSticky && bytes.contentEquals(TermKeys.tab())) {
+                            onShiftStickyChanged(false)
+                            sessions.sendInput("\u001b[Z".toByteArray())
+                        } else {
+                            sessions.sendInput(bytes)
+                        }
+                    }
+                },
+                onText = { text ->
+                    scope.launch {
+                        var payload = text
+                        if (latestShiftSticky && payload.length == 1) {
+                            val ch = payload[0]
+                            if (ch in 'a'..'z') {
+                                payload = ch.uppercaseChar().toString()
+                                onShiftStickyChanged(false)
+                            }
+                        }
+                        if (latestAltSticky && payload.isNotEmpty()) {
+                            onAltStickyChanged(false)
+                            payload = "\u001b$payload"
+                        }
+                        sessions.sendText(payload)
+                    }
+                },
                 onPaste = onPaste,
                 onCopy = onCopy,
                 onScrollUp = {
@@ -913,9 +969,105 @@ private fun extractUrl(text: String): String? {
 }
 
 @Composable
+private fun DisconnectBanner(
+    message: String,
+    connecting: Boolean,
+    onReconnect: () -> Unit,
+    modifier: Modifier = Modifier,
+    title: String = stringResource(R.string.terminal_disconnected_title),
+    actionLabel: String = stringResource(R.string.terminal_reconnect),
+) {
+    val shape = RoundedCornerShape(14.dp)
+    Surface(
+        modifier = modifier,
+        shape = shape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f),
+        border = BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.error.copy(alpha = 0.28f),
+        ),
+        tonalElevation = 1.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Surface(
+                color = MaterialTheme.colorScheme.error.copy(alpha = 0.14f),
+                shape = CircleShape,
+                border = BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.error.copy(alpha = 0.22f),
+                ),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.LinkOff,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier
+                        .padding(8.dp)
+                        .size(18.dp),
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = if (connecting) {
+                        stringResource(R.string.terminal_reconnecting)
+                    } else {
+                        title
+                    },
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            FilledTonalButton(
+                onClick = onReconnect,
+                enabled = !connecting,
+                shape = RoundedCornerShape(10.dp),
+            ) {
+                if (connecting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(14.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                } else {
+                    Icon(
+                        Icons.Default.Refresh,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                }
+                Text(actionLabel)
+            }
+        }
+    }
+}
+
+@Composable
 private fun ExtraKeysBar(
+    enabledKeys: List<ExtraKeyId>,
     ctrlSticky: Boolean,
+    altSticky: Boolean,
+    shiftSticky: Boolean,
     onCtrl: () -> Unit,
+    onAlt: () -> Unit,
+    onShift: () -> Unit,
     onBytes: (ByteArray) -> Unit,
     onText: (String) -> Unit,
     onPaste: () -> Unit,
@@ -923,7 +1075,16 @@ private fun ExtraKeysBar(
     onScrollUp: () -> Unit,
     onScrollDown: () -> Unit,
 ) {
-    Surface(tonalElevation = 2.dp) {
+    // Match ZeroTopBar chrome transparency so bottom keys bar blends the same way.
+    val transparency = LocalChromeTransparency.current.topBar.coerceIn(0f, 0.8f)
+    val containerAlpha = 1f - transparency
+    val keys = enabledKeys.ifEmpty { ExtraKeyId.DEFAULT_ENABLED }
+    Surface(
+        color = MaterialTheme.colorScheme.background.copy(alpha = containerAlpha),
+        contentColor = MaterialTheme.colorScheme.onBackground,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+    ) {
         Row(
             Modifier
                 .fillMaxWidth()
@@ -933,37 +1094,79 @@ private fun ExtraKeysBar(
             horizontalArrangement = Arrangement.spacedBy(2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            KeyBtn("Esc") { onBytes(TermKeys.esc()) }
-            KeyBtn("Tab") { onBytes(TermKeys.tab()) }
-            KeyBtn("Ctrl", highlight = ctrlSticky) { onCtrl() }
-            KeyBtn("↑") { onBytes(TermKeys.up()) }
-            KeyBtn("↓") { onBytes(TermKeys.down()) }
-            KeyBtn("←") { onBytes(TermKeys.left()) }
-            KeyBtn("→") { onBytes(TermKeys.right()) }
-            KeyBtn("PgUp") { onBytes(TermKeys.pgUp()) }
-            KeyBtn("PgDn") { onBytes(TermKeys.pgDn()) }
-            KeyBtn("Scr↑") { onScrollUp() }
-            KeyBtn("Scr↓") { onScrollDown() }
-            KeyBtn(stringResource(R.string.terminal_key_copy)) { onCopy() }
-            KeyBtn(stringResource(R.string.terminal_key_paste)) { onPaste() }
-            KeyBtn("|") { onText("|") }
-            KeyBtn("~") { onText("~") }
-            KeyBtn("-") { onText("-") }
-            KeyBtn("/") { onText("/") }
+            keys.forEach { id ->
+                when (id) {
+                    ExtraKeyId.ESC -> KeyBtn("Esc") { onBytes(TermKeys.esc()) }
+                    ExtraKeyId.TAB -> KeyBtn("Tab") { onBytes(TermKeys.tab()) }
+                    ExtraKeyId.CTRL -> KeyBtn(stringResource(R.string.terminal_key_ctrl), highlight = ctrlSticky, onClick = onCtrl)
+                    ExtraKeyId.ALT -> KeyBtn(stringResource(R.string.terminal_key_alt), highlight = altSticky, onClick = onAlt)
+                    ExtraKeyId.SHIFT -> KeyBtn(stringResource(R.string.terminal_key_shift), highlight = shiftSticky, onClick = onShift)
+                    ExtraKeyId.ENTER -> KeyBtn(stringResource(R.string.terminal_key_enter)) { onBytes(TermKeys.enter()) }
+                    ExtraKeyId.BACKSPACE -> KeyBtn(stringResource(R.string.terminal_key_backspace)) { onBytes(TermKeys.backspace()) }
+                    ExtraKeyId.DELETE -> KeyBtn(stringResource(R.string.terminal_key_delete)) { onBytes(TermKeys.delete()) }
+                    ExtraKeyId.INSERT -> KeyBtn(stringResource(R.string.terminal_key_insert)) { onBytes(TermKeys.insert()) }
+                    ExtraKeyId.UP -> KeyBtn("↑") { onBytes(TermKeys.up()) }
+                    ExtraKeyId.DOWN -> KeyBtn("↓") { onBytes(TermKeys.down()) }
+                    ExtraKeyId.LEFT -> KeyBtn("←") { onBytes(TermKeys.left()) }
+                    ExtraKeyId.RIGHT -> KeyBtn("→") { onBytes(TermKeys.right()) }
+                    ExtraKeyId.HOME -> KeyBtn(stringResource(R.string.terminal_key_home)) { onBytes(TermKeys.home()) }
+                    ExtraKeyId.END -> KeyBtn(stringResource(R.string.terminal_key_end)) { onBytes(TermKeys.end()) }
+                    ExtraKeyId.PGUP -> KeyBtn(stringResource(R.string.terminal_key_pgup)) { onBytes(TermKeys.pgUp()) }
+                    ExtraKeyId.PGDN -> KeyBtn(stringResource(R.string.terminal_key_pgdn)) { onBytes(TermKeys.pgDn()) }
+                    ExtraKeyId.SCR_UP -> KeyBtn(stringResource(R.string.terminal_key_scr_up), onClick = onScrollUp)
+                    ExtraKeyId.SCR_DOWN -> KeyBtn(stringResource(R.string.terminal_key_scr_down), onClick = onScrollDown)
+                    ExtraKeyId.COPY -> KeyBtn(stringResource(R.string.terminal_key_copy), onClick = onCopy)
+                    ExtraKeyId.PASTE -> KeyBtn(stringResource(R.string.terminal_key_paste), onClick = onPaste)
+                    ExtraKeyId.F1 -> KeyBtn("F1") { onBytes(TermKeys.f1()) }
+                    ExtraKeyId.F2 -> KeyBtn("F2") { onBytes(TermKeys.f2()) }
+                    ExtraKeyId.F3 -> KeyBtn("F3") { onBytes(TermKeys.f3()) }
+                    ExtraKeyId.F4 -> KeyBtn("F4") { onBytes(TermKeys.f4()) }
+                    ExtraKeyId.F5 -> KeyBtn("F5") { onBytes(TermKeys.f5()) }
+                    ExtraKeyId.F6 -> KeyBtn("F6") { onBytes(TermKeys.f6()) }
+                    ExtraKeyId.F7 -> KeyBtn("F7") { onBytes(TermKeys.f7()) }
+                    ExtraKeyId.F8 -> KeyBtn("F8") { onBytes(TermKeys.f8()) }
+                    ExtraKeyId.F9 -> KeyBtn("F9") { onBytes(TermKeys.f9()) }
+                    ExtraKeyId.F10 -> KeyBtn("F10") { onBytes(TermKeys.f10()) }
+                    ExtraKeyId.F11 -> KeyBtn("F11") { onBytes(TermKeys.f11()) }
+                    ExtraKeyId.F12 -> KeyBtn("F12") { onBytes(TermKeys.f12()) }
+                }
+            }
         }
     }
 }
 
 @Composable
 private fun KeyBtn(label: String, highlight: Boolean = false, onClick: () -> Unit) {
-    TextButton(
+    val shape = RoundedCornerShape(10.dp)
+    Surface(
         onClick = onClick,
-        modifier = Modifier.height(40.dp),
+        shape = shape,
+        color = if (highlight) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            Color.Transparent
+        },
+        contentColor = if (highlight) {
+            MaterialTheme.colorScheme.onPrimaryContainer
+        } else {
+            MaterialTheme.colorScheme.onSurface
+        },
+        border = if (highlight) {
+            BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.55f))
+        } else {
+            null
+        },
+        modifier = Modifier.height(36.dp),
     ) {
-        Text(
-            label,
-            color = if (highlight) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.onSurface,
-        )
+        Box(
+            modifier = Modifier.padding(horizontal = 12.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = if (highlight) FontWeight.SemiBold else FontWeight.Medium,
+            )
+        }
     }
 }

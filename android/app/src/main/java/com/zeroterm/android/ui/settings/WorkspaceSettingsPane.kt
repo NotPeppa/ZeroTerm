@@ -28,6 +28,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material.icons.Icons
@@ -89,6 +91,7 @@ import com.zeroterm.android.data.AppSettings
 import com.zeroterm.android.data.SettingsSnapshot
 import com.zeroterm.android.data.UpdateCheckResult
 import com.zeroterm.android.data.UpdateChecker
+import com.zeroterm.android.terminal.ExtraKeyId
 import com.zeroterm.android.ui.components.ZeroSectionCard
 import com.zeroterm.android.ui.components.ZeroTopBar
 import com.zeroterm.ffi.ZeroTerm
@@ -110,10 +113,14 @@ fun WorkspaceSettingsPane(
 ) {
     val context = LocalContext.current
     val powerManager = context.getSystemService(PowerManager::class.java)
-    val isFlyme = remember {
-        Build.MANUFACTURER.equals("Meizu", ignoreCase = true) ||
-            Build.BRAND.equals("Meizu", ignoreCase = true)
+    val deviceLabel = remember {
+        listOf(Build.MANUFACTURER, Build.MODEL)
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .joinToString(" ")
+            .ifBlank { Build.DEVICE }
     }
+    val isFlyme = remember { isFlymeDevice() }
     var batteryOptimizationIgnored by remember {
         mutableStateOf(powerManager.isIgnoringBatteryOptimizations(context.packageName))
     }
@@ -396,6 +403,13 @@ fun WorkspaceSettingsPane(
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        if (deviceLabel.isNotBlank()) {
+                            Text(
+                                stringResource(R.string.settings_background_device_model, deviceLabel),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                         Button(
                             enabled = !batteryOptimizationIgnored,
                             onClick = {
@@ -428,6 +442,12 @@ fun WorkspaceSettingsPane(
                             OutlinedButton(onClick = { openFlymeBackgroundManager(context) }) {
                                 Text(stringResource(R.string.settings_flyme_background_action))
                             }
+                        } else {
+                            Text(
+                                stringResource(R.string.settings_background_vendor_help),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                 }
@@ -459,6 +479,12 @@ fun WorkspaceSettingsPane(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                    ExtraKeysSettingsCard(
+                        enabledCsv = snap.terminalExtraKeysCsv,
+                        onChange = { csv ->
+                            scope.launch { settings.setTerminalExtraKeysCsv(csv) }
+                        },
+                    )
                 }
 
                 WorkspaceSettingsPage.About -> {
@@ -467,6 +493,101 @@ fun WorkspaceSettingsPane(
             }
         }
     }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ExtraKeysSettingsCard(
+    enabledCsv: String,
+    onChange: (String) -> Unit,
+) {
+    val enabled = remember(enabledCsv) {
+        ExtraKeyId.parseCsv(enabledCsv).toSet()
+    }
+    ZeroSectionCard(
+        title = stringResource(R.string.settings_extra_keys_title),
+        translucent = true,
+    ) {
+        Text(
+            stringResource(R.string.settings_extra_keys_help),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            stringResource(R.string.settings_extra_keys_count, enabled.size),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OutlinedButton(
+                onClick = { onChange(ExtraKeyId.toCsv(ExtraKeyId.entries)) },
+            ) {
+                Text(stringResource(R.string.settings_extra_keys_select_all))
+            }
+            TextButton(
+                onClick = { onChange(ExtraKeyId.toCsv(ExtraKeyId.DEFAULT_ENABLED)) },
+            ) {
+                Text(stringResource(R.string.settings_extra_keys_reset))
+            }
+        }
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            ExtraKeyId.entries.forEach { key ->
+                val selected = key in enabled
+                FilterChip(
+                    selected = selected,
+                    onClick = {
+                        val next = enabled.toMutableSet()
+                        if (selected) next.remove(key) else next.add(key)
+                        onChange(ExtraKeyId.toCsv(next))
+                    },
+                    label = { Text(extraKeySettingsLabel(key)) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun extraKeySettingsLabel(id: ExtraKeyId): String = when (id) {
+    ExtraKeyId.ESC -> "Esc"
+    ExtraKeyId.TAB -> "Tab"
+    ExtraKeyId.CTRL -> stringResource(R.string.terminal_key_ctrl)
+    ExtraKeyId.ALT -> stringResource(R.string.terminal_key_alt)
+    ExtraKeyId.SHIFT -> stringResource(R.string.terminal_key_shift)
+    ExtraKeyId.ENTER -> stringResource(R.string.terminal_key_enter)
+    ExtraKeyId.BACKSPACE -> stringResource(R.string.terminal_key_backspace)
+    ExtraKeyId.DELETE -> stringResource(R.string.terminal_key_delete)
+    ExtraKeyId.INSERT -> stringResource(R.string.terminal_key_insert)
+    ExtraKeyId.UP -> "↑"
+    ExtraKeyId.DOWN -> "↓"
+    ExtraKeyId.LEFT -> "←"
+    ExtraKeyId.RIGHT -> "→"
+    ExtraKeyId.HOME -> stringResource(R.string.terminal_key_home)
+    ExtraKeyId.END -> stringResource(R.string.terminal_key_end)
+    ExtraKeyId.PGUP -> stringResource(R.string.terminal_key_pgup)
+    ExtraKeyId.PGDN -> stringResource(R.string.terminal_key_pgdn)
+    ExtraKeyId.SCR_UP -> stringResource(R.string.terminal_key_scr_up)
+    ExtraKeyId.SCR_DOWN -> stringResource(R.string.terminal_key_scr_down)
+    ExtraKeyId.COPY -> stringResource(R.string.terminal_key_copy)
+    ExtraKeyId.PASTE -> stringResource(R.string.terminal_key_paste)
+    ExtraKeyId.F1 -> "F1"
+    ExtraKeyId.F2 -> "F2"
+    ExtraKeyId.F3 -> "F3"
+    ExtraKeyId.F4 -> "F4"
+    ExtraKeyId.F5 -> "F5"
+    ExtraKeyId.F6 -> "F6"
+    ExtraKeyId.F7 -> "F7"
+    ExtraKeyId.F8 -> "F8"
+    ExtraKeyId.F9 -> "F9"
+    ExtraKeyId.F10 -> "F10"
+    ExtraKeyId.F11 -> "F11"
+    ExtraKeyId.F12 -> "F12"
 }
 
 @Composable
@@ -922,6 +1043,54 @@ private fun workspaceLocaleLabel(locale: AppLocale): String = when (locale) {
     AppLocale.System -> stringResource(R.string.settings_language_system)
     AppLocale.English -> stringResource(R.string.settings_language_en)
     AppLocale.ChineseSimplified -> stringResource(R.string.settings_language_zh_cn)
+}
+
+/**
+ * Detect Flyme OS (Meizu). Prefer system markers over brand alone so
+ * rebranded / non-Flyme Meizu devices don't get Flyme-only actions.
+ */
+private fun isFlymeDevice(): Boolean {
+    val brand = Build.BRAND.orEmpty()
+    val manufacturer = Build.MANUFACTURER.orEmpty()
+    val display = Build.DISPLAY.orEmpty()
+    val fingerprint = Build.FINGERPRINT.orEmpty()
+    val product = Build.PRODUCT.orEmpty()
+    val model = Build.MODEL.orEmpty()
+
+    fun prop(key: String): String = runCatching {
+        val clazz = Class.forName("android.os.SystemProperties")
+        val get = clazz.getMethod("get", String::class.java, String::class.java)
+        (get.invoke(null, key, "") as? String).orEmpty()
+    }.getOrDefault("")
+
+    val flymeVersion = prop("ro.build.flyme.version")
+    val flymePublished = prop("ro.flyme.published")
+    val meizuFlyme = prop("ro.meizu.product.flyme")
+    val buildUser = prop("ro.build.user")
+
+    val markers = listOf(
+        flymeVersion,
+        flymePublished,
+        meizuFlyme,
+        display,
+        fingerprint,
+        product,
+        buildUser,
+    ).joinToString(" ").lowercase()
+
+    val hasFlymeMarker =
+        markers.contains("flyme") ||
+            flymeVersion.isNotBlank() ||
+            flymePublished.equals("true", ignoreCase = true) ||
+            meizuFlyme.isNotBlank()
+
+    // Fallback: Meizu brand/model with Flyme-like display string.
+    val meizuBrand =
+        brand.contains("meizu", ignoreCase = true) ||
+            manufacturer.contains("meizu", ignoreCase = true) ||
+            model.contains("meizu", ignoreCase = true)
+
+    return hasFlymeMarker || (meizuBrand && display.contains("Flyme", ignoreCase = true))
 }
 
 private fun openFlymeBackgroundManager(context: android.content.Context) {

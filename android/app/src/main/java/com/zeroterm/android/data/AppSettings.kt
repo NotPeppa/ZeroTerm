@@ -69,6 +69,8 @@ data class SettingsSnapshot(
     val terminalCustomThemesJson: String = "[]",
     /** JSON array of hidden builtin terminal theme ids. */
     val terminalHiddenBuiltinThemesJson: String = "[]",
+    /** Comma-separated ExtraKeyId names for terminal bottom key bar. */
+    val terminalExtraKeysCsv: String = "",
 )
 
 /**
@@ -95,6 +97,7 @@ class AppSettings(private val context: Context) {
             terminalThemeId = prefs[KEY_TERMINAL_THEME].orEmpty(),
             terminalCustomThemesJson = prefs[KEY_TERMINAL_CUSTOM_THEMES] ?: "[]",
             terminalHiddenBuiltinThemesJson = prefs[KEY_TERMINAL_HIDDEN_BUILTINS] ?: "[]",
+            terminalExtraKeysCsv = prefs[KEY_TERMINAL_EXTRA_KEYS].orEmpty(),
         )
     }
 
@@ -222,6 +225,14 @@ class AppSettings(private val context: Context) {
         context.dataStore.edit { it[KEY_TERMINAL_HIDDEN_BUILTINS] = json }
     }
 
+    suspend fun setTerminalExtraKeysCsv(csv: String) {
+        context.dataStore.edit {
+            val trimmed = csv.trim()
+            if (trimmed.isEmpty()) it.remove(KEY_TERMINAL_EXTRA_KEYS)
+            else it[KEY_TERMINAL_EXTRA_KEYS] = trimmed
+        }
+    }
+
     companion object {
         const val MIN_FONT = 9f
         const val MAX_FONT = 28f
@@ -243,6 +254,7 @@ class AppSettings(private val context: Context) {
         private val KEY_TERMINAL_THEME = stringPreferencesKey("terminal_theme_id")
         private val KEY_TERMINAL_CUSTOM_THEMES = stringPreferencesKey("terminal_custom_themes_json")
         private val KEY_TERMINAL_HIDDEN_BUILTINS = stringPreferencesKey("terminal_hidden_builtin_themes_json")
+        private val KEY_TERMINAL_EXTRA_KEYS = stringPreferencesKey("terminal_extra_keys_csv")
         private const val BACKGROUND_FILE_LEGACY = "terminal-background-image"
         private const val BACKGROUND_FILE_PREFIX = "terminal-background-image-"
 

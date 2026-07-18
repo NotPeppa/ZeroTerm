@@ -688,6 +688,10 @@ fun keyEventToBytes(event: KeyEvent): ByteArray? {
 object TermKeys {
     fun esc() = byteArrayOf(0x1b)
     fun tab() = byteArrayOf('\t'.code.toByte())
+    fun enter() = byteArrayOf('\r'.code.toByte())
+    fun backspace() = byteArrayOf(0x7f)
+    fun insert() = "\u001b[2~".toByteArray()
+    fun delete() = "\u001b[3~".toByteArray()
     fun ctrl(letter: Char): ByteArray {
         val c = letter.lowercaseChar()
         require(c in 'a'..'z')
@@ -701,4 +705,51 @@ object TermKeys {
     fun pgDn() = "\u001b[6~".toByteArray()
     fun home() = "\u001b[H".toByteArray()
     fun end() = "\u001b[F".toByteArray()
+    fun f1() = "\u001bOP".toByteArray()
+    fun f2() = "\u001bOQ".toByteArray()
+    fun f3() = "\u001bOR".toByteArray()
+    fun f4() = "\u001bOS".toByteArray()
+    fun f5() = "\u001b[15~".toByteArray()
+    fun f6() = "\u001b[17~".toByteArray()
+    fun f7() = "\u001b[18~".toByteArray()
+    fun f8() = "\u001b[19~".toByteArray()
+    fun f9() = "\u001b[20~".toByteArray()
+    fun f10() = "\u001b[21~".toByteArray()
+    fun f11() = "\u001b[23~".toByteArray()
+    fun f12() = "\u001b[24~".toByteArray()
+}
+
+/**
+ * Catalog of bottom extra-key bar buttons.
+ * Only keys that are hard or impossible on a typical soft keyboard.
+ */
+enum class ExtraKeyId {
+    ESC, TAB, CTRL, ALT, SHIFT,
+    ENTER, BACKSPACE, DELETE, INSERT,
+    UP, DOWN, LEFT, RIGHT, HOME, END, PGUP, PGDN,
+    SCR_UP, SCR_DOWN,
+    COPY, PASTE,
+    F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
+    ;
+
+    companion object {
+        val DEFAULT_ENABLED: List<ExtraKeyId> = listOf(
+            ESC, TAB, CTRL, ALT, SHIFT,
+            UP, DOWN, LEFT, RIGHT, HOME, END, PGUP, PGDN,
+            DELETE, SCR_UP, SCR_DOWN, COPY, PASTE,
+        )
+
+        fun parseCsv(raw: String?): List<ExtraKeyId> {
+            if (raw.isNullOrBlank()) return DEFAULT_ENABLED
+            val parsed = raw.split(',')
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .mapNotNull { id -> entries.firstOrNull { it.name.equals(id, ignoreCase = true) } }
+            // Drop legacy symbol keys silently; fall back if nothing valid remains.
+            return parsed.ifEmpty { DEFAULT_ENABLED }
+        }
+
+        fun toCsv(ids: Collection<ExtraKeyId>): String =
+            entries.filter { it in ids }.joinToString(",") { it.name }
+    }
 }
