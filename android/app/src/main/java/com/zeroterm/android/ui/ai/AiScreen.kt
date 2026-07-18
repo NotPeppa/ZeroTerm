@@ -80,6 +80,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
 import com.zeroterm.android.R
+import com.zeroterm.android.data.AppSettings
 import com.zeroterm.android.data.ZeroTermRepository
 import com.zeroterm.android.ui.components.ZeroTopBar
 import com.zeroterm.ffi.AiChatMessage
@@ -87,6 +88,7 @@ import com.zeroterm.ffi.AiProfileInput
 import com.zeroterm.ffi.AiProfileRecord
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 internal data class UiAiMessage(
@@ -115,6 +117,7 @@ internal fun rememberAiConversationState(): AiConversationState = remember {
 @Composable
 fun AiScreen(
     repository: ZeroTermRepository,
+    settings: AppSettings? = null,
     onOpenNavigation: (() -> Unit)? = null,
     onClose: (() -> Unit)? = null,
     contextLabel: String? = null,
@@ -130,6 +133,7 @@ fun AiScreen(
     val listState = rememberLazyListState()
     var profiles by remember { mutableStateOf<List<AiProfileRecord>>(emptyList()) }
     var selectedId by retainedConversation.selectedId
+    var activeProfileId by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf<AiProfileRecord?>(null) }
     var creating by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<AiProfileRecord?>(null) }
@@ -143,18 +147,31 @@ fun AiScreen(
     var sessionModelOptions by retainedConversation.sessionModelOptions
     var sessionModelsBusy by remember { mutableStateOf(false) }
 
+    fun pickDefaultProfileId(loaded: List<AiProfileRecord>, preferred: String?): String? {
+        val ids = loaded.map { it.id }
+        return preferred?.takeIf { it in ids } ?: selectedId?.takeIf { it in ids } ?: ids.firstOrNull()
+    }
+
     fun reload() {
         scope.launch {
+            val preferred = settings?.flow?.first()?.activeAiProfileId.orEmpty()
             repository.listAiProfiles().fold(
                 onSuccess = { loaded ->
                     profiles = loaded
-                    if (selectedId !in loaded.map { it.id }) {
-                        selectedId = loaded.firstOrNull()?.id
-                    }
+                    activeProfileId = preferred.takeIf { id -> loaded.any { it.id == id } }.orEmpty()
+                    selectedId = pickDefaultProfileId(loaded, preferred.ifBlank { null })
                     error = null
                 },
                 onFailure = { error = it.message },
             )
+        }
+    }
+
+    fun setActiveProfile(id: String) {
+        scope.launch {
+            settings?.setActiveAiProfileId(id)
+            activeProfileId = id
+            selectedId = id
         }
     }
 
@@ -266,6 +283,10 @@ fun AiScreen(
                     repository.saveAiProfile(profileInput).fold(
                         onSuccess = { id ->
                             selectedId = id
+                            if (activeProfileId.isBlank() || profiles.isEmpty()) {
+                                settings?.setActiveAiProfileId(id)
+                                activeProfileId = id
+                            }
                             creating = false
                             editing = null
                             modelOptions = emptyList()
@@ -291,7 +312,14 @@ fun AiScreen(
                     pendingDelete = null
                     scope.launch {
                         repository.deleteAiProfile(profile.id).fold(
-                            onSuccess = { reload() },
+                            onSuccess = {
+                                if (activeProfileId == profile.id) {
+                                    settings?.setActiveAiProfileId("")
+                                    activeProfileId = ""
+                                }
+                                if (selectedId == profile.id) selectedId = null
+                                reload()
+                            },
                             onFailure = { error = it.message },
                         )
                     }
@@ -419,6 +447,8 @@ fun AiScreen(
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp),
                     ) {
                         items(profiles, key = { it.id }) { profile ->
+                            val isActive = profile.id == activeProfileId ||
+                                (activeProfileId.isBlank() && profile.id == selectedId)
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 onClick = {
@@ -427,13 +457,21 @@ fun AiScreen(
                                     modelError = null
                                 },
                                 colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.52f),
+                                    containerColor = if (isActive) {
+                                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f)
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.52f)
+                                    },
                                     contentColor = MaterialTheme.colorScheme.onSurface,
                                 ),
                                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                                 border = BorderStroke(
                                     1.dp,
-                                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f),
+                                    if (isActive) {
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
+                                    } else {
+                                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
+                                    },
                                 ),
                             ) {
                                 Row(
@@ -443,7 +481,27 @@ fun AiScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Column(Modifier.weight(1f)) {
-                                        Text(profile.name, style = MaterialTheme.typography.titleMedium)
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                profile.name,
+                                                style = MaterialTheme.typography.titleMedium,
+                                                modifier = Modifier.weight(1f, fill = false),
+                                            )
+                                            if (isActive) {
+                                                Spacer(Modifier.width(8.dp))
+                                                Surface(
+                                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                                                    contentColor = MaterialTheme.colorScheme.primary,
+                                                    shape = MaterialTheme.shapes.extraSmall,
+                                                ) {
+                                                    Text(
+                                                        stringResource(R.string.ai_profile_active),
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                    )
+                                                }
+                                            }
+                                        }
                                         Text(
                                             profile.model,
                                             style = MaterialTheme.typography.bodyMedium,
@@ -456,7 +514,18 @@ fun AiScreen(
                                             maxLines = 1,
                                         )
                                     }
-                                    Icon(Icons.Default.Edit, stringResource(R.string.common_edit))
+                                    if (!isActive) {
+                                        TextButton(onClick = { setActiveProfile(profile.id) }) {
+                                            Text(stringResource(R.string.ai_profile_set_default))
+                                        }
+                                    }
+                                    IconButton(onClick = {
+                                        editing = profile
+                                        modelOptions = emptyList()
+                                        modelError = null
+                                    }) {
+                                        Icon(Icons.Default.Edit, stringResource(R.string.common_edit))
+                                    }
                                 }
                             }
                         }

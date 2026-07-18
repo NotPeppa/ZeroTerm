@@ -31,7 +31,7 @@ pub use sync_api::{
     ConflictRecord, SyncBackendKind, SyncCompactRecord, SyncDeviceRecord, SyncOutcomeRecord,
     SyncProfileInput, SyncProfileSummary, SyncRepoStatsRecord, SyncStatusRecord,
 };
-pub use term::{DamageFrame, DamageLine, TermCell, Terminal};
+pub use term::{DamageFrame, DamageLine, TermCell, Terminal, TerminalPalette};
 pub use types::{
     AiChatMessage, AiChatResponse, AiProfileInput, AiProfileRecord, AuthKind, HostAuthInput,
     HostDetail, HostExecResult, HostGroupInput, HostGroupRecord, HostInput, HostKeyInfo, HostSummary,

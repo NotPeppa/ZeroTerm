@@ -90,6 +90,69 @@ class TermGridState {
         revision++
     }
 
+    /** Move the ordered start corner (top-left-most in reading order). */
+    fun moveSelectionStart(row: Int, col: Int): Boolean {
+        if (!hasSelection) return false
+        val bounds = orderedBounds() ?: return false
+        val r = row.coerceIn(0, rows - 1)
+        val c = col.coerceIn(0, cols - 1)
+        // Keep start as the first corner in reading order relative to end.
+        if (r < bounds.endRow || (r == bounds.endRow && c <= bounds.endCol)) {
+            selStartRow = r
+            selStartCol = c
+            selEndRow = bounds.endRow
+            selEndCol = bounds.endCol
+        } else {
+            selStartRow = bounds.endRow
+            selStartCol = bounds.endCol
+            selEndRow = r
+            selEndCol = c
+        }
+        revision++
+        return r > bounds.endRow || (r == bounds.endRow && c > bounds.endCol)
+    }
+
+    /** Move the ordered end corner (bottom-right-most in reading order). */
+    fun moveSelectionEnd(row: Int, col: Int): Boolean {
+        if (!hasSelection) return false
+        val bounds = orderedBounds() ?: return false
+        val r = row.coerceIn(0, rows - 1)
+        val c = col.coerceIn(0, cols - 1)
+        if (r > bounds.startRow || (r == bounds.startRow && c >= bounds.startCol)) {
+            selStartRow = bounds.startRow
+            selStartCol = bounds.startCol
+            selEndRow = r
+            selEndCol = c
+        } else {
+            selStartRow = r
+            selStartCol = c
+            selEndRow = bounds.startRow
+            selEndCol = bounds.startCol
+        }
+        revision++
+        return r < bounds.startRow || (r == bounds.startRow && c < bounds.startCol)
+    }
+
+    data class OrderedBounds(
+        val startRow: Int,
+        val startCol: Int,
+        val endRow: Int,
+        val endCol: Int,
+    )
+
+    fun orderedBounds(): OrderedBounds? {
+        val r0 = selStartRow ?: return null
+        val c0 = selStartCol ?: return null
+        val r1 = selEndRow ?: return null
+        val c1 = selEndCol ?: return null
+        val forward = r0 < r1 || (r0 == r1 && c0 <= c1)
+        return if (forward) {
+            OrderedBounds(r0, c0, r1, c1)
+        } else {
+            OrderedBounds(r1, c1, r0, c0)
+        }
+    }
+
     fun clearSelection() {
         if (selStartRow == null) return
         selStartRow = null

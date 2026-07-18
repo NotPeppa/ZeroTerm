@@ -29,11 +29,13 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.ChevronLeft
-import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.VerticalAlignBottom
 import androidx.compose.material3.AlertDialog
@@ -78,10 +80,15 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.zeroterm.android.R
 import com.zeroterm.android.data.ActiveSession
+import com.zeroterm.android.data.AppSettings
 import com.zeroterm.android.data.SessionManager
+import com.zeroterm.android.data.SettingsSnapshot
 import com.zeroterm.android.data.ZeroTermRepository
+import com.zeroterm.android.terminal.CustomTerminalTheme
 import com.zeroterm.android.terminal.TermKeys
 import com.zeroterm.android.terminal.TerminalHostView
+import com.zeroterm.android.terminal.TerminalPalettes
+import com.zeroterm.android.terminal.TerminalThemeDef
 import com.zeroterm.android.ui.ai.AiScreen
 import com.zeroterm.android.ui.ai.rememberAiConversationState
 import com.zeroterm.android.ui.snippets.SnippetsScreen
@@ -97,6 +104,7 @@ fun TerminalScreen(
     alreadyConnected: Boolean = false,
     sessions: SessionManager,
     repository: ZeroTermRepository,
+    settings: AppSettings? = null,
     fontSizeSp: Float = 13f,
     backgroundImagePath: String = "",
     backgroundOpacity: Float = 0.4f,
@@ -123,6 +131,60 @@ fun TerminalScreen(
     val toolsDrawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val drawerAlpha = 1f - LocalChromeTransparency.current.drawer.coerceIn(0f, 0.8f)
     var toolsPage by remember { mutableStateOf(TerminalToolsPage.Ai) }
+    val settingsSnap by (settings?.flow ?: kotlinx.coroutines.flow.flowOf(SettingsSnapshot()))
+        .collectAsState(initial = SettingsSnapshot())
+    val isSystemDark = (context.resources.configuration.uiMode and
+        android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+        android.content.res.Configuration.UI_MODE_NIGHT_YES
+    val darkApp = when (settingsSnap.themeMode) {
+        com.zeroterm.android.data.ThemeMode.Dark -> true
+        com.zeroterm.android.data.ThemeMode.Light -> false
+        com.zeroterm.android.data.ThemeMode.System -> isSystemDark
+    }
+    val customThemes = remember(settingsSnap.terminalCustomThemesJson) {
+        TerminalPalettes.decodeCustomThemes(settingsSnap.terminalCustomThemesJson)
+    }
+    val hiddenBuiltins = remember(settingsSnap.terminalHiddenBuiltinThemesJson) {
+        TerminalPalettes.decodeHiddenBuiltins(settingsSnap.terminalHiddenBuiltinThemesJson)
+    }
+    val builtinLabels = mapOf(
+        "tokyo-day" to stringResource(R.string.terminal_theme_tokyo_day),
+        "catppuccin-latte" to stringResource(R.string.terminal_theme_catppuccin_latte),
+        "sage-light" to stringResource(R.string.terminal_theme_sage_light),
+        "termark-dark" to stringResource(R.string.terminal_theme_termark_dark),
+        "kanagawa-wave" to stringResource(R.string.terminal_theme_kanagawa_wave),
+        "catppuccin-mocha" to stringResource(R.string.terminal_theme_catppuccin_mocha),
+    )
+    val terminalThemes = remember(customThemes, hiddenBuiltins, builtinLabels) {
+        TerminalPalettes.resolve(customThemes, hiddenBuiltins) { b ->
+            builtinLabels[b.id] ?: TerminalPalettes.builtinLabel(b)
+        }
+    }
+    val terminalThemeId = settingsSnap.terminalThemeId
+        .ifBlank { TerminalPalettes.defaultId(darkApp) }
+        .let { id -> if (terminalThemes.any { it.id == id }) id else TerminalPalettes.defaultId(darkApp) }
+    val terminalTheme = remember(terminalThemeId, terminalThemes) {
+        terminalThemes.firstOrNull { it.id == terminalThemeId }
+            ?: TerminalPalettes.byId(terminalThemeId, customThemes, hiddenBuiltins)
+    }
+
+    fun applyThemeToView(view: TerminalHostView?) {
+        view?.setThemeColors(
+            background = terminalTheme.backgroundColor,
+            cursor = terminalTheme.cursorColor,
+            selection = terminalTheme.selectionColor,
+            defaultCellBackground = terminalTheme.backgroundColor,
+        )
+    }
+
+    LaunchedEffect(terminalThemeId, terminalTheme.palette) {
+        sessions.applyTerminalPalette(terminalTheme.palette)
+        applyThemeToView(termView)
+    }
+
+    LaunchedEffect(termView, terminalThemeId, terminalTheme.palette) {
+        applyThemeToView(termView)
+    }
 
     val batteryOptimizationRequest = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
@@ -229,6 +291,44 @@ fun TerminalScreen(
         }
     }
 
+    fun selectedText(): String = termView?.selectedText().orEmpty().trim()
+
+    fun clearSelectionState() {
+        termView?.clearSelection()
+        hasSelection = false
+    }
+
+    fun executeSelection() {
+        val text = selectedText()
+        if (text.isBlank()) return
+        scope.launch {
+            if (sessions.displayOffset() > 0) {
+                sessions.scrollToBottom()
+                scrolledBack = false
+                refreshPaint()
+            }
+            sessions.sendText(if (text.endsWith("\n")) text else "$text\n")
+            clearSelectionState()
+        }
+    }
+
+    fun openSelectionUrl() {
+        val url = extractUrl(selectedText()) ?: return
+        runCatching {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        }.onFailure {
+            Toast.makeText(context, it.message ?: "open failed", Toast.LENGTH_SHORT).show()
+        }
+        clearSelectionState()
+    }
+
+    fun sendSelectionToAi() {
+        toolsPage = TerminalToolsPage.Ai
+        scope.launch { toolsDrawerState.open() }
+        // Keep selection so user can still copy if needed; clear after open.
+        clearSelectionState()
+    }
+
     LaunchedEffect(hostId, lastCols, lastRows, alreadyConnected) {
         if (!started && lastCols >= 2 && lastRows >= 1) {
             started = true
@@ -313,9 +413,40 @@ fun TerminalScreen(
                             onPageSelected = { toolsPage = it },
                             onClose = { scope.launch { toolsDrawerState.close() } },
                             repository = repository,
+                            settings = settings,
                             sessions = sessions,
                             hostLabel = hostLabel,
                             contextProvider = { sessions.viewportText() },
+                            selectedThemeId = terminalThemeId,
+                            themes = terminalThemes,
+                            onThemeSelected = { id ->
+                                scope.launch { settings?.setTerminalThemeId(id) }
+                            },
+                            onSaveTheme = { custom ->
+                                scope.launch {
+                                    val next = customThemes
+                                        .filterNot { it.id == custom.id } + custom
+                                    settings?.setTerminalCustomThemesJson(
+                                        TerminalPalettes.encodeCustomThemes(next),
+                                    )
+                                    settings?.setTerminalThemeId(custom.id)
+                                }
+                            },
+                            onDeleteTheme = { theme ->
+                                scope.launch {
+                                    if (theme.id == terminalThemeId) return@launch
+                                    val nextCustom = customThemes.filterNot { it.id == theme.id }
+                                    settings?.setTerminalCustomThemesJson(
+                                        TerminalPalettes.encodeCustomThemes(nextCustom),
+                                    )
+                                    if (theme.isBuiltin) {
+                                        val nextHidden = hiddenBuiltins + theme.id
+                                        settings?.setTerminalHiddenBuiltinThemesJson(
+                                            TerminalPalettes.encodeHiddenBuiltins(nextHidden),
+                                        )
+                                    }
+                                }
+                            },
                             onInsertAiCommand = { command ->
                                 // Tapping the explicit approval action executes the command.
                                 val executable = command.trim()
@@ -368,6 +499,10 @@ fun TerminalScreen(
                     onReconnect = { doConnect() },
                     onCopy = { copySelection() },
                     onPaste = { pasteClipboard() },
+                    onExecuteSelection = { executeSelection() },
+                    onOpenSelectionUrl = { openSelectionUrl() },
+                    onSendSelectionToAi = { sendSelectionToAi() },
+                    selectionUrl = if (hasSelection) extractUrl(selectedText()) else null,
                     onRefreshPaint = { refreshPaint() },
                     onOpenTools = { scope.launch { toolsDrawerState.open() } },
                     onFontSizeChanged = onFontSizeChanged,
@@ -407,6 +542,10 @@ private fun TerminalContent(
     onReconnect: () -> Unit,
     onCopy: () -> Unit,
     onPaste: () -> Unit,
+    onExecuteSelection: () -> Unit,
+    onOpenSelectionUrl: () -> Unit,
+    onSendSelectionToAi: () -> Unit,
+    selectionUrl: String?,
     onRefreshPaint: () -> Unit,
     onOpenTools: () -> Unit,
     onFontSizeChanged: (Float) -> Unit,
@@ -415,8 +554,15 @@ private fun TerminalContent(
     val latestCtrlSticky by rememberUpdatedState(ctrlSticky)
     val latestCols by rememberUpdatedState(lastCols)
     val latestRows by rememberUpdatedState(lastRows)
+    // AppBackground already draws the custom image under the whole NavHost.
+    // Keep terminal chrome transparent so that image is not covered.
+    val hasCustomBackground = backgroundImagePath.isNotBlank()
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.48f),
+        containerColor = if (hasCustomBackground) {
+            Color.Transparent
+        } else {
+            MaterialTheme.colorScheme.background.copy(alpha = 0.48f)
+        },
         contentColor = MaterialTheme.colorScheme.onBackground,
         topBar = {
             ZeroTopBar(
@@ -431,11 +577,6 @@ private fun TerminalContent(
                     }
                 },
                 actions = {
-                    if (hasSelection) {
-                        IconButton(onClick = onCopy) {
-                            Icon(Icons.Default.ContentCopy, contentDescription = stringResource(R.string.common_copy))
-                        }
-                    }
                     if (scrolledBack) {
                         IconButton(onClick = {
                             sessions.scrollToBottom()
@@ -445,16 +586,40 @@ private fun TerminalContent(
                             Icon(Icons.Default.VerticalAlignBottom, contentDescription = stringResource(R.string.terminal_bottom))
                         }
                     }
-                    IconButton(onClick = onPaste) {
-                        Icon(Icons.Default.ContentPaste, contentDescription = stringResource(R.string.common_paste))
+                    if (hasSelection) {
+                        // Selection actions (icons only), shown at paste position.
+                        if (selectionUrl != null) {
+                            IconButton(onClick = onOpenSelectionUrl) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.OpenInNew,
+                                    contentDescription = stringResource(R.string.terminal_selection_open_url),
+                                )
+                            }
+                        }
+                        IconButton(onClick = onCopy) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = stringResource(R.string.common_copy))
+                        }
+                        IconButton(onClick = onExecuteSelection) {
+                            Icon(
+                                Icons.Default.PlayArrow,
+                                contentDescription = stringResource(R.string.terminal_selection_execute),
+                            )
+                        }
+                        IconButton(onClick = onSendSelectionToAi) {
+                            Icon(
+                                Icons.Default.AutoAwesome,
+                                contentDescription = stringResource(R.string.terminal_selection_ai),
+                            )
+                        }
+                    } else {
+                        IconButton(onClick = onPaste) {
+                            Icon(Icons.Default.ContentPaste, contentDescription = stringResource(R.string.common_paste))
+                        }
                     }
                     if (disconnectedMsg != null || (error != null && active == null)) {
                         IconButton(onClick = onReconnect, enabled = !connecting) {
                             Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.terminal_reconnect))
                         }
-                    }
-                    IconButton(onClick = { termView?.showIme() }) {
-                        Icon(Icons.Default.Keyboard, contentDescription = stringResource(R.string.terminal_keyboard))
                     }
                 },
             )
@@ -464,7 +629,9 @@ private fun TerminalContent(
             Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .background(Color(0xFF0B1220)),
+                .background(
+                    if (hasCustomBackground) Color.Transparent else Color(0xFF0B1220),
+                ),
         ) {
             disconnectedMsg?.let { msg ->
                 Surface(
@@ -572,23 +739,19 @@ private fun TerminalContent(
                     }
                 }
                 if (active != null) {
-                    Surface(
+                    Box(
                         modifier = Modifier
                             .align(Alignment.CenterEnd)
                             .width(22.dp)
                             .height(64.dp)
                             .clickable(onClick = onOpenTools),
-                        shape = MaterialTheme.shapes.small,
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
-                        tonalElevation = 3.dp,
+                        contentAlignment = Alignment.Center,
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                Icons.Default.ChevronLeft,
-                                contentDescription = stringResource(R.string.terminal_tools),
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
+                        Icon(
+                            Icons.Default.ChevronLeft,
+                            contentDescription = stringResource(R.string.terminal_tools),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
                     }
                 }
             }
@@ -614,7 +777,7 @@ private fun TerminalContent(
     }
 }
 
-private enum class TerminalToolsPage { Ai, Snippets, Metrics, Docker }
+private enum class TerminalToolsPage { Ai, Snippets, Metrics, Docker, Theme }
 
 @Composable
 private fun TerminalToolsDrawer(
@@ -622,9 +785,15 @@ private fun TerminalToolsDrawer(
     onPageSelected: (TerminalToolsPage) -> Unit,
     onClose: () -> Unit,
     repository: ZeroTermRepository,
+    settings: AppSettings? = null,
     sessions: SessionManager,
     hostLabel: String,
     contextProvider: () -> String,
+    selectedThemeId: String,
+    themes: List<TerminalThemeDef>,
+    onThemeSelected: (String) -> Unit,
+    onSaveTheme: (CustomTerminalTheme) -> Unit,
+    onDeleteTheme: (TerminalThemeDef) -> Unit,
     onInsertAiCommand: (String) -> Unit,
     onInsertSnippet: (String) -> Unit,
     onTerminalCommand: (String) -> Unit,
@@ -662,6 +831,12 @@ private fun TerminalToolsDrawer(
                 label = stringResource(R.string.docker_title),
                 onClick = { onPageSelected(TerminalToolsPage.Docker) },
             )
+            TerminalToolIconButton(
+                selected = selectedPage == TerminalToolsPage.Theme,
+                icon = painterResource(R.drawable.ic_terminal_tool_theme),
+                label = stringResource(R.string.terminal_theme_title),
+                onClick = { onPageSelected(TerminalToolsPage.Theme) },
+            )
             Spacer(Modifier.weight(1f))
             IconButton(onClick = onClose) {
                 Icon(Icons.Default.Close, contentDescription = stringResource(R.string.common_close))
@@ -670,6 +845,7 @@ private fun TerminalToolsDrawer(
         when (selectedPage) {
             TerminalToolsPage.Ai -> AiScreen(
                 repository = repository,
+                settings = settings,
                 contextLabel = hostLabel,
                 contextProvider = contextProvider,
                 onInsertCommand = onInsertAiCommand,
@@ -684,6 +860,13 @@ private fun TerminalToolsDrawer(
             )
             TerminalToolsPage.Metrics -> MetricsPanel(sessions)
             TerminalToolsPage.Docker -> DockerPanel(sessions, onTerminalCommand)
+            TerminalToolsPage.Theme -> TerminalThemePanel(
+                selectedThemeId = selectedThemeId,
+                themes = themes,
+                onThemeSelected = onThemeSelected,
+                onSaveTheme = onSaveTheme,
+                onDeleteTheme = onDeleteTheme,
+            )
         }
     }
 }
@@ -711,6 +894,22 @@ private fun TerminalToolIconButton(
 private fun copyToClipboard(context: Context, text: String) {
     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     cm.setPrimaryClip(ClipData.newPlainText(context.getString(R.string.terminal_clip_label), text))
+}
+
+private fun extractUrl(text: String): String? {
+    val raw = text.trim()
+    if (raw.isEmpty()) return null
+    val candidate = raw.split(Regex("\\s+")).firstOrNull().orEmpty()
+    val withScheme = when {
+        candidate.startsWith("http://", ignoreCase = true) ||
+            candidate.startsWith("https://", ignoreCase = true) -> candidate
+        candidate.startsWith("www.", ignoreCase = true) -> "https://$candidate"
+        else -> return null
+    }
+    return runCatching {
+        val uri = Uri.parse(withScheme)
+        if (uri.scheme.isNullOrBlank() || uri.host.isNullOrBlank()) null else withScheme
+    }.getOrNull()
 }
 
 @Composable

@@ -173,6 +173,7 @@ fun WorkspaceScreen(
 
             WorkspacePage.Ai -> AiScreen(
                 repository = container.repository,
+                settings = container.settings,
                 onOpenNavigation = openDrawer,
                 configurationOnly = true,
             )

@@ -75,6 +75,58 @@ pub struct DamageFrame {
     pub lines: Vec<DamageLine>,
 }
 
+/// Host-provided terminal color palette (packed 0x00RRGGBB).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TerminalPalette {
+    pub background: u32,
+    pub foreground: u32,
+    pub cursor: u32,
+    pub selection: u32,
+    pub black: u32,
+    pub red: u32,
+    pub green: u32,
+    pub yellow: u32,
+    pub blue: u32,
+    pub magenta: u32,
+    pub cyan: u32,
+    pub white: u32,
+    pub bright_black: u32,
+    pub bright_red: u32,
+    pub bright_green: u32,
+    pub bright_yellow: u32,
+    pub bright_blue: u32,
+    pub bright_magenta: u32,
+    pub bright_cyan: u32,
+    pub bright_white: u32,
+}
+
+impl Default for TerminalPalette {
+    fn default() -> Self {
+        Self {
+            background: 0x0b1220,
+            foreground: 0xd0d0d0,
+            cursor: 0xd0d0d0,
+            selection: 0x27384f,
+            black: 0x000000,
+            red: 0xcd0000,
+            green: 0x00cd00,
+            yellow: 0xcdcd00,
+            blue: 0x0000ee,
+            magenta: 0xcd00cd,
+            cyan: 0x00cdcd,
+            white: 0xe5e5e5,
+            bright_black: 0x7f7f7f,
+            bright_red: 0xff0000,
+            bright_green: 0x00ff00,
+            bright_yellow: 0xffff00,
+            bright_blue: 0x5c5cff,
+            bright_magenta: 0xff00ff,
+            bright_cyan: 0x00ffff,
+            bright_white: 0xffffff,
+        }
+    }
+}
+
 /// VT terminal. Thread-safe for feed from session callbacks + paint from UI.
 pub struct Terminal {
     inner: Mutex<Inner>,
@@ -86,6 +138,10 @@ struct Inner {
     size: TermSize,
     /// Tracks whether anything changed since last take_damage (for cheap skip).
     dirty: bool,
+    /// Force a full frame on next take_damage (e.g. after palette change).
+    force_full: bool,
+    /// User-selected palette used when the term has no OSC override.
+    palette: TerminalPalette,
 }
 
 impl Terminal {
@@ -100,8 +156,22 @@ impl Terminal {
                 parser: Processor::new(),
                 size,
                 dirty: true,
+                force_full: true,
+                palette: TerminalPalette::default(),
             }),
         }
+    }
+
+    /// Apply a host palette and force a full redraw on next damage poll.
+    pub fn set_palette(&self, palette: TerminalPalette) {
+        let mut g = self.inner.lock().unwrap();
+        g.palette = palette;
+        g.dirty = true;
+        g.force_full = true;
+    }
+
+    pub fn palette(&self) -> TerminalPalette {
+        self.inner.lock().unwrap().palette
     }
 
     /// Feed raw PTY bytes (VT sequences + text).
@@ -183,18 +253,21 @@ impl Terminal {
         let cols = g.size.columns;
         let rows = g.size.screen_lines;
         let was_dirty = g.dirty;
+        let force_full = g.force_full;
 
         // Collect damaged row indices first (damage borrows term mutably).
-        let (full, mut line_rows): (bool, Vec<usize>) = {
+        let (term_full, mut line_rows): (bool, Vec<usize>) = {
             let damage = g.term.damage();
             match damage {
                 TermDamage::Full => (true, (0..rows).collect()),
                 TermDamage::Partial(it) => (false, it.map(|b| b.line).collect()),
             }
         };
+        let full = term_full || force_full;
 
         let content = g.term.renderable_content();
         let colors = content.colors;
+        let palette = g.palette;
         let cursor = content.cursor;
         let show_cursor = content.mode.contains(TermMode::SHOW_CURSOR)
             && cursor.shape != alacritty_terminal::vte::ansi::CursorShape::Hidden;
@@ -207,7 +280,7 @@ impl Terminal {
         line_rows.sort_unstable();
         line_rows.dedup();
 
-        if line_rows.is_empty() && !was_dirty {
+        if line_rows.is_empty() && !was_dirty && !force_full {
             g.term.reset_damage();
             return None;
         }
@@ -217,8 +290,8 @@ impl Terminal {
                 (0..cols)
                     .map(|_| TermCell {
                         ch: ' ',
-                        fg: resolve_color(AnsiColor::Named(NamedColor::Foreground), colors),
-                        bg: resolve_color(AnsiColor::Named(NamedColor::Background), colors),
+                        fg: resolve_color(AnsiColor::Named(NamedColor::Foreground), colors, &palette),
+                        bg: resolve_color(AnsiColor::Named(NamedColor::Background), colors, &palette),
                         flags: 0,
                     })
                     .collect()
@@ -235,8 +308,14 @@ impl Terminal {
             if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
                 continue;
             }
-            viewport[row as usize][col] = cell_to_term(cell, colors);
+            viewport[row as usize][col] = cell_to_term(cell, colors, &palette);
         }
+
+        let line_rows: Vec<usize> = if full {
+            (0..rows).collect()
+        } else {
+            line_rows
+        };
 
         let lines: Vec<DamageLine> = line_rows
             .into_iter()
@@ -249,6 +328,7 @@ impl Terminal {
 
         g.term.reset_damage();
         g.dirty = false;
+        g.force_full = false;
 
         Some(DamageFrame {
             cols: cols as u16,
@@ -268,6 +348,7 @@ impl Terminal {
         let rows = g.size.screen_lines;
         let content = g.term.renderable_content();
         let colors = content.colors;
+        let palette = g.palette;
         let cursor = content.cursor;
         let show_cursor = content.mode.contains(TermMode::SHOW_CURSOR)
             && cursor.shape != alacritty_terminal::vte::ansi::CursorShape::Hidden;
@@ -277,8 +358,8 @@ impl Terminal {
                 (0..cols)
                     .map(|_| TermCell {
                         ch: ' ',
-                        fg: resolve_color(AnsiColor::Named(NamedColor::Foreground), colors),
-                        bg: resolve_color(AnsiColor::Named(NamedColor::Background), colors),
+                        fg: resolve_color(AnsiColor::Named(NamedColor::Foreground), colors, &palette),
+                        bg: resolve_color(AnsiColor::Named(NamedColor::Background), colors, &palette),
                         flags: 0,
                     })
                     .collect()
@@ -295,7 +376,7 @@ impl Terminal {
             if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
                 continue;
             }
-            viewport[row as usize][col] = cell_to_term(cell, colors);
+            viewport[row as usize][col] = cell_to_term(cell, colors, &palette);
         }
 
         let lines: Vec<DamageLine> = (0..rows)
@@ -327,7 +408,11 @@ const FLAG_INVERSE: u16 = 16;
 const FLAG_STRIKE: u16 = 32;
 const FLAG_WIDE: u16 = 64;
 
-fn cell_to_term(cell: &alacritty_terminal::term::cell::Cell, colors: &TermColors) -> TermCell {
+fn cell_to_term(
+    cell: &alacritty_terminal::term::cell::Cell,
+    colors: &TermColors,
+    palette: &TerminalPalette,
+) -> TermCell {
     let mut flags = 0u16;
     if cell.flags.contains(CellFlags::BOLD) {
         flags |= FLAG_BOLD;
@@ -351,8 +436,8 @@ fn cell_to_term(cell: &alacritty_terminal::term::cell::Cell, colors: &TermColors
         flags |= FLAG_WIDE;
     }
 
-    let mut fg = resolve_color(cell.fg, colors);
-    let mut bg = resolve_color(cell.bg, colors);
+    let mut fg = resolve_color(cell.fg, colors, palette);
+    let mut bg = resolve_color(cell.bg, colors, palette);
     if cell.flags.contains(CellFlags::INVERSE) {
         std::mem::swap(&mut fg, &mut bg);
     }
@@ -365,11 +450,11 @@ fn cell_to_term(cell: &alacritty_terminal::term::cell::Cell, colors: &TermColors
     }
 }
 
-fn resolve_color(color: AnsiColor, colors: &TermColors) -> u32 {
+fn resolve_color(color: AnsiColor, colors: &TermColors, palette: &TerminalPalette) -> u32 {
     match color {
-        AnsiColor::Named(n) => named_rgb(n, colors),
+        AnsiColor::Named(n) => named_rgb(n, colors, palette),
         AnsiColor::Spec(rgb) => pack_rgb(rgb),
-        AnsiColor::Indexed(i) => indexed_rgb(i, colors),
+        AnsiColor::Indexed(i) => indexed_rgb(i, colors, palette),
     }
 }
 
@@ -377,56 +462,55 @@ fn pack_rgb(rgb: Rgb) -> u32 {
     ((rgb.r as u32) << 16) | ((rgb.g as u32) << 8) | (rgb.b as u32)
 }
 
-fn named_rgb(n: NamedColor, colors: &TermColors) -> u32 {
+fn named_rgb(n: NamedColor, colors: &TermColors, palette: &TerminalPalette) -> u32 {
     if let Some(rgb) = colors[n] {
         return pack_rgb(rgb);
     }
-    // XTerm default 16 + specials
     match n {
-        NamedColor::Black => 0x000000,
-        NamedColor::Red => 0xcd0000,
-        NamedColor::Green => 0x00cd00,
-        NamedColor::Yellow => 0xcdcd00,
-        NamedColor::Blue => 0x0000ee,
-        NamedColor::Magenta => 0xcd00cd,
-        NamedColor::Cyan => 0x00cdcd,
-        NamedColor::White => 0xe5e5e5,
-        NamedColor::BrightBlack => 0x7f7f7f,
-        NamedColor::BrightRed => 0xff0000,
-        NamedColor::BrightGreen => 0x00ff00,
-        NamedColor::BrightYellow => 0xffff00,
-        NamedColor::BrightBlue => 0x5c5cff,
-        NamedColor::BrightMagenta => 0xff00ff,
-        NamedColor::BrightCyan => 0x00ffff,
-        NamedColor::BrightWhite => 0xffffff,
-        NamedColor::Foreground => 0xd0d0d0,
-        NamedColor::Background => 0x0b1220,
-        NamedColor::Cursor => 0xd0d0d0,
-        _ => 0xd0d0d0,
+        NamedColor::Black => palette.black,
+        NamedColor::Red => palette.red,
+        NamedColor::Green => palette.green,
+        NamedColor::Yellow => palette.yellow,
+        NamedColor::Blue => palette.blue,
+        NamedColor::Magenta => palette.magenta,
+        NamedColor::Cyan => palette.cyan,
+        NamedColor::White => palette.white,
+        NamedColor::BrightBlack => palette.bright_black,
+        NamedColor::BrightRed => palette.bright_red,
+        NamedColor::BrightGreen => palette.bright_green,
+        NamedColor::BrightYellow => palette.bright_yellow,
+        NamedColor::BrightBlue => palette.bright_blue,
+        NamedColor::BrightMagenta => palette.bright_magenta,
+        NamedColor::BrightCyan => palette.bright_cyan,
+        NamedColor::BrightWhite => palette.bright_white,
+        NamedColor::Foreground => palette.foreground,
+        NamedColor::Background => palette.background,
+        NamedColor::Cursor => palette.cursor,
+        _ => palette.foreground,
     }
 }
 
-fn indexed_rgb(i: u8, colors: &TermColors) -> u32 {
+fn indexed_rgb(i: u8, colors: &TermColors, palette: &TerminalPalette) -> u32 {
     if let Some(rgb) = colors[i as usize] {
         return pack_rgb(rgb);
     }
     match i {
-        0 => 0x000000,
-        1 => 0xcd0000,
-        2 => 0x00cd00,
-        3 => 0xcdcd00,
-        4 => 0x0000ee,
-        5 => 0xcd00cd,
-        6 => 0x00cdcd,
-        7 => 0xe5e5e5,
-        8 => 0x7f7f7f,
-        9 => 0xff0000,
-        10 => 0x00ff00,
-        11 => 0xffff00,
-        12 => 0x5c5cff,
-        13 => 0xff00ff,
-        14 => 0x00ffff,
-        15 => 0xffffff,
+        0 => palette.black,
+        1 => palette.red,
+        2 => palette.green,
+        3 => palette.yellow,
+        4 => palette.blue,
+        5 => palette.magenta,
+        6 => palette.cyan,
+        7 => palette.white,
+        8 => palette.bright_black,
+        9 => palette.bright_red,
+        10 => palette.bright_green,
+        11 => palette.bright_yellow,
+        12 => palette.bright_blue,
+        13 => palette.bright_magenta,
+        14 => palette.bright_cyan,
+        15 => palette.bright_white,
         16..=231 => {
             let n = i - 16;
             let r = n / 36;

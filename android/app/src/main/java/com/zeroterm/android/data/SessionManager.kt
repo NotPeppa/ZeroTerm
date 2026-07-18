@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import com.zeroterm.android.service.SessionForegroundService
+import com.zeroterm.android.terminal.TerminalPalettes
 import com.zeroterm.ffi.DamageFrame
 import com.zeroterm.ffi.HostExecResult
 import com.zeroterm.ffi.HostAuthInput
@@ -11,6 +12,7 @@ import com.zeroterm.ffi.HostKeyInfo
 import com.zeroterm.ffi.HostKeyPromptCallback
 import com.zeroterm.ffi.SessionListener
 import com.zeroterm.ffi.Terminal
+import com.zeroterm.ffi.TerminalPalette
 import com.zeroterm.ffi.ZeroTerm
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -84,6 +86,10 @@ class SessionManager(
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
+    @Volatile
+    private var terminalPalette: TerminalPalette =
+        TerminalPalettes.byId(TerminalPalettes.DEFAULT_DARK_ID).palette
+
     init {
         val connectivity = appContext.getSystemService(ConnectivityManager::class.java)
         runCatching {
@@ -150,6 +156,7 @@ class SessionManager(
                 }
 
                 val term = Terminal(cols, rows, 10_000u)
+                term.setPalette(terminalPalette)
                 val pendingClose = AtomicReference<PendingClose?>(null)
                 val listener = object : SessionListener {
                     override fun onData(data: ByteArray) {
@@ -266,6 +273,16 @@ class SessionManager(
     }
 
     fun snapshot(): DamageFrame? = _active.value?.terminal?.snapshot()
+
+    fun applyTerminalPalette(palette: TerminalPalette) {
+        terminalPalette = palette
+        sessions.values.forEach { session ->
+            runCatching { session.terminal.setPalette(palette) }
+        }
+        _frameTick.value = frameGen.incrementAndGet()
+    }
+
+    fun currentTerminalPalette(): TerminalPalette = terminalPalette
 
     fun scrollDisplay(delta: Int) {
         val term = _active.value?.terminal ?: return

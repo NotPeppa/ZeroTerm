@@ -61,6 +61,14 @@ data class SettingsSnapshot(
     val drawerTransparency: Float = 0.34f,
     val proxyEnabled: Boolean = false,
     val proxyUrl: String = "",
+    /** Preferred AI profile id used as the default selection. */
+    val activeAiProfileId: String = "",
+    /** Active terminal color theme id (see TerminalPalettes). */
+    val terminalThemeId: String = "",
+    /** JSON array of custom terminal themes. */
+    val terminalCustomThemesJson: String = "[]",
+    /** JSON array of hidden builtin terminal theme ids. */
+    val terminalHiddenBuiltinThemesJson: String = "[]",
 )
 
 /**
@@ -83,6 +91,10 @@ class AppSettings(private val context: Context) {
             drawerTransparency = (prefs[KEY_DRAWER_TRANSPARENCY] ?: 0.34f).coerceIn(0f, 0.8f),
             proxyEnabled = prefs[KEY_PROXY_ENABLED] ?: false,
             proxyUrl = prefs[KEY_PROXY_URL].orEmpty(),
+            activeAiProfileId = prefs[KEY_ACTIVE_AI_PROFILE].orEmpty(),
+            terminalThemeId = prefs[KEY_TERMINAL_THEME].orEmpty(),
+            terminalCustomThemesJson = prefs[KEY_TERMINAL_CUSTOM_THEMES] ?: "[]",
+            terminalHiddenBuiltinThemesJson = prefs[KEY_TERMINAL_HIDDEN_BUILTINS] ?: "[]",
         )
     }
 
@@ -116,20 +128,44 @@ class AppSettings(private val context: Context) {
     }
 
     suspend fun setBackgroundImage(uri: Uri): String = withContext(Dispatchers.IO) {
-        val target = File(context.filesDir, BACKGROUND_FILE)
-        val temporary = File(context.cacheDir, "$BACKGROUND_FILE.tmp")
+        // Unique filename so path changes and UI reloads (same path would keep old bitmap).
+        val target = File(context.filesDir, "$BACKGROUND_FILE_PREFIX${System.currentTimeMillis()}")
+        val temporary = File(context.cacheDir, "$BACKGROUND_FILE_PREFIX.tmp")
         context.contentResolver.openInputStream(uri).use { input ->
             requireNotNull(input) { "Unable to open selected image" }
             temporary.outputStream().use { output -> input.copyTo(output) }
         }
         temporary.copyTo(target, overwrite = true)
         temporary.delete()
+        // Remove previous background files after the new one is ready.
+        context.filesDir.listFiles()?.forEach { file ->
+            if (
+                file.isFile &&
+                file.absolutePath != target.absolutePath &&
+                (
+                    file.name == BACKGROUND_FILE_LEGACY ||
+                        file.name.startsWith(BACKGROUND_FILE_PREFIX)
+                    )
+            ) {
+                file.delete()
+            }
+        }
         context.dataStore.edit { it[KEY_BACKGROUND_PATH] = target.absolutePath }
         target.absolutePath
     }
 
     suspend fun clearBackgroundImage() = withContext(Dispatchers.IO) {
-        File(context.filesDir, BACKGROUND_FILE).delete()
+        context.filesDir.listFiles()?.forEach { file ->
+            if (
+                file.isFile &&
+                (
+                    file.name == BACKGROUND_FILE_LEGACY ||
+                        file.name.startsWith(BACKGROUND_FILE_PREFIX)
+                    )
+            ) {
+                file.delete()
+            }
+        }
         context.dataStore.edit { it.remove(KEY_BACKGROUND_PATH) }
     }
 
@@ -156,6 +192,36 @@ class AppSettings(private val context: Context) {
         }
     }
 
+    suspend fun setActiveAiProfileId(id: String) {
+        context.dataStore.edit {
+            val trimmed = id.trim()
+            if (trimmed.isEmpty()) {
+                it.remove(KEY_ACTIVE_AI_PROFILE)
+            } else {
+                it[KEY_ACTIVE_AI_PROFILE] = trimmed
+            }
+        }
+    }
+
+    suspend fun setTerminalThemeId(id: String) {
+        context.dataStore.edit {
+            val trimmed = id.trim()
+            if (trimmed.isEmpty()) {
+                it.remove(KEY_TERMINAL_THEME)
+            } else {
+                it[KEY_TERMINAL_THEME] = trimmed
+            }
+        }
+    }
+
+    suspend fun setTerminalCustomThemesJson(json: String) {
+        context.dataStore.edit { it[KEY_TERMINAL_CUSTOM_THEMES] = json }
+    }
+
+    suspend fun setTerminalHiddenBuiltinThemesJson(json: String) {
+        context.dataStore.edit { it[KEY_TERMINAL_HIDDEN_BUILTINS] = json }
+    }
+
     companion object {
         const val MIN_FONT = 9f
         const val MAX_FONT = 28f
@@ -173,7 +239,12 @@ class AppSettings(private val context: Context) {
         private val KEY_DRAWER_TRANSPARENCY = floatPreferencesKey("drawer_transparency")
         private val KEY_PROXY_ENABLED = booleanPreferencesKey("network_proxy_enabled")
         private val KEY_PROXY_URL = stringPreferencesKey("network_proxy_url")
-        private const val BACKGROUND_FILE = "terminal-background-image"
+        private val KEY_ACTIVE_AI_PROFILE = stringPreferencesKey("active_ai_profile_id")
+        private val KEY_TERMINAL_THEME = stringPreferencesKey("terminal_theme_id")
+        private val KEY_TERMINAL_CUSTOM_THEMES = stringPreferencesKey("terminal_custom_themes_json")
+        private val KEY_TERMINAL_HIDDEN_BUILTINS = stringPreferencesKey("terminal_hidden_builtin_themes_json")
+        private const val BACKGROUND_FILE_LEGACY = "terminal-background-image"
+        private const val BACKGROUND_FILE_PREFIX = "terminal-background-image-"
 
         fun applyLocale(locale: AppLocale) {
             val list = if (locale == AppLocale.System) {

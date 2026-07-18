@@ -2,7 +2,9 @@
 
 use std::sync::Arc;
 
-use zeroterm_term::{DamageFrame as CoreFrame, Terminal as CoreTerminal};
+use zeroterm_term::{
+    DamageFrame as CoreFrame, Terminal as CoreTerminal, TerminalPalette as CorePalette,
+};
 
 /// One cell for the host Canvas renderer.
 #[derive(Debug, Clone, uniffi::Record)]
@@ -13,6 +15,31 @@ pub struct TermCell {
     pub bg: u32,
     /// Bit flags: 1=bold 2=dim 4=italic 8=underline 16=inverse 32=strike 64=wide
     pub flags: u16,
+}
+
+/// Host-selected terminal color palette (packed 0x00RRGGBB).
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct TerminalPalette {
+    pub background: u32,
+    pub foreground: u32,
+    pub cursor: u32,
+    pub selection: u32,
+    pub black: u32,
+    pub red: u32,
+    pub green: u32,
+    pub yellow: u32,
+    pub blue: u32,
+    pub magenta: u32,
+    pub cyan: u32,
+    pub white: u32,
+    pub bright_black: u32,
+    pub bright_red: u32,
+    pub bright_green: u32,
+    pub bright_yellow: u32,
+    pub bright_blue: u32,
+    pub bright_magenta: u32,
+    pub bright_cyan: u32,
+    pub bright_white: u32,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -89,6 +116,58 @@ impl Terminal {
     /// Full viewport (after resize or first paint).
     pub fn snapshot(&self) -> DamageFrame {
         convert_frame(self.inner.snapshot())
+    }
+
+    /// Apply a color palette and force a full redraw on next damage poll.
+    pub fn set_palette(&self, palette: TerminalPalette) {
+        self.inner.set_palette(CorePalette {
+            background: palette.background,
+            foreground: palette.foreground,
+            cursor: palette.cursor,
+            selection: palette.selection,
+            black: palette.black,
+            red: palette.red,
+            green: palette.green,
+            yellow: palette.yellow,
+            blue: palette.blue,
+            magenta: palette.magenta,
+            cyan: palette.cyan,
+            white: palette.white,
+            bright_black: palette.bright_black,
+            bright_red: palette.bright_red,
+            bright_green: palette.bright_green,
+            bright_yellow: palette.bright_yellow,
+            bright_blue: palette.bright_blue,
+            bright_magenta: palette.bright_magenta,
+            bright_cyan: palette.bright_cyan,
+            bright_white: palette.bright_white,
+        });
+    }
+
+    pub fn palette(&self) -> TerminalPalette {
+        let p = self.inner.palette();
+        TerminalPalette {
+            background: p.background,
+            foreground: p.foreground,
+            cursor: p.cursor,
+            selection: p.selection,
+            black: p.black,
+            red: p.red,
+            green: p.green,
+            yellow: p.yellow,
+            blue: p.blue,
+            magenta: p.magenta,
+            cyan: p.cyan,
+            white: p.white,
+            bright_black: p.bright_black,
+            bright_red: p.bright_red,
+            bright_green: p.bright_green,
+            bright_yellow: p.bright_yellow,
+            bright_blue: p.bright_blue,
+            bright_magenta: p.bright_magenta,
+            bright_cyan: p.bright_cyan,
+            bright_white: p.bright_white,
+        }
     }
 }
 

@@ -1,7 +1,6 @@
 package com.zeroterm.android.terminal
 
 import android.content.Context
-import android.graphics.BitmapFactory
 import android.graphics.Typeface
 import android.util.AttributeSet
 import android.view.KeyEvent
@@ -11,13 +10,14 @@ import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.magnifier
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -28,24 +28,26 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.graphics.Paint as AndroidPaint
-import java.io.File
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.math.ceil
 import kotlin.math.floor
+import kotlin.math.hypot
 import kotlin.math.max
 
 /**
@@ -69,11 +71,18 @@ class TerminalHostView @JvmOverloads constructor(
     private var backgroundPathState = mutableStateOf("")
     private var backgroundOpacityState = mutableFloatStateOf(0.4f)
     private var backgroundBlurState = mutableFloatStateOf(0f)
+    private var themeBackgroundState = mutableStateOf(Color(0xFF0B1220))
+    private var themeCursorState = mutableStateOf(Color(0xAAD0D0D0))
+    private var themeSelectionState = mutableStateOf(Color(0x665B9DFF))
+    private var themeDefaultBgState = mutableStateOf(Color(0xFF0B1220))
     var onFontSizeChanged: ((Float) -> Unit)? = null
 
     init {
         isFocusable = true
         isFocusableInTouchMode = true
+        // Allow AppBackground / parent glass layers to show through.
+        setBackgroundColor(android.graphics.Color.TRANSPARENT)
+        compose.setBackgroundColor(android.graphics.Color.TRANSPARENT)
         addView(compose, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         compose.setContent {
             val fontSp = fontSizeState.floatValue
@@ -83,6 +92,10 @@ class TerminalHostView @JvmOverloads constructor(
                 backgroundImagePath = backgroundPathState.value,
                 backgroundOpacity = backgroundOpacityState.floatValue,
                 backgroundBlurDp = backgroundBlurState.floatValue,
+                themeBackground = themeBackgroundState.value,
+                themeCursor = themeCursorState.value,
+                themeSelection = themeSelectionState.value,
+                themeDefaultBackground = themeDefaultBgState.value,
                 onTap = {
                     grid.clearSelection()
                     onSelectionChanged?.invoke(false)
@@ -114,6 +127,19 @@ class TerminalHostView @JvmOverloads constructor(
         backgroundPathState.value = path
         backgroundOpacityState.floatValue = opacity.coerceIn(0.05f, 1f)
         backgroundBlurState.floatValue = blurDp.coerceIn(0, 30).toFloat()
+        compose.invalidate()
+    }
+
+    fun setThemeColors(
+        background: Color,
+        cursor: Color,
+        selection: Color,
+        defaultCellBackground: Color = background,
+    ) {
+        themeBackgroundState.value = background
+        themeCursorState.value = cursor
+        themeSelectionState.value = selection
+        themeDefaultBgState.value = defaultCellBackground
         compose.invalidate()
     }
 
@@ -177,6 +203,7 @@ class TerminalHostView @JvmOverloads constructor(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TerminalCanvas(
     grid: TermGridState,
@@ -184,6 +211,10 @@ fun TerminalCanvas(
     backgroundImagePath: String = "",
     backgroundOpacity: Float = 0.4f,
     backgroundBlurDp: Float = 0f,
+    themeBackground: Color = Color(0xFF0B1220),
+    themeCursor: Color = Color(0xAAD0D0D0),
+    themeSelection: Color = Color(0x665B9DFF),
+    themeDefaultBackground: Color = Color(0xFF0B1220),
     onTap: () -> Unit,
     onSizeCells: (cols: Int, rows: Int) -> Unit,
     onScrollLines: (delta: Int) -> Unit,
@@ -191,6 +222,7 @@ fun TerminalCanvas(
     onFontScale: (Float) -> Unit = {},
 ) {
     val density = LocalDensity.current
+    val haptic = LocalHapticFeedback.current
     val fontPx = with(density) { fontSizeSp.sp.toPx() }
     val paint = remember {
         AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
@@ -204,7 +236,12 @@ fun TerminalCanvas(
     var viewSize by remember { mutableStateOf(IntSize.Zero) }
     val rev = grid.revision
     var scrollAccum by remember { mutableFloatStateOf(0f) }
-    var selecting by remember { mutableStateOf(false) }
+    var draggingHandle by remember { mutableStateOf<SelectionHandle?>(null) }
+    var handleDragCorrection by remember { mutableStateOf(Offset.Zero) }
+    var magnifierSource by remember { mutableStateOf(Offset.Unspecified) }
+    val handleRadiusPx = with(density) { 9.dp.toPx() }
+    // Keep the visual affordance compact while meeting Android's 48dp touch target.
+    val handleHitPx = with(density) { 24.dp.toPx() }
 
     LaunchedEffect(viewSize, cellW, cellH) {
         if (viewSize.width > 0 && viewSize.height > 0) {
@@ -220,80 +257,239 @@ fun TerminalCanvas(
         return row to col
     }
 
-    var backgroundBitmap by remember(backgroundImagePath) {
-        mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
+    fun handleGeometries(): Pair<SelectionHandleGeometry, SelectionHandleGeometry>? {
+        val bounds = grid.orderedBounds() ?: return null
+        fun geometry(row: Int, logicalX: Float, start: Boolean): SelectionHandleGeometry {
+            val logical = Offset(logicalX, (row + 1) * cellH)
+            val below = logical.y + handleRadiusPx * 0.75f
+            val centerY = if (below + handleRadiusPx <= viewSize.height) {
+                below
+            } else {
+                row * cellH - handleRadiusPx * 0.75f
+            }
+            val centerX = logical.x + handleRadiusPx * if (start) -0.45f else 0.45f
+            return SelectionHandleGeometry(
+                logical = logical,
+                center = Offset(
+                    centerX.coerceIn(handleRadiusPx, (viewSize.width - handleRadiusPx).coerceAtLeast(handleRadiusPx)),
+                    centerY.coerceIn(handleRadiusPx, (viewSize.height - handleRadiusPx).coerceAtLeast(handleRadiusPx)),
+                ),
+            )
+        }
+        val start = geometry(
+            row = bounds.startRow,
+            logicalX = bounds.startCol * cellW,
+            start = true,
+        )
+        val end = geometry(
+            row = bounds.endRow,
+            logicalX = (bounds.endCol + 1) * cellW,
+            start = false,
+        )
+        return start to end
     }
-    LaunchedEffect(backgroundImagePath) {
-        backgroundBitmap = withContext(Dispatchers.IO) {
-            if (backgroundImagePath.isBlank()) null
-            else runCatching {
-                BitmapFactory.decodeFile(File(backgroundImagePath).absolutePath)?.asImageBitmap()
-            }.getOrNull()
+
+    fun hitHandle(pos: Offset): SelectionHandle? {
+        val geometries = handleGeometries() ?: return null
+        val (start, end) = geometries
+        val dStart = hypot(pos.x - start.center.x, pos.y - start.center.y)
+        val dEnd = hypot(pos.x - end.center.x, pos.y - end.center.y)
+        return when {
+            dStart <= handleHitPx && dStart <= dEnd -> SelectionHandle.Start
+            dEnd <= handleHitPx -> SelectionHandle.End
+            else -> null
         }
     }
 
-    Box(Modifier.fillMaxSize().background(Color(0xFF0B1220))) {
-        backgroundBitmap?.let { image ->
-            Image(
-                bitmap = image,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                alpha = backgroundOpacity,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .blur(backgroundBlurDp.dp),
-            )
+    fun logicalPositionFor(handle: SelectionHandle): Offset? {
+        val (start, end) = handleGeometries() ?: return null
+        return if (handle == SelectionHandle.Start) start.logical else end.logical
+    }
+
+    fun selectionCellAt(pos: Offset, handle: SelectionHandle): Pair<Int, Int> {
+        val row = (ceil(pos.y / cellH).toInt() - 1)
+            .coerceIn(0, (grid.rows - 1).coerceAtLeast(0))
+        val col = when (handle) {
+            SelectionHandle.Start -> floor(pos.x / cellW).toInt()
+            SelectionHandle.End -> ceil(pos.x / cellW).toInt() - 1
+        }.coerceIn(0, (grid.cols - 1).coerceAtLeast(0))
+        return row to col
+    }
+
+    fun moveDraggedHandle(position: Offset) {
+        when (draggingHandle) {
+            SelectionHandle.Start -> {
+                val logical = position + handleDragCorrection
+                val (r, c) = selectionCellAt(logical, SelectionHandle.Start)
+                if (grid.moveSelectionStart(r, c)) {
+                    draggingHandle = SelectionHandle.End
+                    handleDragCorrection = logicalPositionFor(SelectionHandle.End)
+                        ?.minus(position) ?: Offset.Zero
+                }
+            }
+            SelectionHandle.End -> {
+                val logical = position + handleDragCorrection
+                val (r, c) = selectionCellAt(logical, SelectionHandle.End)
+                if (grid.moveSelectionEnd(r, c)) {
+                    draggingHandle = SelectionHandle.Start
+                    handleDragCorrection = logicalPositionFor(SelectionHandle.Start)
+                        ?.minus(position) ?: Offset.Zero
+                }
+            }
+            null -> Unit
         }
+    }
+
+    fun finishDrag() {
+        scrollAccum = 0f
+        draggingHandle = null
+        handleDragCorrection = Offset.Zero
+        magnifierSource = Offset.Unspecified
+    }
+
+    // AppBackground already paints the custom image under the NavHost.
+    // Keep this surface transparent so it is not covered by theme fill.
+    val hasCustomBackground = backgroundImagePath.isNotBlank()
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(if (hasCustomBackground) Color.Transparent else themeBackground),
+    ) {
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
                 .onSizeChanged { viewSize = it }
-                .pointerInput(Unit) {
-                    detectTransformGestures { _, _, zoom, _ ->
-                        if (kotlin.math.abs(zoom - 1f) > 0.01f) {
-                            onFontScale(zoom)
+                .magnifier(
+                    sourceCenter = { magnifierSource },
+                    magnifierCenter = {
+                        if (magnifierSource.isSpecified) {
+                            magnifierSource - Offset(0f, 72.dp.toPx())
+                        } else {
+                            Offset.Unspecified
                         }
-                    }
-                }
-                .pointerInput(cellW, cellH, grid.cols, grid.rows) {
-                    detectTapGestures(
-                        onTap = {
-                            selecting = false
-                            onTap()
-                        },
-                        onLongPress = { offset ->
-                            selecting = true
-                            val (r, c) = cellAt(offset)
-                            grid.beginSelection(r, c)
-                            onSelectionChanged(true)
-                        },
-                    )
-                }
-                .pointerInput(cellW, cellH, grid.cols, grid.rows) {
-                    detectDragGestures(
-                        onDragStart = { offset ->
-                            if (selecting) {
-                                val (r, c) = cellAt(offset)
-                                grid.extendSelection(r, c)
-                            }
-                        },
-                        onDrag = { change, dragAmount ->
-                            change.consume()
-                            if (selecting) {
-                                val (r, c) = cellAt(change.position)
-                                grid.extendSelection(r, c)
-                            } else {
-                                scrollAccum += dragAmount.y
-                                val lines = floor(scrollAccum / cellH).toInt()
-                                if (lines != 0) {
-                                    scrollAccum -= lines * cellH
-                                    onScrollLines(lines)
+                    },
+                    zoom = 1.8f,
+                    size = DpSize(88.dp, 56.dp),
+                    cornerRadius = 28.dp,
+                    elevation = 8.dp,
+                    clip = true,
+                )
+                // A single recognizer owns tap, scroll, long-press selection,
+                // handle dragging, and pinch zoom. This prevents gesture
+                // detectors from consuming each other's pointer changes.
+                .pointerInput(cellW, cellH, grid.cols, grid.rows, handleHitPx, viewSize) {
+                    awaitEachGesture {
+                        finishDrag()
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val downPosition = down.position
+                        var lastPosition = downPosition
+                        var mode = TerminalGestureMode.Pending
+                        var decisionEvent: androidx.compose.ui.input.pointer.PointerEvent? = null
+                        val initialHandle = hitHandle(downPosition)
+
+                        if (initialHandle != null) {
+                            draggingHandle = initialHandle
+                            handleDragCorrection = logicalPositionFor(initialHandle)
+                                ?.minus(downPosition) ?: Offset.Zero
+                            while (mode == TerminalGestureMode.Pending) {
+                                val event = awaitPointerEvent()
+                                decisionEvent = event
+                                val pressed = event.changes.filter { it.pressed }
+                                val change = event.changes.firstOrNull { it.id == down.id }
+                                mode = when {
+                                    pressed.size >= 2 -> TerminalGestureMode.Zoom
+                                    change == null || !change.pressed -> TerminalGestureMode.Finished
+                                    (change.position - downPosition).getDistance() >= viewConfiguration.touchSlop -> {
+                                        magnifierSource = (change.position + handleDragCorrection)
+                                            .coerceToViewport(viewSize)
+                                        TerminalGestureMode.Selection
+                                    }
+                                    else -> TerminalGestureMode.Pending
                                 }
                             }
-                        },
-                        onDragEnd = { scrollAccum = 0f },
-                        onDragCancel = { scrollAccum = 0f },
-                    )
+                        } else {
+                            val decided = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                                while (mode == TerminalGestureMode.Pending) {
+                                    val event = awaitPointerEvent()
+                                    decisionEvent = event
+                                    val pressed = event.changes.filter { it.pressed }
+                                    val change = event.changes.firstOrNull { it.id == down.id }
+                                    mode = when {
+                                        pressed.size >= 2 -> TerminalGestureMode.Zoom
+                                        change == null || !change.pressed -> TerminalGestureMode.Tap
+                                        (change.position - downPosition).getDistance() >= viewConfiguration.touchSlop -> {
+                                            TerminalGestureMode.Scroll
+                                        }
+                                        else -> TerminalGestureMode.Pending
+                                    }
+                                }
+                                true
+                            }
+                            if (decided == null) {
+                                val (r, c) = cellAt(downPosition)
+                                grid.beginSelection(r, c)
+                                draggingHandle = SelectionHandle.End
+                                handleDragCorrection = Offset.Zero
+                                magnifierSource = downPosition.coerceToViewport(viewSize)
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onSelectionChanged(true)
+                                mode = TerminalGestureMode.Selection
+                            }
+                        }
+
+                        when (mode) {
+                            TerminalGestureMode.Tap -> onTap()
+                            TerminalGestureMode.Scroll -> {
+                                var event = decisionEvent
+                                while (event != null) {
+                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                    if (!change.pressed) break
+                                    val deltaY = change.position.y - lastPosition.y
+                                    lastPosition = change.position
+                                    scrollAccum += deltaY
+                                    val lines = floor(scrollAccum / cellH).toInt()
+                                    if (lines != 0) {
+                                        scrollAccum -= lines * cellH
+                                        onScrollLines(lines)
+                                    }
+                                    change.consume()
+                                    event = awaitPointerEvent()
+                                }
+                            }
+                            TerminalGestureMode.Selection -> {
+                                var event = decisionEvent
+                                while (true) {
+                                    if (event == null) event = awaitPointerEvent()
+                                    if (event.changes.count { it.pressed } >= 2) {
+                                        mode = TerminalGestureMode.Zoom
+                                        decisionEvent = event
+                                        break
+                                    }
+                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                    if (!change.pressed) break
+                                    magnifierSource = (change.position + handleDragCorrection)
+                                        .coerceToViewport(viewSize)
+                                    moveDraggedHandle(change.position)
+                                    change.consume()
+                                    event = null
+                                }
+                            }
+                            else -> Unit
+                        }
+
+                        if (mode == TerminalGestureMode.Zoom) {
+                            var event = decisionEvent
+                            while (event != null && event.changes.any { it.pressed }) {
+                                val zoom = event.calculateZoom()
+                                if (kotlin.math.abs(zoom - 1f) > 0.01f) onFontScale(zoom)
+                                event.changes.forEach { change ->
+                                    if (change.positionChanged()) change.consume()
+                                }
+                                event = awaitPointerEvent()
+                            }
+                        }
+                        finishDrag()
+                    }
                 },
         ) {
             @Suppress("UNUSED_EXPRESSION")
@@ -303,10 +499,40 @@ fun TerminalCanvas(
                 cellW = cellW,
                 cellH = cellH,
                 paint = paint,
-                transparentDefaultBackground = backgroundBitmap != null,
+                transparentDefaultBackground = hasCustomBackground,
+                defaultBackground = themeDefaultBackground,
+                selectionColor = themeSelection,
+                cursorColor = themeCursor,
+                handleRadius = handleRadiusPx,
+                viewportSize = viewSize,
             )
         }
     }
+}
+
+private enum class SelectionHandle { Start, End }
+
+private enum class TerminalGestureMode { Pending, Tap, Scroll, Selection, Zoom, Finished }
+
+private fun Offset.coerceToViewport(viewport: IntSize): Offset {
+    if (!isSpecified || viewport.width <= 0 || viewport.height <= 0) return Offset.Unspecified
+    return Offset(
+        x.coerceIn(0f, viewport.width.toFloat()),
+        y.coerceIn(0f, viewport.height.toFloat()),
+    )
+}
+
+private data class SelectionHandleGeometry(
+    val logical: Offset,
+    val center: Offset,
+)
+
+private fun isDefaultCellBackground(bg: Color, defaultBackground: Color): Boolean {
+    if (bg == defaultBackground || bg == Color.Black || bg == Color(0xFF0B1220)) return true
+    // Match RGB even if alpha differs (theme vs cell packing).
+    return bg.red == defaultBackground.red &&
+        bg.green == defaultBackground.green &&
+        bg.blue == defaultBackground.blue
 }
 
 private fun DrawScope.drawTermGrid(
@@ -315,22 +541,26 @@ private fun DrawScope.drawTermGrid(
     cellH: Float,
     paint: AndroidPaint,
     transparentDefaultBackground: Boolean,
+    defaultBackground: Color,
+    selectionColor: Color,
+    cursorColor: Color,
+    handleRadius: Float,
+    viewportSize: IntSize,
 ) {
     val native = drawContext.canvas.nativeCanvas
     val baseline = -paint.fontMetrics.ascent
-    val selColor = Color(0x665B9DFF)
     for (row in 0 until grid.rows) {
         for (col in 0 until grid.cols) {
             val cell = grid.cellAt(row, col)
             val x = col * cellW
             val y = row * cellH
             val w = if (cell.wide) cellW * 2 else cellW
-            val isDefaultBackground = cell.bg == Color(0xFF0B1220) || cell.bg == Color.Black
+            val isDefaultBackground = isDefaultCellBackground(cell.bg, defaultBackground)
             if (!transparentDefaultBackground || !isDefaultBackground) {
                 drawRect(cell.bg, topLeft = Offset(x, y), size = Size(w, cellH))
             }
             if (grid.isSelected(row, col)) {
-                drawRect(selColor, topLeft = Offset(x, y), size = Size(w, cellH))
+                drawRect(selectionColor.copy(alpha = 0.4f), topLeft = Offset(x, y), size = Size(w, cellH))
             }
             paint.color = cell.fg.toArgb()
             paint.isFakeBoldText = cell.bold
@@ -343,11 +573,62 @@ private fun DrawScope.drawTermGrid(
         val cx = grid.cursorCol * cellW
         val cy = grid.cursorRow * cellH
         drawRect(
-            Color(0xAAD0D0D0),
+            cursorColor.copy(alpha = 0.67f),
             topLeft = Offset(cx, cy),
             size = Size(cellW, cellH),
         )
     }
+    // Android-like selection handles (start + end).
+    val bounds = grid.orderedBounds()
+    if (bounds != null && handleRadius > 0f) {
+        val handleColor = selectionColor.copy(alpha = 1f).let {
+            // Prefer solid primary-ish handle over translucent selection fill.
+            if (it.alpha < 0.9f) Color(0xFF5B9DFF) else it
+        }
+        fun center(row: Int, logicalX: Float, start: Boolean): Offset {
+            val logicalY = (row + 1) * cellH
+            val below = logicalY + handleRadius * 0.75f
+            val y = if (below + handleRadius <= viewportSize.height) {
+                below
+            } else {
+                row * cellH - handleRadius * 0.75f
+            }
+            val x = logicalX + handleRadius * if (start) -0.45f else 0.45f
+            return Offset(
+                x.coerceIn(handleRadius, (viewportSize.width - handleRadius).coerceAtLeast(handleRadius)),
+                y.coerceIn(handleRadius, (viewportSize.height - handleRadius).coerceAtLeast(handleRadius)),
+            )
+        }
+        val startCenter = center(bounds.startRow, bounds.startCol * cellW, start = true)
+        val endCenter = center(bounds.endRow, (bounds.endCol + 1) * cellW, start = false)
+        drawSelectionHandle(startCenter, handleRadius, handleColor, start = true)
+        drawSelectionHandle(endCenter, handleRadius, handleColor, start = false)
+    }
+}
+
+private fun DrawScope.drawSelectionHandle(
+    center: Offset,
+    radius: Float,
+    color: Color,
+    start: Boolean,
+) {
+    // Stem into the selection edge.
+    val stemTop = center.y - radius * 0.85f
+    drawRect(
+        color = color,
+        topLeft = Offset(center.x - radius * 0.18f, stemTop - radius * 0.35f),
+        size = Size(radius * 0.36f, radius * 0.55f),
+    )
+    drawCircle(color = color, radius = radius, center = center)
+    // Small white ring for contrast on busy terminal backgrounds.
+    drawCircle(
+        color = Color.White.copy(alpha = 0.92f),
+        radius = radius * 0.38f,
+        center = center,
+    )
+    // Subtle directional cue: start handle slightly left, end slightly right.
+    val tipX = if (start) center.x - radius * 0.15f else center.x + radius * 0.15f
+    drawCircle(color = color, radius = radius * 0.18f, center = Offset(tipX, center.y))
 }
 
 private fun Color.toArgb(): Int {
