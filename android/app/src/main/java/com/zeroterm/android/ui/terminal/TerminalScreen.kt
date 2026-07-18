@@ -1,26 +1,38 @@
 package com.zeroterm.android.ui.terminal
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.os.PowerManager
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.VerticalAlignBottom
@@ -30,31 +42,51 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.viewinterop.AndroidView
-import com.zeroterm.android.data.HostKeyPrompt
+import androidx.core.content.ContextCompat
+import com.zeroterm.android.R
+import com.zeroterm.android.data.ActiveSession
 import com.zeroterm.android.data.SessionManager
+import com.zeroterm.android.data.ZeroTermRepository
 import com.zeroterm.android.terminal.TermKeys
 import com.zeroterm.android.terminal.TerminalHostView
+import com.zeroterm.android.ui.ai.AiScreen
+import com.zeroterm.android.ui.ai.rememberAiConversationState
+import com.zeroterm.android.ui.snippets.SnippetsScreen
+import com.zeroterm.android.ui.components.ZeroTopBar
+import com.zeroterm.android.ui.components.LocalChromeTransparency
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -64,11 +96,12 @@ fun TerminalScreen(
     hostLabel: String,
     alreadyConnected: Boolean = false,
     sessions: SessionManager,
+    repository: ZeroTermRepository,
     fontSizeSp: Float = 13f,
+    backgroundImagePath: String = "",
+    backgroundOpacity: Float = 0.4f,
+    backgroundBlurDp: Int = 0,
     onFontSizeChanged: (Float) -> Unit = {},
-    onOpenSnippets: (() -> Unit)? = null,
-    snippetCommand: String? = null,
-    onSnippetConsumed: () -> Unit = {},
     onBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -76,8 +109,9 @@ fun TerminalScreen(
     val connecting by sessions.connecting.collectAsState()
     val error by sessions.error.collectAsState()
     val active by sessions.active.collectAsState()
+    val hostKey by sessions.hostKeyPrompt.collectAsState()
+    val closedEvent by sessions.closed.collectAsState()
     val frameTick by sessions.frameTick.collectAsState()
-    var hostKey by remember { mutableStateOf<HostKeyPrompt?>(null) }
     var termView by remember { mutableStateOf<TerminalHostView?>(null) }
     var ctrlSticky by remember { mutableStateOf(false) }
     var lastCols by remember { mutableStateOf(80) }
@@ -86,14 +120,56 @@ fun TerminalScreen(
     var disconnectedMsg by remember { mutableStateOf<String?>(null) }
     var hasSelection by remember { mutableStateOf(false) }
     var scrolledBack by remember { mutableStateOf(false) }
+    val toolsDrawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val drawerAlpha = 1f - LocalChromeTransparency.current.drawer.coerceIn(0f, 0.8f)
+    var toolsPage by remember { mutableStateOf(TerminalToolsPage.Ai) }
+
+    val batteryOptimizationRequest = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { /* The session still works if the user keeps battery optimization enabled. */ }
+    val permissionPrefs = remember(context) {
+        context.getSharedPreferences("runtime_permission_prompts", Context.MODE_PRIVATE)
+    }
+    val requestBatteryExemption = {
+        val power = context.getSystemService(PowerManager::class.java)
+        if (
+            !power.isIgnoringBatteryOptimizations(context.packageName) &&
+            !permissionPrefs.getBoolean("battery_optimization_prompted", false)
+        ) {
+            permissionPrefs.edit().putBoolean("battery_optimization_prompted", true).apply()
+            batteryOptimizationRequest.launch(
+                Intent(
+                    android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    Uri.parse("package:${context.packageName}"),
+                ),
+            )
+        }
+    }
+    val notificationPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { requestBatteryExemption() }
 
     LaunchedEffect(Unit) {
-        sessions.hostKeyPrompts.collect { hostKey = it }
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            requestBatteryExemption()
+        }
+    }
+
+    LaunchedEffect(closedEvent) {
+        closedEvent?.let { event ->
+            disconnectedMsg = event.message ?: context.getString(R.string.terminal_disconnected)
+        }
     }
 
     LaunchedEffect(Unit) {
-        sessions.closed.collect { (_, msg) ->
-            disconnectedMsg = msg ?: "Disconnected"
+        sessions.networkChanged.collect {
+            disconnectedMsg = context.getString(R.string.terminal_network_changed)
         }
     }
 
@@ -116,35 +192,22 @@ fun TerminalScreen(
         if (frame != null) termView?.applyFrame(frame)
     }
 
-    LaunchedEffect(snippetCommand) {
-        val cmd = snippetCommand ?: return@LaunchedEffect
-        if (cmd.isNotEmpty()) {
-            if (sessions.displayOffset() > 0) {
-                sessions.scrollToBottom()
-                scrolledBack = false
-                refreshPaint()
-            }
-            sessions.sendText(cmd)
-            onSnippetConsumed()
-        }
-    }
-
     fun copySelection() {
         val text = termView?.selectedText().orEmpty()
         if (text.isBlank()) {
             // Fall back to full viewport
             val all = sessions.viewportText()
             if (all.isBlank()) {
-                Toast.makeText(context, "Nothing to copy", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.terminal_nothing_to_copy), Toast.LENGTH_SHORT).show()
                 return
             }
             copyToClipboard(context, all)
-            Toast.makeText(context, "Copied screen", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.terminal_copied_screen), Toast.LENGTH_SHORT).show()
         } else {
             copyToClipboard(context, text)
             termView?.clearSelection()
             hasSelection = false
-            Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.terminal_copied), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -152,7 +215,7 @@ fun TerminalScreen(
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val text = cm.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()
         if (text.isNullOrEmpty()) {
-            Toast.makeText(context, "Clipboard empty", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.terminal_clipboard_empty), Toast.LENGTH_SHORT).show()
             return
         }
         scope.launch {
@@ -169,8 +232,8 @@ fun TerminalScreen(
     LaunchedEffect(hostId, lastCols, lastRows, alreadyConnected) {
         if (!started && lastCols >= 2 && lastRows >= 1) {
             started = true
-            if (alreadyConnected) {
-                // Session already opened by Quick Connect
+            if (alreadyConnected || sessions.isActiveFor(hostId)) {
+                // Re-attach after navigation or Activity/Compose recreation.
                 refreshPaint()
             } else if (hostId != null) {
                 doConnect()
@@ -195,22 +258,16 @@ fun TerminalScreen(
         scrolledBack = sessions.displayOffset() > 0
     }
 
-    DisposableEffect(Unit) {
-        onDispose {
-            scope.launch { sessions.disconnect() }
-        }
-    }
-
     hostKey?.let { prompt ->
         AlertDialog(
             onDismissRequest = {
                 sessions.respondHostKey(prompt.requestId, false)
-                hostKey = null
             },
+            properties = DialogProperties(dismissOnClickOutside = false),
             title = {
                 Text(
-                    if (prompt.stored != null) "Host key changed!"
-                    else "Unknown host key",
+                    if (prompt.stored != null) stringResource(R.string.terminal_host_key_changed)
+                    else stringResource(R.string.terminal_host_key_unknown),
                 )
             },
             text = {
@@ -219,77 +276,185 @@ fun TerminalScreen(
                     Text(prompt.info.keyType)
                     Text(prompt.info.fingerprint, style = MaterialTheme.typography.bodySmall)
                     prompt.stored?.let {
-                        Text("Previously: $it", color = MaterialTheme.colorScheme.error)
+                        Text(stringResource(R.string.terminal_previously, it), color = MaterialTheme.colorScheme.error)
                     }
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
                     sessions.respondHostKey(prompt.requestId, true)
-                    hostKey = null
-                }) { Text("Accept") }
+                }) { Text(stringResource(R.string.common_accept)) }
             },
             dismissButton = {
                 TextButton(onClick = {
                     sessions.respondHostKey(prompt.requestId, false)
-                    hostKey = null
-                }) { Text("Reject") }
+                }) { Text(stringResource(R.string.common_reject)) }
             },
         )
     }
 
+    // Material's drawer follows layout direction. RTL places it on the physical
+    // right, then each surface restores LTR so text and terminal input stay normal.
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+        ModalNavigationDrawer(
+            drawerState = toolsDrawerState,
+            gesturesEnabled = active != null,
+            drawerContent = {
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                    ModalDrawerSheet(
+                        modifier = Modifier
+                            .fillMaxWidth(0.92f)
+                            .widthIn(max = 420.dp),
+                        drawerContainerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = drawerAlpha),
+                        drawerContentColor = MaterialTheme.colorScheme.onSurface,
+                    ) {
+                        TerminalToolsDrawer(
+                            selectedPage = toolsPage,
+                            onPageSelected = { toolsPage = it },
+                            onClose = { scope.launch { toolsDrawerState.close() } },
+                            repository = repository,
+                            sessions = sessions,
+                            hostLabel = hostLabel,
+                            contextProvider = { sessions.viewportText() },
+                            onInsertAiCommand = { command ->
+                                // Tapping the explicit approval action executes the command.
+                                val executable = command.trim()
+                                if (executable.isNotEmpty()) {
+                                    scope.launch { sessions.sendText("$executable\n") }
+                                    scope.launch { toolsDrawerState.close() }
+                                }
+                            },
+                            onInsertSnippet = { command ->
+                                if (command.isNotEmpty()) {
+                                    scope.launch { sessions.sendText(command) }
+                                    scope.launch { toolsDrawerState.close() }
+                                }
+                            },
+                            onTerminalCommand = { command ->
+                                scope.launch { sessions.sendText("$command\n") }
+                                scope.launch { toolsDrawerState.close() }
+                            },
+                        )
+                    }
+                }
+            },
+        ) {
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                TerminalContent(
+                    hostLabel = hostLabel,
+                    connecting = connecting,
+                    error = error,
+                    active = active,
+                    disconnectedMsg = disconnectedMsg,
+                    hasSelection = hasSelection,
+                    scrolledBack = scrolledBack,
+                    ctrlSticky = ctrlSticky,
+                    lastCols = lastCols,
+                    lastRows = lastRows,
+                    fontSizeSp = fontSizeSp,
+                    backgroundImagePath = backgroundImagePath,
+                    backgroundOpacity = backgroundOpacity,
+                    backgroundBlurDp = backgroundBlurDp,
+                    alreadyConnected = alreadyConnected,
+                    sessions = sessions,
+                    termView = termView,
+                    onTermViewChanged = { termView = it },
+                    onCtrlStickyChanged = { ctrlSticky = it },
+                    onSelectionChanged = { hasSelection = it },
+                    onScrolledBackChanged = { scrolledBack = it },
+                    onSizeChanged = { cols, rows -> lastCols = cols; lastRows = rows },
+                    onBack = onBack,
+                    onDisconnect = { scope.launch { sessions.disconnect() } },
+                    onReconnect = { doConnect() },
+                    onCopy = { copySelection() },
+                    onPaste = { pasteClipboard() },
+                    onRefreshPaint = { refreshPaint() },
+                    onOpenTools = { scope.launch { toolsDrawerState.open() } },
+                    onFontSizeChanged = onFontSizeChanged,
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TerminalContent(
+    hostLabel: String,
+    connecting: Boolean,
+    error: String?,
+    active: ActiveSession?,
+    disconnectedMsg: String?,
+    hasSelection: Boolean,
+    scrolledBack: Boolean,
+    ctrlSticky: Boolean,
+    lastCols: Int,
+    lastRows: Int,
+    fontSizeSp: Float,
+    backgroundImagePath: String,
+    backgroundOpacity: Float,
+    backgroundBlurDp: Int,
+    alreadyConnected: Boolean,
+    sessions: SessionManager,
+    termView: TerminalHostView?,
+    onTermViewChanged: (TerminalHostView) -> Unit,
+    onCtrlStickyChanged: (Boolean) -> Unit,
+    onSelectionChanged: (Boolean) -> Unit,
+    onScrolledBackChanged: (Boolean) -> Unit,
+    onSizeChanged: (Int, Int) -> Unit,
+    onBack: () -> Unit,
+    onDisconnect: () -> Unit,
+    onReconnect: () -> Unit,
+    onCopy: () -> Unit,
+    onPaste: () -> Unit,
+    onRefreshPaint: () -> Unit,
+    onOpenTools: () -> Unit,
+    onFontSizeChanged: (Float) -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    val latestCtrlSticky by rememberUpdatedState(ctrlSticky)
+    val latestCols by rememberUpdatedState(lastCols)
+    val latestRows by rememberUpdatedState(lastRows)
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.48f),
+        contentColor = MaterialTheme.colorScheme.onBackground,
         topBar = {
-            TopAppBar(
-                title = { Text(hostLabel, maxLines = 1) },
+            ZeroTopBar(
+                title = hostLabel,
+                subtitle = stringResource(R.string.terminal_connected),
                 navigationIcon = {
                     IconButton(onClick = {
-                        scope.launch {
-                            sessions.disconnect()
-                            onBack()
-                        }
+                        onDisconnect()
+                        onBack()
                     }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 actions = {
                     if (hasSelection) {
-                        IconButton(onClick = { copySelection() }) {
-                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy")
+                        IconButton(onClick = onCopy) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = stringResource(R.string.common_copy))
                         }
                     }
                     if (scrolledBack) {
                         IconButton(onClick = {
                             sessions.scrollToBottom()
-                            scrolledBack = false
-                            refreshPaint()
+                            onScrolledBackChanged(false)
+                            onRefreshPaint()
                         }) {
-                            Icon(Icons.Default.VerticalAlignBottom, contentDescription = "Bottom")
+                            Icon(Icons.Default.VerticalAlignBottom, contentDescription = stringResource(R.string.terminal_bottom))
                         }
                     }
-                    IconButton(onClick = { pasteClipboard() }) {
-                        Icon(Icons.Default.ContentPaste, contentDescription = "Paste")
-                    }
-                    if (onOpenSnippets != null) {
-                        IconButton(onClick = onOpenSnippets) {
-                            Icon(Icons.Default.Code, contentDescription = "Snippets")
-                        }
+                    IconButton(onClick = onPaste) {
+                        Icon(Icons.Default.ContentPaste, contentDescription = stringResource(R.string.common_paste))
                     }
                     if (disconnectedMsg != null || (error != null && active == null)) {
-                        IconButton(onClick = { doConnect() }) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Reconnect")
+                        IconButton(onClick = onReconnect, enabled = !connecting) {
+                            Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.terminal_reconnect))
                         }
                     }
                     IconButton(onClick = { termView?.showIme() }) {
-                        Icon(Icons.Default.Keyboard, contentDescription = "Keyboard")
-                    }
-                    IconButton(onClick = {
-                        scope.launch {
-                            sessions.disconnect()
-                            onBack()
-                        }
-                    }) {
-                        Icon(Icons.Default.Close, contentDescription = "Disconnect")
+                        Icon(Icons.Default.Keyboard, contentDescription = stringResource(R.string.terminal_keyboard))
                     }
                 },
             )
@@ -318,8 +483,8 @@ fun TerminalScreen(
                             color = MaterialTheme.colorScheme.onErrorContainer,
                             modifier = Modifier.weight(1f),
                         )
-                        Button(onClick = { doConnect() }) {
-                            Text("Reconnect")
+                        Button(onClick = onReconnect, enabled = !connecting) {
+                            Text(stringResource(R.string.terminal_reconnect))
                         }
                     }
                 }
@@ -328,8 +493,9 @@ fun TerminalScreen(
                 AndroidView(
                     factory = { ctx ->
                         TerminalHostView(ctx).also { v ->
-                            termView = v
+                            onTermViewChanged(v)
                             v.setFontSizeSp(fontSizeSp)
+                            v.setBackgroundConfig(backgroundImagePath, backgroundOpacity, backgroundBlurDp)
                             v.onFontSizeChanged = onFontSizeChanged
                             if (alreadyConnected) {
                                 sessions.snapshot()?.let { v.applyFrame(it) }
@@ -338,14 +504,14 @@ fun TerminalScreen(
                                 scope.launch {
                                     if (sessions.displayOffset() > 0) {
                                         sessions.scrollToBottom()
-                                        scrolledBack = false
-                                        refreshPaint()
+                                        onScrolledBackChanged(false)
+                                        onRefreshPaint()
                                     }
-                                    if (ctrlSticky && text.length == 1) {
+                                    if (latestCtrlSticky && text.length == 1) {
                                         val ch = text[0]
                                         if (ch in 'a'..'z' || ch in 'A'..'Z') {
                                             sessions.sendInput(TermKeys.ctrl(ch))
-                                            ctrlSticky = false
+                                            onCtrlStickyChanged(false)
                                             return@launch
                                         }
                                     }
@@ -356,17 +522,16 @@ fun TerminalScreen(
                                 scope.launch {
                                     if (sessions.displayOffset() > 0) {
                                         sessions.scrollToBottom()
-                                        scrolledBack = false
-                                        refreshPaint()
+                                        onScrolledBackChanged(false)
+                                        onRefreshPaint()
                                     }
                                     sessions.sendInput(bytes)
                                 }
                             }
                             v.onSizeChangedCells = { c, r ->
-                                if (c != lastCols || r != lastRows) {
-                                    lastCols = c
-                                    lastRows = r
-                                    if (active != null) {
+                                if (c != latestCols || r != latestRows) {
+                                    onSizeChanged(c, r)
+                                    if (sessions.active.value != null) {
                                         scope.launch {
                                             sessions.resize(c.toUShort(), r.toUShort())
                                         }
@@ -376,11 +541,15 @@ fun TerminalScreen(
                             v.onScrollLines = { delta ->
                                 // Finger drag down (positive y) → older history
                                 sessions.scrollDisplay(delta)
-                                scrolledBack = sessions.displayOffset() > 0
-                                refreshPaint()
+                                onScrolledBackChanged(sessions.displayOffset() > 0)
+                                onRefreshPaint()
                             }
-                            v.onSelectionChanged = { hasSelection = it }
+                            v.onSelectionChanged = onSelectionChanged
                         }
+                    },
+                    update = { view ->
+                        view.setFontSizeSp(fontSizeSp)
+                        view.setBackgroundConfig(backgroundImagePath, backgroundOpacity, backgroundBlurDp)
                     },
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -393,37 +562,155 @@ fun TerminalScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Text(error!!, color = MaterialTheme.colorScheme.error)
-                        Button(onClick = { doConnect() }, modifier = Modifier.padding(top = 8.dp)) {
-                            Text("Retry")
+                        Button(
+                            onClick = onReconnect,
+                            enabled = !connecting,
+                            modifier = Modifier.padding(top = 8.dp),
+                        ) {
+                            Text(stringResource(R.string.common_retry))
+                        }
+                    }
+                }
+                if (active != null) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .width(22.dp)
+                            .height(64.dp)
+                            .clickable(onClick = onOpenTools),
+                        shape = MaterialTheme.shapes.small,
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
+                        tonalElevation = 3.dp,
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Default.ChevronLeft,
+                                contentDescription = stringResource(R.string.terminal_tools),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
                         }
                     }
                 }
             }
             ExtraKeysBar(
                 ctrlSticky = ctrlSticky,
-                onCtrl = { ctrlSticky = !ctrlSticky },
+                onCtrl = { onCtrlStickyChanged(!ctrlSticky) },
                 onBytes = { scope.launch { sessions.sendInput(it) } },
                 onText = { scope.launch { sessions.sendText(it) } },
-                onPaste = { pasteClipboard() },
-                onCopy = { copySelection() },
+                onPaste = onPaste,
+                onCopy = onCopy,
                 onScrollUp = {
                     sessions.scrollDisplay(5)
-                    scrolledBack = true
-                    refreshPaint()
+                    onScrolledBackChanged(true)
+                    onRefreshPaint()
                 },
                 onScrollDown = {
                     sessions.scrollDisplay(-5)
-                    scrolledBack = sessions.displayOffset() > 0
-                    refreshPaint()
+                    onScrolledBackChanged(sessions.displayOffset() > 0)
+                    onRefreshPaint()
                 },
             )
         }
     }
 }
 
+private enum class TerminalToolsPage { Ai, Snippets, Metrics, Docker }
+
+@Composable
+private fun TerminalToolsDrawer(
+    selectedPage: TerminalToolsPage,
+    onPageSelected: (TerminalToolsPage) -> Unit,
+    onClose: () -> Unit,
+    repository: ZeroTermRepository,
+    sessions: SessionManager,
+    hostLabel: String,
+    contextProvider: () -> String,
+    onInsertAiCommand: (String) -> Unit,
+    onInsertSnippet: (String) -> Unit,
+    onTerminalCommand: (String) -> Unit,
+) {
+    val aiConversationState = rememberAiConversationState()
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TerminalToolIconButton(
+                selected = selectedPage == TerminalToolsPage.Snippets,
+                icon = painterResource(R.drawable.ic_terminal_tool_snippets),
+                label = stringResource(R.string.snippets_title),
+                onClick = { onPageSelected(TerminalToolsPage.Snippets) },
+            )
+            TerminalToolIconButton(
+                selected = selectedPage == TerminalToolsPage.Ai,
+                icon = painterResource(R.drawable.ic_terminal_tool_ai),
+                label = stringResource(R.string.ai_title),
+                onClick = { onPageSelected(TerminalToolsPage.Ai) },
+            )
+            TerminalToolIconButton(
+                selected = selectedPage == TerminalToolsPage.Metrics,
+                icon = painterResource(R.drawable.ic_terminal_tool_metrics),
+                label = stringResource(R.string.monitor_title),
+                onClick = { onPageSelected(TerminalToolsPage.Metrics) },
+            )
+            TerminalToolIconButton(
+                selected = selectedPage == TerminalToolsPage.Docker,
+                icon = painterResource(R.drawable.ic_terminal_tool_docker),
+                label = stringResource(R.string.docker_title),
+                onClick = { onPageSelected(TerminalToolsPage.Docker) },
+            )
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = onClose) {
+                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.common_close))
+            }
+        }
+        when (selectedPage) {
+            TerminalToolsPage.Ai -> AiScreen(
+                repository = repository,
+                contextLabel = hostLabel,
+                contextProvider = contextProvider,
+                onInsertCommand = onInsertAiCommand,
+                embedded = true,
+                conversationState = aiConversationState,
+            )
+            TerminalToolsPage.Snippets -> SnippetsScreen(
+                repository = repository,
+                onInsert = onInsertSnippet,
+                allowEditingInPickMode = true,
+                embedded = true,
+            )
+            TerminalToolsPage.Metrics -> MetricsPanel(sessions)
+            TerminalToolsPage.Docker -> DockerPanel(sessions, onTerminalCommand)
+        }
+    }
+}
+
+@Composable
+private fun TerminalToolIconButton(
+    selected: Boolean,
+    icon: Painter,
+    label: String,
+    onClick: () -> Unit,
+) {
+    IconToggleButton(
+        checked = selected,
+        onCheckedChange = { onClick() },
+        colors = IconButtonDefaults.iconToggleButtonColors(
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            checkedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+            checkedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ),
+    ) {
+        Icon(icon, contentDescription = label)
+    }
+}
+
 private fun copyToClipboard(context: Context, text: String) {
     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    cm.setPrimaryClip(ClipData.newPlainText("terminal", text))
+    cm.setPrimaryClip(ClipData.newPlainText(context.getString(R.string.terminal_clip_label), text))
 }
 
 @Composable
@@ -458,8 +745,8 @@ private fun ExtraKeysBar(
             KeyBtn("PgDn") { onBytes(TermKeys.pgDn()) }
             KeyBtn("Scr↑") { onScrollUp() }
             KeyBtn("Scr↓") { onScrollDown() }
-            KeyBtn("Copy") { onCopy() }
-            KeyBtn("Paste") { onPaste() }
+            KeyBtn(stringResource(R.string.terminal_key_copy)) { onCopy() }
+            KeyBtn(stringResource(R.string.terminal_key_paste)) { onPaste() }
             KeyBtn("|") { onText("|") }
             KeyBtn("~") { onText("~") }
             KeyBtn("-") { onText("-") }

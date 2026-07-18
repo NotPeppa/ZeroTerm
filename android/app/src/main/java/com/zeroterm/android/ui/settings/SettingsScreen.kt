@@ -20,18 +20,21 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.zeroterm.android.BuildConfig
+import com.zeroterm.android.R
+import com.zeroterm.android.data.AppLocale
 import com.zeroterm.android.data.AppSettings
 import com.zeroterm.android.data.ThemeMode
 import kotlinx.coroutines.launch
+import com.zeroterm.android.ui.components.ZeroTopBar
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -46,12 +49,17 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.48f),
+        contentColor = MaterialTheme.colorScheme.onBackground,
         topBar = {
-            TopAppBar(
-                title = { Text("Settings") },
+            ZeroTopBar(
+                title = stringResource(R.string.settings_title),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.common_back),
+                        )
                     }
                 },
             )
@@ -64,27 +72,46 @@ fun SettingsScreen(
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState()),
         ) {
-            Text("Appearance", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.settings_appearance), style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
-            Text("Theme", style = MaterialTheme.typography.labelLarge)
+            Text(stringResource(R.string.settings_theme), style = MaterialTheme.typography.labelLarge)
             Spacer(Modifier.height(4.dp))
             Row {
                 ThemeMode.entries.forEach { mode ->
                     FilterChip(
                         selected = snap.themeMode == mode,
                         onClick = { scope.launch { settings.setThemeMode(mode) } },
-                        label = { Text(mode.name) },
+                        label = { Text(themeModeLabel(mode)) },
+                        modifier = Modifier.padding(end = 6.dp),
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+            Text(stringResource(R.string.settings_language), style = MaterialTheme.typography.labelLarge)
+            Spacer(Modifier.height(4.dp))
+            Row {
+                AppLocale.entries.forEach { locale ->
+                    FilterChip(
+                        selected = snap.locale == locale,
+                        onClick = { scope.launch { settings.setLocale(locale) } },
+                        label = { Text(localeLabel(locale)) },
                         modifier = Modifier.padding(end = 6.dp),
                     )
                 }
             }
 
             Spacer(Modifier.height(24.dp))
-            Text("Terminal", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.settings_terminal), style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Font size", modifier = Modifier.weight(1f))
-                Text("${snap.fontSizeSp.roundToInt()} sp")
+                Text(stringResource(R.string.settings_font_size), modifier = Modifier.weight(1f))
+                Text(
+                    stringResource(
+                        R.string.settings_font_size_value,
+                        snap.fontSizeSp.roundToInt(),
+                    ),
+                )
             }
             Slider(
                 value = snap.fontSizeSp,
@@ -96,19 +123,19 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
             Text(
-                "Pinch on the terminal to zoom; this is the default size for new sessions.",
+                stringResource(R.string.settings_font_help),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
 
             Spacer(Modifier.height(24.dp))
-            Text("Sync", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.settings_sync), style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Auto-sync in foreground")
+                    Text(stringResource(R.string.settings_auto_sync))
                     Text(
-                        "While unlocked, sync all profiles periodically.",
+                        stringResource(R.string.settings_auto_sync_help),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                     )
@@ -121,8 +148,13 @@ fun SettingsScreen(
             if (snap.autoSync) {
                 Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Interval", modifier = Modifier.weight(1f))
-                    Text("${snap.autoSyncIntervalMin} min")
+                    Text(stringResource(R.string.settings_interval), modifier = Modifier.weight(1f))
+                    Text(
+                        stringResource(
+                            R.string.settings_interval_value,
+                            snap.autoSyncIntervalMin,
+                        ),
+                    )
                 }
                 Slider(
                     value = snap.autoSyncIntervalMin.toFloat(),
@@ -136,20 +168,38 @@ fun SettingsScreen(
             }
 
             Spacer(Modifier.height(32.dp))
-            Text("About", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.settings_about), style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
-            Text("ZeroTerm Android", style = MaterialTheme.typography.bodyLarge)
+            Text(stringResource(R.string.settings_about_title), style = MaterialTheme.typography.bodyLarge)
             Text(
-                "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                stringResource(
+                    R.string.settings_about_version,
+                    BuildConfig.VERSION_NAME,
+                    BuildConfig.VERSION_CODE,
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
             Text(
-                "Zero telemetry. Vault crypto and SSH live in Rust (core).",
+                stringResource(R.string.settings_about_body),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 modifier = Modifier.padding(top = 4.dp),
             )
         }
     }
+}
+
+@Composable
+private fun themeModeLabel(mode: ThemeMode): String = when (mode) {
+    ThemeMode.System -> stringResource(R.string.settings_theme_system)
+    ThemeMode.Dark -> stringResource(R.string.settings_theme_dark)
+    ThemeMode.Light -> stringResource(R.string.settings_theme_light)
+}
+
+@Composable
+private fun localeLabel(locale: AppLocale): String = when (locale) {
+    AppLocale.System -> stringResource(R.string.settings_language_system)
+    AppLocale.English -> stringResource(R.string.settings_language_en)
+    AppLocale.ChineseSimplified -> stringResource(R.string.settings_language_zh_cn)
 }

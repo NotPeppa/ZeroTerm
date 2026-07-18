@@ -78,6 +78,36 @@ pub struct SyncStatusRecord {
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
+pub struct SyncDeviceRecord {
+    pub device_id: String,
+    pub name: String,
+    pub last_seen_at: i64,
+    pub is_current: bool,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct SyncRepoStatsRecord {
+    pub total_bytes: u64,
+    pub manifest_bytes: u64,
+    pub keyring_bytes: u64,
+    pub snapshots_bytes: u64,
+    pub events_bytes: u64,
+    pub trash_bytes: u64,
+    pub devices_bytes: u64,
+    pub snapshot_count: u32,
+    pub event_count: u32,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct SyncCompactRecord {
+    pub events_compacted: u32,
+    pub events_trashed: u32,
+    pub events_retained: u32,
+    pub records_in_snapshot: u32,
+    pub head_clock: u64,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
 pub struct SyncOutcomeRecord {
     pub profile_id: String,
     pub events_pulled: u32,
@@ -418,6 +448,79 @@ impl ZeroTerm {
             profile_valid: s.profile_valid,
             profile_issue: s.profile_issue.unwrap_or_default(),
         })
+    }
+
+    pub async fn sync_forget_engine(&self, profile_id: String) -> Result<(), FfiError> {
+        self.sync_manager.forget(&profile_id).await;
+        Ok(())
+    }
+
+    pub async fn sync_list_devices(
+        &self,
+        profile_id: String,
+    ) -> Result<Vec<SyncDeviceRecord>, FfiError> {
+        let app = app_arc(self)?;
+        let devices = app
+            .sync_list_devices(&self.sync_manager, &profile_id)
+            .await
+            .map_err(map_app_error)?;
+        let current_device_id = zeroterm_app::local_device_id();
+        Ok(devices
+            .into_iter()
+            .map(|device| SyncDeviceRecord {
+                is_current: device.device_id == current_device_id,
+                device_id: device.device_id,
+                name: device.name,
+                last_seen_at: device.last_seen_at,
+            })
+            .collect())
+    }
+
+    pub async fn sync_repo_stats(
+        &self,
+        profile_id: String,
+    ) -> Result<SyncRepoStatsRecord, FfiError> {
+        let app = app_arc(self)?;
+        let stats = app
+            .sync_repo_stats(&self.sync_manager, &profile_id)
+            .await
+            .map_err(map_app_error)?;
+        Ok(SyncRepoStatsRecord {
+            total_bytes: stats.total_bytes,
+            manifest_bytes: stats.manifest_bytes,
+            keyring_bytes: stats.keyring_bytes,
+            snapshots_bytes: stats.snapshots_bytes,
+            events_bytes: stats.events_bytes,
+            trash_bytes: stats.trash_bytes,
+            devices_bytes: stats.devices_bytes,
+            snapshot_count: stats.snapshot_count as u32,
+            event_count: stats.event_count as u32,
+        })
+    }
+
+    pub async fn sync_compact(
+        &self,
+        profile_id: String,
+    ) -> Result<SyncCompactRecord, FfiError> {
+        let app = app_arc(self)?;
+        let report = app
+            .sync_compact(&self.sync_manager, &profile_id)
+            .await
+            .map_err(map_app_error)?;
+        Ok(SyncCompactRecord {
+            events_compacted: report.events_compacted as u32,
+            events_trashed: report.events_trashed as u32,
+            events_retained: report.events_retained as u32,
+            records_in_snapshot: report.records_in_snapshot as u32,
+            head_clock: report.head_clock,
+        })
+    }
+
+    pub async fn sync_delete_remote_repo(&self, profile_id: String) -> Result<(), FfiError> {
+        let app = app_arc(self)?;
+        app.sync_delete_remote_repo(&self.sync_manager, &profile_id)
+            .await
+            .map_err(map_app_error)
     }
 
     pub fn list_open_conflicts(&self) -> Result<Vec<ConflictRecord>, FfiError> {

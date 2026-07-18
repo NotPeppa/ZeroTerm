@@ -12,6 +12,7 @@ use zeroterm_ssh::{ConnectConfig, HostKeyPolicy};
 use zeroterm_vault::Vault;
 
 use crate::error::AppError;
+use crate::ai::AiProfile;
 use crate::host::Host;
 use crate::host_group::HostGroup;
 use crate::port_forward::PortForwardRule;
@@ -21,6 +22,7 @@ const HOST_KIND: &str = "host";
 const HOST_GROUP_KIND: &str = "host_group";
 const PORT_FORWARD_KIND: &str = "port_forward";
 const SNIPPET_KIND: &str = "snippet";
+const AI_PROFILE_KIND: &str = "ai_profile";
 
 #[derive(Debug, Clone)]
 pub struct HostDiagnostics {
@@ -56,6 +58,60 @@ impl App {
     /// repos so two devices can verify they share the same vault.
     pub fn vault_id(&self) -> &str {
         self.vault.vault_id()
+    }
+
+    // -- AI profile CRUD ---------------------------------------------------
+
+    pub fn list_ai_profiles(&self) -> Result<Vec<AiProfile>, AppError> {
+        let records = self.vault.list(AI_PROFILE_KIND)?;
+        let mut profiles = Vec::with_capacity(records.len());
+        for (id, plaintext) in records {
+            match serde_json::from_slice::<AiProfile>(&plaintext) {
+                Ok(mut profile) => {
+                    profile.id = id;
+                    profiles.push(profile);
+                }
+                Err(error) => {
+                    tracing::warn!(record_id = %id, %error, "skipping malformed AI profile");
+                }
+            }
+        }
+        profiles.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        Ok(profiles)
+    }
+
+    pub fn find_ai_profile_by_id(&self, id: &str) -> Result<Option<AiProfile>, AppError> {
+        match self.vault.get(id) {
+            Ok(plaintext) => {
+                let mut profile: AiProfile = serde_json::from_slice(&plaintext)
+                    .map_err(AppError::BadAiProfileRecord)?;
+                profile.id = id.to_string();
+                Ok(Some(profile))
+            }
+            Err(zeroterm_vault::VaultError::NotFound(_)) => Ok(None),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    pub fn save_ai_profile(&self, profile: &AiProfile) -> Result<String, AppError> {
+        validate_ai_profile(profile)?;
+        let json = serde_json::to_vec(profile).map_err(AppError::BadAiProfileRecord)?;
+        Ok(self.vault.insert(AI_PROFILE_KIND, &json)?)
+    }
+
+    pub fn update_ai_profile(&self, profile: &AiProfile) -> Result<(), AppError> {
+        if profile.id.is_empty() {
+            return Err(AppError::BadAiProfile("id is required for update".into()));
+        }
+        validate_ai_profile(profile)?;
+        let json = serde_json::to_vec(profile).map_err(AppError::BadAiProfileRecord)?;
+        self.vault.update(&profile.id, &json)?;
+        Ok(())
+    }
+
+    pub fn delete_ai_profile(&self, id: &str) -> Result<(), AppError> {
+        self.vault.delete(id)?;
+        Ok(())
     }
 
     // -- host CRUD ----------------------------------------------------------
@@ -455,6 +511,19 @@ impl App {
             host_key_policy,
         }
     }
+}
+
+fn validate_ai_profile(profile: &AiProfile) -> Result<(), AppError> {
+    if profile.name.trim().is_empty() {
+        return Err(AppError::BadAiProfile("name cannot be empty".into()));
+    }
+    if profile.base_url.trim().is_empty() {
+        return Err(AppError::BadAiProfile("base URL cannot be empty".into()));
+    }
+    if profile.model.trim().is_empty() {
+        return Err(AppError::BadAiProfile("model cannot be empty".into()));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

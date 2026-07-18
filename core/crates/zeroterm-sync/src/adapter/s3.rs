@@ -178,31 +178,35 @@ impl S3Adapter {
         if self.cfg.force_path_style {
             builder = builder.force_path_style(true);
         }
-        // Route S3 traffic through the app's global HTTP proxy when one is set.
-        // The aws-sdk default connector ignores HTTP_PROXY env vars, so we build
-        // a hyper-based client with explicit proxy config and inject it.
-        if let Some(proxy_url) = proxy {
-            builder = builder.http_client(http_client_via_proxy(proxy_url)?);
-        }
+        // Always inject our connector. Besides making proxy handling explicit,
+        // this lets Android use bundled CA roots instead of rustls-native-certs,
+        // which cannot read Android's platform certificate store.
+        builder = builder.http_client(s3_http_client(proxy)?);
         Ok(S3Client::from_conf(builder.build()))
     }
 }
 
-/// Build an HTTP client that tunnels every request through `proxy_url`.
-/// Uses the SDK's own TLS backend (aws-lc rustls) so no extra crypto provider
-/// is pulled in, and threads the proxy config into the connector each time the
-/// runtime asks for one.
-fn http_client_via_proxy(
-    proxy_url: &str,
+/// Build the S3 HTTP client, optionally tunnelling through `proxy_url`.
+///
+/// Android does not have the filesystem CA bundle expected by
+/// `rustls-native-certs`, so its TLS context uses Mozilla roots compiled into
+/// the app. Other platforms keep using their native trust store.
+fn s3_http_client(
+    proxy_url: Option<&str>,
 ) -> Result<impl aws_sdk_s3::config::HttpClient + 'static, Error> {
     use aws_smithy_http_client::{
         proxy::ProxyConfig, tls, tls::rustls_provider::CryptoMode, Builder, Connector,
     };
 
-    let proxy_config = ProxyConfig::http(proxy_url.to_string()).map_err(err_str)?;
+    let proxy_config = match proxy_url {
+        Some(url) => ProxyConfig::http(url.to_string()).map_err(err_str)?,
+        None => ProxyConfig::disabled(),
+    };
+    let tls_context = s3_tls_context()?;
     let client = Builder::new().build_with_connector_fn(move |settings, components| {
         let mut conn = Connector::builder()
             .tls_provider(tls::Provider::Rustls(CryptoMode::AwsLc))
+            .tls_context(tls_context.clone())
             .proxy_config(proxy_config.clone());
         conn.set_connector_settings(settings.cloned());
         if let Some(components) = components {
@@ -211,6 +215,37 @@ fn http_client_via_proxy(
         conn.build()
     });
     Ok(client)
+}
+
+#[cfg(not(target_os = "android"))]
+fn s3_tls_context() -> Result<aws_smithy_http_client::tls::TlsContext, Error> {
+    aws_smithy_http_client::tls::TlsContext::builder()
+        .build()
+        .map_err(err_str)
+}
+
+#[cfg(target_os = "android")]
+fn s3_tls_context() -> Result<aws_smithy_http_client::tls::TlsContext, Error> {
+    use aws_smithy_http_client::tls::{TlsContext, TrustStore};
+    use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+
+    let mut roots = TrustStore::empty();
+    for cert in webpki_root_certs::TLS_SERVER_ROOT_CERTS {
+        let encoded = B64.encode(cert.as_ref());
+        let mut pem = String::from("-----BEGIN CERTIFICATE-----\n");
+        for line in encoded.as_bytes().chunks(64) {
+            // base64 output is guaranteed ASCII.
+            pem.push_str(std::str::from_utf8(line).expect("base64 is ASCII"));
+            pem.push('\n');
+        }
+        pem.push_str("-----END CERTIFICATE-----\n");
+        roots.add_pem_certificate(pem.into_bytes());
+    }
+
+    TlsContext::builder()
+        .with_trust_store(roots)
+        .build()
+        .map_err(err_str)
 }
 
 fn is_not_found_str(s: &str) -> bool {

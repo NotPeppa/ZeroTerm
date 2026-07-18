@@ -5,6 +5,7 @@
 //! rather than the lower layers directly.
 
 mod app;
+mod ai;
 mod error;
 mod host;
 mod host_group;
@@ -14,6 +15,7 @@ mod snippet;
 mod sync;
 
 pub use app::{App, HostDiagnostics};
+pub use ai::AiProfile;
 pub use error::AppError;
 pub use host::{ForwardSpec, Host, HostAuth};
 pub use host_group::HostGroup;

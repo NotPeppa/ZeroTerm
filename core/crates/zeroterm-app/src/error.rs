@@ -23,6 +23,12 @@ pub enum AppError {
     #[error("invalid snippet: {0}")]
     BadSnippet(String),
 
+    #[error("vault record was not valid AI profile JSON: {0}")]
+    BadAiProfileRecord(serde_json::Error),
+
+    #[error("invalid AI profile: {0}")]
+    BadAiProfile(String),
+
     #[error("vault record was not valid sync profile JSON: {0}")]
     BadSyncProfile(serde_json::Error),
 

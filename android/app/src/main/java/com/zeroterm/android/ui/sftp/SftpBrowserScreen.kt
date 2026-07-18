@@ -33,14 +33,13 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -51,7 +50,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
+import com.zeroterm.android.R
 import com.zeroterm.android.data.HostKeyPrompt
 import com.zeroterm.android.data.SftpManager
 import com.zeroterm.ffi.SftpDirEntry
@@ -59,6 +61,8 @@ import com.zeroterm.ffi.SftpFileKind
 import java.io.File
 import java.io.FileOutputStream
 import kotlinx.coroutines.launch
+import com.zeroterm.android.ui.components.ZeroTopBar
+import com.zeroterm.android.ui.components.ZeroEmptyState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -96,11 +100,11 @@ fun SftpBrowserScreen(
                     FileOutputStream(cache).use { output -> input.copyTo(output) }
                 }
                 sftp.upload(cache, name, overwrite = true).onFailure {
-                    Toast.makeText(context, it.message ?: "Upload failed", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, it.message ?: context.getString(R.string.sftp_upload_failed), Toast.LENGTH_LONG).show()
                 }
                 sftp.clearProgress()
             } catch (e: Exception) {
-                Toast.makeText(context, e.message ?: "Upload failed", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, e.message ?: context.getString(R.string.sftp_upload_failed), Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -116,27 +120,23 @@ fun SftpBrowserScreen(
                 context.contentResolver.openOutputStream(uri)?.use { out ->
                     file.inputStream().use { it.copyTo(out) }
                 }
-                Toast.makeText(context, "Saved", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.sftp_saved), Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
-                Toast.makeText(context, e.message ?: "Save failed", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, e.message ?: context.getString(R.string.sftp_save_failed), Toast.LENGTH_LONG).show()
             }
         }
     }
 
     LaunchedEffect(hostId) {
-        sftp.open(hostId).onFailure {
-            Toast.makeText(context, it.message ?: "SFTP open failed", Toast.LENGTH_LONG).show()
+        if (!sftp.isOpenFor(hostId)) {
+            sftp.open(hostId).onFailure {
+                Toast.makeText(context, it.message ?: context.getString(R.string.sftp_open_failed), Toast.LENGTH_LONG).show()
+            }
         }
     }
 
     LaunchedEffect(Unit) {
         sftp.hostKeyPrompts.collect { hostKey = it }
-    }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            scope.launch { sftp.close() }
-        }
     }
 
     hostKey?.let { prompt ->
@@ -145,7 +145,8 @@ fun SftpBrowserScreen(
                 sftp.respondHostKey(prompt.requestId, false)
                 hostKey = null
             },
-            title = { Text(if (prompt.stored != null) "Host key changed!" else "Unknown host key") },
+            properties = DialogProperties(dismissOnClickOutside = false),
+            title = { Text(if (prompt.stored != null) stringResource(R.string.sftp_host_key_changed) else stringResource(R.string.sftp_host_key_unknown)) },
             text = {
                 Column {
                     Text("${prompt.info.host}:${prompt.info.port}")
@@ -156,13 +157,13 @@ fun SftpBrowserScreen(
                 TextButton(onClick = {
                     sftp.respondHostKey(prompt.requestId, true)
                     hostKey = null
-                }) { Text("Accept") }
+                }) { Text(stringResource(R.string.common_accept)) }
             },
             dismissButton = {
                 TextButton(onClick = {
                     sftp.respondHostKey(prompt.requestId, false)
                     hostKey = null
-                }) { Text("Reject") }
+                }) { Text(stringResource(R.string.common_reject)) }
             },
         )
     }
@@ -170,12 +171,13 @@ fun SftpBrowserScreen(
     if (mkdirOpen) {
         AlertDialog(
             onDismissRequest = { mkdirOpen = false },
-            title = { Text("New folder") },
+            properties = DialogProperties(dismissOnClickOutside = false),
+            title = { Text(stringResource(R.string.sftp_new_folder)) },
             text = {
                 OutlinedTextField(
                     value = mkdirName,
                     onValueChange = { mkdirName = it },
-                    label = { Text("Name") },
+                    label = { Text(stringResource(R.string.common_name)) },
                     singleLine = true,
                 )
             },
@@ -191,10 +193,10 @@ fun SftpBrowserScreen(
                             }
                         }
                     }
-                }) { Text("Create") }
+                }) { Text(stringResource(R.string.common_create)) }
             },
             dismissButton = {
-                TextButton(onClick = { mkdirOpen = false }) { Text("Cancel") }
+                TextButton(onClick = { mkdirOpen = false }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }
@@ -202,13 +204,14 @@ fun SftpBrowserScreen(
     deleteConfirm?.let { entry ->
         AlertDialog(
             onDismissRequest = { deleteConfirm = null },
-            title = { Text("Delete ${entry.name}?") },
+            properties = DialogProperties(dismissOnClickOutside = false),
+            title = { Text(stringResource(R.string.sftp_delete_confirm, entry.name)) },
             text = {
                 Text(
                     if (entry.kind == SftpFileKind.DIR) {
-                        "Directory must be empty."
+                        stringResource(R.string.sftp_dir_must_empty)
                     } else {
-                        "This cannot be undone."
+                        stringResource(R.string.sftp_cannot_undo)
                     },
                 )
             },
@@ -220,10 +223,10 @@ fun SftpBrowserScreen(
                             Toast.makeText(context, it.message, Toast.LENGTH_LONG).show()
                         }
                     }
-                }) { Text("Delete") }
+                }) { Text(stringResource(R.string.common_delete)) }
             },
             dismissButton = {
-                TextButton(onClick = { deleteConfirm = null }) { Text("Cancel") }
+                TextButton(onClick = { deleteConfirm = null }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }
@@ -231,12 +234,13 @@ fun SftpBrowserScreen(
     renameTarget?.let { entry ->
         AlertDialog(
             onDismissRequest = { renameTarget = null },
-            title = { Text("Rename") },
+            properties = DialogProperties(dismissOnClickOutside = false),
+            title = { Text(stringResource(R.string.common_rename)) },
             text = {
                 OutlinedTextField(
                     value = renameName,
                     onValueChange = { renameName = it },
-                    label = { Text("New name") },
+                    label = { Text(stringResource(R.string.sftp_new_name)) },
                     singleLine = true,
                 )
             },
@@ -252,27 +256,21 @@ fun SftpBrowserScreen(
                             }
                         }
                     }
-                }) { Text("Rename") }
+                }) { Text(stringResource(R.string.common_rename)) }
             },
             dismissButton = {
-                TextButton(onClick = { renameTarget = null }) { Text("Cancel") }
+                TextButton(onClick = { renameTarget = null }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.48f),
+        contentColor = MaterialTheme.colorScheme.onBackground,
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(hostLabel, maxLines = 1)
-                        Text(
-                            path,
-                            style = MaterialTheme.typography.bodySmall,
-                            maxLines = 1,
-                        )
-                    }
-                },
+            ZeroTopBar(
+                title = hostLabel,
+                subtitle = path,
                 navigationIcon = {
                     IconButton(onClick = {
                         if (path != "/") {
@@ -284,17 +282,17 @@ fun SftpBrowserScreen(
                             }
                         }
                     }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 actions = {
                     IconButton(onClick = { mkdirOpen = true }) {
-                        Icon(Icons.Default.CreateNewFolder, contentDescription = "Mkdir")
+                        Icon(Icons.Default.CreateNewFolder, contentDescription = stringResource(R.string.sftp_mkdir))
                     }
                     IconButton(onClick = {
                         openDoc.launch(arrayOf("*/*"))
                     }) {
-                        Icon(Icons.Default.Upload, contentDescription = "Upload")
+                        Icon(Icons.Default.Upload, contentDescription = stringResource(R.string.common_upload))
                     }
                 },
             )
@@ -332,7 +330,7 @@ fun SftpBrowserScreen(
                         TextButton(onClick = {
                             sftp.cancelActiveTransfer()
                             sftp.clearProgress()
-                        }) { Text("Cancel") }
+                        }) { Text(stringResource(R.string.common_cancel)) }
                     }
                 }
             }
@@ -346,6 +344,12 @@ fun SftpBrowserScreen(
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 if (busy && entries.isEmpty()) {
                     CircularProgressIndicator(Modifier.align(Alignment.Center))
+                } else if (entries.isEmpty() && path == "/") {
+                    ZeroEmptyState(
+                        title = stringResource(R.string.sftp_empty_title),
+                        description = stringResource(R.string.sftp_empty_hint),
+                        icon = Icons.Default.Folder,
+                    )
                 } else {
                     LazyColumn(
                         contentPadding = PaddingValues(bottom = 24.dp),
@@ -370,40 +374,39 @@ fun SftpBrowserScreen(
                             }
                         }
                         items(entries, key = { it.name }) { entry ->
-                            SftpRow(
-                                entry = entry,
-                                onClick = {
-                                    if (entry.kind == SftpFileKind.DIR) {
-                                        scope.launch {
-                                            sftp.list(SftpManager.joinPath(path, entry.name))
+                            Column {
+                                SftpRow(
+                                    entry = entry,
+                                    onClick = {
+                                        if (entry.kind == SftpFileKind.DIR) {
+                                            scope.launch {
+                                                sftp.list(SftpManager.joinPath(path, entry.name))
+                                            }
                                         }
-                                    }
-                                },
-                                onDownload = {
-                                    scope.launch {
-                                        val dest = File(sftp.cacheDir(), entry.name)
-                                        sftp.download(entry.name, dest).fold(
-                                            onSuccess = { file ->
-                                                sftp.clearProgress()
-                                                pendingExport = file
-                                                createDoc.launch(entry.name)
-                                            },
-                                            onFailure = {
-                                                Toast.makeText(
-                                                    context,
-                                                    it.message,
-                                                    Toast.LENGTH_LONG,
-                                                ).show()
-                                            },
-                                        )
-                                    }
-                                },
-                                onRename = {
-                                    renameName = entry.name
-                                    renameTarget = entry
-                                },
-                                onDelete = { deleteConfirm = entry },
-                            )
+                                    },
+                                    onDownload = {
+                                        scope.launch {
+                                            val dest = File(sftp.cacheDir(), entry.name)
+                                            sftp.download(entry.name, dest).fold(
+                                                onSuccess = { file ->
+                                                    sftp.clearProgress()
+                                                    pendingExport = file
+                                                    createDoc.launch(entry.name)
+                                                },
+                                                onFailure = {
+                                                    Toast.makeText(context, it.message, Toast.LENGTH_LONG).show()
+                                                },
+                                            )
+                                        }
+                                    },
+                                    onRename = {
+                                        renameName = entry.name
+                                        renameTarget = entry
+                                    },
+                                    onDelete = { deleteConfirm = entry },
+                                )
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            }
                         }
                     }
                 }
@@ -440,17 +443,17 @@ private fun SftpRow(
                 Text(
                     formatSize(entry.size),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
         IconButton(onClick = { menu = true }) {
-            Icon(Icons.Default.MoreVert, contentDescription = "Menu")
+            Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.common_menu))
         }
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
             if (entry.kind != SftpFileKind.DIR) {
                 DropdownMenuItem(
-                    text = { Text("Download") },
+                    text = { Text(stringResource(R.string.common_download)) },
                     onClick = {
                         menu = false
                         onDownload()
@@ -459,14 +462,14 @@ private fun SftpRow(
                 )
             }
             DropdownMenuItem(
-                text = { Text("Rename") },
+                text = { Text(stringResource(R.string.common_rename)) },
                 onClick = {
                     menu = false
                     onRename()
                 },
             )
             DropdownMenuItem(
-                text = { Text("Delete") },
+                text = { Text(stringResource(R.string.common_delete)) },
                 onClick = {
                     menu = false
                     onDelete()
@@ -477,13 +480,14 @@ private fun SftpRow(
     }
 }
 
+@Composable
 private fun formatSize(size: ULong): String {
     val n = size.toLong()
     return when {
-        n < 1024 -> "$n B"
-        n < 1024 * 1024 -> "${n / 1024} KB"
-        n < 1024L * 1024 * 1024 -> "${n / (1024 * 1024)} MB"
-        else -> "${n / (1024L * 1024 * 1024)} GB"
+        n < 1024 -> stringResource(R.string.sftp_size_b, n.toInt())
+        n < 1024 * 1024 -> stringResource(R.string.sftp_size_kb, (n / 1024).toInt())
+        n < 1024L * 1024 * 1024 -> stringResource(R.string.sftp_size_mb, (n / (1024 * 1024)).toInt())
+        else -> stringResource(R.string.sftp_size_gb, (n / (1024L * 1024 * 1024)).toInt())
     }
 }
 

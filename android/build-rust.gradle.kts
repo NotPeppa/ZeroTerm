@@ -11,6 +11,7 @@
 
 import org.gradle.api.tasks.Exec
 import java.io.File
+import java.util.Properties
 
 val coreDir = rootProject.projectDir.resolve("../core").canonicalFile
 val ffiCrate = "zeroterm-ffi"
@@ -31,9 +32,16 @@ val ndkVersionProp: String = (project.findProperty("android.ndkVersion") as Stri
 fun resolveNdkHome(): File? {
     System.getenv("ANDROID_NDK_HOME")?.let { return File(it) }
     System.getenv("NDK_HOME")?.let { return File(it) }
+    val localSdk = rootProject.file("local.properties")
+        .takeIf { it.isFile }
+        ?.inputStream()
+        ?.use { stream ->
+            Properties().apply { load(stream) }.getProperty("sdk.dir")
+        }
     val sdk = System.getenv("ANDROID_HOME")
         ?: System.getenv("ANDROID_SDK_ROOT")
         ?: (System.getenv("LOCALAPPDATA")?.let { "$it/Android/Sdk" })
+        ?: localSdk
         ?: return null
     val ndkRoot = File(sdk, "ndk")
     val preferred = File(ndkRoot, ndkVersionProp)
@@ -74,8 +82,11 @@ tasks.register("cargoNdkBuild") {
     group = "zeroterm"
     description = "Cross-compile zeroterm-ffi for Android ABIs and copy into jniLibs"
 
-    inputs.dir(coreDir.resolve("crates/zeroterm-ffi/src"))
-    inputs.file(coreDir.resolve("crates/zeroterm-ffi/Cargo.toml"))
+    // The FFI library statically links the shared crates, so changes anywhere
+    // under core/crates (including sync/TLS code) must invalidate this task.
+    inputs.dir(coreDir.resolve("crates"))
+    inputs.file(coreDir.resolve("Cargo.toml"))
+    inputs.file(coreDir.resolve("Cargo.lock"))
     outputs.dir(jniLibsDir)
 
     doLast {

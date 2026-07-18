@@ -12,7 +12,7 @@ default = []
 webdav-backend = ["dep:reqwest", "dep:quick-xml"]
 # Repo-layout S3 adapter (M8). Pulls the aws-sdk-s3 stack; opt-in
 # because it adds ~30 s to clean builds and ~6 MB to release binaries.
-s3-backend = ["dep:aws-config", "dep:aws-sdk-s3", "dep:aws-credential-types", "dep:aws-smithy-http-client"]
+s3-backend = ["dep:aws-config", "dep:aws-sdk-s3", "dep:aws-credential-types", "dep:aws-smithy-http-client", "dep:webpki-root-certs"]
 
 [dependencies]
 zeroterm-crypto = { path = "../zeroterm-crypto" }
@@ -31,12 +31,15 @@ base64.workspace = true
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"], optional = true }
 quick-xml = { version = "0.38", optional = true }
 aws-config = { version = "1", optional = true }
-aws-sdk-s3 = { version = "1", optional = true }
+aws-sdk-s3 = { version = "1", default-features = false, features = ["rt-tokio"], optional = true }
 aws-credential-types = { version = "1", optional = true }
 # Custom HTTP client for the S3 adapter so it can honour the app's global
 # HTTP proxy (the aws-sdk default connector ignores HTTP_PROXY env vars).
 # aws-lc crypto matches the SDK's own default TLS backend (no extra provider).
 aws-smithy-http-client = { version = "1", features = ["rustls-aws-lc"], optional = true }
+# Android does not expose its CA store through the filesystem paths used by
+# rustls-native-certs. Bundle Mozilla's DER roots for the Android S3 client.
+webpki-root-certs = { version = "1", optional = true }
 
 [dev-dependencies]
 tempfile.workspace = true

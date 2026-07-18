@@ -25,6 +25,7 @@ class SftpManager(
     private val appContext: Context,
 ) {
     private var sftpId: ULong? = null
+    private var currentHostId: String? = null
 
     private val _path = MutableStateFlow("/")
     val path: StateFlow<String> = _path.asStateFlow()
@@ -45,6 +46,7 @@ class SftpManager(
     val hostKeyPrompts: SharedFlow<HostKeyPrompt> = _hostKeyPrompts.asSharedFlow()
 
     fun isOpen(): Boolean = sftpId != null
+    fun isOpenFor(hostId: String): Boolean = sftpId != null && currentHostId == hostId
 
     fun cacheDir(): File {
         val dir = File(appContext.cacheDir, "sftp")
@@ -58,6 +60,7 @@ class SftpManager(
         runCatching {
             sftpId?.let { id -> runCatching { zeroTerm.sftpClose(id) } }
             sftpId = null
+            currentHostId = null
             val prompt = object : HostKeyPromptCallback {
                 override fun onPrompt(requestId: String, info: HostKeyInfo, stored: String?) {
                     _hostKeyPrompts.tryEmit(HostKeyPrompt(requestId, info, stored))
@@ -65,6 +68,7 @@ class SftpManager(
             }
             val id = zeroTerm.sftpOpen(hostId, prompt)
             sftpId = id
+            currentHostId = hostId
             _path.value = "/"
             val entries = zeroTerm.sftpList(id, "/")
             _entries.value = entries
@@ -77,6 +81,7 @@ class SftpManager(
     suspend fun close() = withContext(Dispatchers.Default) {
         sftpId?.let { id -> runCatching { zeroTerm.sftpClose(id) } }
         sftpId = null
+        currentHostId = null
         _entries.value = emptyList()
         _path.value = "/"
         _progress.value = null

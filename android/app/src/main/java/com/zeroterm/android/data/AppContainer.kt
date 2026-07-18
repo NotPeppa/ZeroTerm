@@ -3,6 +3,8 @@ package com.zeroterm.android.data
 import android.content.Context
 import com.zeroterm.android.data.biometric.MasterPasswordStore
 import com.zeroterm.ffi.ZeroTerm
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.receiveAsFlow
 
 /**
  * Hand-rolled DI root (RFC-003: no Hilt in v1).
@@ -25,6 +27,7 @@ class AppContainer(context: Context) {
     val repository = ZeroTermRepository(
         zeroTerm = zeroTerm,
         passwordStore = passwordStore,
+        appContext = appContext,
     )
 
     val sessions = SessionManager(
@@ -42,4 +45,11 @@ class AppContainer(context: Context) {
         repository = repository,
         settings = settings,
     )
+
+    private val openActiveSessionChannel = Channel<Unit>(Channel.CONFLATED)
+    val openActiveSessionRequests = openActiveSessionChannel.receiveAsFlow()
+
+    fun requestOpenActiveSession() {
+        openActiveSessionChannel.trySend(Unit)
+    }
 }

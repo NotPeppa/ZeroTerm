@@ -10,6 +10,51 @@ pub struct VaultStatus {
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
+pub struct AiProfileRecord {
+    pub id: String,
+    pub name: String,
+    pub provider: String,
+    pub base_url: String,
+    pub model: String,
+    pub has_api_key: bool,
+    pub system_prompt: String,
+    pub reasoning_effort: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct AiProfileInput {
+    pub id: Option<String>,
+    pub name: String,
+    pub provider: String,
+    pub base_url: String,
+    pub model: String,
+    /// Blank on update preserves the encrypted key already in the vault.
+    pub api_key: String,
+    pub system_prompt: String,
+    pub reasoning_effort: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct AiChatMessage {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct AiChatResponse {
+    pub content: String,
+    pub reasoning_content: String,
+}
+
+/// Result of a non-interactive command executed on a saved host.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct HostExecResult {
+    pub code: i32,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
 pub struct HostSummary {
     pub id: String,
     pub name: String,
@@ -18,6 +63,25 @@ pub struct HostSummary {
     pub user: String,
     pub auth_kind: AuthKind,
     pub group_id: Option<String>,
+}
+
+/// Host group metadata used by mobile clients to render the saved hierarchy.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct HostGroupRecord {
+    pub id: String,
+    pub name: String,
+    pub parent_id: Option<String>,
+    pub sort_order: i32,
+}
+
+/// Create/update input for a host group. When `id` is set, update;
+/// otherwise insert a new group.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct HostGroupInput {
+    pub id: Option<String>,
+    pub name: String,
+    pub parent_id: Option<String>,
+    pub sort_order: i32,
 }
 
 /// Full host for edit forms. Credentials are returned so the mobile UI
@@ -122,6 +186,15 @@ pub(crate) fn host_to_summary(h: zeroterm_app::Host) -> HostSummary {
             zeroterm_app::HostAuth::Agent => AuthKind::Agent,
         },
         group_id: h.group_id,
+    }
+}
+
+pub(crate) fn host_group_to_record(g: zeroterm_app::HostGroup) -> HostGroupRecord {
+    HostGroupRecord {
+        id: g.id,
+        name: g.name,
+        parent_id: g.parent_id,
+        sort_order: g.sort_order,
     }
 }
 

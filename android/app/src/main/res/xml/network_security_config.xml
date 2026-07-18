@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- SSH is not HTTP; cleartext is only for local debug tooling. -->
+<!-- Native SSH and proxy sockets are handled by Rust; Android HTTP stays TLS-only. -->
 <network-security-config>
-    <base-config cleartextTrafficPermitted="true" />
+    <base-config cleartextTrafficPermitted="false" />
 </network-security-config>

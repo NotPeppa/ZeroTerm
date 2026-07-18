@@ -13,16 +13,15 @@ object BiometricGate {
     fun canAuthenticate(activity: FragmentActivity): Boolean {
         val mgr = BiometricManager.from(activity)
         val result = mgr.canAuthenticate(
-            BiometricManager.Authenticators.BIOMETRIC_WEAK or
-                BiometricManager.Authenticators.DEVICE_CREDENTIAL,
+            BiometricManager.Authenticators.BIOMETRIC_WEAK,
         )
         return result == BiometricManager.BIOMETRIC_SUCCESS
     }
 
     fun authenticate(
         activity: FragmentActivity,
-        title: String = "Unlock ZeroTerm",
-        subtitle: String = "Confirm it's you to unlock the vault",
+        title: String = activity.getString(com.zeroterm.android.R.string.biometric_title),
+        subtitle: String = activity.getString(com.zeroterm.android.R.string.biometric_subtitle),
         onSuccess: () -> Unit,
         onError: (String) -> Unit,
         onCancel: () -> Unit = {},
@@ -56,9 +55,12 @@ object BiometricGate {
         val info = BiometricPrompt.PromptInfo.Builder()
             .setTitle(title)
             .setSubtitle(subtitle)
+            // Passive face authentication may otherwise show a second
+            // confirmation button after a successful scan.
+            .setConfirmationRequired(false)
+            .setNegativeButtonText(activity.getString(com.zeroterm.android.R.string.common_cancel))
             .setAllowedAuthenticators(
-                BiometricManager.Authenticators.BIOMETRIC_WEAK or
-                    BiometricManager.Authenticators.DEVICE_CREDENTIAL,
+                BiometricManager.Authenticators.BIOMETRIC_WEAK,
             )
             .build()
 

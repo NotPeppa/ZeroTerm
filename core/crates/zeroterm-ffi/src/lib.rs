@@ -28,13 +28,14 @@ pub use facade::ZeroTerm;
 pub use listener::{HostKeyPromptCallback, SessionListener};
 pub use sftp::{SftpDirEntry, SftpFileKind, TransferListener, TransferProgress};
 pub use sync_api::{
-    ConflictRecord, SyncBackendKind, SyncOutcomeRecord, SyncProfileInput, SyncProfileSummary,
-    SyncStatusRecord,
+    ConflictRecord, SyncBackendKind, SyncCompactRecord, SyncDeviceRecord, SyncOutcomeRecord,
+    SyncProfileInput, SyncProfileSummary, SyncRepoStatsRecord, SyncStatusRecord,
 };
 pub use term::{DamageFrame, DamageLine, TermCell, Terminal};
 pub use types::{
-    AuthKind, HostAuthInput, HostDetail, HostInput, HostKeyInfo, HostSummary, SnippetInput,
-    SnippetRecord, VaultStatus,
+    AiChatMessage, AiChatResponse, AiProfileInput, AiProfileRecord, AuthKind, HostAuthInput,
+    HostDetail, HostExecResult, HostGroupInput, HostGroupRecord, HostInput, HostKeyInfo, HostSummary,
+    SnippetInput, SnippetRecord, VaultStatus,
 };
 
 #[cfg(test)]
@@ -109,6 +110,41 @@ mod tests {
             Err(FfiError::VaultLocked) => {}
             other => panic!("expected VaultLocked, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn host_groups_are_exposed_to_mobile_clients() {
+        let dir = tempdir().unwrap();
+        let zt = ZeroTerm::new();
+        fresh(&zt, dir.path());
+        zt.create("hunter2".into(), false).unwrap();
+
+        let parent_id = zt
+            .save_host_group(HostGroupInput {
+                id: None,
+                name: "Production".into(),
+                parent_id: None,
+                sort_order: 3,
+            })
+            .unwrap();
+
+        let groups = zt.list_host_groups().unwrap();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].id, parent_id);
+        assert_eq!(groups[0].name, "Production");
+        assert_eq!(groups[0].sort_order, 3);
+
+        zt.save_host_group(HostGroupInput {
+            id: Some(parent_id.clone()),
+            name: "Prod".into(),
+            parent_id: None,
+            sort_order: 4,
+        })
+        .unwrap();
+        assert_eq!(zt.list_host_groups().unwrap()[0].name, "Prod");
+
+        zt.delete_host_group(parent_id).unwrap();
+        assert!(zt.list_host_groups().unwrap().is_empty());
     }
 
     #[test]

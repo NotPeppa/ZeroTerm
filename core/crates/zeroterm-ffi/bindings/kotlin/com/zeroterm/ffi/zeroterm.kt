@@ -913,6 +913,42 @@ internal open class UniffiVTableCallbackInterfaceTransferListener(
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -928,124 +964,150 @@ internal interface UniffiLib : Library {
                 uniffiCallbackInterfaceTransferListener.register(lib)
                 }
         }
-        
+
         // The Cleaner for the whole library
         internal val CLEANER: UniffiCleaner by lazy {
             UniffiCleaner.create()
         }
     }
 
-    fun uniffi_zeroterm_ffi_fn_clone_hostkeypromptcallback(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_clone_hostkeypromptcallback(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus,
     ): Pointer
-    fun uniffi_zeroterm_ffi_fn_free_hostkeypromptcallback(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_free_hostkeypromptcallback(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
     fun uniffi_zeroterm_ffi_fn_init_callback_vtable_hostkeypromptcallback(`vtable`: UniffiVTableCallbackInterfaceHostKeyPromptCallback,
     ): Unit
-    fun uniffi_zeroterm_ffi_fn_method_hostkeypromptcallback_on_prompt(`ptr`: Pointer,`requestId`: RustBuffer.ByValue,`info`: RustBuffer.ByValue,`stored`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_hostkeypromptcallback_on_prompt(`ptr`: Pointer,`requestId`: RustBuffer.ByValue,`info`: RustBuffer.ByValue,`stored`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
-    fun uniffi_zeroterm_ffi_fn_clone_sessionlistener(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_clone_sessionlistener(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus,
     ): Pointer
-    fun uniffi_zeroterm_ffi_fn_free_sessionlistener(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_free_sessionlistener(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
     fun uniffi_zeroterm_ffi_fn_init_callback_vtable_sessionlistener(`vtable`: UniffiVTableCallbackInterfaceSessionListener,
     ): Unit
-    fun uniffi_zeroterm_ffi_fn_method_sessionlistener_on_data(`ptr`: Pointer,`data`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_sessionlistener_on_data(`ptr`: Pointer,`data`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
-    fun uniffi_zeroterm_ffi_fn_method_sessionlistener_on_closed(`ptr`: Pointer,`exitCode`: RustBuffer.ByValue,`message`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_sessionlistener_on_closed(`ptr`: Pointer,`exitCode`: RustBuffer.ByValue,`message`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
-    fun uniffi_zeroterm_ffi_fn_clone_terminal(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_clone_terminal(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus,
     ): Pointer
-    fun uniffi_zeroterm_ffi_fn_free_terminal(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_free_terminal(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
-    fun uniffi_zeroterm_ffi_fn_constructor_terminal_new(`cols`: Short,`rows`: Short,`scrollback`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_constructor_terminal_new(`cols`: Short,`rows`: Short,`scrollback`: Int,uniffi_out_err: UniffiRustCallStatus,
     ): Pointer
-    fun uniffi_zeroterm_ffi_fn_method_terminal_cols(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_terminal_cols(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus,
     ): Short
-    fun uniffi_zeroterm_ffi_fn_method_terminal_display_offset(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_terminal_display_offset(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus,
     ): Int
-    fun uniffi_zeroterm_ffi_fn_method_terminal_feed(`ptr`: Pointer,`data`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_terminal_feed(`ptr`: Pointer,`data`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
-    fun uniffi_zeroterm_ffi_fn_method_terminal_resize(`ptr`: Pointer,`cols`: Short,`rows`: Short,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_terminal_resize(`ptr`: Pointer,`cols`: Short,`rows`: Short,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
-    fun uniffi_zeroterm_ffi_fn_method_terminal_rows(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_terminal_rows(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus,
     ): Short
-    fun uniffi_zeroterm_ffi_fn_method_terminal_scroll_display(`ptr`: Pointer,`delta`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_terminal_scroll_display(`ptr`: Pointer,`delta`: Int,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
-    fun uniffi_zeroterm_ffi_fn_method_terminal_scroll_to_bottom(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_terminal_scroll_to_bottom(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
-    fun uniffi_zeroterm_ffi_fn_method_terminal_snapshot(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_terminal_snapshot(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
-    fun uniffi_zeroterm_ffi_fn_method_terminal_take_damage(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_terminal_take_damage(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
-    fun uniffi_zeroterm_ffi_fn_method_terminal_viewport_text(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_terminal_viewport_text(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
-    fun uniffi_zeroterm_ffi_fn_clone_transferlistener(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_clone_transferlistener(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus,
     ): Pointer
-    fun uniffi_zeroterm_ffi_fn_free_transferlistener(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_free_transferlistener(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
     fun uniffi_zeroterm_ffi_fn_init_callback_vtable_transferlistener(`vtable`: UniffiVTableCallbackInterfaceTransferListener,
     ): Unit
-    fun uniffi_zeroterm_ffi_fn_method_transferlistener_on_transfer(`ptr`: Pointer,`event`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_transferlistener_on_transfer(`ptr`: Pointer,`event`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
-    fun uniffi_zeroterm_ffi_fn_clone_zeroterm(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_clone_zeroterm(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus,
     ): Pointer
-    fun uniffi_zeroterm_ffi_fn_free_zeroterm(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_free_zeroterm(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
-    fun uniffi_zeroterm_ffi_fn_constructor_zeroterm_new(uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_constructor_zeroterm_new(uniffi_out_err: UniffiRustCallStatus,
     ): Pointer
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_ai_chat(`ptr`: Pointer,`profileId`: RustBuffer.ByValue,`messages`: RustBuffer.ByValue,
+    ): Long
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_ai_chat_with_model(`ptr`: Pointer,`profileId`: RustBuffer.ByValue,`modelOverride`: RustBuffer.ByValue,`messages`: RustBuffer.ByValue,
+    ): Long
     fun uniffi_zeroterm_ffi_fn_method_zeroterm_connect_direct(`ptr`: Pointer,`host`: RustBuffer.ByValue,`port`: Short,`user`: RustBuffer.ByValue,`auth`: RustBuffer.ByValue,`cols`: Short,`rows`: Short,`listener`: Pointer,`hostKeyPrompt`: Pointer,
     ): Long
     fun uniffi_zeroterm_ffi_fn_method_zeroterm_connect_host(`ptr`: Pointer,`hostId`: RustBuffer.ByValue,`cols`: Short,`rows`: Short,`listener`: Pointer,`hostKeyPrompt`: Pointer,
     ): Long
-    fun uniffi_zeroterm_ffi_fn_method_zeroterm_create(`ptr`: Pointer,`password`: RustBuffer.ByValue,`remember`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_create(`ptr`: Pointer,`password`: RustBuffer.ByValue,`remember`: Byte,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
-    fun uniffi_zeroterm_ffi_fn_method_zeroterm_delete_host(`ptr`: Pointer,`id`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_delete_ai_profile(`ptr`: Pointer,`id`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
-    fun uniffi_zeroterm_ffi_fn_method_zeroterm_delete_snippet(`ptr`: Pointer,`id`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_delete_host(`ptr`: Pointer,`id`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
-    fun uniffi_zeroterm_ffi_fn_method_zeroterm_delete_snippet_group(`ptr`: Pointer,`group`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_delete_host_group(`ptr`: Pointer,`id`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): Unit
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_delete_snippet(`ptr`: Pointer,`id`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): Unit
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_delete_snippet_group(`ptr`: Pointer,`group`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Int
-    fun uniffi_zeroterm_ffi_fn_method_zeroterm_delete_sync_profile(`ptr`: Pointer,`id`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_delete_sync_profile(`ptr`: Pointer,`id`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
     fun uniffi_zeroterm_ffi_fn_method_zeroterm_disconnect_session(`ptr`: Pointer,`sessionId`: Long,
     ): Long
-    fun uniffi_zeroterm_ffi_fn_method_zeroterm_forget_keychain(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_exec_host_command(`ptr`: Pointer,`hostId`: RustBuffer.ByValue,`command`: RustBuffer.ByValue,
+    ): Long
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_exec_session_command(`ptr`: Pointer,`sessionId`: Long,`command`: RustBuffer.ByValue,
+    ): Long
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_forget_keychain(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
-    fun uniffi_zeroterm_ffi_fn_method_zeroterm_get_host(`ptr`: Pointer,`id`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_get_host(`ptr`: Pointer,`id`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
-    fun uniffi_zeroterm_ffi_fn_method_zeroterm_get_snippet(`ptr`: Pointer,`id`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_get_snippet(`ptr`: Pointer,`id`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
-    fun uniffi_zeroterm_ffi_fn_method_zeroterm_list_hosts(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_list_ai_models(`ptr`: Pointer,`profileId`: RustBuffer.ByValue,
+    ): Long
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_list_ai_models_with_config(`ptr`: Pointer,`profileId`: RustBuffer.ByValue,`baseUrl`: RustBuffer.ByValue,`apiKey`: RustBuffer.ByValue,
+    ): Long
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_list_ai_profiles(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
-    fun uniffi_zeroterm_ffi_fn_method_zeroterm_list_open_conflicts(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_list_host_groups(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
-    fun uniffi_zeroterm_ffi_fn_method_zeroterm_list_snippets(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_list_hosts(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
-    fun uniffi_zeroterm_ffi_fn_method_zeroterm_list_sync_profiles(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_list_open_conflicts(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
-    fun uniffi_zeroterm_ffi_fn_method_zeroterm_lock(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_list_snippets(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_list_sync_profiles(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_lock(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
-    fun uniffi_zeroterm_ffi_fn_method_zeroterm_rename_snippet_group(`ptr`: Pointer,`old`: RustBuffer.ByValue,`new`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_rename_snippet_group(`ptr`: Pointer,`old`: RustBuffer.ByValue,`new`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Int
     fun uniffi_zeroterm_ffi_fn_method_zeroterm_resize_session(`ptr`: Pointer,`sessionId`: Long,`cols`: Short,`rows`: Short,
     ): Long
-    fun uniffi_zeroterm_ffi_fn_method_zeroterm_resolve_conflict(`ptr`: Pointer,`conflictId`: RustBuffer.ByValue,`keepLocal`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_resolve_conflict(`ptr`: Pointer,`conflictId`: RustBuffer.ByValue,`keepLocal`: Byte,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
-    fun uniffi_zeroterm_ffi_fn_method_zeroterm_respond_host_key(`ptr`: Pointer,`requestId`: RustBuffer.ByValue,`accept`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_respond_host_key(`ptr`: Pointer,`requestId`: RustBuffer.ByValue,`accept`: Byte,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
-    fun uniffi_zeroterm_ffi_fn_method_zeroterm_save_host(`ptr`: Pointer,`host`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_save_ai_profile(`ptr`: Pointer,`input`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
-    fun uniffi_zeroterm_ffi_fn_method_zeroterm_save_snippet(`ptr`: Pointer,`input`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_save_host(`ptr`: Pointer,`host`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
-    fun uniffi_zeroterm_ffi_fn_method_zeroterm_save_sync_profile(`ptr`: Pointer,`input`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_save_host_group(`ptr`: Pointer,`input`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_save_snippet(`ptr`: Pointer,`input`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_save_sync_profile(`ptr`: Pointer,`input`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
     fun uniffi_zeroterm_ffi_fn_method_zeroterm_send_input(`ptr`: Pointer,`sessionId`: Long,`data`: RustBuffer.ByValue,
     ): Long
-    fun uniffi_zeroterm_ffi_fn_method_zeroterm_set_data_dir(`ptr`: Pointer,`path`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_set_data_dir(`ptr`: Pointer,`path`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
-    fun uniffi_zeroterm_ffi_fn_method_zeroterm_set_vault_path(`ptr`: Pointer,`path`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_set_network_proxy(`ptr`: Pointer,`proxyUrl`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_set_vault_path(`ptr`: Pointer,`path`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
-    fun uniffi_zeroterm_ffi_fn_method_zeroterm_sftp_cancel_transfer(`ptr`: Pointer,`transferId`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_sftp_cancel_transfer(`ptr`: Pointer,`transferId`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
     fun uniffi_zeroterm_ffi_fn_method_zeroterm_sftp_close(`ptr`: Pointer,`sftpId`: Long,
     ): Long
@@ -1065,27 +1127,37 @@ internal interface UniffiLib : Library {
     ): Long
     fun uniffi_zeroterm_ffi_fn_method_zeroterm_sftp_upload(`ptr`: Pointer,`sftpId`: Long,`localPath`: RustBuffer.ByValue,`remote`: RustBuffer.ByValue,`overwrite`: Byte,`listener`: Pointer,
     ): Long
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_sync_compact(`ptr`: Pointer,`profileId`: RustBuffer.ByValue,
+    ): Long
     fun uniffi_zeroterm_ffi_fn_method_zeroterm_sync_create_repo(`ptr`: Pointer,`profileId`: RustBuffer.ByValue,`passphrase`: RustBuffer.ByValue,
+    ): Long
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_sync_delete_remote_repo(`ptr`: Pointer,`profileId`: RustBuffer.ByValue,
+    ): Long
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_sync_forget_engine(`ptr`: Pointer,`profileId`: RustBuffer.ByValue,
     ): Long
     fun uniffi_zeroterm_ffi_fn_method_zeroterm_sync_join_repo(`ptr`: Pointer,`profileId`: RustBuffer.ByValue,`passphrase`: RustBuffer.ByValue,
     ): Long
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_sync_list_devices(`ptr`: Pointer,`profileId`: RustBuffer.ByValue,
+    ): Long
     fun uniffi_zeroterm_ffi_fn_method_zeroterm_sync_now(`ptr`: Pointer,`profileId`: RustBuffer.ByValue,
+    ): Long
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_sync_repo_stats(`ptr`: Pointer,`profileId`: RustBuffer.ByValue,
     ): Long
     fun uniffi_zeroterm_ffi_fn_method_zeroterm_sync_status(`ptr`: Pointer,`profileId`: RustBuffer.ByValue,
     ): Long
-    fun uniffi_zeroterm_ffi_fn_method_zeroterm_try_keychain_unlock(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_try_keychain_unlock(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus,
     ): Byte
-    fun uniffi_zeroterm_ffi_fn_method_zeroterm_unlock(`ptr`: Pointer,`password`: RustBuffer.ByValue,`remember`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_unlock(`ptr`: Pointer,`password`: RustBuffer.ByValue,`remember`: Byte,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
-    fun uniffi_zeroterm_ffi_fn_method_zeroterm_vault_status(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_zeroterm_ffi_fn_method_zeroterm_vault_status(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
-    fun ffi_zeroterm_ffi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    fun ffi_zeroterm_ffi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
-    fun ffi_zeroterm_ffi_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    fun ffi_zeroterm_ffi_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
-    fun ffi_zeroterm_ffi_rustbuffer_free(`buf`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    fun ffi_zeroterm_ffi_rustbuffer_free(`buf`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
-    fun ffi_zeroterm_ffi_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    fun ffi_zeroterm_ffi_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
     fun ffi_zeroterm_ffi_rust_future_poll_u8(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
@@ -1093,7 +1165,7 @@ internal interface UniffiLib : Library {
     ): Unit
     fun ffi_zeroterm_ffi_rust_future_free_u8(`handle`: Long,
     ): Unit
-    fun ffi_zeroterm_ffi_rust_future_complete_u8(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    fun ffi_zeroterm_ffi_rust_future_complete_u8(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): Byte
     fun ffi_zeroterm_ffi_rust_future_poll_i8(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
@@ -1101,7 +1173,7 @@ internal interface UniffiLib : Library {
     ): Unit
     fun ffi_zeroterm_ffi_rust_future_free_i8(`handle`: Long,
     ): Unit
-    fun ffi_zeroterm_ffi_rust_future_complete_i8(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    fun ffi_zeroterm_ffi_rust_future_complete_i8(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): Byte
     fun ffi_zeroterm_ffi_rust_future_poll_u16(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
@@ -1109,7 +1181,7 @@ internal interface UniffiLib : Library {
     ): Unit
     fun ffi_zeroterm_ffi_rust_future_free_u16(`handle`: Long,
     ): Unit
-    fun ffi_zeroterm_ffi_rust_future_complete_u16(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    fun ffi_zeroterm_ffi_rust_future_complete_u16(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): Short
     fun ffi_zeroterm_ffi_rust_future_poll_i16(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
@@ -1117,7 +1189,7 @@ internal interface UniffiLib : Library {
     ): Unit
     fun ffi_zeroterm_ffi_rust_future_free_i16(`handle`: Long,
     ): Unit
-    fun ffi_zeroterm_ffi_rust_future_complete_i16(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    fun ffi_zeroterm_ffi_rust_future_complete_i16(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): Short
     fun ffi_zeroterm_ffi_rust_future_poll_u32(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
@@ -1125,7 +1197,7 @@ internal interface UniffiLib : Library {
     ): Unit
     fun ffi_zeroterm_ffi_rust_future_free_u32(`handle`: Long,
     ): Unit
-    fun ffi_zeroterm_ffi_rust_future_complete_u32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    fun ffi_zeroterm_ffi_rust_future_complete_u32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): Int
     fun ffi_zeroterm_ffi_rust_future_poll_i32(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
@@ -1133,7 +1205,7 @@ internal interface UniffiLib : Library {
     ): Unit
     fun ffi_zeroterm_ffi_rust_future_free_i32(`handle`: Long,
     ): Unit
-    fun ffi_zeroterm_ffi_rust_future_complete_i32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    fun ffi_zeroterm_ffi_rust_future_complete_i32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): Int
     fun ffi_zeroterm_ffi_rust_future_poll_u64(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
@@ -1141,7 +1213,7 @@ internal interface UniffiLib : Library {
     ): Unit
     fun ffi_zeroterm_ffi_rust_future_free_u64(`handle`: Long,
     ): Unit
-    fun ffi_zeroterm_ffi_rust_future_complete_u64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    fun ffi_zeroterm_ffi_rust_future_complete_u64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): Long
     fun ffi_zeroterm_ffi_rust_future_poll_i64(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
@@ -1149,7 +1221,7 @@ internal interface UniffiLib : Library {
     ): Unit
     fun ffi_zeroterm_ffi_rust_future_free_i64(`handle`: Long,
     ): Unit
-    fun ffi_zeroterm_ffi_rust_future_complete_i64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    fun ffi_zeroterm_ffi_rust_future_complete_i64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): Long
     fun ffi_zeroterm_ffi_rust_future_poll_f32(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
@@ -1157,7 +1229,7 @@ internal interface UniffiLib : Library {
     ): Unit
     fun ffi_zeroterm_ffi_rust_future_free_f32(`handle`: Long,
     ): Unit
-    fun ffi_zeroterm_ffi_rust_future_complete_f32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    fun ffi_zeroterm_ffi_rust_future_complete_f32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): Float
     fun ffi_zeroterm_ffi_rust_future_poll_f64(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
@@ -1165,7 +1237,7 @@ internal interface UniffiLib : Library {
     ): Unit
     fun ffi_zeroterm_ffi_rust_future_free_f64(`handle`: Long,
     ): Unit
-    fun ffi_zeroterm_ffi_rust_future_complete_f64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    fun ffi_zeroterm_ffi_rust_future_complete_f64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): Double
     fun ffi_zeroterm_ffi_rust_future_poll_pointer(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
@@ -1173,7 +1245,7 @@ internal interface UniffiLib : Library {
     ): Unit
     fun ffi_zeroterm_ffi_rust_future_free_pointer(`handle`: Long,
     ): Unit
-    fun ffi_zeroterm_ffi_rust_future_complete_pointer(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    fun ffi_zeroterm_ffi_rust_future_complete_pointer(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): Pointer
     fun ffi_zeroterm_ffi_rust_future_poll_rust_buffer(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
@@ -1181,7 +1253,7 @@ internal interface UniffiLib : Library {
     ): Unit
     fun ffi_zeroterm_ffi_rust_future_free_rust_buffer(`handle`: Long,
     ): Unit
-    fun ffi_zeroterm_ffi_rust_future_complete_rust_buffer(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    fun ffi_zeroterm_ffi_rust_future_complete_rust_buffer(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
     fun ffi_zeroterm_ffi_rust_future_poll_void(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
@@ -1189,7 +1261,7 @@ internal interface UniffiLib : Library {
     ): Unit
     fun ffi_zeroterm_ffi_rust_future_free_void(`handle`: Long,
     ): Unit
-    fun ffi_zeroterm_ffi_rust_future_complete_void(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    fun ffi_zeroterm_ffi_rust_future_complete_void(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
     ): Unit
     fun uniffi_zeroterm_ffi_checksum_method_hostkeypromptcallback_on_prompt(
     ): Short
@@ -1219,13 +1291,21 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_zeroterm_ffi_checksum_method_transferlistener_on_transfer(
     ): Short
+    fun uniffi_zeroterm_ffi_checksum_method_zeroterm_ai_chat(
+    ): Short
+    fun uniffi_zeroterm_ffi_checksum_method_zeroterm_ai_chat_with_model(
+    ): Short
     fun uniffi_zeroterm_ffi_checksum_method_zeroterm_connect_direct(
     ): Short
     fun uniffi_zeroterm_ffi_checksum_method_zeroterm_connect_host(
     ): Short
     fun uniffi_zeroterm_ffi_checksum_method_zeroterm_create(
     ): Short
+    fun uniffi_zeroterm_ffi_checksum_method_zeroterm_delete_ai_profile(
+    ): Short
     fun uniffi_zeroterm_ffi_checksum_method_zeroterm_delete_host(
+    ): Short
+    fun uniffi_zeroterm_ffi_checksum_method_zeroterm_delete_host_group(
     ): Short
     fun uniffi_zeroterm_ffi_checksum_method_zeroterm_delete_snippet(
     ): Short
@@ -1235,11 +1315,23 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_zeroterm_ffi_checksum_method_zeroterm_disconnect_session(
     ): Short
+    fun uniffi_zeroterm_ffi_checksum_method_zeroterm_exec_host_command(
+    ): Short
+    fun uniffi_zeroterm_ffi_checksum_method_zeroterm_exec_session_command(
+    ): Short
     fun uniffi_zeroterm_ffi_checksum_method_zeroterm_forget_keychain(
     ): Short
     fun uniffi_zeroterm_ffi_checksum_method_zeroterm_get_host(
     ): Short
     fun uniffi_zeroterm_ffi_checksum_method_zeroterm_get_snippet(
+    ): Short
+    fun uniffi_zeroterm_ffi_checksum_method_zeroterm_list_ai_models(
+    ): Short
+    fun uniffi_zeroterm_ffi_checksum_method_zeroterm_list_ai_models_with_config(
+    ): Short
+    fun uniffi_zeroterm_ffi_checksum_method_zeroterm_list_ai_profiles(
+    ): Short
+    fun uniffi_zeroterm_ffi_checksum_method_zeroterm_list_host_groups(
     ): Short
     fun uniffi_zeroterm_ffi_checksum_method_zeroterm_list_hosts(
     ): Short
@@ -1259,7 +1351,11 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_zeroterm_ffi_checksum_method_zeroterm_respond_host_key(
     ): Short
+    fun uniffi_zeroterm_ffi_checksum_method_zeroterm_save_ai_profile(
+    ): Short
     fun uniffi_zeroterm_ffi_checksum_method_zeroterm_save_host(
+    ): Short
+    fun uniffi_zeroterm_ffi_checksum_method_zeroterm_save_host_group(
     ): Short
     fun uniffi_zeroterm_ffi_checksum_method_zeroterm_save_snippet(
     ): Short
@@ -1268,6 +1364,8 @@ internal interface UniffiLib : Library {
     fun uniffi_zeroterm_ffi_checksum_method_zeroterm_send_input(
     ): Short
     fun uniffi_zeroterm_ffi_checksum_method_zeroterm_set_data_dir(
+    ): Short
+    fun uniffi_zeroterm_ffi_checksum_method_zeroterm_set_network_proxy(
     ): Short
     fun uniffi_zeroterm_ffi_checksum_method_zeroterm_set_vault_path(
     ): Short
@@ -1291,11 +1389,21 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_zeroterm_ffi_checksum_method_zeroterm_sftp_upload(
     ): Short
+    fun uniffi_zeroterm_ffi_checksum_method_zeroterm_sync_compact(
+    ): Short
     fun uniffi_zeroterm_ffi_checksum_method_zeroterm_sync_create_repo(
+    ): Short
+    fun uniffi_zeroterm_ffi_checksum_method_zeroterm_sync_delete_remote_repo(
+    ): Short
+    fun uniffi_zeroterm_ffi_checksum_method_zeroterm_sync_forget_engine(
     ): Short
     fun uniffi_zeroterm_ffi_checksum_method_zeroterm_sync_join_repo(
     ): Short
+    fun uniffi_zeroterm_ffi_checksum_method_zeroterm_sync_list_devices(
+    ): Short
     fun uniffi_zeroterm_ffi_checksum_method_zeroterm_sync_now(
+    ): Short
+    fun uniffi_zeroterm_ffi_checksum_method_zeroterm_sync_repo_stats(
     ): Short
     fun uniffi_zeroterm_ffi_checksum_method_zeroterm_sync_status(
     ): Short
@@ -1311,7 +1419,7 @@ internal interface UniffiLib : Library {
     ): Short
     fun ffi_zeroterm_ffi_uniffi_contract_version(
     ): Int
-    
+
 }
 
 private fun uniffiCheckContractApiVersion(lib: UniffiLib) {
@@ -1368,6 +1476,12 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_zeroterm_ffi_checksum_method_transferlistener_on_transfer() != 22880.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_ai_chat() != 23148.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_ai_chat_with_model() != 32873.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_connect_direct() != 26854.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1377,7 +1491,13 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_create() != 6614.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_delete_ai_profile() != 63910.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_delete_host() != 1418.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_delete_host_group() != 36224.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_delete_snippet() != 32419.toShort()) {
@@ -1392,6 +1512,12 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_disconnect_session() != 35863.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_exec_host_command() != 9797.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_exec_session_command() != 4449.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_forget_keychain() != 65474.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1399,6 +1525,18 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_get_snippet() != 17185.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_list_ai_models() != 17830.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_list_ai_models_with_config() != 18666.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_list_ai_profiles() != 64165.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_list_host_groups() != 40809.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_list_hosts() != 46238.toShort()) {
@@ -1428,7 +1566,13 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_respond_host_key() != 23930.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_save_ai_profile() != 46565.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_save_host() != 59223.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_save_host_group() != 37217.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_save_snippet() != 42172.toShort()) {
@@ -1441,6 +1585,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_set_data_dir() != 36841.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_set_network_proxy() != 8690.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_set_vault_path() != 22249.toShort()) {
@@ -1476,13 +1623,28 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_sftp_upload() != 30829.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_sync_compact() != 59359.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_sync_create_repo() != 55726.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_sync_delete_remote_repo() != 61124.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_sync_forget_engine() != 20235.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_sync_join_repo() != 41234.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_sync_list_devices() != 3548.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_sync_now() != 50997.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_sync_repo_stats() != 37661.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_sync_status() != 62170.toShort()) {
@@ -1583,7 +1745,7 @@ inline fun <T : Disposable?, R> T.use(block: (T) -> R) =
         }
     }
 
-/** 
+/**
  * Used to instantiate an interface without an actual pointer, for fakes in tests, mostly.
  *
  * @suppress
@@ -1984,9 +2146,9 @@ private class JavaLangRefCleanable(
  * loudly.
  */
 public interface HostKeyPromptCallback {
-    
+
     fun `onPrompt`(`requestId`: kotlin.String, `info`: HostKeyInfo, `stored`: kotlin.String?)
-    
+
     companion object
 }
 
@@ -2089,22 +2251,22 @@ open class HostKeyPromptCallbackImpl: Disposable, AutoCloseable, HostKeyPromptCa
     }
 
     override fun `onPrompt`(`requestId`: kotlin.String, `info`: HostKeyInfo, `stored`: kotlin.String?)
-        = 
+        =
     callWithPointer {
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_hostkeypromptcallback_on_prompt(
         it, FfiConverterString.lower(`requestId`),FfiConverterTypeHostKeyInfo.lower(`info`),FfiConverterOptionalString.lower(`stored`),_status)
 }
     }
-    
-    
 
-    
 
-    
-    
+
+
+
+
+
     companion object
-    
+
 }
 // Magic number for the Rust proxy to call using the same mechanism as every other method,
 // to free the callback once it's dropped by Rust.
@@ -2308,12 +2470,12 @@ public object FfiConverterTypeHostKeyPromptCallback: FfiConverter<HostKeyPromptC
  * renderer.
  */
 public interface SessionListener {
-    
+
     /**
      * Raw bytes from the remote PTY. Stdout and stderr are merged here.
      */
     fun `onData`(`data`: kotlin.ByteArray)
-    
+
     /**
      * Channel closed. `exit_code` is the remote process exit status if
      * the server reported one before close; `message` carries a Rust-side
@@ -2321,7 +2483,7 @@ public interface SessionListener {
      * early.
      */
     fun `onClosed`(`exitCode`: kotlin.UInt?, `message`: kotlin.String?)
-    
+
     companion object
 }
 
@@ -2411,43 +2573,43 @@ open class SessionListenerImpl: Disposable, AutoCloseable, SessionListener {
         }
     }
 
-    
+
     /**
      * Raw bytes from the remote PTY. Stdout and stderr are merged here.
      */override fun `onData`(`data`: kotlin.ByteArray)
-        = 
+        =
     callWithPointer {
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_sessionlistener_on_data(
         it, FfiConverterByteArray.lower(`data`),_status)
 }
     }
-    
-    
 
-    
+
+
+
     /**
      * Channel closed. `exit_code` is the remote process exit status if
      * the server reported one before close; `message` carries a Rust-side
      * error description (e.g. "send failed: ...") if the loop bailed
      * early.
      */override fun `onClosed`(`exitCode`: kotlin.UInt?, `message`: kotlin.String?)
-        = 
+        =
     callWithPointer {
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_sessionlistener_on_closed(
         it, FfiConverterOptionalUInt.lower(`exitCode`),FfiConverterOptionalString.lower(`message`),_status)
 }
     }
-    
-    
 
-    
 
-    
-    
+
+
+
+
+
     companion object
-    
+
 }
 
 
@@ -2630,39 +2792,39 @@ public object FfiConverterTypeSessionListener: FfiConverter<SessionListener, Poi
  * VT terminal object. Create one per SSH session / local shell.
  */
 public interface TerminalInterface {
-    
+
     fun `cols`(): kotlin.UShort
-    
+
     fun `displayOffset`(): kotlin.UInt
-    
+
     fun `feed`(`data`: kotlin.ByteArray)
-    
+
     fun `resize`(`cols`: kotlin.UShort, `rows`: kotlin.UShort)
-    
+
     fun `rows`(): kotlin.UShort
-    
+
     /**
      * Scroll display: positive = into history (up), negative = toward bottom.
      */
     fun `scrollDisplay`(`delta`: kotlin.Int)
-    
+
     fun `scrollToBottom`()
-    
+
     /**
      * Full viewport (after resize or first paint).
      */
     fun `snapshot`(): DamageFrame
-    
+
     /**
      * Dirty lines since last call, or empty frame if nothing changed.
      */
     fun `takeDamage`(): DamageFrame?
-    
+
     /**
      * Plain text of the current viewport (trailing spaces trimmed per line).
      */
     fun `viewportText`(): kotlin.String
-    
+
     companion object
 }
 
@@ -2767,7 +2929,7 @@ open class Terminal: Disposable, AutoCloseable, TerminalInterface {
     }
     )
     }
-    
+
 
     override fun `displayOffset`(): kotlin.UInt {
             return FfiConverterUInt.lift(
@@ -2779,29 +2941,29 @@ open class Terminal: Disposable, AutoCloseable, TerminalInterface {
     }
     )
     }
-    
+
 
     override fun `feed`(`data`: kotlin.ByteArray)
-        = 
+        =
     callWithPointer {
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_terminal_feed(
         it, FfiConverterByteArray.lower(`data`),_status)
 }
     }
-    
-    
+
+
 
     override fun `resize`(`cols`: kotlin.UShort, `rows`: kotlin.UShort)
-        = 
+        =
     callWithPointer {
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_terminal_resize(
         it, FfiConverterUShort.lower(`cols`),FfiConverterUShort.lower(`rows`),_status)
 }
     }
-    
-    
+
+
 
     override fun `rows`(): kotlin.UShort {
             return FfiConverterUShort.lift(
@@ -2813,34 +2975,34 @@ open class Terminal: Disposable, AutoCloseable, TerminalInterface {
     }
     )
     }
-    
 
-    
+
+
     /**
      * Scroll display: positive = into history (up), negative = toward bottom.
      */override fun `scrollDisplay`(`delta`: kotlin.Int)
-        = 
+        =
     callWithPointer {
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_terminal_scroll_display(
         it, FfiConverterInt.lower(`delta`),_status)
 }
     }
-    
-    
+
+
 
     override fun `scrollToBottom`()
-        = 
+        =
     callWithPointer {
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_terminal_scroll_to_bottom(
         it, _status)
 }
     }
-    
-    
 
-    
+
+
+
     /**
      * Full viewport (after resize or first paint).
      */override fun `snapshot`(): DamageFrame {
@@ -2853,9 +3015,9 @@ open class Terminal: Disposable, AutoCloseable, TerminalInterface {
     }
     )
     }
-    
 
-    
+
+
     /**
      * Dirty lines since last call, or empty frame if nothing changed.
      */override fun `takeDamage`(): DamageFrame? {
@@ -2868,9 +3030,9 @@ open class Terminal: Disposable, AutoCloseable, TerminalInterface {
     }
     )
     }
-    
 
-    
+
+
     /**
      * Plain text of the current viewport (trailing spaces trimmed per line).
      */override fun `viewportText`(): kotlin.String {
@@ -2883,14 +3045,14 @@ open class Terminal: Disposable, AutoCloseable, TerminalInterface {
     }
     )
     }
-    
 
-    
 
-    
-    
+
+
+
+
     companion object
-    
+
 }
 
 /**
@@ -3021,9 +3183,9 @@ public object FfiConverterTypeTerminal: FfiConverter<Terminal, Pointer> {
 
 
 public interface TransferListener {
-    
+
     fun `onTransfer`(`event`: TransferProgress)
-    
+
     companion object
 }
 
@@ -3109,22 +3271,22 @@ open class TransferListenerImpl: Disposable, AutoCloseable, TransferListener {
     }
 
     override fun `onTransfer`(`event`: TransferProgress)
-        = 
+        =
     callWithPointer {
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_transferlistener_on_transfer(
         it, FfiConverterTypeTransferProgress.lower(`event`),_status)
 }
     }
-    
-    
 
-    
 
-    
-    
+
+
+
+
+
     companion object
-    
+
 }
 
 
@@ -3295,14 +3457,18 @@ public object FfiConverterTypeTransferListener: FfiConverter<TransferListener, P
  * `ObservableObject`, etc.).
  */
 public interface ZeroTermInterface {
-    
+
+    suspend fun `aiChat`(`profileId`: kotlin.String, `messages`: List<AiChatMessage>): AiChatResponse
+
+    suspend fun `aiChatWithModel`(`profileId`: kotlin.String, `modelOverride`: kotlin.String, `messages`: List<AiChatMessage>): AiChatResponse
+
     /**
      * Quick Connect: connect without a saved vault host. Vault must still
      * be unlocked (session APIs live on the same object). Host is not
      * written to the vault.
      */
     suspend fun `connectDirect`(`host`: kotlin.String, `port`: kotlin.UShort, `user`: kotlin.String, `auth`: HostAuthInput, `cols`: kotlin.UShort, `rows`: kotlin.UShort, `listener`: SessionListener, `hostKeyPrompt`: HostKeyPromptCallback): kotlin.ULong
-    
+
     /**
      * Connect to a saved host and open a PTY-backed shell. Streams data
      * into `listener.on_data`; surfaces unknown / mismatched host keys
@@ -3313,66 +3479,94 @@ public interface ZeroTermInterface {
      * [`Self::resize_session`], [`Self::disconnect_session`].
      */
     suspend fun `connectHost`(`hostId`: kotlin.String, `cols`: kotlin.UShort, `rows`: kotlin.UShort, `listener`: SessionListener, `hostKeyPrompt`: HostKeyPromptCallback): kotlin.ULong
-    
+
     fun `create`(`password`: kotlin.String, `remember`: kotlin.Boolean)
-    
+
+    fun `deleteAiProfile`(`id`: kotlin.String)
+
     fun `deleteHost`(`id`: kotlin.String)
-    
+
+    fun `deleteHostGroup`(`id`: kotlin.String)
+
     fun `deleteSnippet`(`id`: kotlin.String)
-    
+
     fun `deleteSnippetGroup`(`group`: kotlin.String): kotlin.UInt
-    
+
     fun `deleteSyncProfile`(`id`: kotlin.String)
-    
+
     suspend fun `disconnectSession`(`sessionId`: kotlin.ULong)
-    
+
+    /**
+     * Execute a non-interactive command on a saved host. This deliberately
+     * uses a separate SSH channel so monitoring never writes into the user's PTY.
+     */
+    suspend fun `execHostCommand`(`hostId`: kotlin.String, `command`: kotlin.String): HostExecResult
+
+    /**
+     * Execute a command over the active SSH transport without writing it to
+     * the PTY. Works for both saved hosts and Quick Connect sessions.
+     */
+    suspend fun `execSessionCommand`(`sessionId`: kotlin.ULong, `command`: kotlin.String): HostExecResult
+
     /**
      * Drop any cached master password for the current vault path.
      */
     fun `forgetKeychain`()
-    
+
     fun `getHost`(`id`: kotlin.String): HostDetail
-    
+
     fun `getSnippet`(`id`: kotlin.String): SnippetRecord
-    
+
+    suspend fun `listAiModels`(`profileId`: kotlin.String): List<kotlin.String>
+
+    suspend fun `listAiModelsWithConfig`(`profileId`: kotlin.String?, `baseUrl`: kotlin.String, `apiKey`: kotlin.String): List<kotlin.String>
+
+    fun `listAiProfiles`(): List<AiProfileRecord>
+
+    fun `listHostGroups`(): List<HostGroupRecord>
+
     fun `listHosts`(): List<HostSummary>
-    
+
     fun `listOpenConflicts`(): List<ConflictRecord>
-    
+
     fun `listSnippets`(): List<SnippetRecord>
-    
+
     fun `listSyncProfiles`(): List<SyncProfileSummary>
-    
+
     fun `lock`()
-    
+
     fun `renameSnippetGroup`(`old`: kotlin.String, `new`: kotlin.String): kotlin.UInt
-    
+
     suspend fun `resizeSession`(`sessionId`: kotlin.ULong, `cols`: kotlin.UShort, `rows`: kotlin.UShort)
-    
+
     /**
      * `keep_local = true` → KeepLocal; false → KeepRemote.
      */
     fun `resolveConflict`(`conflictId`: kotlin.String, `keepLocal`: kotlin.Boolean)
-    
+
     /**
      * Answer a pending host-key prompt. `accept = true` continues the
      * SSH handshake; `false` cancels it.
      */
     fun `respondHostKey`(`requestId`: kotlin.String, `accept`: kotlin.Boolean)
-    
+
+    fun `saveAiProfile`(`input`: AiProfileInput): kotlin.String
+
     /**
      * Insert a new host (`host.id` ignored / empty) or update when
      * `host.id` is set. Forwards / ProxyJump from the existing record
      * are preserved on update.
      */
     fun `saveHost`(`host`: HostInput): kotlin.String
-    
+
+    fun `saveHostGroup`(`input`: HostGroupInput): kotlin.String
+
     fun `saveSnippet`(`input`: SnippetInput): kotlin.String
-    
+
     fun `saveSyncProfile`(`input`: SyncProfileInput): kotlin.String
-    
+
     suspend fun `sendInput`(`sessionId`: kotlin.ULong, `data`: kotlin.ByteArray)
-    
+
     /**
      * Set the app data directory used for vault + known_hosts when no
      * explicit vault path is set. Pass empty string to clear.
@@ -3381,66 +3575,82 @@ public interface ZeroTermInterface {
      * before any vault/session operations.
      */
     fun `setDataDir`(`path`: kotlin.String)
-    
+
+    /**
+     * Configure one process-wide HTTP CONNECT proxy for SSH and network
+     * clients. An empty value disables the proxy.
+     */
+    fun `setNetworkProxy`(`proxyUrl`: kotlin.String): kotlin.String
+
     /**
      * Use a custom vault path instead of the OS default. Pass empty
      * string to revert to the OS default.
      */
     fun `setVaultPath`(`path`: kotlin.String)
-    
+
     fun `sftpCancelTransfer`(`transferId`: kotlin.ULong)
-    
+
     suspend fun `sftpClose`(`sftpId`: kotlin.ULong)
-    
+
     /**
      * Download remote file to a local path. Returns transfer id.
      * Progress via [listener]. Completes when the future resolves.
      */
     suspend fun `sftpDownload`(`sftpId`: kotlin.ULong, `remote`: kotlin.String, `localPath`: kotlin.String, `overwrite`: kotlin.Boolean, `listener`: TransferListener): kotlin.ULong
-    
+
     suspend fun `sftpList`(`sftpId`: kotlin.ULong, `path`: kotlin.String): List<SftpDirEntry>
-    
+
     suspend fun `sftpMkdir`(`sftpId`: kotlin.ULong, `path`: kotlin.String)
-    
+
     /**
      * Open an SFTP channel to a saved host. Host-key prompts use the same
      * callback protocol as `connectHost`.
      */
     suspend fun `sftpOpen`(`hostId`: kotlin.String, `hostKeyPrompt`: HostKeyPromptCallback): kotlin.ULong
-    
+
     suspend fun `sftpRemove`(`sftpId`: kotlin.ULong, `path`: kotlin.String)
-    
+
     /**
      * Remove a directory (non-recursive). Fails if not empty.
      */
     suspend fun `sftpRemoveDir`(`sftpId`: kotlin.ULong, `path`: kotlin.String)
-    
+
     suspend fun `sftpRename`(`sftpId`: kotlin.ULong, `from`: kotlin.String, `to`: kotlin.String)
-    
+
     /**
      * Upload local file to remote path. Returns transfer id.
      */
     suspend fun `sftpUpload`(`sftpId`: kotlin.ULong, `localPath`: kotlin.String, `remote`: kotlin.String, `overwrite`: kotlin.Boolean, `listener`: TransferListener): kotlin.ULong
-    
+
+    suspend fun `syncCompact`(`profileId`: kotlin.String): SyncCompactRecord
+
     /**
      * Create a new remote repo (first device). Requires encryption passphrase
      * either in keychain or passed via prior `saveSyncProfile`.
      */
     suspend fun `syncCreateRepo`(`profileId`: kotlin.String, `passphrase`: kotlin.String): kotlin.UInt
-    
+
+    suspend fun `syncDeleteRemoteRepo`(`profileId`: kotlin.String)
+
+    suspend fun `syncForgetEngine`(`profileId`: kotlin.String)
+
     /**
      * Join an existing remote repo (second device).
      */
     suspend fun `syncJoinRepo`(`profileId`: kotlin.String, `passphrase`: kotlin.String): SyncOutcomeRecord
-    
+
+    suspend fun `syncListDevices`(`profileId`: kotlin.String): List<SyncDeviceRecord>
+
     /**
      * One sync round-trip. Engine must already be bootstrapped via
      * createRepo or joinRepo.
      */
     suspend fun `syncNow`(`profileId`: kotlin.String): SyncOutcomeRecord
-    
+
+    suspend fun `syncRepoStats`(`profileId`: kotlin.String): SyncRepoStatsRecord
+
     suspend fun `syncStatus`(`profileId`: kotlin.String): SyncStatusRecord
-    
+
     /**
      * Try to unlock the vault using the OS keychain-cached master
      * password, if any. Returns `true` on success, `false` if there's no
@@ -3451,11 +3661,11 @@ public interface ZeroTermInterface {
      * only sees a single Touch ID / password prompt.
      */
     fun `tryKeychainUnlock`(): kotlin.Boolean
-    
+
     fun `unlock`(`password`: kotlin.String, `remember`: kotlin.Boolean)
-    
+
     fun `vaultStatus`(): VaultStatus
-    
+
     companion object
 }
 
@@ -3552,7 +3762,49 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
         }
     }
 
-    
+
+    @Throws(FfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `aiChat`(`profileId`: kotlin.String, `messages`: List<AiChatMessage>) : AiChatResponse {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_zeroterm_ai_chat(
+                thisPtr,
+                FfiConverterString.lower(`profileId`),FfiConverterSequenceTypeAiChatMessage.lower(`messages`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterTypeAiChatResponse.lift(it) },
+        // Error FFI converter
+        FfiException.ErrorHandler,
+    )
+    }
+
+
+    @Throws(FfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `aiChatWithModel`(`profileId`: kotlin.String, `modelOverride`: kotlin.String, `messages`: List<AiChatMessage>) : AiChatResponse {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_zeroterm_ai_chat_with_model(
+                thisPtr,
+                FfiConverterString.lower(`profileId`),FfiConverterString.lower(`modelOverride`),FfiConverterSequenceTypeAiChatMessage.lower(`messages`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterTypeAiChatResponse.lift(it) },
+        // Error FFI converter
+        FfiException.ErrorHandler,
+    )
+    }
+
+
     /**
      * Quick Connect: connect without a saved vault host. Vault must still
      * be unlocked (session APIs live on the same object). Host is not
@@ -3578,7 +3830,7 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
     )
     }
 
-    
+
     /**
      * Connect to a saved host and open a PTY-backed shell. Streams data
      * into `listener.on_data`; surfaces unknown / mismatched host keys
@@ -3608,43 +3860,67 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
     )
     }
 
-    
+
     @Throws(FfiException::class)override fun `create`(`password`: kotlin.String, `remember`: kotlin.Boolean)
-        = 
+        =
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_zeroterm_create(
         it, FfiConverterString.lower(`password`),FfiConverterBoolean.lower(`remember`),_status)
 }
     }
-    
-    
 
-    
+
+
+
+    @Throws(FfiException::class)override fun `deleteAiProfile`(`id`: kotlin.String)
+        =
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_zeroterm_delete_ai_profile(
+        it, FfiConverterString.lower(`id`),_status)
+}
+    }
+
+
+
+
     @Throws(FfiException::class)override fun `deleteHost`(`id`: kotlin.String)
-        = 
+        =
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_zeroterm_delete_host(
         it, FfiConverterString.lower(`id`),_status)
 }
     }
-    
-    
 
-    
+
+
+
+    @Throws(FfiException::class)override fun `deleteHostGroup`(`id`: kotlin.String)
+        =
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_zeroterm_delete_host_group(
+        it, FfiConverterString.lower(`id`),_status)
+}
+    }
+
+
+
+
     @Throws(FfiException::class)override fun `deleteSnippet`(`id`: kotlin.String)
-        = 
+        =
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_zeroterm_delete_snippet(
         it, FfiConverterString.lower(`id`),_status)
 }
     }
-    
-    
 
-    
+
+
+
     @Throws(FfiException::class)override fun `deleteSnippetGroup`(`group`: kotlin.String): kotlin.UInt {
             return FfiConverterUInt.lift(
     callWithPointer {
@@ -3655,21 +3931,21 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
     }
     )
     }
-    
 
-    
+
+
     @Throws(FfiException::class)override fun `deleteSyncProfile`(`id`: kotlin.String)
-        = 
+        =
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_zeroterm_delete_sync_profile(
         it, FfiConverterString.lower(`id`),_status)
 }
     }
-    
-    
 
-    
+
+
+
     @Throws(FfiException::class)
     @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
     override suspend fun `disconnectSession`(`sessionId`: kotlin.ULong) {
@@ -3685,28 +3961,78 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
         { future -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_free_void(future) },
         // lift function
         { Unit },
-        
+
         // Error FFI converter
         FfiException.ErrorHandler,
     )
     }
 
-    
+
+    /**
+     * Execute a non-interactive command on a saved host. This deliberately
+     * uses a separate SSH channel so monitoring never writes into the user's PTY.
+     */
+    @Throws(FfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `execHostCommand`(`hostId`: kotlin.String, `command`: kotlin.String) : HostExecResult {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_zeroterm_exec_host_command(
+                thisPtr,
+                FfiConverterString.lower(`hostId`),FfiConverterString.lower(`command`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterTypeHostExecResult.lift(it) },
+        // Error FFI converter
+        FfiException.ErrorHandler,
+    )
+    }
+
+
+    /**
+     * Execute a command over the active SSH transport without writing it to
+     * the PTY. Works for both saved hosts and Quick Connect sessions.
+     */
+    @Throws(FfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `execSessionCommand`(`sessionId`: kotlin.ULong, `command`: kotlin.String) : HostExecResult {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_zeroterm_exec_session_command(
+                thisPtr,
+                FfiConverterULong.lower(`sessionId`),FfiConverterString.lower(`command`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterTypeHostExecResult.lift(it) },
+        // Error FFI converter
+        FfiException.ErrorHandler,
+    )
+    }
+
+
     /**
      * Drop any cached master password for the current vault path.
      */
     @Throws(FfiException::class)override fun `forgetKeychain`()
-        = 
+        =
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_zeroterm_forget_keychain(
         it, _status)
 }
     }
-    
-    
 
-    
+
+
+
     @Throws(FfiException::class)override fun `getHost`(`id`: kotlin.String): HostDetail {
             return FfiConverterTypeHostDetail.lift(
     callWithPointer {
@@ -3717,9 +4043,9 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
     }
     )
     }
-    
 
-    
+
+
     @Throws(FfiException::class)override fun `getSnippet`(`id`: kotlin.String): SnippetRecord {
             return FfiConverterTypeSnippetRecord.lift(
     callWithPointer {
@@ -3730,9 +4056,77 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
     }
     )
     }
-    
 
-    
+
+
+    @Throws(FfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `listAiModels`(`profileId`: kotlin.String) : List<kotlin.String> {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_zeroterm_list_ai_models(
+                thisPtr,
+                FfiConverterString.lower(`profileId`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterSequenceString.lift(it) },
+        // Error FFI converter
+        FfiException.ErrorHandler,
+    )
+    }
+
+
+    @Throws(FfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `listAiModelsWithConfig`(`profileId`: kotlin.String?, `baseUrl`: kotlin.String, `apiKey`: kotlin.String) : List<kotlin.String> {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_zeroterm_list_ai_models_with_config(
+                thisPtr,
+                FfiConverterOptionalString.lower(`profileId`),FfiConverterString.lower(`baseUrl`),FfiConverterString.lower(`apiKey`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterSequenceString.lift(it) },
+        // Error FFI converter
+        FfiException.ErrorHandler,
+    )
+    }
+
+
+    @Throws(FfiException::class)override fun `listAiProfiles`(): List<AiProfileRecord> {
+            return FfiConverterSequenceTypeAiProfileRecord.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_zeroterm_list_ai_profiles(
+        it, _status)
+}
+    }
+    )
+    }
+
+
+
+    @Throws(FfiException::class)override fun `listHostGroups`(): List<HostGroupRecord> {
+            return FfiConverterSequenceTypeHostGroupRecord.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_zeroterm_list_host_groups(
+        it, _status)
+}
+    }
+    )
+    }
+
+
+
     @Throws(FfiException::class)override fun `listHosts`(): List<HostSummary> {
             return FfiConverterSequenceTypeHostSummary.lift(
     callWithPointer {
@@ -3743,9 +4137,9 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
     }
     )
     }
-    
 
-    
+
+
     @Throws(FfiException::class)override fun `listOpenConflicts`(): List<ConflictRecord> {
             return FfiConverterSequenceTypeConflictRecord.lift(
     callWithPointer {
@@ -3756,9 +4150,9 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
     }
     )
     }
-    
 
-    
+
+
     @Throws(FfiException::class)override fun `listSnippets`(): List<SnippetRecord> {
             return FfiConverterSequenceTypeSnippetRecord.lift(
     callWithPointer {
@@ -3769,9 +4163,9 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
     }
     )
     }
-    
 
-    
+
+
     @Throws(FfiException::class)override fun `listSyncProfiles`(): List<SyncProfileSummary> {
             return FfiConverterSequenceTypeSyncProfileSummary.lift(
     callWithPointer {
@@ -3782,20 +4176,20 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
     }
     )
     }
-    
+
 
     override fun `lock`()
-        = 
+        =
     callWithPointer {
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_zeroterm_lock(
         it, _status)
 }
     }
-    
-    
 
-    
+
+
+
     @Throws(FfiException::class)override fun `renameSnippetGroup`(`old`: kotlin.String, `new`: kotlin.String): kotlin.UInt {
             return FfiConverterUInt.lift(
     callWithPointer {
@@ -3806,9 +4200,9 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
     }
     )
     }
-    
 
-    
+
+
     @Throws(FfiException::class)
     @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
     override suspend fun `resizeSession`(`sessionId`: kotlin.ULong, `cols`: kotlin.UShort, `rows`: kotlin.UShort) {
@@ -3824,44 +4218,57 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
         { future -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_free_void(future) },
         // lift function
         { Unit },
-        
+
         // Error FFI converter
         FfiException.ErrorHandler,
     )
     }
 
-    
+
     /**
      * `keep_local = true` → KeepLocal; false → KeepRemote.
      */
     @Throws(FfiException::class)override fun `resolveConflict`(`conflictId`: kotlin.String, `keepLocal`: kotlin.Boolean)
-        = 
+        =
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_zeroterm_resolve_conflict(
         it, FfiConverterString.lower(`conflictId`),FfiConverterBoolean.lower(`keepLocal`),_status)
 }
     }
-    
-    
 
-    
+
+
+
     /**
      * Answer a pending host-key prompt. `accept = true` continues the
      * SSH handshake; `false` cancels it.
      */
     @Throws(FfiException::class)override fun `respondHostKey`(`requestId`: kotlin.String, `accept`: kotlin.Boolean)
-        = 
+        =
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_zeroterm_respond_host_key(
         it, FfiConverterString.lower(`requestId`),FfiConverterBoolean.lower(`accept`),_status)
 }
     }
-    
-    
 
-    
+
+
+
+    @Throws(FfiException::class)override fun `saveAiProfile`(`input`: AiProfileInput): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_zeroterm_save_ai_profile(
+        it, FfiConverterTypeAiProfileInput.lower(`input`),_status)
+}
+    }
+    )
+    }
+
+
+
     /**
      * Insert a new host (`host.id` ignored / empty) or update when
      * `host.id` is set. Forwards / ProxyJump from the existing record
@@ -3877,9 +4284,22 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
     }
     )
     }
-    
 
-    
+
+
+    @Throws(FfiException::class)override fun `saveHostGroup`(`input`: HostGroupInput): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_zeroterm_save_host_group(
+        it, FfiConverterTypeHostGroupInput.lower(`input`),_status)
+}
+    }
+    )
+    }
+
+
+
     @Throws(FfiException::class)override fun `saveSnippet`(`input`: SnippetInput): kotlin.String {
             return FfiConverterString.lift(
     callWithPointer {
@@ -3890,9 +4310,9 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
     }
     )
     }
-    
 
-    
+
+
     @Throws(FfiException::class)override fun `saveSyncProfile`(`input`: SyncProfileInput): kotlin.String {
             return FfiConverterString.lift(
     callWithPointer {
@@ -3903,9 +4323,9 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
     }
     )
     }
-    
 
-    
+
+
     @Throws(FfiException::class)
     @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
     override suspend fun `sendInput`(`sessionId`: kotlin.ULong, `data`: kotlin.ByteArray) {
@@ -3921,13 +4341,13 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
         { future -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_free_void(future) },
         // lift function
         { Unit },
-        
+
         // Error FFI converter
         FfiException.ErrorHandler,
     )
     }
 
-    
+
     /**
      * Set the app data directory used for vault + known_hosts when no
      * explicit vault path is set. Pass empty string to clear.
@@ -3935,44 +4355,61 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
      * On Android call with `context.filesDir.absolutePath` at startup
      * before any vault/session operations.
      */override fun `setDataDir`(`path`: kotlin.String)
-        = 
+        =
     callWithPointer {
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_zeroterm_set_data_dir(
         it, FfiConverterString.lower(`path`),_status)
 }
     }
-    
-    
 
-    
+
+
+
+    /**
+     * Configure one process-wide HTTP CONNECT proxy for SSH and network
+     * clients. An empty value disables the proxy.
+     */
+    @Throws(FfiException::class)override fun `setNetworkProxy`(`proxyUrl`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_zeroterm_set_network_proxy(
+        it, FfiConverterString.lower(`proxyUrl`),_status)
+}
+    }
+    )
+    }
+
+
+
     /**
      * Use a custom vault path instead of the OS default. Pass empty
      * string to revert to the OS default.
      */override fun `setVaultPath`(`path`: kotlin.String)
-        = 
+        =
     callWithPointer {
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_zeroterm_set_vault_path(
         it, FfiConverterString.lower(`path`),_status)
 }
     }
-    
-    
 
-    
+
+
+
     @Throws(FfiException::class)override fun `sftpCancelTransfer`(`transferId`: kotlin.ULong)
-        = 
+        =
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_zeroterm_sftp_cancel_transfer(
         it, FfiConverterULong.lower(`transferId`),_status)
 }
     }
-    
-    
 
-    
+
+
+
     @Throws(FfiException::class)
     @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
     override suspend fun `sftpClose`(`sftpId`: kotlin.ULong) {
@@ -3988,13 +4425,13 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
         { future -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_free_void(future) },
         // lift function
         { Unit },
-        
+
         // Error FFI converter
         FfiException.ErrorHandler,
     )
     }
 
-    
+
     /**
      * Download remote file to a local path. Returns transfer id.
      * Progress via [listener]. Completes when the future resolves.
@@ -4019,7 +4456,7 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
     )
     }
 
-    
+
     @Throws(FfiException::class)
     @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
     override suspend fun `sftpList`(`sftpId`: kotlin.ULong, `path`: kotlin.String) : List<SftpDirEntry> {
@@ -4040,7 +4477,7 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
     )
     }
 
-    
+
     @Throws(FfiException::class)
     @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
     override suspend fun `sftpMkdir`(`sftpId`: kotlin.ULong, `path`: kotlin.String) {
@@ -4056,13 +4493,13 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
         { future -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_free_void(future) },
         // lift function
         { Unit },
-        
+
         // Error FFI converter
         FfiException.ErrorHandler,
     )
     }
 
-    
+
     /**
      * Open an SFTP channel to a saved host. Host-key prompts use the same
      * callback protocol as `connectHost`.
@@ -4087,7 +4524,7 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
     )
     }
 
-    
+
     @Throws(FfiException::class)
     @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
     override suspend fun `sftpRemove`(`sftpId`: kotlin.ULong, `path`: kotlin.String) {
@@ -4103,13 +4540,13 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
         { future -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_free_void(future) },
         // lift function
         { Unit },
-        
+
         // Error FFI converter
         FfiException.ErrorHandler,
     )
     }
 
-    
+
     /**
      * Remove a directory (non-recursive). Fails if not empty.
      */
@@ -4128,13 +4565,13 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
         { future -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_free_void(future) },
         // lift function
         { Unit },
-        
+
         // Error FFI converter
         FfiException.ErrorHandler,
     )
     }
 
-    
+
     @Throws(FfiException::class)
     @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
     override suspend fun `sftpRename`(`sftpId`: kotlin.ULong, `from`: kotlin.String, `to`: kotlin.String) {
@@ -4150,13 +4587,13 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
         { future -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_free_void(future) },
         // lift function
         { Unit },
-        
+
         // Error FFI converter
         FfiException.ErrorHandler,
     )
     }
 
-    
+
     /**
      * Upload local file to remote path. Returns transfer id.
      */
@@ -4180,7 +4617,28 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
     )
     }
 
-    
+
+    @Throws(FfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `syncCompact`(`profileId`: kotlin.String) : SyncCompactRecord {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_zeroterm_sync_compact(
+                thisPtr,
+                FfiConverterString.lower(`profileId`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterTypeSyncCompactRecord.lift(it) },
+        // Error FFI converter
+        FfiException.ErrorHandler,
+    )
+    }
+
+
     /**
      * Create a new remote repo (first device). Requires encryption passphrase
      * either in keychain or passed via prior `saveSyncProfile`.
@@ -4205,7 +4663,51 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
     )
     }
 
-    
+
+    @Throws(FfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `syncDeleteRemoteRepo`(`profileId`: kotlin.String) {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_zeroterm_sync_delete_remote_repo(
+                thisPtr,
+                FfiConverterString.lower(`profileId`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_poll_void(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_complete_void(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_free_void(future) },
+        // lift function
+        { Unit },
+
+        // Error FFI converter
+        FfiException.ErrorHandler,
+    )
+    }
+
+
+    @Throws(FfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `syncForgetEngine`(`profileId`: kotlin.String) {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_zeroterm_sync_forget_engine(
+                thisPtr,
+                FfiConverterString.lower(`profileId`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_poll_void(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_complete_void(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_free_void(future) },
+        // lift function
+        { Unit },
+
+        // Error FFI converter
+        FfiException.ErrorHandler,
+    )
+    }
+
+
     /**
      * Join an existing remote repo (second device).
      */
@@ -4229,7 +4731,28 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
     )
     }
 
-    
+
+    @Throws(FfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `syncListDevices`(`profileId`: kotlin.String) : List<SyncDeviceRecord> {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_zeroterm_sync_list_devices(
+                thisPtr,
+                FfiConverterString.lower(`profileId`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterSequenceTypeSyncDeviceRecord.lift(it) },
+        // Error FFI converter
+        FfiException.ErrorHandler,
+    )
+    }
+
+
     /**
      * One sync round-trip. Engine must already be bootstrapped via
      * createRepo or joinRepo.
@@ -4254,7 +4777,28 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
     )
     }
 
-    
+
+    @Throws(FfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `syncRepoStats`(`profileId`: kotlin.String) : SyncRepoStatsRecord {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_zeroterm_sync_repo_stats(
+                thisPtr,
+                FfiConverterString.lower(`profileId`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_zeroterm_ffi_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterTypeSyncRepoStatsRecord.lift(it) },
+        // Error FFI converter
+        FfiException.ErrorHandler,
+    )
+    }
+
+
     @Throws(FfiException::class)
     @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
     override suspend fun `syncStatus`(`profileId`: kotlin.String) : SyncStatusRecord {
@@ -4275,7 +4819,7 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
     )
     }
 
-    
+
     /**
      * Try to unlock the vault using the OS keychain-cached master
      * password, if any. Returns `true` on success, `false` if there's no
@@ -4295,21 +4839,21 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
     }
     )
     }
-    
 
-    
+
+
     @Throws(FfiException::class)override fun `unlock`(`password`: kotlin.String, `remember`: kotlin.Boolean)
-        = 
+        =
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_zeroterm_ffi_fn_method_zeroterm_unlock(
         it, FfiConverterString.lower(`password`),FfiConverterBoolean.lower(`remember`),_status)
 }
     }
-    
-    
 
-    
+
+
+
     @Throws(FfiException::class)override fun `vaultStatus`(): VaultStatus {
             return FfiConverterTypeVaultStatus.lift(
     callWithPointer {
@@ -4320,14 +4864,14 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
     }
     )
     }
-    
 
-    
 
-    
-    
+
+
+
+
     companion object
-    
+
 }
 
 /**
@@ -4360,17 +4904,196 @@ public object FfiConverterTypeZeroTerm: FfiConverter<ZeroTerm, Pointer> {
 
 
 
+data class AiChatMessage (
+    var `role`: kotlin.String,
+    var `content`: kotlin.String
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeAiChatMessage: FfiConverterRustBuffer<AiChatMessage> {
+    override fun read(buf: ByteBuffer): AiChatMessage {
+        return AiChatMessage(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: AiChatMessage) = (
+            FfiConverterString.allocationSize(value.`role`) +
+            FfiConverterString.allocationSize(value.`content`)
+    )
+
+    override fun write(value: AiChatMessage, buf: ByteBuffer) {
+            FfiConverterString.write(value.`role`, buf)
+            FfiConverterString.write(value.`content`, buf)
+    }
+}
+
+
+
+data class AiChatResponse (
+    var `content`: kotlin.String,
+    var `reasoningContent`: kotlin.String
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeAiChatResponse: FfiConverterRustBuffer<AiChatResponse> {
+    override fun read(buf: ByteBuffer): AiChatResponse {
+        return AiChatResponse(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: AiChatResponse) = (
+            FfiConverterString.allocationSize(value.`content`) +
+            FfiConverterString.allocationSize(value.`reasoningContent`)
+    )
+
+    override fun write(value: AiChatResponse, buf: ByteBuffer) {
+            FfiConverterString.write(value.`content`, buf)
+            FfiConverterString.write(value.`reasoningContent`, buf)
+    }
+}
+
+
+
+data class AiProfileInput (
+    var `id`: kotlin.String?,
+    var `name`: kotlin.String,
+    var `provider`: kotlin.String,
+    var `baseUrl`: kotlin.String,
+    var `model`: kotlin.String,
+    /**
+     * Blank on update preserves the encrypted key already in the vault.
+     */
+    var `apiKey`: kotlin.String,
+    var `systemPrompt`: kotlin.String,
+    var `reasoningEffort`: kotlin.String
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeAiProfileInput: FfiConverterRustBuffer<AiProfileInput> {
+    override fun read(buf: ByteBuffer): AiProfileInput {
+        return AiProfileInput(
+            FfiConverterOptionalString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: AiProfileInput) = (
+            FfiConverterOptionalString.allocationSize(value.`id`) +
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterString.allocationSize(value.`provider`) +
+            FfiConverterString.allocationSize(value.`baseUrl`) +
+            FfiConverterString.allocationSize(value.`model`) +
+            FfiConverterString.allocationSize(value.`apiKey`) +
+            FfiConverterString.allocationSize(value.`systemPrompt`) +
+            FfiConverterString.allocationSize(value.`reasoningEffort`)
+    )
+
+    override fun write(value: AiProfileInput, buf: ByteBuffer) {
+            FfiConverterOptionalString.write(value.`id`, buf)
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterString.write(value.`provider`, buf)
+            FfiConverterString.write(value.`baseUrl`, buf)
+            FfiConverterString.write(value.`model`, buf)
+            FfiConverterString.write(value.`apiKey`, buf)
+            FfiConverterString.write(value.`systemPrompt`, buf)
+            FfiConverterString.write(value.`reasoningEffort`, buf)
+    }
+}
+
+
+
+data class AiProfileRecord (
+    var `id`: kotlin.String,
+    var `name`: kotlin.String,
+    var `provider`: kotlin.String,
+    var `baseUrl`: kotlin.String,
+    var `model`: kotlin.String,
+    var `hasApiKey`: kotlin.Boolean,
+    var `systemPrompt`: kotlin.String,
+    var `reasoningEffort`: kotlin.String
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeAiProfileRecord: FfiConverterRustBuffer<AiProfileRecord> {
+    override fun read(buf: ByteBuffer): AiProfileRecord {
+        return AiProfileRecord(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: AiProfileRecord) = (
+            FfiConverterString.allocationSize(value.`id`) +
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterString.allocationSize(value.`provider`) +
+            FfiConverterString.allocationSize(value.`baseUrl`) +
+            FfiConverterString.allocationSize(value.`model`) +
+            FfiConverterBoolean.allocationSize(value.`hasApiKey`) +
+            FfiConverterString.allocationSize(value.`systemPrompt`) +
+            FfiConverterString.allocationSize(value.`reasoningEffort`)
+    )
+
+    override fun write(value: AiProfileRecord, buf: ByteBuffer) {
+            FfiConverterString.write(value.`id`, buf)
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterString.write(value.`provider`, buf)
+            FfiConverterString.write(value.`baseUrl`, buf)
+            FfiConverterString.write(value.`model`, buf)
+            FfiConverterBoolean.write(value.`hasApiKey`, buf)
+            FfiConverterString.write(value.`systemPrompt`, buf)
+            FfiConverterString.write(value.`reasoningEffort`, buf)
+    }
+}
+
+
+
 data class ConflictRecord (
-    var `id`: kotlin.String, 
-    var `recordId`: kotlin.String, 
-    var `kind`: kotlin.String, 
-    var `detectedAt`: kotlin.Long, 
-    var `localRev`: kotlin.String, 
-    var `remoteRev`: kotlin.String, 
-    var `localPreview`: kotlin.String, 
+    var `id`: kotlin.String,
+    var `recordId`: kotlin.String,
+    var `kind`: kotlin.String,
+    var `detectedAt`: kotlin.Long,
+    var `localRev`: kotlin.String,
+    var `remoteRev`: kotlin.String,
+    var `localPreview`: kotlin.String,
     var `remotePreview`: kotlin.String
 ) {
-    
+
     companion object
 }
 
@@ -4417,15 +5140,15 @@ public object FfiConverterTypeConflictRecord: FfiConverterRustBuffer<ConflictRec
 
 
 data class DamageFrame (
-    var `cols`: kotlin.UShort, 
-    var `rows`: kotlin.UShort, 
-    var `cursorCol`: kotlin.UShort, 
-    var `cursorRow`: kotlin.UShort, 
-    var `cursorVisible`: kotlin.Boolean, 
-    var `full`: kotlin.Boolean, 
+    var `cols`: kotlin.UShort,
+    var `rows`: kotlin.UShort,
+    var `cursorCol`: kotlin.UShort,
+    var `cursorRow`: kotlin.UShort,
+    var `cursorVisible`: kotlin.Boolean,
+    var `full`: kotlin.Boolean,
     var `lines`: List<DamageLine>
 ) {
-    
+
     companion object
 }
 
@@ -4469,10 +5192,10 @@ public object FfiConverterTypeDamageFrame: FfiConverterRustBuffer<DamageFrame> {
 
 
 data class DamageLine (
-    var `row`: kotlin.UShort, 
+    var `row`: kotlin.UShort,
     var `cells`: List<TermCell>
 ) {
-    
+
     companion object
 }
 
@@ -4505,15 +5228,15 @@ public object FfiConverterTypeDamageLine: FfiConverterRustBuffer<DamageLine> {
  * can re-save; treat as sensitive in the host process.
  */
 data class HostDetail (
-    var `id`: kotlin.String, 
-    var `name`: kotlin.String, 
-    var `host`: kotlin.String, 
-    var `port`: kotlin.UShort, 
-    var `user`: kotlin.String, 
-    var `auth`: HostAuthInput, 
+    var `id`: kotlin.String,
+    var `name`: kotlin.String,
+    var `host`: kotlin.String,
+    var `port`: kotlin.UShort,
+    var `user`: kotlin.String,
+    var `auth`: HostAuthInput,
     var `groupId`: kotlin.String?
 ) {
-    
+
     companion object
 }
 
@@ -4557,18 +5280,144 @@ public object FfiConverterTypeHostDetail: FfiConverterRustBuffer<HostDetail> {
 
 
 /**
+ * Result of a non-interactive command executed on a saved host.
+ */
+data class HostExecResult (
+    var `code`: kotlin.Int,
+    var `stdout`: kotlin.String,
+    var `stderr`: kotlin.String
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeHostExecResult: FfiConverterRustBuffer<HostExecResult> {
+    override fun read(buf: ByteBuffer): HostExecResult {
+        return HostExecResult(
+            FfiConverterInt.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: HostExecResult) = (
+            FfiConverterInt.allocationSize(value.`code`) +
+            FfiConverterString.allocationSize(value.`stdout`) +
+            FfiConverterString.allocationSize(value.`stderr`)
+    )
+
+    override fun write(value: HostExecResult, buf: ByteBuffer) {
+            FfiConverterInt.write(value.`code`, buf)
+            FfiConverterString.write(value.`stdout`, buf)
+            FfiConverterString.write(value.`stderr`, buf)
+    }
+}
+
+
+
+/**
+ * Create/update input for a host group. When `id` is set, update;
+ * otherwise insert a new group.
+ */
+data class HostGroupInput (
+    var `id`: kotlin.String?,
+    var `name`: kotlin.String,
+    var `parentId`: kotlin.String?,
+    var `sortOrder`: kotlin.Int
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeHostGroupInput: FfiConverterRustBuffer<HostGroupInput> {
+    override fun read(buf: ByteBuffer): HostGroupInput {
+        return HostGroupInput(
+            FfiConverterOptionalString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: HostGroupInput) = (
+            FfiConverterOptionalString.allocationSize(value.`id`) +
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterOptionalString.allocationSize(value.`parentId`) +
+            FfiConverterInt.allocationSize(value.`sortOrder`)
+    )
+
+    override fun write(value: HostGroupInput, buf: ByteBuffer) {
+            FfiConverterOptionalString.write(value.`id`, buf)
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterOptionalString.write(value.`parentId`, buf)
+            FfiConverterInt.write(value.`sortOrder`, buf)
+    }
+}
+
+
+
+/**
+ * Host group metadata used by mobile clients to render the saved hierarchy.
+ */
+data class HostGroupRecord (
+    var `id`: kotlin.String,
+    var `name`: kotlin.String,
+    var `parentId`: kotlin.String?,
+    var `sortOrder`: kotlin.Int
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeHostGroupRecord: FfiConverterRustBuffer<HostGroupRecord> {
+    override fun read(buf: ByteBuffer): HostGroupRecord {
+        return HostGroupRecord(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: HostGroupRecord) = (
+            FfiConverterString.allocationSize(value.`id`) +
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterOptionalString.allocationSize(value.`parentId`) +
+            FfiConverterInt.allocationSize(value.`sortOrder`)
+    )
+
+    override fun write(value: HostGroupRecord, buf: ByteBuffer) {
+            FfiConverterString.write(value.`id`, buf)
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterOptionalString.write(value.`parentId`, buf)
+            FfiConverterInt.write(value.`sortOrder`, buf)
+    }
+}
+
+
+
+/**
  * Input for save/update host. When `id` is set, update; otherwise insert.
  */
 data class HostInput (
-    var `id`: kotlin.String?, 
-    var `name`: kotlin.String, 
-    var `host`: kotlin.String, 
-    var `port`: kotlin.UShort, 
-    var `user`: kotlin.String, 
-    var `auth`: HostAuthInput, 
+    var `id`: kotlin.String?,
+    var `name`: kotlin.String,
+    var `host`: kotlin.String,
+    var `port`: kotlin.UShort,
+    var `user`: kotlin.String,
+    var `auth`: HostAuthInput,
     var `groupId`: kotlin.String?
 ) {
-    
+
     companion object
 }
 
@@ -4616,15 +5465,15 @@ public object FfiConverterTypeHostInput: FfiConverterRustBuffer<HostInput> {
  * foreign UI when the user must decide whether to trust it.
  */
 data class HostKeyInfo (
-    var `host`: kotlin.String, 
-    var `port`: kotlin.UShort, 
-    var `keyType`: kotlin.String, 
+    var `host`: kotlin.String,
+    var `port`: kotlin.UShort,
+    var `keyType`: kotlin.String,
     /**
      * SHA256 fingerprint in OpenSSH style: `SHA256:<base64-no-pad>`.
      */
     var `fingerprint`: kotlin.String
 ) {
-    
+
     companion object
 }
 
@@ -4659,15 +5508,15 @@ public object FfiConverterTypeHostKeyInfo: FfiConverterRustBuffer<HostKeyInfo> {
 
 
 data class HostSummary (
-    var `id`: kotlin.String, 
-    var `name`: kotlin.String, 
-    var `host`: kotlin.String, 
-    var `port`: kotlin.UShort, 
-    var `user`: kotlin.String, 
-    var `authKind`: AuthKind, 
+    var `id`: kotlin.String,
+    var `name`: kotlin.String,
+    var `host`: kotlin.String,
+    var `port`: kotlin.UShort,
+    var `user`: kotlin.String,
+    var `authKind`: AuthKind,
     var `groupId`: kotlin.String?
 ) {
-    
+
     companion object
 }
 
@@ -4711,12 +5560,12 @@ public object FfiConverterTypeHostSummary: FfiConverterRustBuffer<HostSummary> {
 
 
 data class SftpDirEntry (
-    var `name`: kotlin.String, 
-    var `kind`: SftpFileKind, 
-    var `size`: kotlin.ULong, 
+    var `name`: kotlin.String,
+    var `kind`: SftpFileKind,
+    var `size`: kotlin.ULong,
     var `modifiedUnixMs`: kotlin.Long?
 ) {
-    
+
     companion object
 }
 
@@ -4754,13 +5603,13 @@ public object FfiConverterTypeSftpDirEntry: FfiConverterRustBuffer<SftpDirEntry>
  * Create/update input. When `id` is set, update; otherwise insert.
  */
 data class SnippetInput (
-    var `id`: kotlin.String?, 
-    var `title`: kotlin.String, 
-    var `command`: kotlin.String, 
-    var `group`: kotlin.String, 
+    var `id`: kotlin.String?,
+    var `title`: kotlin.String,
+    var `command`: kotlin.String,
+    var `group`: kotlin.String,
     var `sortOrder`: kotlin.Int
 ) {
-    
+
     companion object
 }
 
@@ -4801,16 +5650,16 @@ public object FfiConverterTypeSnippetInput: FfiConverterRustBuffer<SnippetInput>
  * Vault command snippet (kind `snippet`).
  */
 data class SnippetRecord (
-    var `id`: kotlin.String, 
-    var `title`: kotlin.String, 
-    var `command`: kotlin.String, 
+    var `id`: kotlin.String,
+    var `title`: kotlin.String,
+    var `command`: kotlin.String,
     /**
      * Free-form group label; empty = ungrouped.
      */
-    var `group`: kotlin.String, 
+    var `group`: kotlin.String,
     var `sortOrder`: kotlin.Int
 ) {
-    
+
     companion object
 }
 
@@ -4847,19 +5696,103 @@ public object FfiConverterTypeSnippetRecord: FfiConverterRustBuffer<SnippetRecor
 
 
 
+data class SyncCompactRecord (
+    var `eventsCompacted`: kotlin.UInt,
+    var `eventsTrashed`: kotlin.UInt,
+    var `eventsRetained`: kotlin.UInt,
+    var `recordsInSnapshot`: kotlin.UInt,
+    var `headClock`: kotlin.ULong
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeSyncCompactRecord: FfiConverterRustBuffer<SyncCompactRecord> {
+    override fun read(buf: ByteBuffer): SyncCompactRecord {
+        return SyncCompactRecord(
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: SyncCompactRecord) = (
+            FfiConverterUInt.allocationSize(value.`eventsCompacted`) +
+            FfiConverterUInt.allocationSize(value.`eventsTrashed`) +
+            FfiConverterUInt.allocationSize(value.`eventsRetained`) +
+            FfiConverterUInt.allocationSize(value.`recordsInSnapshot`) +
+            FfiConverterULong.allocationSize(value.`headClock`)
+    )
+
+    override fun write(value: SyncCompactRecord, buf: ByteBuffer) {
+            FfiConverterUInt.write(value.`eventsCompacted`, buf)
+            FfiConverterUInt.write(value.`eventsTrashed`, buf)
+            FfiConverterUInt.write(value.`eventsRetained`, buf)
+            FfiConverterUInt.write(value.`recordsInSnapshot`, buf)
+            FfiConverterULong.write(value.`headClock`, buf)
+    }
+}
+
+
+
+data class SyncDeviceRecord (
+    var `deviceId`: kotlin.String,
+    var `name`: kotlin.String,
+    var `lastSeenAt`: kotlin.Long,
+    var `isCurrent`: kotlin.Boolean
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeSyncDeviceRecord: FfiConverterRustBuffer<SyncDeviceRecord> {
+    override fun read(buf: ByteBuffer): SyncDeviceRecord {
+        return SyncDeviceRecord(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterLong.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: SyncDeviceRecord) = (
+            FfiConverterString.allocationSize(value.`deviceId`) +
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterLong.allocationSize(value.`lastSeenAt`) +
+            FfiConverterBoolean.allocationSize(value.`isCurrent`)
+    )
+
+    override fun write(value: SyncDeviceRecord, buf: ByteBuffer) {
+            FfiConverterString.write(value.`deviceId`, buf)
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterLong.write(value.`lastSeenAt`, buf)
+            FfiConverterBoolean.write(value.`isCurrent`, buf)
+    }
+}
+
+
+
 data class SyncOutcomeRecord (
-    var `profileId`: kotlin.String, 
-    var `eventsPulled`: kotlin.UInt, 
-    var `upsertsApplied`: kotlin.UInt, 
-    var `deletesApplied`: kotlin.UInt, 
-    var `conflictsDetected`: kotlin.UInt, 
-    var `alreadySeen`: kotlin.UInt, 
-    var `skipped`: kotlin.UInt, 
-    var `eventsPushed`: kotlin.UInt, 
-    var `headClock`: kotlin.ULong, 
+    var `profileId`: kotlin.String,
+    var `eventsPulled`: kotlin.UInt,
+    var `upsertsApplied`: kotlin.UInt,
+    var `deletesApplied`: kotlin.UInt,
+    var `conflictsDetected`: kotlin.UInt,
+    var `alreadySeen`: kotlin.UInt,
+    var `skipped`: kotlin.UInt,
+    var `eventsPushed`: kotlin.UInt,
+    var `headClock`: kotlin.ULong,
     var `finishedAt`: kotlin.Long
 ) {
-    
+
     companion object
 }
 
@@ -4916,38 +5849,38 @@ public object FfiConverterTypeSyncOutcomeRecord: FfiConverterRustBuffer<SyncOutc
  * are optional — empty means "leave keychain entry unchanged".
  */
 data class SyncProfileInput (
-    var `id`: kotlin.String?, 
-    var `name`: kotlin.String, 
+    var `id`: kotlin.String?,
+    var `name`: kotlin.String,
     /**
      * "local_folder" | "sftp" | "webdav" | "s3"
      */
-    var `backend`: kotlin.String, 
-    var `root`: kotlin.String, 
-    var `hostRef`: kotlin.String, 
-    var `remoteDir`: kotlin.String, 
-    var `url`: kotlin.String, 
-    var `rootPath`: kotlin.String, 
-    var `username`: kotlin.String, 
+    var `backend`: kotlin.String,
+    var `root`: kotlin.String,
+    var `hostRef`: kotlin.String,
+    var `remoteDir`: kotlin.String,
+    var `url`: kotlin.String,
+    var `rootPath`: kotlin.String,
+    var `username`: kotlin.String,
     /**
      * WebDAV password or S3 secret access key (keychain).
      */
-    var `password`: kotlin.String, 
-    var `region`: kotlin.String, 
-    var `bucket`: kotlin.String, 
-    var `prefix`: kotlin.String, 
-    var `endpoint`: kotlin.String, 
-    var `forcePathStyle`: kotlin.Boolean, 
-    var `accessKeyId`: kotlin.String, 
+    var `password`: kotlin.String,
+    var `region`: kotlin.String,
+    var `bucket`: kotlin.String,
+    var `prefix`: kotlin.String,
+    var `endpoint`: kotlin.String,
+    var `forcePathStyle`: kotlin.Boolean,
+    var `accessKeyId`: kotlin.String,
     /**
      * S3 session token (keychain extra).
      */
-    var `sessionToken`: kotlin.String, 
+    var `sessionToken`: kotlin.String,
     /**
      * Sync encryption passphrase (keychain). Required on create/join.
      */
     var `encryptionPassphrase`: kotlin.String
 ) {
-    
+
     companion object
 }
 
@@ -5024,36 +5957,36 @@ public object FfiConverterTypeSyncProfileInput: FfiConverterRustBuffer<SyncProfi
 
 
 data class SyncProfileSummary (
-    var `id`: kotlin.String, 
-    var `name`: kotlin.String, 
-    var `backend`: SyncBackendKind, 
+    var `id`: kotlin.String,
+    var `name`: kotlin.String,
+    var `backend`: SyncBackendKind,
     /**
      * Local folder root, or empty.
      */
-    var `root`: kotlin.String, 
+    var `root`: kotlin.String,
     /**
      * SFTP host vault id, or empty.
      */
-    var `hostRef`: kotlin.String, 
+    var `hostRef`: kotlin.String,
     /**
      * SFTP remote dir / WebDAV root path / S3 prefix.
      */
-    var `remotePath`: kotlin.String, 
+    var `remotePath`: kotlin.String,
     /**
      * WebDAV URL or empty.
      */
-    var `url`: kotlin.String, 
+    var `url`: kotlin.String,
     /**
      * WebDAV username or S3 access key id.
      */
-    var `username`: kotlin.String, 
-    var `region`: kotlin.String, 
-    var `bucket`: kotlin.String, 
-    var `endpoint`: kotlin.String, 
-    var `forcePathStyle`: kotlin.Boolean, 
+    var `username`: kotlin.String,
+    var `region`: kotlin.String,
+    var `bucket`: kotlin.String,
+    var `endpoint`: kotlin.String,
+    var `forcePathStyle`: kotlin.Boolean,
     var `createdAt`: kotlin.Long
 ) {
-    
+
     companion object
 }
 
@@ -5114,15 +6047,75 @@ public object FfiConverterTypeSyncProfileSummary: FfiConverterRustBuffer<SyncPro
 
 
 
+data class SyncRepoStatsRecord (
+    var `totalBytes`: kotlin.ULong,
+    var `manifestBytes`: kotlin.ULong,
+    var `keyringBytes`: kotlin.ULong,
+    var `snapshotsBytes`: kotlin.ULong,
+    var `eventsBytes`: kotlin.ULong,
+    var `trashBytes`: kotlin.ULong,
+    var `devicesBytes`: kotlin.ULong,
+    var `snapshotCount`: kotlin.UInt,
+    var `eventCount`: kotlin.UInt
+) {
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeSyncRepoStatsRecord: FfiConverterRustBuffer<SyncRepoStatsRecord> {
+    override fun read(buf: ByteBuffer): SyncRepoStatsRecord {
+        return SyncRepoStatsRecord(
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: SyncRepoStatsRecord) = (
+            FfiConverterULong.allocationSize(value.`totalBytes`) +
+            FfiConverterULong.allocationSize(value.`manifestBytes`) +
+            FfiConverterULong.allocationSize(value.`keyringBytes`) +
+            FfiConverterULong.allocationSize(value.`snapshotsBytes`) +
+            FfiConverterULong.allocationSize(value.`eventsBytes`) +
+            FfiConverterULong.allocationSize(value.`trashBytes`) +
+            FfiConverterULong.allocationSize(value.`devicesBytes`) +
+            FfiConverterUInt.allocationSize(value.`snapshotCount`) +
+            FfiConverterUInt.allocationSize(value.`eventCount`)
+    )
+
+    override fun write(value: SyncRepoStatsRecord, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`totalBytes`, buf)
+            FfiConverterULong.write(value.`manifestBytes`, buf)
+            FfiConverterULong.write(value.`keyringBytes`, buf)
+            FfiConverterULong.write(value.`snapshotsBytes`, buf)
+            FfiConverterULong.write(value.`eventsBytes`, buf)
+            FfiConverterULong.write(value.`trashBytes`, buf)
+            FfiConverterULong.write(value.`devicesBytes`, buf)
+            FfiConverterUInt.write(value.`snapshotCount`, buf)
+            FfiConverterUInt.write(value.`eventCount`, buf)
+    }
+}
+
+
+
 data class SyncStatusRecord (
-    var `profileId`: kotlin.String, 
-    var `bootstrapped`: kotlin.Boolean, 
-    var `vaultId`: kotlin.String, 
-    var `headClock`: kotlin.ULong, 
-    var `profileValid`: kotlin.Boolean, 
+    var `profileId`: kotlin.String,
+    var `bootstrapped`: kotlin.Boolean,
+    var `vaultId`: kotlin.String,
+    var `headClock`: kotlin.ULong,
+    var `profileValid`: kotlin.Boolean,
     var `profileIssue`: kotlin.String
 ) {
-    
+
     companion object
 }
 
@@ -5166,18 +6159,18 @@ public object FfiConverterTypeSyncStatusRecord: FfiConverterRustBuffer<SyncStatu
  * One cell for the host Canvas renderer.
  */
 data class TermCell (
-    var `ch`: kotlin.String, 
+    var `ch`: kotlin.String,
     /**
      * Packed 0x00RRGGBB.
      */
-    var `fg`: kotlin.UInt, 
-    var `bg`: kotlin.UInt, 
+    var `fg`: kotlin.UInt,
+    var `bg`: kotlin.UInt,
     /**
      * Bit flags: 1=bold 2=dim 4=italic 8=underline 16=inverse 32=strike 64=wide
      */
     var `flags`: kotlin.UShort
 ) {
-    
+
     companion object
 }
 
@@ -5212,22 +6205,22 @@ public object FfiConverterTypeTermCell: FfiConverterRustBuffer<TermCell> {
 
 
 data class TransferProgress (
-    var `transferId`: kotlin.ULong, 
+    var `transferId`: kotlin.ULong,
     /**
      * "upload" | "download"
      */
-    var `kind`: kotlin.String, 
+    var `kind`: kotlin.String,
     /**
      * queued | running | success | error | cancelled
      */
-    var `status`: kotlin.String, 
-    var `source`: kotlin.String, 
-    var `destination`: kotlin.String, 
-    var `bytesDone`: kotlin.ULong, 
-    var `total`: kotlin.ULong?, 
+    var `status`: kotlin.String,
+    var `source`: kotlin.String,
+    var `destination`: kotlin.String,
+    var `bytesDone`: kotlin.ULong,
+    var `total`: kotlin.ULong?,
     var `error`: kotlin.String?
 ) {
-    
+
     companion object
 }
 
@@ -5274,11 +6267,11 @@ public object FfiConverterTypeTransferProgress: FfiConverterRustBuffer<TransferP
 
 
 data class VaultStatus (
-    var `path`: kotlin.String, 
-    var `exists`: kotlin.Boolean, 
+    var `path`: kotlin.String,
+    var `exists`: kotlin.Boolean,
     var `unlocked`: kotlin.Boolean
 ) {
-    
+
     companion object
 }
 
@@ -5311,7 +6304,7 @@ public object FfiConverterTypeVaultStatus: FfiConverterRustBuffer<VaultStatus> {
 
 
 enum class AuthKind {
-    
+
     PASSWORD,
     PRIVATE_KEY,
     AGENT;
@@ -5343,7 +6336,7 @@ public object FfiConverterTypeAuthKind: FfiConverterRustBuffer<AuthKind> {
 
 
 sealed class FfiException: kotlin.Exception() {
-    
+
     /**
      * Vault operations were attempted before [`crate::ZeroTerm::unlock`]
      * or [`crate::ZeroTerm::create`] succeeded.
@@ -5353,7 +6346,7 @@ sealed class FfiException: kotlin.Exception() {
         override val message
             get() = ""
     }
-    
+
     /**
      * Master password rejected. The vault file is intact; retry with the
      * correct password.
@@ -5363,7 +6356,7 @@ sealed class FfiException: kotlin.Exception() {
         override val message
             get() = ""
     }
-    
+
     /**
      * `unlock` was called against a path that has no vault yet.
      */
@@ -5372,7 +6365,7 @@ sealed class FfiException: kotlin.Exception() {
         override val message
             get() = ""
     }
-    
+
     /**
      * `create` was called against a path that already has a vault.
      */
@@ -5381,34 +6374,34 @@ sealed class FfiException: kotlin.Exception() {
         override val message
             get() = ""
     }
-    
+
     class NotFound(
-        
+
         val `detail`: kotlin.String
         ) : FfiException() {
         override val message
             get() = "detail=${ `detail` }"
     }
-    
+
     /**
      * Catch-all for anything that doesn't fit a more specific case —
      * IO errors, malformed records, name collisions, etc. The `detail`
      * is `Display` of the underlying error.
      */
     class Other(
-        
+
         val `detail`: kotlin.String
         ) : FfiException() {
         override val message
             get() = "detail=${ `detail` }"
     }
-    
+
 
     companion object ErrorHandler : UniffiRustCallStatusErrorHandler<FfiException> {
         override fun lift(error_buf: RustBuffer.ByValue): FfiException = FfiConverterTypeFfiError.lift(error_buf)
     }
 
-    
+
 }
 
 /**
@@ -5416,7 +6409,7 @@ sealed class FfiException: kotlin.Exception() {
  */
 public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
     override fun read(buf: ByteBuffer): FfiException {
-        
+
 
         return when(buf.getInt()) {
             1 -> FfiException.VaultLocked()
@@ -5500,23 +6493,23 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
 
 
 sealed class HostAuthInput {
-    
+
     data class Password(
         val `value`: kotlin.String) : HostAuthInput() {
         companion object
     }
-    
+
     data class PrivateKey(
-        val `keyPem`: kotlin.String, 
+        val `keyPem`: kotlin.String,
         val `passphrase`: kotlin.String?) : HostAuthInput() {
         companion object
     }
-    
-    object Agent : HostAuthInput()
-    
-    
 
-    
+    object Agent : HostAuthInput()
+
+
+
+
     companion object
 }
 
@@ -5589,7 +6582,7 @@ public object FfiConverterTypeHostAuthInput : FfiConverterRustBuffer<HostAuthInp
 
 
 enum class SftpFileKind {
-    
+
     FILE,
     DIR,
     SYMLINK,
@@ -5621,7 +6614,7 @@ public object FfiConverterTypeSftpFileKind: FfiConverterRustBuffer<SftpFileKind>
 
 
 enum class SyncBackendKind {
-    
+
     LOCAL_FOLDER,
     SFTP,
     WEB_DAV,
@@ -5815,6 +6808,90 @@ public object FfiConverterOptionalTypeDamageFrame: FfiConverterRustBuffer<Damage
 /**
  * @suppress
  */
+public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.String>> {
+    override fun read(buf: ByteBuffer): List<kotlin.String> {
+        val len = buf.getInt()
+        return List<kotlin.String>(len) {
+            FfiConverterString.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<kotlin.String>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterString.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<kotlin.String>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterString.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeAiChatMessage: FfiConverterRustBuffer<List<AiChatMessage>> {
+    override fun read(buf: ByteBuffer): List<AiChatMessage> {
+        val len = buf.getInt()
+        return List<AiChatMessage>(len) {
+            FfiConverterTypeAiChatMessage.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<AiChatMessage>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeAiChatMessage.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<AiChatMessage>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeAiChatMessage.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeAiProfileRecord: FfiConverterRustBuffer<List<AiProfileRecord>> {
+    override fun read(buf: ByteBuffer): List<AiProfileRecord> {
+        val len = buf.getInt()
+        return List<AiProfileRecord>(len) {
+            FfiConverterTypeAiProfileRecord.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<AiProfileRecord>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeAiProfileRecord.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<AiProfileRecord>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeAiProfileRecord.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeConflictRecord: FfiConverterRustBuffer<List<ConflictRecord>> {
     override fun read(buf: ByteBuffer): List<ConflictRecord> {
         val len = buf.getInt()
@@ -5861,6 +6938,34 @@ public object FfiConverterSequenceTypeDamageLine: FfiConverterRustBuffer<List<Da
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeDamageLine.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeHostGroupRecord: FfiConverterRustBuffer<List<HostGroupRecord>> {
+    override fun read(buf: ByteBuffer): List<HostGroupRecord> {
+        val len = buf.getInt()
+        return List<HostGroupRecord>(len) {
+            FfiConverterTypeHostGroupRecord.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<HostGroupRecord>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeHostGroupRecord.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<HostGroupRecord>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeHostGroupRecord.write(it, buf)
         }
     }
 }
@@ -5945,6 +7050,34 @@ public object FfiConverterSequenceTypeSnippetRecord: FfiConverterRustBuffer<List
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeSnippetRecord.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeSyncDeviceRecord: FfiConverterRustBuffer<List<SyncDeviceRecord>> {
+    override fun read(buf: ByteBuffer): List<SyncDeviceRecord> {
+        val len = buf.getInt()
+        return List<SyncDeviceRecord>(len) {
+            FfiConverterTypeSyncDeviceRecord.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<SyncDeviceRecord>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeSyncDeviceRecord.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<SyncDeviceRecord>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeSyncDeviceRecord.write(it, buf)
         }
     }
 }

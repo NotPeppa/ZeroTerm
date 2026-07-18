@@ -10,16 +10,19 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, info, warn};
+use serde::Deserialize;
+use serde_json::json;
 
 use zeroterm_ssh::{ChannelEvent, HostKeyPolicy, KnownHosts, PtySize, Session, ShellChannel};
 
 use crate::error::{map_app_error, other, FfiError};
 use crate::listener::{ForeignHostKeyPrompt, HostKeyPromptCallback, PendingMap, SessionListener};
 use crate::types::{
-    host_input_to_host, host_to_detail, host_to_summary, HostAuthInput, HostDetail, HostInput,
-    HostSummary, SnippetInput, SnippetRecord, VaultStatus,
+    host_group_to_record, host_input_to_host, host_to_detail, host_to_summary, AiChatMessage,
+    AiChatResponse, AiProfileInput, AiProfileRecord, HostAuthInput, HostDetail, HostExecResult,
+    HostGroupInput, HostGroupRecord, HostInput, HostSummary, SnippetInput, SnippetRecord, VaultStatus,
 };
 
 /// Entry point for the FFI surface. Construct one per app process,
@@ -58,7 +61,66 @@ struct SessionEntry {
 enum SessionCommand {
     Input(Vec<u8>),
     Resize(u16, u16),
+    Exec {
+        command: String,
+        response: oneshot::Sender<Result<HostExecResult, String>>,
+    },
     Disconnect,
+}
+
+#[derive(Deserialize)]
+struct OpenAiModelsResponse {
+    data: Vec<OpenAiModel>,
+}
+
+#[derive(Deserialize)]
+struct OpenAiModel {
+    id: String,
+}
+
+#[derive(Deserialize)]
+struct OpenAiChatResponse {
+    choices: Vec<OpenAiChoice>,
+}
+
+#[derive(Deserialize)]
+struct OpenAiChoice {
+    message: OpenAiResponseMessage,
+}
+
+#[derive(Deserialize)]
+struct OpenAiResponseMessage {
+    #[serde(default)]
+    content: String,
+    #[serde(default)]
+    reasoning_content: String,
+}
+
+fn ai_profile_record(profile: zeroterm_app::AiProfile) -> AiProfileRecord {
+    AiProfileRecord {
+        has_api_key: !profile.api_key.is_empty(),
+        id: profile.id,
+        name: profile.name,
+        provider: profile.provider,
+        base_url: profile.base_url,
+        model: profile.model,
+        system_prompt: profile.system_prompt,
+        reasoning_effort: profile.reasoning_effort,
+    }
+}
+
+fn ai_http_client() -> Result<reqwest::Client, FfiError> {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(90))
+        .build()
+        .map_err(other)
+}
+
+fn ai_http_error(status: u16, body: &str) -> FfiError {
+    let preview = body.chars().take(1_000).collect::<String>();
+    FfiError::Other {
+        detail: format!("AI request failed ({status}): {preview}"),
+    }
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -106,6 +168,60 @@ impl ZeroTerm {
             zeroterm_app::set_sync_known_hosts_path(Some(p.join("known_hosts")));
             Some(p)
         };
+    }
+
+    /// Configure one process-wide HTTP CONNECT proxy for SSH and network
+    /// clients. An empty value disables the proxy.
+    pub fn set_network_proxy(&self, proxy_url: String) -> Result<String, FfiError> {
+        let raw = proxy_url.trim();
+        if raw.is_empty() {
+            for key in [
+                "HTTP_PROXY",
+                "HTTPS_PROXY",
+                "ALL_PROXY",
+                "http_proxy",
+                "https_proxy",
+                "all_proxy",
+            ] {
+                std::env::remove_var(key);
+            }
+            zeroterm_ssh::set_global_http_proxy(None);
+            return Ok(String::new());
+        }
+
+        let parsed = reqwest::Url::parse(raw).map_err(|e| FfiError::Other {
+            detail: format!("invalid proxy URL: {e}"),
+        })?;
+        if parsed.scheme() != "http" {
+            return Err(FfiError::Other {
+                detail: "only http:// proxy URLs are supported".into(),
+            });
+        }
+        if parsed.host_str().is_none() || parsed.port_or_known_default().is_none() {
+            return Err(FfiError::Other {
+                detail: "proxy URL must include a host and valid port".into(),
+            });
+        }
+        if parsed.path() != "/" || parsed.query().is_some() || parsed.fragment().is_some() {
+            return Err(FfiError::Other {
+                detail: "proxy URL may only contain scheme, host, port, and optional credentials"
+                    .into(),
+            });
+        }
+
+        let normalized = parsed.to_string();
+        for key in [
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "ALL_PROXY",
+            "http_proxy",
+            "https_proxy",
+            "all_proxy",
+        ] {
+            std::env::set_var(key, &normalized);
+        }
+        zeroterm_ssh::set_global_http_proxy(Some(normalized.clone()));
+        Ok(normalized)
     }
 
     // -- vault ------------------------------------------------------------
@@ -203,6 +319,240 @@ impl ZeroTerm {
         })
     }
 
+    // -- AI ---------------------------------------------------------------
+
+    pub fn list_ai_profiles(&self) -> Result<Vec<AiProfileRecord>, FfiError> {
+        let guard = self.inner.lock().unwrap();
+        let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
+        Ok(app
+            .list_ai_profiles()
+            .map_err(map_app_error)?
+            .into_iter()
+            .map(ai_profile_record)
+            .collect())
+    }
+
+    pub fn save_ai_profile(&self, input: AiProfileInput) -> Result<String, FfiError> {
+        let guard = self.inner.lock().unwrap();
+        let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
+        let id = input.id.clone().filter(|id| !id.trim().is_empty());
+        let existing = id
+            .as_deref()
+            .map(|profile_id| app.find_ai_profile_by_id(profile_id))
+            .transpose()
+            .map_err(map_app_error)?
+            .flatten();
+        let api_key = if input.api_key.trim().is_empty() {
+            existing.as_ref().map(|p| p.api_key.clone()).unwrap_or_default()
+        } else {
+            input.api_key.trim().to_string()
+        };
+        if api_key.is_empty() {
+            return Err(FfiError::Other {
+                detail: "AI API key cannot be empty".into(),
+            });
+        }
+        let provider = if input.provider.trim().is_empty() {
+            "openai-compatible".to_string()
+        } else {
+            input.provider.trim().to_string()
+        };
+        let mut base_url = input.base_url.trim().trim_end_matches('/').to_string();
+        if base_url.is_empty() && provider == "openai" {
+            base_url = "https://api.openai.com/v1".into();
+        }
+        reqwest::Url::parse(&base_url).map_err(other)?;
+        let profile = zeroterm_app::AiProfile {
+            id: id.clone().unwrap_or_default(),
+            name: input.name.trim().to_string(),
+            provider,
+            base_url,
+            model: input.model.trim().to_string(),
+            api_key,
+            system_prompt: input.system_prompt.trim().to_string(),
+            reasoning_effort: input.reasoning_effort.trim().to_string(),
+        };
+        if id.is_some() {
+            app.update_ai_profile(&profile).map_err(map_app_error)?;
+            Ok(profile.id)
+        } else {
+            app.save_ai_profile(&profile).map_err(map_app_error)
+        }
+    }
+
+    pub fn delete_ai_profile(&self, id: String) -> Result<(), FfiError> {
+        let guard = self.inner.lock().unwrap();
+        let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
+        app.delete_ai_profile(&id).map_err(map_app_error)
+    }
+
+    pub async fn list_ai_models(&self, profile_id: String) -> Result<Vec<String>, FfiError> {
+        let profile = {
+            let guard = self.inner.lock().unwrap();
+            let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
+            app.find_ai_profile_by_id(&profile_id)
+                .map_err(map_app_error)?
+                .ok_or_else(|| FfiError::NotFound {
+                    detail: profile_id.clone(),
+                })?
+        };
+        let client = ai_http_client()?;
+        let response = client
+            .get(format!("{}/models", profile.base_url))
+            .bearer_auth(profile.api_key)
+            .send()
+            .await
+            .map_err(other)?;
+        let status = response.status();
+        let body = response.text().await.map_err(other)?;
+        if !status.is_success() {
+            return Err(ai_http_error(status.as_u16(), &body));
+        }
+        let mut models = serde_json::from_str::<OpenAiModelsResponse>(&body)
+            .map_err(other)?
+            .data
+            .into_iter()
+            .map(|model| model.id)
+            .filter(|id| !id.trim().is_empty())
+            .collect::<Vec<_>>();
+        models.sort();
+        models.dedup();
+        Ok(models)
+    }
+
+    pub async fn list_ai_models_with_config(
+        &self,
+        profile_id: Option<String>,
+        base_url: String,
+        api_key: String,
+    ) -> Result<Vec<String>, FfiError> {
+        let base_url = base_url.trim().trim_end_matches('/').to_string();
+        if base_url.is_empty() {
+            return Err(FfiError::Other {
+                detail: "AI Base URL cannot be empty".into(),
+            });
+        }
+        reqwest::Url::parse(&base_url).map_err(other)?;
+
+        let api_key = if api_key.trim().is_empty() {
+            let id = profile_id
+                .filter(|id| !id.trim().is_empty())
+                .ok_or_else(|| FfiError::Other {
+                    detail: "AI API key cannot be empty".into(),
+                })?;
+            let guard = self.inner.lock().unwrap();
+            let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
+            app.find_ai_profile_by_id(&id)
+                .map_err(map_app_error)?
+                .ok_or_else(|| FfiError::NotFound { detail: id })?
+                .api_key
+        } else {
+            api_key.trim().to_string()
+        };
+
+        let client = ai_http_client()?;
+        let response = client
+            .get(format!("{base_url}/models"))
+            .bearer_auth(api_key)
+            .send()
+            .await
+            .map_err(other)?;
+        let status = response.status();
+        let body = response.text().await.map_err(other)?;
+        if !status.is_success() {
+            return Err(ai_http_error(status.as_u16(), &body));
+        }
+        let mut models = serde_json::from_str::<OpenAiModelsResponse>(&body)
+            .map_err(other)?
+            .data
+            .into_iter()
+            .map(|model| model.id)
+            .filter(|id| !id.trim().is_empty())
+            .collect::<Vec<_>>();
+        models.sort();
+        models.dedup();
+        Ok(models)
+    }
+
+    pub async fn ai_chat(
+        &self,
+        profile_id: String,
+        messages: Vec<AiChatMessage>,
+    ) -> Result<AiChatResponse, FfiError> {
+        self.ai_chat_with_model(profile_id, String::new(), messages)
+            .await
+    }
+
+    pub async fn ai_chat_with_model(
+        &self,
+        profile_id: String,
+        model_override: String,
+        messages: Vec<AiChatMessage>,
+    ) -> Result<AiChatResponse, FfiError> {
+        let profile = {
+            let guard = self.inner.lock().unwrap();
+            let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
+            app.find_ai_profile_by_id(&profile_id)
+                .map_err(map_app_error)?
+                .ok_or_else(|| FfiError::NotFound {
+                    detail: profile_id.clone(),
+                })?
+        };
+        let mut payload = Vec::new();
+        if !profile.system_prompt.is_empty() {
+            payload.push(json!({ "role": "system", "content": profile.system_prompt }));
+        }
+        for message in messages {
+            let content = message.content.trim();
+            if content.is_empty() {
+                continue;
+            }
+            let role = match message.role.as_str() {
+                "system" | "assistant" | "user" => message.role,
+                _ => "user".into(),
+            };
+            payload.push(json!({ "role": role, "content": content }));
+        }
+        if payload.is_empty() {
+            return Err(FfiError::Other { detail: "message is empty".into() });
+        }
+        let model = if model_override.trim().is_empty() {
+            profile.model.clone()
+        } else {
+            model_override.trim().to_string()
+        };
+        let mut body = json!({
+            "model": model,
+            "messages": payload,
+            "temperature": 0.2,
+        });
+        if !profile.reasoning_effort.is_empty() {
+            body["reasoning_effort"] = json!(profile.reasoning_effort);
+        }
+        let response = ai_http_client()?
+            .post(format!("{}/chat/completions", profile.base_url))
+            .bearer_auth(profile.api_key)
+            .json(&body)
+            .send()
+            .await
+            .map_err(other)?;
+        let status = response.status();
+        let text = response.text().await.map_err(other)?;
+        if !status.is_success() {
+            return Err(ai_http_error(status.as_u16(), &text));
+        }
+        let parsed: OpenAiChatResponse = serde_json::from_str(&text).map_err(other)?;
+        let message = parsed.choices.into_iter().next().map(|c| c.message)
+            .ok_or_else(|| FfiError::Other { detail: "AI response was empty".into() })?;
+        if message.content.trim().is_empty() && message.reasoning_content.trim().is_empty() {
+            return Err(FfiError::Other { detail: "AI response was empty".into() });
+        }
+        Ok(AiChatResponse {
+            content: message.content.trim().to_string(),
+            reasoning_content: message.reasoning_content.trim().to_string(),
+        })
+    }
+
     // -- hosts ------------------------------------------------------------
 
     pub fn list_hosts(&self) -> Result<Vec<HostSummary>, FfiError> {
@@ -210,6 +560,36 @@ impl ZeroTerm {
         let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
         let hosts = app.list_hosts().map_err(map_app_error)?;
         Ok(hosts.into_iter().map(host_to_summary).collect())
+    }
+
+    pub fn list_host_groups(&self) -> Result<Vec<HostGroupRecord>, FfiError> {
+        let guard = self.inner.lock().unwrap();
+        let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
+        let groups = app.list_host_groups().map_err(map_app_error)?;
+        Ok(groups.into_iter().map(host_group_to_record).collect())
+    }
+
+    pub fn save_host_group(&self, input: HostGroupInput) -> Result<String, FfiError> {
+        let guard = self.inner.lock().unwrap();
+        let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
+        let group = zeroterm_app::HostGroup {
+            id: input.id.clone().unwrap_or_default(),
+            name: input.name.trim().to_string(),
+            parent_id: input.parent_id.filter(|id| !id.is_empty()),
+            sort_order: input.sort_order,
+        };
+        if input.id.as_deref().is_some_and(|id| !id.is_empty()) {
+            app.update_host_group(&group).map_err(map_app_error)?;
+            Ok(group.id)
+        } else {
+            app.save_host_group(&group).map_err(map_app_error)
+        }
+    }
+
+    pub fn delete_host_group(&self, id: String) -> Result<(), FfiError> {
+        let guard = self.inner.lock().unwrap();
+        let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
+        app.delete_host_group(&id).map_err(map_app_error)
     }
 
     pub fn get_host(&self, id: String) -> Result<HostDetail, FfiError> {
@@ -449,6 +829,63 @@ impl ZeroTerm {
         Ok(())
     }
 
+    /// Execute a command over the active SSH transport without writing it to
+    /// the PTY. Works for both saved hosts and Quick Connect sessions.
+    pub async fn exec_session_command(
+        &self,
+        session_id: u64,
+        command: String,
+    ) -> Result<HostExecResult, FfiError> {
+        if command.trim().is_empty() {
+            return Err(FfiError::Other { detail: "command cannot be empty".into() });
+        }
+        let tx = self.lookup_tx(session_id)?;
+        let (response, receive) = oneshot::channel();
+        tx.send(SessionCommand::Exec { command, response })
+            .await
+            .map_err(|_| FfiError::Other { detail: "session task closed".into() })?;
+        receive.await
+            .map_err(|_| FfiError::Other { detail: "session command cancelled".into() })?
+            .map_err(|detail| FfiError::Other { detail })
+    }
+
+    /// Execute a non-interactive command on a saved host. This deliberately
+    /// uses a separate SSH channel so monitoring never writes into the user's PTY.
+    pub async fn exec_host_command(
+        &self,
+        host_id: String,
+        command: String,
+    ) -> Result<HostExecResult, FfiError> {
+        if command.trim().is_empty() {
+            return Err(FfiError::Other { detail: "command cannot be empty".into() });
+        }
+        let host = {
+            let guard = self.inner.lock().unwrap();
+            let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
+            app.find_host_by_id(&host_id)
+                .map_err(map_app_error)?
+                .ok_or_else(|| FfiError::NotFound { detail: host_id.clone() })?
+        };
+        let known_hosts = self.resolved_known_hosts()?;
+        let cfg = {
+            let guard = self.inner.lock().unwrap();
+            let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
+            app.connect_config(
+                &host,
+                HostKeyPolicy::Strict(known_hosts),
+                Some(Duration::from_secs(15)),
+            )
+        };
+        let mut session = Session::connect(cfg).await.map_err(other)?;
+        let (code, stdout, stderr) = session.exec(&command).await.map_err(other)?;
+        let _ = session.disconnect().await;
+        Ok(HostExecResult {
+            code: code as i32,
+            stdout: String::from_utf8_lossy(&stdout).to_string(),
+            stderr: String::from_utf8_lossy(&stderr).to_string(),
+        })
+    }
+
     // -- host-key prompt response ----------------------------------------
 
     /// Answer a pending host-key prompt. `accept = true` continues the
@@ -569,7 +1006,7 @@ impl ZeroTerm {
 
 async fn run_session_task(
     session_id: u64,
-    session: Session,
+    mut session: Session,
     mut channel: ShellChannel,
     mut control_rx: mpsc::Receiver<SessionCommand>,
     listener: Arc<dyn SessionListener>,
@@ -605,6 +1042,16 @@ async fn run_session_task(
                     if let Err(e) = channel.resize(PtySize::new(c, r)).await {
                         warn!(session_id, error = %e, "ffi: resize failed");
                     }
+                }
+                Some(SessionCommand::Exec { command, response }) => {
+                    let result = session.exec(&command).await
+                        .map(|(code, stdout, stderr)| HostExecResult {
+                            code: code as i32,
+                            stdout: String::from_utf8_lossy(&stdout).to_string(),
+                            stderr: String::from_utf8_lossy(&stderr).to_string(),
+                        })
+                        .map_err(|e| e.to_string());
+                    let _ = response.send(result);
                 }
                 Some(SessionCommand::Disconnect) | None => {
                     debug!(session_id, "ffi: disconnect requested");

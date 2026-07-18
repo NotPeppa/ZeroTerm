@@ -1,8 +1,10 @@
 package com.zeroterm.android.ui.unlock
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.zeroterm.android.R
 import com.zeroterm.android.data.ZeroTermRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,6 +26,7 @@ data class UnlockUiState(
 
 class UnlockViewModel(
     private val repository: ZeroTermRepository,
+    private val appContext: Context,
 ) : ViewModel() {
     private val _state = MutableStateFlow(UnlockUiState())
     val state: StateFlow<UnlockUiState> = _state.asStateFlow()
@@ -44,6 +47,22 @@ class UnlockViewModel(
         }
     }
 
+    fun prepareForUnlock() {
+        val status = runCatching { repository.vaultStatus() }.getOrNull()
+        _state.update {
+            it.copy(
+                vaultExists = status?.exists == true,
+                vaultPath = status?.path.orEmpty(),
+                password = "",
+                confirmPassword = "",
+                hasCachedPassword = repository.hasCachedPassword(),
+                loading = false,
+                error = null,
+                unlocked = false,
+            )
+        }
+    }
+
     fun onPasswordChange(value: String) {
         _state.update { it.copy(password = value, error = null) }
     }
@@ -59,11 +78,11 @@ class UnlockViewModel(
     fun submit() {
         val s = _state.value
         if (s.password.isEmpty()) {
-            _state.update { it.copy(error = "Password required") }
+            _state.update { it.copy(error = appContext.getString(R.string.unlock_password_required)) }
             return
         }
         if (!s.vaultExists && s.password != s.confirmPassword) {
-            _state.update { it.copy(error = "Passwords do not match") }
+            _state.update { it.copy(error = appContext.getString(R.string.unlock_passwords_mismatch)) }
             return
         }
         viewModelScope.launch {
@@ -81,7 +100,10 @@ class UnlockViewModel(
                 },
                 onFailure = { e ->
                     _state.update {
-                        it.copy(loading = false, error = e.message ?: "Failed")
+                        it.copy(
+                            loading = false,
+                            error = e.message ?: appContext.getString(R.string.common_failed),
+                        )
                     }
                 },
             )
@@ -99,7 +121,7 @@ class UnlockViewModel(
                     _state.update {
                         it.copy(
                             loading = false,
-                            error = e.message ?: "Biometric unlock failed",
+                            error = e.message ?: appContext.getString(R.string.unlock_biometric_failed),
                             hasCachedPassword = false,
                         )
                     }
@@ -109,11 +131,11 @@ class UnlockViewModel(
     }
 
     companion object {
-        fun factory(repository: ZeroTermRepository): ViewModelProvider.Factory =
+        fun factory(repository: ZeroTermRepository, context: Context): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return UnlockViewModel(repository) as T
+                    return UnlockViewModel(repository, context.applicationContext) as T
                 }
             }
     }

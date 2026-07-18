@@ -1,6 +1,7 @@
 package com.zeroterm.android.terminal
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.graphics.Typeface
 import android.util.AttributeSet
 import android.view.KeyEvent
@@ -10,11 +11,13 @@ import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -26,15 +29,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.graphics.Paint as AndroidPaint
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.math.floor
 import kotlin.math.max
 
@@ -56,6 +66,9 @@ class TerminalHostView @JvmOverloads constructor(
     val grid = TermGridState()
     private val compose = ComposeView(context)
     private var fontSizeState = mutableFloatStateOf(13f)
+    private var backgroundPathState = mutableStateOf("")
+    private var backgroundOpacityState = mutableFloatStateOf(0.4f)
+    private var backgroundBlurState = mutableFloatStateOf(0f)
     var onFontSizeChanged: ((Float) -> Unit)? = null
 
     init {
@@ -67,6 +80,9 @@ class TerminalHostView @JvmOverloads constructor(
             TerminalCanvas(
                 grid = grid,
                 fontSizeSp = fontSp,
+                backgroundImagePath = backgroundPathState.value,
+                backgroundOpacity = backgroundOpacityState.floatValue,
+                backgroundBlurDp = backgroundBlurState.floatValue,
                 onTap = {
                     grid.clearSelection()
                     onSelectionChanged?.invoke(false)
@@ -93,6 +109,13 @@ class TerminalHostView @JvmOverloads constructor(
     }
 
     fun fontSizeSp(): Float = fontSizeState.floatValue
+
+    fun setBackgroundConfig(path: String, opacity: Float, blurDp: Int) {
+        backgroundPathState.value = path
+        backgroundOpacityState.floatValue = opacity.coerceIn(0.05f, 1f)
+        backgroundBlurState.floatValue = blurDp.coerceIn(0, 30).toFloat()
+        compose.invalidate()
+    }
 
     fun applyFrame(frame: com.zeroterm.ffi.DamageFrame) {
         grid.apply(frame)
@@ -158,6 +181,9 @@ class TerminalHostView @JvmOverloads constructor(
 fun TerminalCanvas(
     grid: TermGridState,
     fontSizeSp: Float,
+    backgroundImagePath: String = "",
+    backgroundOpacity: Float = 0.4f,
+    backgroundBlurDp: Float = 0f,
     onTap: () -> Unit,
     onSizeCells: (cols: Int, rows: Int) -> Unit,
     onScrollLines: (delta: Int) -> Unit,
@@ -194,67 +220,92 @@ fun TerminalCanvas(
         return row to col
     }
 
-    Canvas(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFF0B1220))
-            .onSizeChanged { viewSize = it }
-            .pointerInput(Unit) {
-                detectTransformGestures { _, _, zoom, _ ->
-                    if (kotlin.math.abs(zoom - 1f) > 0.01f) {
-                        onFontScale(zoom)
+    var backgroundBitmap by remember(backgroundImagePath) {
+        mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
+    }
+    LaunchedEffect(backgroundImagePath) {
+        backgroundBitmap = withContext(Dispatchers.IO) {
+            if (backgroundImagePath.isBlank()) null
+            else runCatching {
+                BitmapFactory.decodeFile(File(backgroundImagePath).absolutePath)?.asImageBitmap()
+            }.getOrNull()
+        }
+    }
+
+    Box(Modifier.fillMaxSize().background(Color(0xFF0B1220))) {
+        backgroundBitmap?.let { image ->
+            Image(
+                bitmap = image,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                alpha = backgroundOpacity,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .blur(backgroundBlurDp.dp),
+            )
+        }
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .onSizeChanged { viewSize = it }
+                .pointerInput(Unit) {
+                    detectTransformGestures { _, _, zoom, _ ->
+                        if (kotlin.math.abs(zoom - 1f) > 0.01f) {
+                            onFontScale(zoom)
+                        }
                     }
                 }
-            }
-            .pointerInput(cellW, cellH, grid.cols, grid.rows) {
-                detectTapGestures(
-                    onTap = {
-                        selecting = false
-                        onTap()
-                    },
-                    onLongPress = { offset ->
-                        selecting = true
-                        val (r, c) = cellAt(offset)
-                        grid.beginSelection(r, c)
-                        onSelectionChanged(true)
-                    },
-                )
-            }
-            .pointerInput(cellW, cellH, grid.cols, grid.rows) {
-                detectDragGestures(
-                    onDragStart = { offset ->
-                        if (selecting) {
+                .pointerInput(cellW, cellH, grid.cols, grid.rows) {
+                    detectTapGestures(
+                        onTap = {
+                            selecting = false
+                            onTap()
+                        },
+                        onLongPress = { offset ->
+                            selecting = true
                             val (r, c) = cellAt(offset)
-                            grid.extendSelection(r, c)
-                        }
-                    },
-                    onDrag = { change, dragAmount ->
-                        change.consume()
-                        if (selecting) {
-                            val (r, c) = cellAt(change.position)
-                            grid.extendSelection(r, c)
-                        } else {
-                            // Finger drag: scroll history (drag down = look at older = positive)
-                            scrollAccum += dragAmount.y
-                            val lines = floor(scrollAccum / cellH).toInt()
-                            if (lines != 0) {
-                                scrollAccum -= lines * cellH
-                                onScrollLines(lines)
+                            grid.beginSelection(r, c)
+                            onSelectionChanged(true)
+                        },
+                    )
+                }
+                .pointerInput(cellW, cellH, grid.cols, grid.rows) {
+                    detectDragGestures(
+                        onDragStart = { offset ->
+                            if (selecting) {
+                                val (r, c) = cellAt(offset)
+                                grid.extendSelection(r, c)
                             }
-                        }
-                    },
-                    onDragEnd = {
-                        scrollAccum = 0f
-                    },
-                    onDragCancel = {
-                        scrollAccum = 0f
-                    },
-                )
-            },
-    ) {
-        @Suppress("UNUSED_EXPRESSION")
-        rev
-        drawTermGrid(grid, cellW, cellH, paint)
+                        },
+                        onDrag = { change, dragAmount ->
+                            change.consume()
+                            if (selecting) {
+                                val (r, c) = cellAt(change.position)
+                                grid.extendSelection(r, c)
+                            } else {
+                                scrollAccum += dragAmount.y
+                                val lines = floor(scrollAccum / cellH).toInt()
+                                if (lines != 0) {
+                                    scrollAccum -= lines * cellH
+                                    onScrollLines(lines)
+                                }
+                            }
+                        },
+                        onDragEnd = { scrollAccum = 0f },
+                        onDragCancel = { scrollAccum = 0f },
+                    )
+                },
+        ) {
+            @Suppress("UNUSED_EXPRESSION")
+            rev
+            drawTermGrid(
+                grid = grid,
+                cellW = cellW,
+                cellH = cellH,
+                paint = paint,
+                transparentDefaultBackground = backgroundBitmap != null,
+            )
+        }
     }
 }
 
@@ -263,6 +314,7 @@ private fun DrawScope.drawTermGrid(
     cellW: Float,
     cellH: Float,
     paint: AndroidPaint,
+    transparentDefaultBackground: Boolean,
 ) {
     val native = drawContext.canvas.nativeCanvas
     val baseline = -paint.fontMetrics.ascent
@@ -273,7 +325,10 @@ private fun DrawScope.drawTermGrid(
             val x = col * cellW
             val y = row * cellH
             val w = if (cell.wide) cellW * 2 else cellW
-            drawRect(cell.bg, topLeft = Offset(x, y), size = Size(w, cellH))
+            val isDefaultBackground = cell.bg == Color(0xFF0B1220) || cell.bg == Color.Black
+            if (!transparentDefaultBackground || !isDefaultBackground) {
+                drawRect(cell.bg, topLeft = Offset(x, y), size = Size(w, cellH))
+            }
             if (grid.isSelected(row, col)) {
                 drawRect(selColor, topLeft = Offset(x, y), size = Size(w, cellH))
             }

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!-- UniFFI probes java.lang.ref.Cleaner with Class.forName and falls back to
+         JNA's cleaner on older Android. Lint cannot follow that reflective gate. -->
+    <issue id="NewApi">
+        <ignore path="app/src/main/java/com/zeroterm/ffi/zeroterm.kt" />
+    </issue>
+</lint>

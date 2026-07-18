@@ -2,8 +2,10 @@ package com.zeroterm.android.ui
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -12,7 +14,6 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.zeroterm.android.data.AppContainer
 import com.zeroterm.android.ui.hosts.HostEditScreen
-import com.zeroterm.android.ui.hosts.HostsScreen
 import com.zeroterm.android.ui.hosts.HostsViewModel
 import com.zeroterm.android.ui.quick.QuickConnectScreen
 import com.zeroterm.android.ui.settings.SettingsScreen
@@ -22,6 +23,9 @@ import com.zeroterm.android.ui.sync.SyncScreen
 import com.zeroterm.android.ui.terminal.TerminalScreen
 import com.zeroterm.android.ui.unlock.UnlockScreen
 import com.zeroterm.android.ui.unlock.UnlockViewModel
+import com.zeroterm.android.ui.components.AppBackground
+import com.zeroterm.android.ui.components.ChromeTransparency
+import com.zeroterm.android.ui.components.LocalChromeTransparency
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -68,8 +72,9 @@ object Routes {
 fun ZeroTermNav(container: AppContainer) {
     val nav = rememberNavController()
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val unlockVm: UnlockViewModel = viewModel(
-        factory = UnlockViewModel.factory(container.repository),
+        factory = UnlockViewModel.factory(container.repository, context),
     )
     val unlocked by container.repository.unlocked.collectAsState()
     val settings by container.settings.flow.collectAsState(
@@ -82,6 +87,29 @@ fun ZeroTermNav(container: AppContainer) {
         scope.launch { container.settings.setFontSize(sp) }
     }
 
+    androidx.compose.runtime.LaunchedEffect(container) {
+        container.openActiveSessionRequests.collect {
+            val active = container.sessions.active.value ?: return@collect
+            val route = if (active.hostId == "direct") {
+                Routes.terminalDirect(active.hostLabel)
+            } else {
+                Routes.terminal(active.hostId, active.hostLabel)
+            }
+            nav.navigate(route) { launchSingleTop = true }
+        }
+    }
+
+    AppBackground(
+        imagePath = settings.backgroundImagePath,
+        opacity = settings.backgroundOpacity,
+        blurDp = settings.backgroundBlurDp,
+    ) {
+    CompositionLocalProvider(
+        LocalChromeTransparency provides ChromeTransparency(
+            topBar = settings.topBarTransparency,
+            drawer = settings.drawerTransparency,
+        ),
+    ) {
     NavHost(navController = nav, startDestination = start) {
         composable(Routes.Unlock) {
             UnlockScreen(
@@ -97,8 +125,9 @@ fun ZeroTermNav(container: AppContainer) {
             val hostsVm: HostsViewModel = viewModel(
                 factory = HostsViewModel.factory(container.repository),
             )
-            HostsScreen(
-                viewModel = hostsVm,
+            WorkspaceScreen(
+                container = container,
+                hostsViewModel = hostsVm,
                 onHostClick = { host ->
                     val label = host.name.ifBlank { "${host.user}@${host.host}" }
                     nav.navigate(Routes.terminal(host.id, label))
@@ -110,19 +139,28 @@ fun ZeroTermNav(container: AppContainer) {
                     nav.navigate(Routes.sftp(host.id, label))
                 },
                 onQuickConnect = { nav.navigate(Routes.QuickConnect) },
-                onSnippets = { nav.navigate(Routes.Snippets) },
-                onSync = { nav.navigate(Routes.Sync) },
-                onSettings = { nav.navigate(Routes.Settings) },
                 onLock = {
-                    container.repository.lock(clearCache = false)
-                    nav.navigate(Routes.Unlock) {
-                        popUpTo(0) { inclusive = true }
+                    scope.launch {
+                        container.sessions.disconnectAll()
+                        container.sftp.close()
+                        container.repository.lock(clearCache = false)
+                        unlockVm.prepareForUnlock()
+                        nav.navigate(Routes.Unlock) {
+                            popUpTo(Routes.Hosts) { inclusive = true }
+                            launchSingleTop = true
+                        }
                     }
                 },
                 onLockAndForget = {
-                    container.repository.lock(clearCache = true)
-                    nav.navigate(Routes.Unlock) {
-                        popUpTo(0) { inclusive = true }
+                    scope.launch {
+                        container.sessions.disconnectAll()
+                        container.sftp.close()
+                        container.repository.lock(clearCache = true)
+                        unlockVm.prepareForUnlock()
+                        nav.navigate(Routes.Unlock) {
+                            popUpTo(Routes.Hosts) { inclusive = true }
+                            launchSingleTop = true
+                        }
                     }
                 },
             )
@@ -177,6 +215,9 @@ fun ZeroTermNav(container: AppContainer) {
             SyncScreen(
                 zeroTerm = container.zeroTerm,
                 hosts = hosts,
+                onDataChanged = {
+                    scope.launch { container.repository.refreshHosts() }
+                },
                 onBack = { nav.popBackStack() },
             )
         }
@@ -230,21 +271,17 @@ fun ZeroTermNav(container: AppContainer) {
                 entry.arguments?.getString("hostLabel").orEmpty(),
                 StandardCharsets.UTF_8.toString(),
             )
-            val snippetCmd by entry.savedStateHandle
-                .getStateFlow<String?>("snippet_cmd", null)
-                .collectAsState()
             TerminalScreen(
                 hostId = hostId,
                 hostLabel = hostLabel,
                 alreadyConnected = false,
                 sessions = container.sessions,
+                repository = container.repository,
                 fontSizeSp = settings.fontSizeSp,
+                backgroundImagePath = settings.backgroundImagePath,
+                backgroundOpacity = settings.backgroundOpacity,
+                backgroundBlurDp = settings.backgroundBlurDp,
                 onFontSizeChanged = ::persistFont,
-                onOpenSnippets = { nav.navigate(Routes.SnippetPick) },
-                snippetCommand = snippetCmd,
-                onSnippetConsumed = {
-                    entry.savedStateHandle["snippet_cmd"] = null
-                },
                 onBack = { nav.popBackStack() },
             )
         }
@@ -258,23 +295,21 @@ fun ZeroTermNav(container: AppContainer) {
                 entry.arguments?.getString("hostLabel").orEmpty(),
                 StandardCharsets.UTF_8.toString(),
             )
-            val snippetCmd by entry.savedStateHandle
-                .getStateFlow<String?>("snippet_cmd", null)
-                .collectAsState()
             TerminalScreen(
                 hostId = null,
                 hostLabel = hostLabel,
                 alreadyConnected = true,
                 sessions = container.sessions,
+                repository = container.repository,
                 fontSizeSp = settings.fontSizeSp,
+                backgroundImagePath = settings.backgroundImagePath,
+                backgroundOpacity = settings.backgroundOpacity,
+                backgroundBlurDp = settings.backgroundBlurDp,
                 onFontSizeChanged = ::persistFont,
-                onOpenSnippets = { nav.navigate(Routes.SnippetPick) },
-                snippetCommand = snippetCmd,
-                onSnippetConsumed = {
-                    entry.savedStateHandle["snippet_cmd"] = null
-                },
                 onBack = { nav.popBackStack() },
             )
         }
+    }
+    }
     }
 }
