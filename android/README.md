@@ -31,7 +31,8 @@ Kotlin bindings + per-ABI `libzeroterm_ffi.so`. Design: [RFC-003](../RFC-003-and
 - [x] Snippets CRUD + insert into terminal
 - [x] Sync profiles (WebDAV/SFTP/S3), create/join, sync now, conflicts
 - [x] Foreground auto-sync (settings toggle + interval)
-- [x] CI `assembleDebug` + R8 keep rules (JNA/uniffi)
+- [x] R8 keep rules (JNA/uniffi)
+- [ ] CI smoke build (optional; release packaging is via tag → `release.yml`)
 - [ ] Play internal testing / signed release (operator)
 - [ ] Real-device exit criteria (vim/tmux/CJK/perf) — measure on device
 
