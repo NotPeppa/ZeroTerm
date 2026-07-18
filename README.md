@@ -128,11 +128,46 @@ cd desktop\src-tauri
 cargo tauri build
 ```
 
-产物（`.msi` / `.app` / `.deb`，取决于宿主系统）位于 `desktop/src-tauri/target/release/bundle/`。
+  产物（`.msi` / `.app` / `.deb`，取决于宿主系统）位于 `desktop/src-tauri/target/release/bundle/`。
 
-> `tauri build` 需要图标。`tauri dev` 只需在 `desktop/src-tauri/icons/` 放任意 `icon.png` 占位即可。
+  > `tauri build` 需要图标。`tauri dev` 只需在 `desktop/src-tauri/icons/` 放任意 `icon.png` 占位即可。
 
-### 命令行（CLI）
+  ### GitHub Actions 发布
+
+  推送版本标签后，`.github/workflows/release.yml` 会自动打包并创建 **draft** Release：
+
+  ```bash
+  # 版本号需与 desktop/src-tauri/tauri.conf.json、android versionName 对齐
+  git tag 0.1.12
+  git push origin 0.1.12
+  ```
+
+  | 产物 | 说明 |
+  |------|------|
+  | 桌面安装包 | macOS (arm64/x64)、Windows（Tauri；Linux 暂未发布） |
+  | `latest.json` | 桌面自动更新清单（Tauri updater） |
+  | Android APK | `ZeroTerm_<ver>_android-arm64.apk` |
+
+  **桌面自动更新** endpoint：
+
+  `https://github.com/NotPeppa/ZeroTerm/releases/latest/download/latest.json`
+
+  **Android 检查更新**：读取同一仓库的 GitHub Releases API，下载 release 中的 `.apk` 并调起系统安装。
+
+  **需要的 Secrets（仓库 Settings → Secrets）：**
+
+  | Secret | 用途 |
+  |--------|------|
+  | `TAURI_SIGNING_PRIVATE_KEY` | 桌面 updater 签名私钥（与 `tauri.conf.json` 里 pubkey 配对） |
+  | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | 私钥密码（可空） |
+  | `ANDROID_KEYSTORE_BASE64` | 可选；release 签名 keystore（base64）。未配置时用 debug 签名 |
+  | `ANDROID_KEYSTORE_PASSWORD` | 可选 |
+  | `ANDROID_KEY_ALIAS` | 可选 |
+  | `ANDROID_KEY_PASSWORD` | 可选 |
+
+  CI 完成后到 GitHub Releases 检查 draft，确认附件齐全后点 **Publish**。
+
+  ### 命令行（CLI）
 
 `core/` 内置交互式 SSH 客户端，二进制名为 `zeroterm`：
 

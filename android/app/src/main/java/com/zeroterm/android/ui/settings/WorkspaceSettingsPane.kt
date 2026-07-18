@@ -595,6 +595,7 @@ private fun AboutPageContent() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val repoUrl = stringResource(R.string.settings_about_repo_url)
+    val releasesUrl = stringResource(R.string.settings_about_releases_url)
     val brandBlue = Color(0xFF3B82F6)
     val brandBlueSoft = Color(0xFF60A5FA)
     val currentVersion = BuildConfig.VERSION_NAME
@@ -920,7 +921,9 @@ private fun AboutPageContent() {
                                 )
                             }
                         }
-                        val releaseUrl = updateResult?.releaseUrl ?: repoUrl
+                        val releaseUrl = updateResult?.releaseUrl
+                            ?: releasesUrl
+                            ?: repoUrl
                         TextButton(
                             onClick = {
                                 runCatching {

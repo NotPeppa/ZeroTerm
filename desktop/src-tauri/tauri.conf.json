@@ -65,7 +65,7 @@
     "updater": {
       "active": true,
       "endpoints": [
-        "https://zeroterm.cipheror.com/latest.json"
+        "https://github.com/NotPeppa/ZeroTerm/releases/latest/download/latest.json"
       ],
       "dialog": false,
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEUyRjY5MUQyODQ2RUM5MEYKUldRUHlXNkUwcEgyNHJ2enRjQ0VyNU05MXJzRzJXV3pxODZ1RDk2SElpVFZqY1B4UlBJSEVKYk4K"

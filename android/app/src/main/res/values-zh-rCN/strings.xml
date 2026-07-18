@@ -246,6 +246,7 @@
     <string name="settings_about_repo_label">GitHub</string>
     <string name="settings_about_repo">ZeroTerm</string>
     <string name="settings_about_repo_url">https://github.com/NotPeppa/ZeroTerm</string>
+    <string name="settings_about_releases_url">https://github.com/NotPeppa/ZeroTerm/releases/latest</string>
     <string name="settings_about_body">零遥测。保险库加密与 SSH 运行在 Rust 核心中。</string>
     <string name="settings_about_open_github">打开仓库</string>
     <string name="settings_update_title">系统升级</string>

@@ -26,8 +26,12 @@ data class UpdateCheckResult(
 )
 
 object UpdateChecker {
-    private const val LATEST_RELEASE_API =
+    /** GitHub Releases — same repo used by the desktop updater endpoint. */
+    const val GITHUB_REPO = "NotPeppa/ZeroTerm"
+    const val LATEST_RELEASE_API =
         "https://api.github.com/repos/NotPeppa/ZeroTerm/releases/latest"
+    const val LATEST_RELEASE_PAGE =
+        "https://github.com/NotPeppa/ZeroTerm/releases/latest"
 
     suspend fun check(currentVersion: String): UpdateCheckResult = withContext(Dispatchers.IO) {
         runCatching {
