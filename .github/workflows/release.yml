@@ -19,7 +19,33 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Resolve version from tag / dispatch input once, shared by all build jobs.
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.ver.outputs.tag }}
+    steps:
+      - id: ver
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            TAG="${{ github.ref_name }}"
+          elif [ -n "${{ inputs.tag }}" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="ci-${{ github.run_id }}"
+          fi
+          VERSION="${TAG#v}"
+          # For pure CI drafts without a semver tag, keep a placeholder version.
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            VERSION="0.0.0-ci.${{ github.run_id }}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Resolved tag=$TAG version=$VERSION"
+
   desktop:
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
@@ -41,6 +67,12 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
+
+      - name: Apply version from tag
+        shell: bash
+        run: |
+          chmod +x scripts/set-version.sh
+          ./scripts/set-version.sh "${{ needs.prepare.outputs.version }}"
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -82,13 +114,15 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: desktop/src-tauri
-          tagName: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || format('ci-{0}', github.run_id) }}
-          releaseName: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || format('CI {0}', github.run_id) }}
+          tagName: ${{ needs.prepare.outputs.tag }}
+          releaseName: ZeroTerm ${{ needs.prepare.outputs.version }}
           releaseBody: |
-            ## ZeroTerm ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || github.run_id }}
+            ## ZeroTerm ${{ needs.prepare.outputs.version }}
 
             Desktop installers and updater artifacts are attached below.
             Android APK is published by the `android` job when available.
+
+            Version files are patched automatically from the git tag by CI.
           releaseDraft: true
           prerelease: false
           includeUpdaterJson: true
@@ -96,11 +130,17 @@ jobs:
           args: ${{ matrix.args }}
 
   android:
+    needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 120
-    needs: []
     steps:
       - uses: actions/checkout@v4
+
+      - name: Apply version from tag
+        shell: bash
+        run: |
+          chmod +x scripts/set-version.sh
+          ./scripts/set-version.sh "${{ needs.prepare.outputs.version }}"
 
       - name: Setup JDK 17
         uses: actions/setup-java@v4
@@ -155,9 +195,7 @@ jobs:
         id: apk
         run: |
           SRC=$(ls android/app/build/outputs/apk/release/*.apk | head -n1)
-          VERSION="${GITHUB_REF_NAME}"
-          if [[ "$VERSION" == refs/* ]]; then VERSION="${{ github.run_id }}"; fi
-          VERSION="${VERSION#v}"
+          VERSION="${{ needs.prepare.outputs.version }}"
           OUT="ZeroTerm_${VERSION}_android-arm64.apk"
           cp "$SRC" "$OUT"
           echo "name=$OUT" >> "$GITHUB_OUTPUT"
@@ -173,7 +211,7 @@ jobs:
         if: github.ref_type == 'tag' || inputs.tag != ''
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
+          tag_name: ${{ needs.prepare.outputs.tag }}
           draft: true
           files: ${{ steps.apk.outputs.path }}
           fail_on_unmatched_files: true

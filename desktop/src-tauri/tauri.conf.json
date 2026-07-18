@@ -48,7 +48,10 @@
         "installerIcon": "icons/icon.ico",
         "headerImage": "installer/header.bmp",
         "sidebarImage": "installer/sidebar.bmp",
-        "languages": ["SimpChinese", "English"],
+        "languages": [
+          "SimpChinese",
+          "English"
+        ],
         "displayLanguageSelector": true
       }
     },

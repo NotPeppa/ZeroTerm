@@ -15,7 +15,7 @@ android {
         applicationId = "com.zeroterm.android"
         minSdk = 26
         targetSdk = 36
-        versionCode = 11
+        versionCode = 111
         versionName = "0.1.11"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

@@ -134,12 +134,22 @@ cargo tauri build
 
   ### GitHub Actions 发布
 
-  推送版本标签后，`.github/workflows/release.yml` 会自动打包并创建 **draft** Release：
+  推送版本标签后，`.github/workflows/release.yml` 会：
+  1. **根据 tag 自动改版本号**（`tauri.conf.json` / desktop `Cargo.toml` / Android `versionName`+`versionCode` / core workspace）
+  2. 打包桌面 + Android
+  3. 创建 **draft** Release
+
+  本地不必先手改版本文件，只推 tag 即可：
 
   ```bash
-  # 版本号需与 desktop/src-tauri/tauri.conf.json、android versionName 对齐
   git tag 0.1.12
   git push origin 0.1.12
+  # 或: git tag v0.1.12 && git push origin v0.1.12
+  ```
+
+  也可本地预览版本改写：
+  ```bash
+  ./scripts/set-version.sh 0.1.12
   ```
 
   | 产物 | 说明 |
