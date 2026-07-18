@@ -8,10 +8,14 @@ import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
@@ -19,16 +23,26 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -39,6 +53,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -52,18 +67,28 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.zeroterm.android.BuildConfig
 import com.zeroterm.android.R
 import com.zeroterm.android.data.AppLocale
 import com.zeroterm.android.data.AppSettings
 import com.zeroterm.android.data.SettingsSnapshot
-import com.zeroterm.android.data.ThemeMode
+import com.zeroterm.android.data.UpdateCheckResult
+import com.zeroterm.android.data.UpdateChecker
 import com.zeroterm.android.ui.components.ZeroSectionCard
 import com.zeroterm.android.ui.components.ZeroTopBar
 import com.zeroterm.ffi.ZeroTerm
@@ -154,20 +179,6 @@ fun WorkspaceSettingsPane(
                         title = stringResource(R.string.settings_appearance),
                         translucent = true,
                     ) {
-                        Text(
-                            stringResource(R.string.settings_theme),
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                        Row(Modifier.fillMaxWidth()) {
-                            ThemeMode.entries.forEach { mode ->
-                                FilterChip(
-                                    selected = snap.themeMode == mode,
-                                    onClick = { scope.launch { settings.setThemeMode(mode) } },
-                                    label = { Text(workspaceThemeLabel(mode)) },
-                                    modifier = Modifier.padding(end = 6.dp),
-                                )
-                            }
-                        }
                         Text(
                             stringResource(R.string.settings_language),
                             style = MaterialTheme.typography.labelLarge,
@@ -451,24 +462,7 @@ fun WorkspaceSettingsPane(
                 }
 
                 WorkspaceSettingsPage.About -> {
-                    ZeroSectionCard(translucent = true) {
-                        Text(
-                            stringResource(R.string.settings_about_title),
-                            style = MaterialTheme.typography.headlineSmall,
-                        )
-                        Text(
-                            stringResource(
-                                R.string.settings_about_version,
-                                BuildConfig.VERSION_NAME,
-                                BuildConfig.VERSION_CODE,
-                            ),
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                        Text(
-                            stringResource(R.string.settings_about_body),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    AboutPageContent()
                 }
             }
         }
@@ -476,10 +470,451 @@ fun WorkspaceSettingsPane(
 }
 
 @Composable
-private fun workspaceThemeLabel(mode: ThemeMode): String = when (mode) {
-    ThemeMode.System -> stringResource(R.string.settings_theme_system)
-    ThemeMode.Dark -> stringResource(R.string.settings_theme_dark)
-    ThemeMode.Light -> stringResource(R.string.settings_theme_light)
+private fun AboutPageContent() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val repoUrl = stringResource(R.string.settings_about_repo_url)
+    val brandBlue = Color(0xFF3B82F6)
+    val brandBlueSoft = Color(0xFF60A5FA)
+    val currentVersion = BuildConfig.VERSION_NAME
+    var checking by remember { mutableStateOf(false) }
+    var downloading by remember { mutableStateOf(false) }
+    var downloadProgress by remember { mutableStateOf<Float?>(null) }
+    var updateResult by remember { mutableStateOf<UpdateCheckResult?>(null) }
+    var actionError by remember { mutableStateOf<String?>(null) }
+    var downloadedApk by remember { mutableStateOf<java.io.File?>(null) }
+
+    val installPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) {
+        val apk = downloadedApk
+        if (apk != null && UpdateChecker.canInstallPackages(context)) {
+            runCatching { UpdateChecker.installApk(context, apk) }
+                .onFailure { actionError = it.message }
+        }
+    }
+
+    fun checkUpdate() {
+        scope.launch {
+            checking = true
+            actionError = null
+            updateResult = UpdateChecker.check(currentVersion)
+            checking = false
+        }
+    }
+
+    fun downloadAndInstall() {
+        val result = updateResult ?: return
+        val url = result.apkUrl
+        if (url.isNullOrBlank()) {
+            actionError = context.getString(R.string.settings_update_no_apk)
+            return
+        }
+        scope.launch {
+            downloading = true
+            actionError = null
+            downloadProgress = 0f
+            val download = runCatching {
+                UpdateChecker.downloadApk(
+                    context = context,
+                    url = url,
+                    fileName = result.apkName ?: "zeroterm-${result.latestVersion}.apk",
+                    expectedSize = result.apkSize,
+                    onProgress = { downloadProgress = it },
+                )
+            }
+            downloading = false
+            download.fold(
+                onSuccess = { file ->
+                    downloadedApk = file
+                    if (!UpdateChecker.canInstallPackages(context)) {
+                        actionError = context.getString(R.string.settings_update_install_permission)
+                        installPermissionLauncher.launch(
+                            UpdateChecker.installPermissionSettingsIntent(context),
+                        )
+                    } else {
+                        runCatching { UpdateChecker.installApk(context, file) }
+                            .onFailure {
+                                actionError = it.message
+                                    ?: context.getString(R.string.settings_update_download_failed, "install")
+                            }
+                    }
+                },
+                onFailure = {
+                    actionError = context.getString(
+                        R.string.settings_update_download_failed,
+                        it.message ?: "error",
+                    )
+                },
+            )
+        }
+    }
+
+    LaunchedEffect(Unit) { checkUpdate() }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        // Brand header — mirrors desktop settings-about-header
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.48f),
+            border = BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+            ),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Box(
+                        modifier = Modifier
+                            .size(88.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.radialGradient(
+                                    colors = listOf(
+                                        brandBlue.copy(alpha = 0.28f),
+                                        Color.Transparent,
+                                    ),
+                                ),
+                            ),
+                    )
+                    Image(
+                        painter = painterResource(R.drawable.zeroterm_desktop_logo),
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.size(72.dp),
+                    )
+                }
+                Text(
+                    text = stringResource(R.string.settings_about_title),
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = (-0.3).sp,
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = stringResource(R.string.settings_about_tagline),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                )
+            }
+        }
+
+        // Metadata cards — version / author / github
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            AboutMetaCard(
+                icon = Icons.Default.Info,
+                label = stringResource(R.string.settings_about_version_label),
+                value = stringResource(
+                    R.string.settings_about_version,
+                    BuildConfig.VERSION_NAME,
+                    BuildConfig.VERSION_CODE,
+                ),
+            )
+            AboutMetaCard(
+                icon = Icons.Default.Person,
+                label = stringResource(R.string.settings_about_author_label),
+                value = stringResource(R.string.settings_about_author),
+            )
+            AboutMetaCard(
+                icon = Icons.Default.Code,
+                label = stringResource(R.string.settings_about_repo_label),
+                value = stringResource(R.string.settings_about_repo),
+                trailing = {
+                    Icon(
+                        Icons.AutoMirrored.Filled.OpenInNew,
+                        contentDescription = stringResource(R.string.settings_about_open_github),
+                        tint = brandBlueSoft,
+                        modifier = Modifier.size(18.dp),
+                    )
+                },
+                onClick = {
+                    runCatching {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(repoUrl)))
+                    }
+                },
+            )
+        }
+
+        // Update check card — mirrors desktop settings-about-update-card
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.55f),
+            border = BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f),
+            ),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    val pulseColor = when {
+                        checking -> MaterialTheme.colorScheme.primary
+                        updateResult?.available == true -> Color(0xFFFBBF24)
+                        updateResult?.error != null -> MaterialTheme.colorScheme.error
+                        else -> Color(0xFF10B981)
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .clip(CircleShape)
+                            .background(pulseColor),
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_update_title),
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                        modifier = Modifier.weight(1f),
+                    )
+                    Icon(
+                        Icons.Default.SystemUpdate,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+                val statusText = when {
+                    downloading -> {
+                        val p = downloadProgress
+                        if (p != null && p >= 0f) {
+                            stringResource(
+                                R.string.settings_update_downloading,
+                                (p * 100).roundToInt(),
+                            )
+                        } else {
+                            stringResource(R.string.settings_update_downloading_indeterminate)
+                        }
+                    }
+                    checking -> stringResource(R.string.settings_update_checking)
+                    actionError != null -> actionError!!
+                    updateResult?.error != null -> stringResource(
+                        R.string.settings_update_failed,
+                        updateResult?.error.orEmpty(),
+                    )
+                    updateResult?.available == true && updateResult?.apkUrl.isNullOrBlank() ->
+                        stringResource(R.string.settings_update_no_apk)
+                    updateResult?.available == true -> stringResource(
+                        R.string.settings_update_available,
+                        updateResult?.currentVersion ?: currentVersion,
+                        updateResult?.latestVersion.orEmpty(),
+                    )
+                    updateResult != null -> stringResource(
+                        R.string.settings_update_latest,
+                        updateResult?.currentVersion ?: currentVersion,
+                    )
+                    else -> stringResource(R.string.settings_update_checking)
+                }
+                Text(
+                    text = statusText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = when {
+                        actionError != null || updateResult?.error != null ->
+                            MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+                if (downloading) {
+                    val p = downloadProgress
+                    if (p != null && p >= 0f) {
+                        androidx.compose.material3.LinearProgressIndicator(
+                            progress = { p.coerceIn(0f, 1f) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    } else {
+                        androidx.compose.material3.LinearProgressIndicator(
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedButton(
+                        onClick = { checkUpdate() },
+                        enabled = !checking && !downloading,
+                    ) {
+                        if (checking) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text(stringResource(R.string.settings_update_check))
+                    }
+                    if (updateResult?.available == true) {
+                        if (!updateResult?.apkUrl.isNullOrBlank()) {
+                            Button(
+                                onClick = {
+                                    val apk = downloadedApk
+                                    if (apk != null && apk.exists()) {
+                                        if (!UpdateChecker.canInstallPackages(context)) {
+                                            actionError = context.getString(
+                                                R.string.settings_update_install_permission,
+                                            )
+                                            installPermissionLauncher.launch(
+                                                UpdateChecker.installPermissionSettingsIntent(context),
+                                            )
+                                        } else {
+                                            runCatching { UpdateChecker.installApk(context, apk) }
+                                                .onFailure { actionError = it.message }
+                                        }
+                                    } else {
+                                        downloadAndInstall()
+                                    }
+                                },
+                                enabled = !checking && !downloading,
+                            ) {
+                                Text(
+                                    if (downloadedApk?.exists() == true) {
+                                        stringResource(R.string.settings_update_install)
+                                    } else {
+                                        stringResource(R.string.settings_update_download)
+                                    },
+                                )
+                            }
+                        }
+                        val releaseUrl = updateResult?.releaseUrl ?: repoUrl
+                        TextButton(
+                            onClick = {
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(Intent.ACTION_VIEW, Uri.parse(releaseUrl)),
+                                    )
+                                }
+                            },
+                            enabled = !downloading,
+                        ) {
+                            Text(stringResource(R.string.settings_update_open))
+                        }
+                    }
+                }
+            }
+        }
+
+        // Privacy / architecture note (Android-specific, keep)
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.28f),
+            border = BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+            ),
+        ) {
+            Text(
+                text = stringResource(R.string.settings_about_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AboutMetaCard(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    trailing: (@Composable () -> Unit)? = null,
+    onClick: (() -> Unit)? = null,
+) {
+    val shape = RoundedCornerShape(14.dp)
+    val clickableMod = if (onClick != null) {
+        Modifier.clickable(onClick = onClick)
+    } else {
+        Modifier
+    }
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(clickableMod),
+        shape = shape,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.55f),
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f),
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Surface(
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
+                ),
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .padding(10.dp)
+                        .size(20.dp),
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = label.uppercase(),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        letterSpacing = 0.8.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = if (onClick != null) {
+                        Color(0xFF60A5FA)
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                )
+            }
+            trailing?.invoke()
+        }
+    }
 }
 
 @Composable

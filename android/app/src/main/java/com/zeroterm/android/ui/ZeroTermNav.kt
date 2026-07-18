@@ -151,18 +151,6 @@ fun ZeroTermNav(container: AppContainer) {
                         }
                     }
                 },
-                onLockAndForget = {
-                    scope.launch {
-                        container.sessions.disconnectAll()
-                        container.sftp.close()
-                        container.repository.lock(clearCache = true)
-                        unlockVm.prepareForUnlock()
-                        nav.navigate(Routes.Unlock) {
-                            popUpTo(Routes.Hosts) { inclusive = true }
-                            launchSingleTop = true
-                        }
-                    }
-                },
             )
         }
         composable(Routes.HostNew) {
