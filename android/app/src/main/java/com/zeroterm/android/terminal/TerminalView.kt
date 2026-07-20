@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -74,7 +75,8 @@ class TerminalHostView @JvmOverloads constructor(
     private var themeBackgroundState = mutableStateOf(Color(0xFF0B1220))
     private var themeCursorState = mutableStateOf(Color(0xAAD0D0D0))
     private var themeSelectionState = mutableStateOf(Color(0x665B9DFF))
-    private var themeDefaultBgState = mutableStateOf(Color(0xFF0B1220))
+    /** Packed 0x00RRGGBB for the active theme's default cell background. */
+    private var themeDefaultBgPackedState = mutableIntStateOf(0x0B1220)
     var onFontSizeChanged: ((Float) -> Unit)? = null
 
     init {
@@ -95,7 +97,7 @@ class TerminalHostView @JvmOverloads constructor(
                 themeBackground = themeBackgroundState.value,
                 themeCursor = themeCursorState.value,
                 themeSelection = themeSelectionState.value,
-                themeDefaultBackground = themeDefaultBgState.value,
+                themeDefaultBgPacked = themeDefaultBgPackedState.intValue,
                 onTap = {
                     grid.clearSelection()
                     onSelectionChanged?.invoke(false)
@@ -134,12 +136,13 @@ class TerminalHostView @JvmOverloads constructor(
         background: Color,
         cursor: Color,
         selection: Color,
-        defaultCellBackground: Color = background,
+        /** Packed 0x00RRGGBB matching TerminalPalette.background / cell.bg from FFI. */
+        defaultCellBackgroundPacked: Int,
     ) {
         themeBackgroundState.value = background
         themeCursorState.value = cursor
         themeSelectionState.value = selection
-        themeDefaultBgState.value = defaultCellBackground
+        themeDefaultBgPackedState.intValue = defaultCellBackgroundPacked and 0xFFFFFF
         compose.invalidate()
     }
 
@@ -159,6 +162,12 @@ class TerminalHostView @JvmOverloads constructor(
     fun showIme() {
         val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
         imm.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
+    }
+
+    fun hideIme() {
+        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.hideSoftInputFromWindow(windowToken, 0)
+        clearFocus()
     }
 
     override fun onCheckIsTextEditor(): Boolean = true
@@ -214,7 +223,7 @@ fun TerminalCanvas(
     themeBackground: Color = Color(0xFF0B1220),
     themeCursor: Color = Color(0xAAD0D0D0),
     themeSelection: Color = Color(0x665B9DFF),
-    themeDefaultBackground: Color = Color(0xFF0B1220),
+    themeDefaultBgPacked: Int = 0x0B1220,
     onTap: () -> Unit,
     onSizeCells: (cols: Int, rows: Int) -> Unit,
     onScrollLines: (delta: Int) -> Unit,
@@ -499,8 +508,10 @@ fun TerminalCanvas(
                 cellW = cellW,
                 cellH = cellH,
                 paint = paint,
+                // Desktop: hasAppBg → theme.background = "#00000000".
+                // Android: skip painting cells whose bg matches the theme default.
                 transparentDefaultBackground = hasCustomBackground,
-                defaultBackground = themeDefaultBackground,
+                defaultBgPacked = themeDefaultBgPacked and 0xFFFFFF,
                 selectionColor = themeSelection,
                 cursorColor = themeCursor,
                 handleRadius = handleRadiusPx,
@@ -527,12 +538,12 @@ private data class SelectionHandleGeometry(
     val center: Offset,
 )
 
-private fun isDefaultCellBackground(bg: Color, defaultBackground: Color): Boolean {
-    if (bg == defaultBackground || bg == Color.Black || bg == Color(0xFF0B1220)) return true
-    // Match RGB even if alpha differs (theme vs cell packing).
-    return bg.red == defaultBackground.red &&
-        bg.green == defaultBackground.green &&
-        bg.blue == defaultBackground.blue
+private fun isDefaultCellBackground(bgPacked: Int, defaultBgPacked: Int): Boolean {
+    val packed = bgPacked and 0xFFFFFF
+    // Legacy defaults used before a theme is applied / for blank cells.
+    if (packed == 0x000000 || packed == 0x0B1220) return true
+    // Exact integer match against TerminalPalette.background (0x00RRGGBB).
+    return packed == (defaultBgPacked and 0xFFFFFF)
 }
 
 private fun DrawScope.drawTermGrid(
@@ -541,7 +552,7 @@ private fun DrawScope.drawTermGrid(
     cellH: Float,
     paint: AndroidPaint,
     transparentDefaultBackground: Boolean,
-    defaultBackground: Color,
+    defaultBgPacked: Int,
     selectionColor: Color,
     cursorColor: Color,
     handleRadius: Float,
@@ -555,7 +566,7 @@ private fun DrawScope.drawTermGrid(
             val x = col * cellW
             val y = row * cellH
             val w = if (cell.wide) cellW * 2 else cellW
-            val isDefaultBackground = isDefaultCellBackground(cell.bg, defaultBackground)
+            val isDefaultBackground = isDefaultCellBackground(cell.bgPacked, defaultBgPacked)
             if (!transparentDefaultBackground || !isDefaultBackground) {
                 drawRect(cell.bg, topLeft = Offset(x, y), size = Size(w, cellH))
             }

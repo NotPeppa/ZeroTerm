@@ -65,6 +65,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -104,6 +105,7 @@ import com.zeroterm.android.ui.ai.rememberAiConversationState
 import com.zeroterm.android.ui.snippets.SnippetsScreen
 import com.zeroterm.android.ui.components.ZeroTopBar
 import com.zeroterm.android.ui.components.LocalChromeTransparency
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -141,8 +143,9 @@ fun TerminalScreen(
     var hasSelection by remember { mutableStateOf(false) }
     var scrolledBack by remember { mutableStateOf(false) }
     val toolsDrawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    var toolsDrawerOpenKey by remember { mutableIntStateOf(0) }
     val drawerAlpha = 1f - LocalChromeTransparency.current.drawer.coerceIn(0f, 0.8f)
-    var toolsPage by remember { mutableStateOf(TerminalToolsPage.Ai) }
+    var toolsPage by remember { mutableStateOf(TerminalToolsPage.Snippets) }
     val settingsSnap by (settings?.flow ?: kotlinx.coroutines.flow.flowOf(SettingsSnapshot()))
         .collectAsState(initial = SettingsSnapshot())
     val enabledExtraKeys = remember(settingsSnap.terminalExtraKeysCsv) {
@@ -183,22 +186,34 @@ fun TerminalScreen(
             ?: TerminalPalettes.byId(terminalThemeId, customThemes, hiddenBuiltins)
     }
 
+    val themeDefaultBgPacked =
+        (terminalTheme.palette.background.toLong() and 0xFFFFFFL).toInt()
+
     fun applyThemeToView(view: TerminalHostView?) {
         view?.setThemeColors(
             background = terminalTheme.backgroundColor,
             cursor = terminalTheme.cursorColor,
             selection = terminalTheme.selectionColor,
-            defaultCellBackground = terminalTheme.backgroundColor,
+            defaultCellBackgroundPacked = themeDefaultBgPacked,
         )
     }
 
+    // Apply palette before first paint/connect so glass-mode bg matching uses the
+    // active theme (SessionManager defaults to termark-dark until this runs).
     LaunchedEffect(terminalThemeId, terminalTheme.palette) {
         sessions.applyTerminalPalette(terminalTheme.palette)
         applyThemeToView(termView)
+        // Force a full frame so already-drawn cells pick up the new palette.
+        if (sessions.active.value != null) {
+            sessions.snapshot()?.let { termView?.applyFrame(it) }
+        }
     }
 
-    LaunchedEffect(termView, terminalThemeId, terminalTheme.palette) {
+    LaunchedEffect(termView, terminalThemeId, themeDefaultBgPacked) {
         applyThemeToView(termView)
+        if (termView != null && sessions.active.value != null) {
+            sessions.snapshot()?.let { termView?.applyFrame(it) }
+        }
     }
 
     val batteryOptimizationRequest = rememberLauncherForActivityResult(
@@ -254,6 +269,12 @@ fun TerminalScreen(
         val id = hostId ?: return
         scope.launch {
             disconnectedMsg = null
+            // Wait for persisted theme (DataStore) so we never paint with the
+            // SessionManager default palette (termark-dark) on first open.
+            val snap = settings?.flow?.first() ?: settingsSnap
+            val theme = resolveTerminalTheme(snap, darkApp, context)
+            sessions.applyTerminalPalette(theme.palette)
+            applyThemeToView(termView)
             sessions.connect(
                 hostId = id,
                 hostLabel = hostLabel,
@@ -261,6 +282,15 @@ fun TerminalScreen(
                 rows = lastRows.toUShort().coerceAtLeast(1u),
             )
             scrolledBack = false
+            // Session exists now: re-apply so setPalette forces a full damage frame.
+            sessions.applyTerminalPalette(theme.palette)
+            termView?.setThemeColors(
+                background = theme.backgroundColor,
+                cursor = theme.cursorColor,
+                selection = theme.selectionColor,
+                defaultCellBackgroundPacked = (theme.palette.background.toLong() and 0xFFFFFFL).toInt(),
+            )
+            sessions.snapshot()?.let { termView?.applyFrame(it) }
         }
     }
 
@@ -337,19 +367,41 @@ fun TerminalScreen(
         clearSelectionState()
     }
 
-    fun sendSelectionToAi() {
-        toolsPage = TerminalToolsPage.Ai
+    fun openToolsDrawer(page: TerminalToolsPage = TerminalToolsPage.Snippets) {
+        // Keep soft keyboard down until user taps an input field.
+        termView?.hideIme()
+        toolsPage = page
+        toolsDrawerOpenKey += 1
         scope.launch { toolsDrawerState.open() }
+    }
+
+    fun sendSelectionToAi() {
+        openToolsDrawer(TerminalToolsPage.Ai)
         // Keep selection so user can still copy if needed; clear after open.
         clearSelectionState()
+    }
+
+    // Swipe-open also keeps the terminal IME from covering the AI page.
+    LaunchedEffect(toolsDrawerState.currentValue) {
+        if (toolsDrawerState.currentValue == DrawerValue.Open) {
+            termView?.hideIme()
+            toolsDrawerOpenKey += 1
+        }
     }
 
     LaunchedEffect(hostId, lastCols, lastRows, alreadyConnected) {
         if (!started && lastCols >= 2 && lastRows >= 1) {
             started = true
+            // Seed SessionManager with the real theme before any paint/connect.
+            val snap = settings?.flow?.first() ?: settingsSnap
+            val theme = resolveTerminalTheme(snap, darkApp, context)
+            sessions.applyTerminalPalette(theme.palette)
+            applyThemeToView(termView)
             if (alreadyConnected || sessions.isActiveFor(hostId)) {
-                // Re-attach after navigation or Activity/Compose recreation.
-                refreshPaint()
+                // Re-attach: palette may still be default if session was created early.
+                sessions.applyTerminalPalette(theme.palette)
+                sessions.snapshot()?.let { termView?.applyFrame(it) }
+                    ?: refreshPaint()
             } else if (hostId != null) {
                 doConnect()
             }
@@ -432,6 +484,7 @@ fun TerminalScreen(
                             sessions = sessions,
                             hostLabel = hostLabel,
                             contextProvider = { sessions.viewportText() },
+                            toolsDrawerOpenKey = toolsDrawerOpenKey,
                             selectedThemeId = terminalThemeId,
                             themes = terminalThemes,
                             onThemeSelected = { id ->
@@ -504,6 +557,10 @@ fun TerminalScreen(
                     backgroundImagePath = backgroundImagePath,
                     backgroundOpacity = backgroundOpacity,
                     backgroundBlurDp = backgroundBlurDp,
+                    themeBackground = terminalTheme.backgroundColor,
+                    themeCursor = terminalTheme.cursorColor,
+                    themeSelection = terminalTheme.selectionColor,
+                    themeDefaultBgPacked = themeDefaultBgPacked,
                     alreadyConnected = alreadyConnected,
                     sessions = sessions,
                     termView = termView,
@@ -524,7 +581,7 @@ fun TerminalScreen(
                     onSendSelectionToAi = { sendSelectionToAi() },
                     selectionUrl = if (hasSelection) extractUrl(selectedText()) else null,
                     onRefreshPaint = { refreshPaint() },
-                    onOpenTools = { scope.launch { toolsDrawerState.open() } },
+                    onOpenTools = { openToolsDrawer() },
                     onFontSizeChanged = onFontSizeChanged,
                 )
             }
@@ -552,6 +609,10 @@ private fun TerminalContent(
     backgroundImagePath: String,
     backgroundOpacity: Float,
     backgroundBlurDp: Int,
+    themeBackground: Color,
+    themeCursor: Color,
+    themeSelection: Color,
+    themeDefaultBgPacked: Int,
     alreadyConnected: Boolean,
     sessions: SessionManager,
     termView: TerminalHostView?,
@@ -677,6 +738,14 @@ private fun TerminalContent(
                             onTermViewChanged(v)
                             v.setFontSizeSp(fontSizeSp)
                             v.setBackgroundConfig(backgroundImagePath, backgroundOpacity, backgroundBlurDp)
+                            // Apply theme immediately so default-cell transparency
+                            // uses the active palette (not the 0x0B1220 placeholder).
+                            v.setThemeColors(
+                                background = themeBackground,
+                                cursor = themeCursor,
+                                selection = themeSelection,
+                                defaultCellBackgroundPacked = themeDefaultBgPacked,
+                            )
                             v.onFontSizeChanged = onFontSizeChanged
                             if (alreadyConnected) {
                                 sessions.snapshot()?.let { v.applyFrame(it) }
@@ -744,6 +813,12 @@ private fun TerminalContent(
                     update = { view ->
                         view.setFontSizeSp(fontSizeSp)
                         view.setBackgroundConfig(backgroundImagePath, backgroundOpacity, backgroundBlurDp)
+                        view.setThemeColors(
+                            background = themeBackground,
+                            cursor = themeCursor,
+                            selection = themeSelection,
+                            defaultCellBackgroundPacked = themeDefaultBgPacked,
+                        )
                     },
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -833,6 +908,23 @@ private fun TerminalContent(
     }
 }
 
+private fun resolveTerminalTheme(
+    snap: SettingsSnapshot,
+    darkApp: Boolean,
+    context: Context,
+): TerminalThemeDef {
+    val customThemes = TerminalPalettes.decodeCustomThemes(snap.terminalCustomThemesJson)
+    val hiddenBuiltins = TerminalPalettes.decodeHiddenBuiltins(snap.terminalHiddenBuiltinThemesJson)
+    val themes = TerminalPalettes.resolve(customThemes, hiddenBuiltins) { b ->
+        runCatching { context.getString(b.nameRes) }.getOrDefault(TerminalPalettes.builtinLabel(b))
+    }
+    val id = snap.terminalThemeId
+        .ifBlank { TerminalPalettes.defaultId(darkApp) }
+        .let { key -> if (themes.any { it.id == key }) key else TerminalPalettes.defaultId(darkApp) }
+    return themes.firstOrNull { it.id == id }
+        ?: TerminalPalettes.byId(id, customThemes, hiddenBuiltins)
+}
+
 private enum class TerminalToolsPage { Ai, Snippets, Metrics, Docker, Theme }
 
 @Composable
@@ -845,6 +937,7 @@ private fun TerminalToolsDrawer(
     sessions: SessionManager,
     hostLabel: String,
     contextProvider: () -> String,
+    toolsDrawerOpenKey: Int = 0,
     selectedThemeId: String,
     themes: List<TerminalThemeDef>,
     onThemeSelected: (String) -> Unit,
@@ -906,6 +999,7 @@ private fun TerminalToolsDrawer(
                 contextProvider = contextProvider,
                 onInsertCommand = onInsertAiCommand,
                 embedded = true,
+                embeddedOpenKey = toolsDrawerOpenKey,
                 conversationState = aiConversationState,
             )
             TerminalToolsPage.Snippets -> SnippetsScreen(

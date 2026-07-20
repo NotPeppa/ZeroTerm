@@ -232,20 +232,34 @@ class TermGridState {
         val ch: String,
         val fg: Color,
         val bg: Color,
+        /** Packed 0x00RRGGBB from FFI; used for glass-mode default-bg matching. */
+        val bgPacked: Int,
         val bold: Boolean,
         val underline: Boolean,
         val wide: Boolean,
     ) {
         companion object {
-            fun blank() = Cell(" ", Color(0xFFD0D0D0), Color(0xFF0B1220), false, false, false)
+            private const val DEFAULT_BG_PACKED = 0x0B1220
+
+            fun blank() = Cell(
+                ch = " ",
+                fg = Color(0xFFD0D0D0),
+                bg = Color(0xFF0B1220),
+                bgPacked = DEFAULT_BG_PACKED,
+                bold = false,
+                underline = false,
+                wide = false,
+            )
 
             fun from(c: TermCell): Cell {
                 val ch = c.ch.ifEmpty { " " }
                 val flags = c.flags.toInt()
+                val bgPacked = (c.bg.toLong() and 0xFFFFFFL).toInt()
                 return Cell(
                     ch = ch,
                     fg = rgb(c.fg),
                     bg = rgb(c.bg),
+                    bgPacked = bgPacked,
                     bold = (flags and 1) != 0,
                     underline = (flags and 8) != 0,
                     wide = (flags and 64) != 0,

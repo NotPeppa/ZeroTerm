@@ -65,8 +65,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -125,9 +128,13 @@ fun AiScreen(
     onInsertCommand: ((String) -> Unit)? = null,
     configurationOnly: Boolean = false,
     embedded: Boolean = false,
+    /** Bumps when the terminal tools drawer opens so embedded AI re-suppresses auto-IME. */
+    embeddedOpenKey: Int = 0,
     conversationState: AiConversationState? = null,
 ) {
     val scope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val retainedConversation = conversationState ?: rememberAiConversationState()
     val messages = retainedConversation.messages
     val listState = rememberLazyListState()
@@ -146,6 +153,24 @@ fun AiScreen(
     var sessionModel by retainedConversation.sessionModel
     var sessionModelOptions by retainedConversation.sessionModelOptions
     var sessionModelsBusy by remember { mutableStateOf(false) }
+
+    // Embedded terminal drawer: ignore the first automatic focus so IME stays down
+    // until the user explicitly taps the message field.
+    var suppressAutoIme by remember { mutableStateOf(false) }
+    LaunchedEffect(embedded, embeddedOpenKey) {
+        if (!embedded) {
+            suppressAutoIme = false
+            return@LaunchedEffect
+        }
+        suppressAutoIme = true
+        focusManager.clearFocus(force = true)
+        keyboardController?.hide()
+        delay(80)
+        focusManager.clearFocus(force = true)
+        keyboardController?.hide()
+        delay(280)
+        suppressAutoIme = false
+    }
 
     fun pickDefaultProfileId(loaded: List<AiProfileRecord>, preferred: String?): String? {
         val ids = loaded.map { it.id }
@@ -605,7 +630,14 @@ fun AiScreen(
                     OutlinedTextField(
                         value = input,
                         onValueChange = { input = it },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .onFocusChanged { state ->
+                                if (suppressAutoIme && state.isFocused) {
+                                    focusManager.clearFocus(force = true)
+                                    keyboardController?.hide()
+                                }
+                            },
                         placeholder = { Text(stringResource(R.string.ai_message_hint)) },
                         maxLines = 4,
                     )
