@@ -25,7 +25,13 @@ jobs:
     outputs:
       version: ${{ steps.ver.outputs.version }}
       tag: ${{ steps.ver.outputs.tag }}
+      notes: ${{ steps.notes.outputs.notes }}
     steps:
+      # Full history + tags so the notes step can diff against the previous release tag.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
       - id: ver
         run: |
           if [ "${{ github.ref_type }}" = "tag" ]; then
@@ -43,6 +49,51 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Resolved tag=$TAG version=$VERSION"
+
+      # Release notes = commit subjects since the previous release tag.
+      # Goes into the release body and the updater latest.json "notes" field.
+      - id: notes
+        run: |
+          TAG="${{ steps.ver.outputs.tag }}"
+          VERSION="${{ steps.ver.outputs.version }}"
+
+          # Log up to the tagged commit when the tag exists (tag push),
+          # otherwise up to HEAD (manual dispatch before tagging).
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            END_REF="$TAG"
+          else
+            END_REF="HEAD"
+          fi
+
+          # Nearest release tag reachable from END_REF's parent = previous release.
+          # Matches both tag styles in this repo: "0.1.11" and "v0.1.12".
+          PREV=$(git describe --tags --abbrev=0 \
+            --match '[0-9]*.[0-9]*.[0-9]*' --match 'v[0-9]*.[0-9]*.[0-9]*' \
+            "$END_REF^" 2>/dev/null || true)
+
+          if [ -n "$PREV" ]; then
+            HEADER="### 更新内容（${PREV#v} → $VERSION）"
+            CHANGES=$(git log --no-merges --pretty=format:'- %s' "$PREV..$END_REF")
+          else
+            HEADER="### 更新内容（首个发布）"
+            CHANGES=$(git log --no-merges --pretty=format:'- %s' "$END_REF")
+          fi
+          if [ -z "$CHANGES" ]; then
+            CHANGES="- 与上一版本之间没有新的提交"
+          fi
+
+          NOTES=$(printf '%s\n%s' "$HEADER" "$CHANGES")
+          if [ -n "$PREV" ] && [ "$END_REF" = "$TAG" ]; then
+            NOTES=$(printf '%s\n\n完整变更：https://github.com/%s/compare/%s...%s' "$NOTES" "$GITHUB_REPOSITORY" "$PREV" "$TAG")
+          fi
+
+          {
+            echo "notes<<NOTES_EOF"
+            echo "$NOTES"
+            echo "NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "$NOTES"
 
   desktop:
     needs: prepare
@@ -116,13 +167,7 @@ jobs:
           projectPath: desktop/src-tauri
           tagName: ${{ needs.prepare.outputs.tag }}
           releaseName: ZeroTerm ${{ needs.prepare.outputs.version }}
-          releaseBody: |
-            ## ZeroTerm ${{ needs.prepare.outputs.version }}
-
-            Desktop installers and updater artifacts are attached below.
-            Android APK is published by the `android` job when available.
-
-            Version files are patched automatically from the git tag by CI.
+          releaseBody: ${{ needs.prepare.outputs.notes }}
           releaseDraft: true
           prerelease: false
           includeUpdaterJson: true

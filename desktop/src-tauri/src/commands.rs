@@ -1136,6 +1136,29 @@ fn parse_sse_frame_payloads(frame: &str) -> Vec<String> {
         .collect()
 }
 
+/// Appends a byte chunk to `buffer` as UTF-8. A multi-byte sequence split at
+/// the chunk boundary stays in `carry` (≤3 bytes) until the next chunk
+/// completes it; definitely-invalid bytes are decoded lossily so a corrupt
+/// stream keeps flowing instead of stalling.
+fn push_utf8_chunk(buffer: &mut String, carry: &mut Vec<u8>, chunk: &[u8]) {
+    carry.extend_from_slice(chunk);
+    match std::str::from_utf8(carry) {
+        Ok(text) => {
+            buffer.push_str(text);
+            carry.clear();
+        }
+        Err(e) if e.error_len().is_none() => {
+            let valid = e.valid_up_to();
+            buffer.push_str(std::str::from_utf8(&carry[..valid]).unwrap());
+            carry.drain(..valid);
+        }
+        Err(_) => {
+            buffer.push_str(&String::from_utf8_lossy(carry));
+            carry.clear();
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn vault_status(state: State<'_, AppState>) -> Result<VaultStatus, String> {
     let path = zeroterm_app::default_vault_path()
@@ -1479,6 +1502,9 @@ pub async fn ai_chat_stream(app: AppHandle, input: AiChatStreamInput) -> Result<
 
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
+    // Holds an incomplete UTF-8 sequence when a network chunk splits a
+    // character; a plain lossy decode per chunk would inject U+FFFD instead.
+    let mut carry: Vec<u8> = Vec::new();
     while let Some(item) = stream.next().await {
         if take_ai_request_canceled(&request_id) {
             emit_ai_stream(
@@ -1501,7 +1527,7 @@ pub async fn ai_chat_stream(app: AppHandle, input: AiChatStreamInput) -> Result<
                 return Err(msg);
             }
         };
-        buffer.push_str(&String::from_utf8_lossy(&bytes));
+        push_utf8_chunk(&mut buffer, &mut carry, &bytes);
         for frame in parse_sse_frames(&mut buffer) {
             for data in parse_sse_frame_payloads(&frame) {
                 if data == "[DONE]" {
@@ -4428,6 +4454,30 @@ fn default_local_shell_command() -> CommandBuilder {
     }
 }
 
+/// One step of the local-pty stream decode: appends a read chunk to `pending`
+/// and returns the bytes safe to forward now. ConPTY output is always UTF-8,
+/// but read() can split a multi-byte character at the chunk boundary — the
+/// torn tail (≤3 bytes) stays in `pending` until the next read completes it,
+/// instead of tripping the GBK fallback for the whole chunk. Input that is
+/// definitely not UTF-8 (winpty fallback or legacy tools writing a non-UTF-8
+/// codepage) is re-encoded from GBK.
+fn decode_local_pty_chunk(pending: &mut Vec<u8>, chunk: &[u8]) -> Vec<u8> {
+    pending.extend_from_slice(chunk);
+    match std::str::from_utf8(pending) {
+        Ok(_) => std::mem::take(pending),
+        Err(e) if e.error_len().is_none() => {
+            let tail = pending.split_off(e.valid_up_to());
+            std::mem::replace(pending, tail)
+        }
+        Err(_) => {
+            let (cow, _) = encoding_rs::GBK.decode_without_bom_handling(pending);
+            let data = cow.into_owned().into_bytes();
+            pending.clear();
+            data
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn create_local_terminal_session(
     state: State<'_, AppState>,
@@ -4521,19 +4571,17 @@ pub async fn create_local_terminal_session(
 
     let app_for_read = app_handle.clone();
     tokio::task::spawn_blocking(move || {
-        use encoding_rs::GBK;
         let mut buf = vec![0u8; 8192];
+        // Carries a UTF-8 sequence split across reads; see decode_local_pty_chunk.
+        let mut pending: Vec<u8> = Vec::new();
         loop {
             match reader.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => {
-                    let raw = &buf[..n];
-                    let data = if std::str::from_utf8(raw).is_ok() {
-                        raw.to_vec()
-                    } else {
-                        let (cow, _) = GBK.decode_without_bom_handling(raw);
-                        cow.as_bytes().to_vec()
-                    };
+                    let data = decode_local_pty_chunk(&mut pending, &buf[..n]);
+                    if data.is_empty() {
+                        continue;
+                    }
                     let _ = app_for_read.emit(
                         "session:data",
                         crate::session::DataEvent { session_id, data },
@@ -4541,6 +4589,16 @@ pub async fn create_local_terminal_session(
                 }
                 Err(_) => break,
             }
+        }
+        // A torn character can be left behind when the pty closes mid-sequence.
+        if !pending.is_empty() {
+            let _ = app_for_read.emit(
+                "session:data",
+                crate::session::DataEvent {
+                    session_id,
+                    data: String::from_utf8_lossy(&pending).into_owned().into_bytes(),
+                },
+            );
         }
     });
 
@@ -4964,5 +5022,43 @@ mod tests {
         #[cfg(unix)]
         assert!(validate_local_removable_dir(Path::new("/")).is_err());
         assert!(validate_local_removable_dir(&std::env::temp_dir().join("child")).is_ok());
+    }
+
+    #[test]
+    fn local_pty_decode_carries_utf8_split_across_reads() {
+        let bytes = "回显中文".as_bytes(); // 3 bytes per char
+        let mut pending = Vec::new();
+        let mut out = Vec::new();
+        // Boundary lands inside the second character.
+        out.extend(decode_local_pty_chunk(&mut pending, &bytes[..4]));
+        out.extend(decode_local_pty_chunk(&mut pending, &bytes[4..]));
+        assert_eq!(out, bytes);
+        assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn local_pty_decode_still_falls_back_to_gbk() {
+        // "你好" encoded as GBK, split so the first read alone looks like an
+        // incomplete UTF-8 sequence.
+        let gbk = [0xC4u8, 0xE3, 0xBA, 0xC3];
+        let mut pending = Vec::new();
+        let mut out = Vec::new();
+        out.extend(decode_local_pty_chunk(&mut pending, &gbk[..1]));
+        out.extend(decode_local_pty_chunk(&mut pending, &gbk[1..]));
+        assert_eq!(String::from_utf8(out).unwrap(), "你好");
+        assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn sse_push_carries_utf8_split_across_chunks() {
+        let bytes = "data: 中文\n\n".as_bytes();
+        let mut buffer = String::new();
+        let mut carry = Vec::new();
+        // Boundary lands inside 中 ("data: " is 6 bytes).
+        push_utf8_chunk(&mut buffer, &mut carry, &bytes[..8]);
+        assert!(!buffer.contains('\u{FFFD}'));
+        push_utf8_chunk(&mut buffer, &mut carry, &bytes[8..]);
+        assert_eq!(buffer, "data: 中文\n\n");
+        assert!(carry.is_empty());
     }
 }
