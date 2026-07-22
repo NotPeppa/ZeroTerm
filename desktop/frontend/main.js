@@ -473,6 +473,7 @@ const I18N = {
     "terminal.error.no_host": "Active pane has no host to duplicate.",
     "terminal.closed.remote_exited": "[remote exited with status {code}]",
     "terminal.closed.disconnected": "[disconnected]",
+    "terminal.attention.tooltip": "Session is waiting for your confirmation / input",
     "host_key.unknown_title": "Unknown host",
     "host_key.unknown_body":
       "The authenticity of '{host}:{port}' cannot be established. Trusting this key adds it to known_hosts.",
@@ -1366,6 +1367,7 @@ const I18N = {
     "terminal.error.no_host": "当前活动窗格没有可复制的主机。",
     "terminal.closed.remote_exited": "[远端退出状态 {code}]",
     "terminal.closed.disconnected": "[已断开]",
+    "terminal.attention.tooltip": "会话正在等待确认 / 输入",
     "host_key.unknown_title": "未知主机",
     "host_key.unknown_body":
       "无法确认“{host}:{port}”的真实性。信任后会将该主机密钥写入 known_hosts。",
@@ -13237,6 +13239,9 @@ function createPane(host) {
     latencyUnlisten: null,
     closedUnlisten: null,
     osc7HandlerDispose: null,
+    attention: null,
+    attnQuietTimer: null,
+    attnHandlerDisposes: null,
     resizeObserver: null,
     pendingResizeTimer: null,
     pendingFitRaf: null,
@@ -13421,6 +13426,7 @@ async function openLocalTerminalInTab() {
 
 function renderTerminalWorkspace() {
   sanitizeTerminalTabs();
+  syncTerminalAttentionOnWorkspaceRender();
   renderTabStrip();
   syncAiConversationToActivePane();
   applyTerminalSidePanelForActivePane();
@@ -13689,12 +13695,205 @@ document.addEventListener("click", (ev) => {
   }
 });
 
+// --- Terminal attention -----------------------------------------------------
+// Badge a tab when a CLI inside it is waiting on the user (claude / codex /
+// gemini approval menus, plain y/n confirmations). Three signals set the badge:
+//   1. BEL — agent CLIs ring the terminal bell when they need attention;
+//   2. OSC 9 / OSC 777 — desktop-notification escapes (iTerm2 / urxvt style);
+//   3. prompt scan — output goes quiet while the bottom rows of the screen
+//      show a selection menu or confirmation question.
+// The badge only appears while the pane is out of the user's view (background
+// tab, other workspace, unfocused window) and clears as soon as the user looks
+// at the tab again or types into the pane.
+
+const TERMINAL_ATTENTION_QUIET_MS = 450;
+const TERMINAL_ATTENTION_SCAN_ROWS = 14;
+const TERMINAL_ATTENTION_ALT_SCAN_ROWS = 10;
+const TERMINAL_ATTENTION_PROMPT_PATTERNS = [
+  // Selection cursor sitting on a numbered option: "❯ 1. Yes" (claude, gemini).
+  /[❯›]\s{0,3}\d{1,2}[.)]\s/,
+  // Numbered yes/no options rendered without a cursor glyph.
+  /^\s*\d{1,2}[.)]\s+(?:yes|no)\b/im,
+  // Question headers agent CLIs print above their option list.
+  /\b(?:do you want|would you like)\b/i,
+  // Classic inline confirmations: (y/n), [Y/n], (yes/no).
+  /[([](?:y\/n|yes\/no)[)\]]/i,
+  /\b(?:press )?(?:enter|return) to (?:continue|confirm)\b/i,
+  // Chinese confirmation prompts.
+  /是否(?:继续|允许|执行|应用|覆盖)|请选择|请确认|等待(?:确认|授权)/,
+];
+
+let termAttentionLastActiveTabId = null;
+
+function findTerminalTabForPane(pane) {
+  return termState.tabs.find((tab) => tab.panes.includes(pane)) || null;
+}
+
+// The user can only be looking at a pane when its tab is active, the terminal
+// workspace is showing, and the window itself has focus.
+function isPaneOnUserScreen(pane) {
+  if (workspaceMode !== "terminal" || !document.hasFocus()) return false;
+  const tab = findTerminalTabForPane(pane);
+  return !!tab && tab.id === termState.activeTabId;
+}
+
+function triggerPaneAttention(pane, kind) {
+  if (!pane || pane.sessionId === null) return;
+  if (isPaneOnUserScreen(pane)) return;
+  if (pane.attention) {
+    pane.attention = kind;
+    return;
+  }
+  pane.attention = kind;
+  renderTabStrip();
+}
+
+function clearPaneAttention(pane, { rerender = true } = {}) {
+  if (!pane) return false;
+  if (pane.attnQuietTimer !== null && pane.attnQuietTimer !== undefined) {
+    clearTimeout(pane.attnQuietTimer);
+    pane.attnQuietTimer = null;
+  }
+  if (!pane.attention) return false;
+  pane.attention = null;
+  if (rerender) renderTabStrip();
+  return true;
+}
+
+function clearTabAttention(tab, { rerender = true } = {}) {
+  if (!tab) return;
+  let changed = false;
+  for (const pane of tab.panes) {
+    if (clearPaneAttention(pane, { rerender: false })) changed = true;
+  }
+  if (changed && rerender) renderTabStrip();
+}
+
+function schedulePaneAttentionScan(pane, delay = TERMINAL_ATTENTION_QUIET_MS) {
+  if (!pane || pane.sessionId === null) return;
+  if (pane.attnQuietTimer !== null && pane.attnQuietTimer !== undefined) {
+    clearTimeout(pane.attnQuietTimer);
+  }
+  pane.attnQuietTimer = setTimeout(() => {
+    pane.attnQuietTimer = null;
+    evaluatePaneAttentionPrompt(pane);
+  }, delay);
+}
+
+function paneBufferTail(pane, rowCount) {
+  const buffer = pane?.term?.buffer?.active;
+  if (!buffer) return "";
+  const end = buffer.length;
+  const lines = [];
+  for (let i = Math.max(0, end - rowCount); i < end; i++) {
+    const line = buffer.getLine(i);
+    if (line) lines.push(line.translateToString(true));
+  }
+  return lines.join("\n");
+}
+
+function evaluatePaneAttentionPrompt(pane) {
+  if (!pane?.term || pane.sessionId === null || pane.attention) return;
+  if (isPaneOnUserScreen(pane)) return;
+  // Full-screen TUIs (alternate buffer) keep their dialog near the bottom of
+  // the screen; inline CLIs leave the prompt at the end of the scrollback.
+  const isAltScreen = pane.term.buffer.active.type === "alternate";
+  const tail = paneBufferTail(
+    pane,
+    isAltScreen ? TERMINAL_ATTENTION_ALT_SCAN_ROWS : TERMINAL_ATTENTION_SCAN_ROWS
+  );
+  if (!tail) return;
+  if (TERMINAL_ATTENTION_PROMPT_PATTERNS.some((re) => re.test(tail))) {
+    triggerPaneAttention(pane, "prompt");
+  }
+}
+
+function registerPaneAttentionHandlers(pane) {
+  if (!pane?.term || pane.attnHandlerDisposes) return;
+  const disposes = [];
+  try {
+    if (typeof pane.term.onBell === "function") {
+      disposes.push(pane.term.onBell(() => triggerPaneAttention(pane, "bell")));
+    }
+  } catch (e) {
+    console.warn("bell handler registration failed", e);
+  }
+  const parser = pane.term.parser;
+  if (parser?.registerOscHandler) {
+    try {
+      // OSC 9 — iTerm2/ConEmu-style desktop notification. Ignore the ConEmu
+      // control subcommands shells emit routinely: "4;" taskbar progress and
+      // "9;" cwd reporting (Windows Terminal).
+      disposes.push(
+        parser.registerOscHandler(9, (data) => {
+          if (!/^(?:4|9);/.test(String(data || ""))) triggerPaneAttention(pane, "notify");
+          return true;
+        })
+      );
+      // OSC 777 — urxvt-style notification: "notify;title;body".
+      disposes.push(
+        parser.registerOscHandler(777, (data) => {
+          if (/^notify;/i.test(String(data || ""))) triggerPaneAttention(pane, "notify");
+          return true;
+        })
+      );
+    } catch (e) {
+      console.warn("attention OSC handler registration failed", e);
+    }
+  }
+  pane.attnHandlerDisposes = disposes;
+}
+
+function disposePaneAttentionHandlers(pane) {
+  if (!pane?.attnHandlerDisposes) return;
+  for (const d of pane.attnHandlerDisposes) {
+    try {
+      d?.dispose?.();
+    } catch {}
+  }
+  pane.attnHandlerDisposes = null;
+}
+
+// Called from renderTerminalWorkspace before the tab strip re-renders: clears
+// the badge on the tab the user is now looking at, and gives the tab they just
+// left an immediate prompt scan (its CLI may already be sitting on a menu).
+function syncTerminalAttentionOnWorkspaceRender() {
+  const activeId = termState.activeTabId;
+  if (termAttentionLastActiveTabId !== activeId) {
+    const prevTab = termState.tabs.find((tab) => tab.id === termAttentionLastActiveTabId);
+    if (prevTab) {
+      for (const pane of prevTab.panes) schedulePaneAttentionScan(pane, 0);
+    }
+    termAttentionLastActiveTabId = activeId;
+  }
+  if (workspaceMode === "terminal" && document.hasFocus()) {
+    clearTabAttention(getActiveTab(), { rerender: false });
+  }
+}
+
+window.addEventListener("focus", () => {
+  if (workspaceMode !== "terminal") return;
+  clearTabAttention(getActiveTab());
+});
+
+window.addEventListener("blur", () => {
+  if (workspaceMode !== "terminal") return;
+  const tab = getActiveTab();
+  if (!tab) return;
+  for (const pane of tab.panes) schedulePaneAttentionScan(pane, 0);
+});
+
 function renderTabStrip() {
   termTabStrip.innerHTML = "";
 
   for (const tab of termState.tabs) {
     const el = document.createElement("div");
-    el.className = "tab-item" + (tab.id === termState.activeTabId ? " active" : "");
+    const needsAttention = tab.panes.some((pane) => pane.attention);
+    el.className =
+      "tab-item" +
+      (tab.id === termState.activeTabId ? " active" : "") +
+      (needsAttention ? " attention" : "");
+    if (needsAttention) el.title = t("terminal.attention.tooltip");
     el.setAttribute("data-tauri-drag-region", "false");
 
     const title = document.createElement("span");
@@ -13964,6 +14163,7 @@ function ensurePaneTerminal(pane) {
   try {
     pane.term.open(pane.bodyEl);
     registerPaneOsc7Handler(pane);
+    registerPaneAttentionHandlers(pane);
     // Use the Canvas renderer on macOS. Like WebGL it draws each glyph at an
     // absolute cell position, fixing the cumulative left-to-right character
     // drift the DOM renderer exhibits on Retina/macOS with a custom monospace
@@ -14019,6 +14219,7 @@ function ensurePaneTerminal(pane) {
   }
 
   pane.term.onData((d) => {
+    if (pane.attention) clearPaneAttention(pane);
     if (pane.sessionId === null) return;
     sendTextToPane(pane, d).catch((e) => {
       console.warn("send_input failed", e);
@@ -14663,6 +14864,7 @@ async function wirePaneSessionEvents(pane, sessionId) {
     if (!pane.term) return;
     const stickToBottom = isPaneTerminalNearBottom(pane);
     writePaneTerminalData(pane, new Uint8Array(ev.payload.data), { stickToBottom });
+    schedulePaneAttentionScan(pane);
   });
 
   pane.latencyUnlisten = await listen("session:latency", (ev) => {
@@ -14683,6 +14885,7 @@ async function wirePaneSessionEvents(pane, sessionId) {
         : `\r\n\x1b[2m${t("terminal.closed.disconnected")}\x1b[0m\r\n`;
 
     pane.sessionId = null;
+    clearPaneAttention(pane);
     if (pane.statusEl) pane.statusEl.textContent = t("terminal.status.disconnected");
     if (pane.latencyEl) pane.latencyEl.hidden = true;
     if (pane.reconnectBtn) pane.reconnectBtn.hidden = false;
@@ -14696,6 +14899,7 @@ async function disconnectPaneSession(pane, { dispose }) {
   pane.sessionId = null;
   pane.lastSentCols = 0;
   pane.lastSentRows = 0;
+  clearPaneAttention(pane, { rerender: false });
 
   if (sid !== null) {
     try {
@@ -14739,6 +14943,8 @@ async function disconnectPaneSession(pane, { dispose }) {
       } catch {}
       pane.osc7HandlerDispose = null;
     }
+
+    disposePaneAttentionHandlers(pane);
 
     if (pane.term) pane.term.dispose();
     pane.term = null;

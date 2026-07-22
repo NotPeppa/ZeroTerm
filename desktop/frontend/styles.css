@@ -5261,6 +5261,40 @@ body[data-app-theme="light"] .pane-ai-toggle.active {
   color: #ffffff;
 }
 
+/* A CLI in this tab is waiting on the user (selection menu / confirmation). */
+.tab-item.attention {
+  border-color: rgba(245, 158, 11, 0.55);
+}
+
+.tab-item.attention::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #f59e0b;
+  box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.55);
+  animation: tab-attn-pulse 1.6s ease-out infinite;
+}
+
+@keyframes tab-attn-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 5px rgba(245, 158, 11, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab-item.attention::before {
+    animation: none;
+  }
+}
+
 .terminal-workspace {
   flex: 1;
   min-height: 0;
@@ -11883,6 +11917,14 @@ body.has-app-bg[data-app-theme="light"] .tab-item {
 body.has-app-bg[data-app-theme="light"] .tab-item:hover {
   background: transparent !important;
   border-color: rgba(71, 85, 105, 0.9) !important;
+}
+
+body[data-app-theme="light"] .tab-item.attention {
+  border-color: rgba(217, 119, 6, 0.7) !important;
+}
+
+body[data-app-theme="light"] .tab-item.attention::before {
+  background: #d97706;
 }
 
 body.has-app-bg[data-app-theme="light"] .unlock-card {
