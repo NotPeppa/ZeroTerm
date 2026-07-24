@@ -1388,6 +1388,37 @@ pub async fn list_ai_models_for_profile(id: String) -> Result<AiModelListRespons
     Ok(AiModelListResponse { models })
 }
 
+static TOOL_CHOICE_COMPAT_PROFILES: OnceLock<StdMutex<HashSet<String>>> = OnceLock::new();
+
+/// Profiles whose upstream requires the tool_choice compat body (see
+/// apply_tool_choice_compat). Remembered in-memory after the first successful
+/// compat retry so later requests skip the failing round trip.
+fn tool_choice_compat_profiles() -> &'static StdMutex<HashSet<String>> {
+    TOOL_CHOICE_COMPAT_PROFILES.get_or_init(|| StdMutex::new(HashSet::new()))
+}
+
+/// Some gateways inject a `tool_choice` while converting requests for certain
+/// upstreams, which the upstream then rejects because we send no `tools`.
+/// Detects that rejection so the request can be retried with the compat body.
+fn needs_tool_choice_compat(status: reqwest::StatusCode, body: &str) -> bool {
+    status.is_client_error() && body.contains("tool_choice")
+}
+
+/// Makes the request valid for gateways that force a `tool_choice`: declares a
+/// placeholder tool (so tools are never "unspecified") and explicitly opts out
+/// of calling it, which keeps the model in plain-chat behaviour.
+fn apply_tool_choice_compat(body: &mut serde_json::Value) {
+    body["tools"] = json!([{
+        "type": "function",
+        "function": {
+            "name": "noop",
+            "description": "Placeholder. Never call this tool.",
+            "parameters": { "type": "object", "properties": {} }
+        }
+    }]);
+    body["tool_choice"] = json!("none");
+}
+
 #[tauri::command]
 pub async fn ai_chat(
     messages: Vec<AiChatMessage>,
@@ -1410,10 +1441,31 @@ pub async fn ai_chat(
     if !profile.reasoning_effort.is_empty() {
         body["reasoning_effort"] = json!(profile.reasoning_effort);
     }
-    let response =
-        send_ai_request_with_retry(client.post(endpoint).bearer_auth(api_key).json(&body))
+    let mut compat_applied = tool_choice_compat_profiles()
+        .lock()
+        .unwrap()
+        .contains(&profile.id);
+    if compat_applied {
+        apply_tool_choice_compat(&mut body);
+    }
+    let mut response =
+        send_ai_request_with_retry(client.post(&endpoint).bearer_auth(&api_key).json(&body))
             .await
             .map_err(|e| format!("AI request failed: {e}"))?;
+
+    if !response.status().is_success() && !compat_applied {
+        let status = response.status();
+        let err_body = response.text().await.unwrap_or_default();
+        if !needs_tool_choice_compat(status, &err_body) {
+            return Err(format!("AI request failed ({status}): {err_body}"));
+        }
+        apply_tool_choice_compat(&mut body);
+        compat_applied = true;
+        response =
+            send_ai_request_with_retry(client.post(&endpoint).bearer_auth(&api_key).json(&body))
+                .await
+                .map_err(|e| format!("AI request failed: {e}"))?;
+    }
 
     let status = response.status();
     let body = response
@@ -1422,6 +1474,12 @@ pub async fn ai_chat(
         .map_err(|e| format!("reading AI response failed: {e}"))?;
     if !status.is_success() {
         return Err(format!("AI request failed ({status}): {body}"));
+    }
+    if compat_applied {
+        tool_choice_compat_profiles()
+            .lock()
+            .unwrap()
+            .insert(profile.id.clone());
     }
 
     let parsed: OpenAiChatResponse =
@@ -1480,8 +1538,15 @@ pub async fn ai_chat_stream(app: AppHandle, input: AiChatStreamInput) -> Result<
     if !profile.reasoning_effort.is_empty() {
         body["reasoning_effort"] = json!(profile.reasoning_effort);
     }
-    let response =
-        match send_ai_request_with_retry(client.post(endpoint).bearer_auth(api_key).json(&body))
+    let mut compat_applied = tool_choice_compat_profiles()
+        .lock()
+        .unwrap()
+        .contains(&profile.id);
+    if compat_applied {
+        apply_tool_choice_compat(&mut body);
+    }
+    let mut response =
+        match send_ai_request_with_retry(client.post(&endpoint).bearer_auth(&api_key).json(&body))
             .await
         {
             Ok(v) => v,
@@ -1492,12 +1557,42 @@ pub async fn ai_chat_stream(app: AppHandle, input: AiChatStreamInput) -> Result<
             }
         };
 
+    if !response.status().is_success() && !compat_applied {
+        let status = response.status();
+        let err_body = response.text().await.unwrap_or_default();
+        if !needs_tool_choice_compat(status, &err_body) {
+            let msg = format!("AI request failed ({status}): {err_body}");
+            emit_ai_stream_error(&app, &request_id, msg.clone());
+            return Err(msg);
+        }
+        apply_tool_choice_compat(&mut body);
+        compat_applied = true;
+        response = match send_ai_request_with_retry(
+            client.post(&endpoint).bearer_auth(&api_key).json(&body),
+        )
+        .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                let msg = format!("AI request failed: {e}");
+                emit_ai_stream_error(&app, &request_id, msg.clone());
+                return Err(msg);
+            }
+        };
+    }
+
     let status = response.status();
     if !status.is_success() {
         let body = response.text().await.unwrap_or_default();
         let msg = format!("AI request failed ({status}): {body}");
         emit_ai_stream_error(&app, &request_id, msg.clone());
         return Err(msg);
+    }
+    if compat_applied {
+        tool_choice_compat_profiles()
+            .lock()
+            .unwrap()
+            .insert(profile.id.clone());
     }
 
     let mut stream = response.bytes_stream();
@@ -5060,5 +5155,31 @@ mod tests {
         push_utf8_chunk(&mut buffer, &mut carry, &bytes[8..]);
         assert_eq!(buffer, "data: 中文\n\n");
         assert!(carry.is_empty());
+    }
+
+    #[test]
+    fn tool_choice_compat_detects_gateway_rejection() {
+        assert!(needs_tool_choice_compat(
+            reqwest::StatusCode::BAD_REQUEST,
+            r#"{"code":"invalid-argument","error":"Invalid request content: A tool_choice was set on the request but no tools were specified."}"#,
+        ));
+        assert!(!needs_tool_choice_compat(
+            reqwest::StatusCode::BAD_REQUEST,
+            "model not found",
+        ));
+        // Server-side failures are not a request-shape problem.
+        assert!(!needs_tool_choice_compat(
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+            "tool_choice",
+        ));
+    }
+
+    #[test]
+    fn tool_choice_compat_adds_placeholder_tools() {
+        let mut body = json!({ "model": "m", "messages": [] });
+        apply_tool_choice_compat(&mut body);
+        assert_eq!(body["tool_choice"], json!("none"));
+        let tools = body["tools"].as_array().expect("tools array");
+        assert!(!tools.is_empty());
     }
 }
