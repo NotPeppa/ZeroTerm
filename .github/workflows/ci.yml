@@ -18,13 +18,14 @@ env:
   CARGO_TERM_COLOR: always
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   core:
     name: Core (test + clippy)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -39,16 +40,17 @@ jobs:
       # its lints/`ref` tests don't gate our code.
       - name: cargo test
         working-directory: core
-        run: cargo test --workspace --exclude alacritty_terminal --features zeroterm-sync/webdav-backend,zeroterm-sync/s3-backend
+        run: cargo test --locked --workspace --exclude alacritty_terminal --features zeroterm-sync/webdav-backend,zeroterm-sync/s3-backend
       # `--no-deps` keeps `-D warnings` from applying to the vendored
       # dependency's own source (only our crates are linted).
       - name: cargo clippy
         working-directory: core
-        run: cargo clippy --workspace --exclude alacritty_terminal --no-deps --all-targets --features zeroterm-sync/webdav-backend,zeroterm-sync/s3-backend -- -D warnings
+        run: cargo clippy --locked --workspace --exclude alacritty_terminal --no-deps --all-targets --features zeroterm-sync/webdav-backend,zeroterm-sync/s3-backend -- -D warnings
 
   audit:
     name: cargo audit (advisory scan)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     # Hard gate: documented exceptions live in .cargo/audit.toml; every
     # other advisory fails CI.
     steps:
@@ -56,6 +58,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
+      # cargo-audit scans Cargo.lock as committed; it does not resolve the
+      # manifests first. Validate both workspaces so a manifest upgrade with
+      # an omitted lockfile update fails explicitly instead of auditing stale
+      # dependency versions.
+      - name: Verify committed lockfiles
+        run: |
+          cargo metadata --locked --format-version 1 --no-deps --manifest-path core/Cargo.toml > /dev/null
+          cargo metadata --locked --format-version 1 --no-deps --manifest-path desktop/src-tauri/Cargo.toml > /dev/null
       # Audit policy lives in <dir>/.cargo/audit.toml. The sole documented
       # exception is rsa's no-fix Marvin advisory; every other vulnerability
       # fails this job.
@@ -69,6 +79,7 @@ jobs:
   frontend:
     name: Frontend smoke
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -77,16 +88,21 @@ jobs:
       # No build step for the vanilla-JS frontend; syntax-check the entry
       # point and run the redaction regression tests.
       - name: Syntax check
-        run: node --check desktop/frontend/main.js
+        run: |
+          node --check desktop/frontend/main.js
+          node --check desktop/frontend/redact.js
       - name: Redaction tests
         run: node desktop/tests/redact.test.js
 
   desktop-backend:
-    name: Desktop backend (check)
+    name: Desktop backend (test + clippy)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: desktop/src-tauri
@@ -97,4 +113,7 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
       - name: cargo test
         working-directory: desktop/src-tauri
-        run: cargo test
+        run: cargo test --locked
+      - name: cargo clippy
+        working-directory: desktop/src-tauri
+        run: cargo clippy --locked --all-targets --no-deps -- -D warnings
