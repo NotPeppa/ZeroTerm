@@ -143,7 +143,7 @@ impl S3Adapter {
     /// pays the build cost.
     fn client(&self) -> Result<S3Client, Error> {
         let proxy = zeroterm_ssh::current_http_proxy();
-        let mut cached = self.cached.lock().unwrap();
+        let mut cached = self.cached.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some((cached_proxy, client)) = cached.as_ref() {
             if *cached_proxy == proxy {
                 return Ok(client.clone());

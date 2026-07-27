@@ -267,4 +267,58 @@ mod tests {
         assert_eq!(detail.port, 2222);
         assert_eq!(detail.user, "admin");
     }
+
+    #[test]
+    fn saved_host_connect_configs_include_proxy_jump() {
+        let dir = tempdir().unwrap();
+        let zt = ZeroTerm::new();
+        fresh(&zt, dir.path());
+        zt.create("pw".into(), false).unwrap();
+
+        let target = {
+            let guard = zt
+                .inner
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let app = guard.as_ref().unwrap();
+            let jump_id = app
+                .save_host(&zeroterm_app::Host {
+                    id: String::new(),
+                    name: "jump".into(),
+                    host: "jump.example".into(),
+                    port: 22,
+                    user: "jump-user".into(),
+                    auth: zeroterm_app::HostAuth::Agent,
+                    os_type: None,
+                    forwards: Vec::new(),
+                    proxy_jump_host_id: None,
+                    group_id: None,
+                })
+                .unwrap();
+            let target_id = app
+                .save_host(&zeroterm_app::Host {
+                    id: String::new(),
+                    name: "target".into(),
+                    host: "target.internal".into(),
+                    port: 2222,
+                    user: "target-user".into(),
+                    auth: zeroterm_app::HostAuth::Agent,
+                    os_type: None,
+                    forwards: Vec::new(),
+                    proxy_jump_host_id: Some(jump_id),
+                    group_id: None,
+                })
+                .unwrap();
+            app.find_host_by_id(&target_id).unwrap().unwrap()
+        };
+
+        let (target_cfg, jump_cfg) = zt
+            .saved_host_connect_configs(&target, zeroterm_ssh::HostKeyPolicy::AcceptAll)
+            .unwrap();
+        assert_eq!(target_cfg.host, "target.internal");
+        assert_eq!(target_cfg.port, 2222);
+        let jump_cfg = jump_cfg.expect("ProxyJump config must be retained by the FFI path");
+        assert_eq!(jump_cfg.host, "jump.example");
+        assert_eq!(jump_cfg.username, "jump-user");
+    }
 }

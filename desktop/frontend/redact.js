@@ -169,18 +169,45 @@
   // 键名以敏感词结尾/开头(x-api-key、GITHUB_TOKEN、db.password 等都能命中);
   // \b 防止命中复数(max-tokens、secrets)。分隔符只认 = / : / =>,
   // 不认空格(否则 "wrong password entered" 会误伤)。
+  //
+  // 键名前后缀限长 {0,64}:原先无界的 [\w.-]* 在没有关键词的长 [\w.-] 串上
+  // 会退化成 O(n²) 回溯(FE-2 ReDoS,实测 200k 字符卡死数十秒)。真实键名远
+  // 短于 64 字符,限长把每个起点的回溯窗口钳成常数,整体退回线性。
+  //
+  // 值分两支(FE-1):引号包裹的值匹配到闭合引号(允许内部空格),裸值仍在
+  // 首个空白/分隔符处停止。原先只有裸值分支,导致 password="a b c" 只脱敏
+  // 首词 a、"b c" 明文外发。引号值用反向引用 \3 定位闭合引号,限制在同一行内。
   const KEY_VALUE_RE =
-    /([\w.-]*(?:password|passwd|pwd|secret|token|api[_-]?key|apikey|access[_-]?key|client[_-]?secret|credential|passphrase)\b[\w.-]*)(["']?\s*(?:=>|=|:)\s*)(["']?)([^\s"';,]+)/gi;
+    /([\w.-]{0,64}(?:password|passwd|pwd|secret|token|api[_-]?key|apikey|access[_-]?key|client[_-]?secret|credential|passphrase)\b[\w.-]{0,64})(["']?\s*(?:=>|=|:)\s*)(?:(["'])([^\r\n]*?)\3|([^\s"';,]+))/gi;
 
   // 值本身是占位/布尔/脱敏惯用写法时放行(sshd_config 的 yes/no、
   // 文档里的 <your-password>、compose 里的 ${DB_PASSWORD} 等)
   const SAFE_VALUE_RE =
     /^(?:true|false|yes|no|on|off|none|null|nil|undefined|prompt|publickey|keyboard-interactive|\*+|x+|\.+|<[^>]*>|\$\{[^}]*\}|\$[A-Za-z_]\w*)$/i;
 
+  // ANSI/VT 转义序列。脱敏前剥离(FE-7),否则终端里被样式打断的关键词/值
+  // (pass\x1b[1mword=secret)会绕过键名规则。每个分支都是线性、无嵌套量词,
+  // 自身不引入 ReDoS。覆盖 CSI(含 SGR 颜色)、OSC 与双字符转义。
+  // eslint-disable-next-line no-control-regex
+  const ANSI_ESCAPE_RE =
+    /\x1b\[[0-9;?:<>=]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]/g;
+
+  // 单次脱敏可处理的最大长度。超长输入(粘贴的大段无换行文本 / AI 回复里的
+  // 大块 base64)按此截断,避免任何正则在病理输入上拖垮主线程;截断点给出
+  // 明确标记而非静默丢弃(FE-2 纵深防御)。正常终端快照远小于此。
+  const MAX_REDACT_INPUT = 256 * 1024;
+
   // ---------- 主入口 ----------
 
   function redactSensitiveText(text) {
     let out = String(text || "");
+
+    // 先剥离 ANSI(FE-7),再按长度上限截断(FE-2)。两者都在任何有回溯风险的
+    // 规则之前:剥离让被样式打断的凭据重新连续,截断给回溯设了硬上限。
+    out = out.replace(ANSI_ESCAPE_RE, "");
+    if (out.length > MAX_REDACT_INPUT) {
+      out = out.slice(0, MAX_REDACT_INPUT) + "\n[REDACTED_TRUNCATED]";
+    }
 
     // A. 已知格式凭据
     out = out.replace(PEM_PRIVATE_KEY_RE, "[REDACTED_PRIVATE_KEY]");
@@ -190,7 +217,9 @@
 
     // B. 协议/语法位置
     // URL 内嵌凭据:保留用户名(排查连接问题需要),只抹密码;用户名可为空(redis://:pass@)
-    out = out.replace(/([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]*):([^\s/@]+)@/gi, (m, scheme, user, pass) =>
+    // scheme 限长 {0,31}:无界的 [a-z0-9+.-]* 在无 :// 的长小写串上同样 O(n²)
+    // 回溯(与 FE-2 同类,实测 200k 字符 25s)。真实 scheme 均 <32 字符。
+    out = out.replace(/([a-z][a-z0-9+.-]{0,31}:\/\/)([^\s/@:]*):([^\s/@]+)@/gi, (m, scheme, user, pass) =>
       PLACEHOLDER_RE.test(pass) ? m : `${scheme}${user}:[REDACTED_URL_PASSWORD]@`);
     // Authorization 头:保留认证方案(Bearer/Basic...),抹凭据本体
     out = out.replace(/\b((?:proxy-)?authorization\s*:\s*)((?:bearer|basic|token|digest|negotiate|ntlm)\s+)?(\S+)/gi,
@@ -203,10 +232,14 @@
     out = out.replace(/\b((?:set-)?cookie\s*:\s*)(.+)$/gim, (m, key, value) =>
       PLACEHOLDER_RE.test(value) ? m : `${key}[REDACTED_COOKIE]`);
 
-    // C. 键名驱动
-    out = out.replace(KEY_VALUE_RE, (m, key, sep, quote, value) => {
+    // C. 键名驱动。引号分支消费了闭合引号(\3),故替换时要把两个引号补回;
+    // 裸值分支的行为与旧版一致。
+    out = out.replace(KEY_VALUE_RE, (m, key, sep, quote, quotedValue, bareValue) => {
+      const value = quote ? quotedValue : bareValue;
       if (PLACEHOLDER_RE.test(value) || SAFE_VALUE_RE.test(value)) return m;
-      return `${key}${sep}${quote}[REDACTED_SECRET]`;
+      return quote
+        ? `${key}${sep}${quote}[REDACTED_SECRET]${quote}`
+        : `${key}${sep}[REDACTED_SECRET]`;
     });
     out = out.replace(/\b(sshpass\s+-p\s*)(["']?)([^\s"']+)/gi, (m, key, quote, value) =>
       PLACEHOLDER_RE.test(value) ? m : `${key}${quote}[REDACTED_SECRET]`);

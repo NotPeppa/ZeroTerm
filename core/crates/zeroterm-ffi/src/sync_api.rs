@@ -285,14 +285,14 @@ fn app_arc(zt: &ZeroTerm) -> Result<Arc<zeroterm_app::App>, FfiError> {
 #[uniffi::export(async_runtime = "tokio")]
 impl ZeroTerm {
     pub fn list_sync_profiles(&self) -> Result<Vec<SyncProfileSummary>, FfiError> {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
         let list = app.list_sync_profiles().map_err(map_app_error)?;
         Ok(list.into_iter().map(profile_to_summary).collect())
     }
 
     pub fn save_sync_profile(&self, input: SyncProfileInput) -> Result<String, FfiError> {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
         let backend = input_to_backend(&input)?;
         if let Some(ref id) = input.id {
@@ -325,7 +325,7 @@ impl ZeroTerm {
     }
 
     pub fn delete_sync_profile(&self, id: String) -> Result<(), FfiError> {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
         app.delete_sync_profile(&id).map_err(map_app_error)?;
         drop(guard);
@@ -524,7 +524,7 @@ impl ZeroTerm {
     }
 
     pub fn list_open_conflicts(&self) -> Result<Vec<ConflictRecord>, FfiError> {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
         let list = app.list_open_conflicts().map_err(map_app_error)?;
         Ok(list
@@ -544,7 +544,7 @@ impl ZeroTerm {
 
     /// `keep_local = true` → KeepLocal; false → KeepRemote.
     pub fn resolve_conflict(&self, conflict_id: String, keep_local: bool) -> Result<(), FfiError> {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
         let res = if keep_local {
             zeroterm_app::ConflictResolution::KeepLocal

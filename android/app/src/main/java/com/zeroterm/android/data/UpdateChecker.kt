@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.util.Log
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -12,6 +13,7 @@ import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
 
 data class UpdateCheckResult(
     val available: Boolean,
@@ -22,10 +24,14 @@ data class UpdateCheckResult(
     val apkUrl: String? = null,
     val apkName: String? = null,
     val apkSize: Long? = null,
+    /** Lowercase hex SHA-256 of the APK asset, when the feed advertises one. */
+    val apkSha256: String? = null,
     val error: String? = null,
 )
 
 object UpdateChecker {
+    private const val TAG = "ZeroTermUpdate"
+
     /** GitHub Releases — same repo used by the desktop updater endpoint. */
     const val GITHUB_REPO = "NotPeppa/ZeroTerm"
     const val LATEST_RELEASE_API =
@@ -48,9 +54,10 @@ object UpdateChecker {
                 latestVersion = latest,
                 releaseUrl = json.optString("html_url").ifBlank { null },
                 notes = json.optString("body").ifBlank { null },
-                apkUrl = apk?.first,
-                apkName = apk?.second,
-                apkSize = apk?.third,
+                apkUrl = apk?.url,
+                apkName = apk?.name,
+                apkSize = apk?.size,
+                apkSha256 = apk?.sha256,
             )
         }.getOrElse {
             UpdateCheckResult(
@@ -70,6 +77,7 @@ object UpdateChecker {
         url: String,
         fileName: String,
         expectedSize: Long? = null,
+        expectedSha256: String? = null,
         onProgress: (Float) -> Unit = {},
     ): File = withContext(Dispatchers.IO) {
         val dir = File(context.cacheDir, "updates").apply { mkdirs() }
@@ -120,11 +128,42 @@ object UpdateChecker {
                 tmp.copyTo(target, overwrite = true)
                 tmp.delete()
             }
+            // AND-5: verify the downloaded APK before it reaches the installer.
+            val expected = expectedSha256?.trim()?.lowercase()
+            if (!expected.isNullOrBlank()) {
+                val actual = sha256Hex(target)
+                if (actual != expected) {
+                    target.delete()
+                    error("APK integrity check failed (SHA-256 mismatch)")
+                }
+            } else {
+                // The current GitHub release feed does not always advertise an
+                // asset digest. We fall back to TLS + the platform's same-signer
+                // update check, but surface that we could not independently
+                // verify integrity so a silent install never looks trusted.
+                // TODO: publish a SHA-256 (or signature) with every release asset
+                // and make this verification mandatory (reject the install when
+                // absent), which also closes the AND-4 debug-signing gap.
+                Log.w(TAG, "APK downloaded without an integrity hash; SHA-256 not verified")
+            }
             onProgress(1f)
             target
         } finally {
             conn.disconnect()
         }
+    }
+
+    private fun sha256Hex(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buf = ByteArray(64 * 1024)
+            while (true) {
+                val n = input.read(buf)
+                if (n <= 0) break
+                digest.update(buf, 0, n)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
     fun canInstallPackages(context: Context): Boolean {
@@ -156,23 +195,37 @@ object UpdateChecker {
         context.startActivity(intent)
     }
 
-    private fun pickApkAsset(assets: org.json.JSONArray?): Triple<String, String, Long>? {
+    private data class ApkAsset(
+        val url: String,
+        val name: String,
+        val size: Long,
+        /** Lowercase hex SHA-256 parsed from the GitHub asset `digest`, if any. */
+        val sha256: String?,
+    )
+
+    private fun pickApkAsset(assets: org.json.JSONArray?): ApkAsset? {
         if (assets == null) return null
-        val candidates = mutableListOf<Triple<String, String, Long>>()
+        val candidates = mutableListOf<ApkAsset>()
         for (i in 0 until assets.length()) {
             val a = assets.optJSONObject(i) ?: continue
             val name = a.optString("name")
             val url = a.optString("browser_download_url")
             val size = a.optLong("size", 0L)
+            // GitHub asset `digest` is formatted "sha256:<hex>" when present.
+            val sha256 = a.optString("digest")
+                .substringAfter("sha256:", "")
+                .trim()
+                .lowercase()
+                .ifBlank { null }
             if (name.endsWith(".apk", ignoreCase = true) && url.isNotBlank()) {
-                candidates += Triple(url, name, size)
+                candidates += ApkAsset(url, name, size, sha256)
             }
         }
         if (candidates.isEmpty()) return null
         // Prefer arm64 / release-looking names when multiple APKs exist.
         val abi = Build.SUPPORTED_ABIS.firstOrNull().orEmpty().lowercase()
-        val preferred = candidates.firstOrNull { (_, name, _) ->
-            val n = name.lowercase()
+        val preferred = candidates.firstOrNull { asset ->
+            val n = asset.name.lowercase()
             when {
                 abi.contains("arm64") -> n.contains("arm64") || n.contains("aarch64")
                 abi.contains("armeabi") -> n.contains("armeabi") || n.contains("armv7")

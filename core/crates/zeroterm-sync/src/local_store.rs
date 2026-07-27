@@ -24,6 +24,9 @@ pub struct LocalRecord {
     pub plaintext: Vec<u8>,
     pub deleted: bool,
     pub local_rev: String,
+    /// Revision last adopted from / confirmed pushed to the repo.
+    /// `None` when the record has never crossed the sync layer.
+    pub server_rev: Option<String>,
     /// `server_rev` at the moment the dirty edit began — used by the
     /// conflict detector. `None` only when the record was created
     /// locally and has never been pushed.
@@ -32,6 +35,15 @@ pub struct LocalRecord {
     /// Apply-remote uses this to choose between "land cleanly" and
     /// "record a conflict".
     pub dirty: bool,
+    /// Lamport clock of the last sync event this replica incorporated
+    /// for the record (applied remote event or own push). The merge
+    /// guard drops incoming events that lose the `(last_clock,
+    /// last_device)` total order — that's what stops a delayed old
+    /// event from overwriting newer state (SYNC-1).
+    pub last_clock: u64,
+    /// Device id that authored the `last_clock` event; deterministic
+    /// tie-breaker for equal clocks.
+    pub last_device: String,
 }
 
 /// What the engine reports back about each applied remote event.
@@ -42,6 +54,14 @@ pub struct ApplyTally {
     pub conflicts_detected: usize,
     pub already_seen: usize,
     pub skipped: usize,
+    /// Events dropped by the causal merge guard because the local
+    /// replica had already incorporated a newer `(clock, device)`
+    /// position for the record. Folded into `skipped` in user-facing
+    /// reports.
+    pub stale_dropped: usize,
+    /// Event objects that could not be decoded / decrypted and were
+    /// skipped (and possibly quarantined) instead of aborting the pass.
+    pub corrupt_skipped: usize,
 }
 
 impl ApplyTally {
@@ -51,6 +71,8 @@ impl ApplyTally {
         self.conflicts_detected += other.conflicts_detected;
         self.already_seen += other.already_seen;
         self.skipped += other.skipped;
+        self.stale_dropped += other.stale_dropped;
+        self.corrupt_skipped += other.corrupt_skipped;
     }
 }
 
@@ -65,21 +87,42 @@ pub trait LocalRecordStore: Send + Sync {
     fn find(&self, id: &str) -> Result<Option<LocalRecord>, Error>;
 
     /// Apply a remote upsert: overwrite the local row with the remote
-    /// plaintext, mark it clean, stamp `server_rev`/`base_server_rev`.
+    /// plaintext, mark it clean, stamp `server_rev`/`base_server_rev`
+    /// and the event's `(last_clock, last_device)` causal position.
     fn apply_upsert(
         &self,
         id: &str,
         kind: &str,
         plaintext: &[u8],
         server_rev: &str,
+        last_clock: u64,
+        last_device: &str,
     ) -> Result<(), Error>;
 
     /// Apply a remote tombstone.
-    fn apply_delete(&self, id: &str, server_rev: &str) -> Result<(), Error>;
+    fn apply_delete(
+        &self,
+        id: &str,
+        server_rev: &str,
+        last_clock: u64,
+        last_device: &str,
+    ) -> Result<(), Error>;
 
-    /// Clear the dirty flag and stamp the freshly-pushed `server_rev`
-    /// onto the record. Used after a successful push.
-    fn mark_clean(&self, id: &str, server_rev: &str) -> Result<(), Error>;
+    /// Record a successful push: stamp the freshly-pushed `server_rev`
+    /// and causal position onto the record, and clear the dirty flag —
+    /// but ONLY when the row's `local_rev` still equals
+    /// `expected_local_rev`. If the record was edited again while the
+    /// push was uploading, the flag must stay set so the newer edit is
+    /// pushed on the next pass instead of being silently stranded
+    /// (SYNC-2). Returns whether the dirty flag was cleared.
+    fn mark_clean(
+        &self,
+        id: &str,
+        server_rev: &str,
+        expected_local_rev: &str,
+        last_clock: u64,
+        last_device: &str,
+    ) -> Result<bool, Error>;
 
     /// Record a conflict that needs user resolution. The engine has
     /// already detected the divergence; this hook persists it.
@@ -96,6 +139,11 @@ pub trait LocalRecordStore: Send + Sync {
     /// All currently-live records. Used to build the initial snapshot
     /// at `create_repo` and (later, in M5) at compaction time.
     fn list_all_live(&self) -> Result<Vec<LocalRecord>, Error>;
+
+    /// Complete local sync state, including tombstones. Root-key
+    /// rotation uses this to build the new-epoch snapshot directly,
+    /// without first publishing a complete snapshot under the old key.
+    fn list_all_records(&self) -> Result<Vec<LocalRecord>, Error>;
 
     /// Sync-state key/value: persisted Lamport clock, applied-event set,
     /// last-known snapshot pointer, …
@@ -124,9 +172,28 @@ struct InMemoryRecord {
     server_rev: Option<String>,
     base_server_rev: Option<String>,
     dirty: bool,
+    last_clock: u64,
+    last_device: String,
     /// Epoch-millis when this row was tombstoned. `None` while live.
     /// Used by [`InMemoryStore::prune_old_tombstones`] in tests.
     deleted_at_ms: Option<i64>,
+}
+
+impl InMemoryRecord {
+    fn to_local(&self, id: &str) -> LocalRecord {
+        LocalRecord {
+            id: id.to_string(),
+            kind: self.kind.clone(),
+            plaintext: self.plaintext.clone(),
+            deleted: self.deleted,
+            local_rev: self.local_rev.clone(),
+            server_rev: self.server_rev.clone(),
+            base_server_rev: self.base_server_rev.clone(),
+            dirty: self.dirty,
+            last_clock: self.last_clock,
+            last_device: self.last_device.clone(),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -160,7 +227,11 @@ impl InMemoryStore {
     pub fn put_local(&self, id: &str, kind: &str, plaintext: Vec<u8>) {
         let mut g = self.inner.lock().unwrap();
         let rev = uuid::Uuid::now_v7().to_string();
-        let base = g.records.get(id).and_then(|r| r.server_rev.clone());
+        let prev = g.records.get(id);
+        let base = prev.and_then(|r| r.server_rev.clone());
+        let (last_clock, last_device) = prev
+            .map(|r| (r.last_clock, r.last_device.clone()))
+            .unwrap_or_default();
         g.records.insert(
             id.to_string(),
             InMemoryRecord {
@@ -171,6 +242,8 @@ impl InMemoryStore {
                 server_rev: base.clone(),
                 base_server_rev: base,
                 dirty: true,
+                last_clock,
+                last_device,
                 deleted_at_ms: None,
             },
         );
@@ -221,29 +294,13 @@ impl LocalRecordStore for InMemoryStore {
         Ok(g.records
             .iter()
             .filter(|(_, r)| r.dirty)
-            .map(|(id, r)| LocalRecord {
-                id: id.clone(),
-                kind: r.kind.clone(),
-                plaintext: r.plaintext.clone(),
-                deleted: r.deleted,
-                local_rev: r.local_rev.clone(),
-                base_server_rev: r.base_server_rev.clone(),
-                dirty: true,
-            })
+            .map(|(id, r)| r.to_local(id))
             .collect())
     }
 
     fn find(&self, id: &str) -> Result<Option<LocalRecord>, Error> {
         let g = self.inner.lock().unwrap();
-        Ok(g.records.get(id).map(|r| LocalRecord {
-            id: id.to_string(),
-            kind: r.kind.clone(),
-            plaintext: r.plaintext.clone(),
-            deleted: r.deleted,
-            local_rev: r.local_rev.clone(),
-            base_server_rev: r.base_server_rev.clone(),
-            dirty: r.dirty,
-        }))
+        Ok(g.records.get(id).map(|r| r.to_local(id)))
     }
 
     fn apply_upsert(
@@ -252,6 +309,8 @@ impl LocalRecordStore for InMemoryStore {
         kind: &str,
         plaintext: &[u8],
         server_rev: &str,
+        last_clock: u64,
+        last_device: &str,
     ) -> Result<(), Error> {
         let mut g = self.inner.lock().unwrap();
         g.records.insert(
@@ -264,13 +323,21 @@ impl LocalRecordStore for InMemoryStore {
                 server_rev: Some(server_rev.to_string()),
                 base_server_rev: Some(server_rev.to_string()),
                 dirty: false,
+                last_clock,
+                last_device: last_device.to_string(),
                 deleted_at_ms: None,
             },
         );
         Ok(())
     }
 
-    fn apply_delete(&self, id: &str, server_rev: &str) -> Result<(), Error> {
+    fn apply_delete(
+        &self,
+        id: &str,
+        server_rev: &str,
+        last_clock: u64,
+        last_device: &str,
+    ) -> Result<(), Error> {
         let mut g = self.inner.lock().unwrap();
         let entry = g
             .records
@@ -285,19 +352,36 @@ impl LocalRecordStore for InMemoryStore {
         entry.server_rev = Some(server_rev.to_string());
         entry.base_server_rev = Some(server_rev.to_string());
         entry.dirty = false;
+        entry.last_clock = last_clock;
+        entry.last_device = last_device.to_string();
         entry.deleted_at_ms = Some(now_ms());
         Ok(())
     }
 
-    fn mark_clean(&self, id: &str, server_rev: &str) -> Result<(), Error> {
+    fn mark_clean(
+        &self,
+        id: &str,
+        server_rev: &str,
+        expected_local_rev: &str,
+        last_clock: u64,
+        last_device: &str,
+    ) -> Result<bool, Error> {
         let mut g = self.inner.lock().unwrap();
         let Some(rec) = g.records.get_mut(id) else {
-            return Ok(());
+            return Ok(false);
         };
-        rec.dirty = false;
         rec.server_rev = Some(server_rev.to_string());
         rec.base_server_rev = Some(server_rev.to_string());
-        Ok(())
+        if rec.last_clock < last_clock {
+            rec.last_clock = last_clock;
+            rec.last_device = last_device.to_string();
+        }
+        if rec.local_rev == expected_local_rev {
+            rec.dirty = false;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 
     fn record_conflict(
@@ -326,15 +410,15 @@ impl LocalRecordStore for InMemoryStore {
         Ok(g.records
             .iter()
             .filter(|(_, r)| !r.deleted)
-            .map(|(id, r)| LocalRecord {
-                id: id.clone(),
-                kind: r.kind.clone(),
-                plaintext: r.plaintext.clone(),
-                deleted: false,
-                local_rev: r.local_rev.clone(),
-                base_server_rev: r.base_server_rev.clone(),
-                dirty: r.dirty,
-            })
+            .map(|(id, r)| r.to_local(id))
+            .collect())
+    }
+
+    fn list_all_records(&self) -> Result<Vec<LocalRecord>, Error> {
+        let g = self.inner.lock().unwrap();
+        Ok(g.records
+            .iter()
+            .map(|(id, r)| r.to_local(id))
             .collect())
     }
 
@@ -386,21 +470,39 @@ mod tests {
     #[test]
     fn apply_then_local_edit_carries_base_server_rev() {
         let s = InMemoryStore::new();
-        s.apply_upsert("r1", "host", b"a", "srv-1").unwrap();
+        s.apply_upsert("r1", "host", b"a", "srv-1", 3, "dev-A")
+            .unwrap();
         s.put_local("r1", "host", b"b".to_vec());
         let dirty = s.list_dirty().unwrap();
         assert_eq!(dirty.len(), 1);
         assert_eq!(dirty[0].base_server_rev.as_deref(), Some("srv-1"));
+        // A local edit keeps the causal position it was built on.
+        assert_eq!(dirty[0].last_clock, 3);
     }
 
     #[test]
     fn mark_clean_clears_dirty_flag() {
         let s = InMemoryStore::new();
         s.put_local("r1", "host", b"a".to_vec());
-        s.mark_clean("r1", "srv-1").unwrap();
+        let rev = s.find("r1").unwrap().unwrap().local_rev;
+        assert!(s.mark_clean("r1", "srv-1", &rev, 5, "dev-A").unwrap());
         assert!(s.list_dirty().unwrap().is_empty());
         let r = s.find("r1").unwrap().unwrap();
         assert_eq!(r.base_server_rev.as_deref(), Some("srv-1"));
+        assert_eq!(r.last_clock, 5);
+    }
+
+    #[test]
+    fn mark_clean_with_moved_local_rev_keeps_dirty() {
+        let s = InMemoryStore::new();
+        s.put_local("r1", "host", b"a".to_vec());
+        let rev_at_push = s.find("r1").unwrap().unwrap().local_rev;
+        // Concurrent edit during the push window changes local_rev.
+        s.put_local("r1", "host", b"b".to_vec());
+        assert!(!s.mark_clean("r1", "srv-1", &rev_at_push, 5, "dev-A").unwrap());
+        let r = s.find("r1").unwrap().unwrap();
+        assert!(r.dirty, "mid-push edit must stay dirty");
+        assert_eq!(r.server_rev.as_deref(), Some("srv-1"));
     }
 
     #[test]

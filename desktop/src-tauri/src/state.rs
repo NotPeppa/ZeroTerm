@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, AtomicU8};
 use std::sync::{Arc, Mutex};
 
@@ -61,6 +62,14 @@ pub struct AppState {
     pub port_forwards: Mutex<HashMap<u64, PortForwardHandle>>,
 
     pub next_port_forward_id: AtomicU64,
+
+    /// Canonical paths the user explicitly picked through a native file
+    /// dialog this session (`pick_local_file`). High-risk commands that
+    /// exist only to act on a just-picked path (`read_local_text_file`,
+    /// `open_with_app`'s application path) refuse anything not in this
+    /// set — so webview-side script injection can't feed them arbitrary
+    /// paths like `~/.ssh/id_rsa` or `/bin/sh`.
+    pub dialog_grants: Mutex<HashSet<PathBuf>>,
 }
 
 impl AppState {
@@ -79,6 +88,7 @@ impl AppState {
             local_sessions: Mutex::new(HashMap::new()),
             port_forwards: Mutex::new(HashMap::new()),
             next_port_forward_id: AtomicU64::new(1),
+            dialog_grants: Mutex::new(HashSet::new()),
         }
     }
 }

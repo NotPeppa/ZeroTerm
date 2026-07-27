@@ -34,11 +34,11 @@ static SYNC_KNOWN_HOSTS_PATH: std::sync::Mutex<Option<PathBuf>> = std::sync::Mut
 /// Point SFTP sync host-key checks at a specific known_hosts file.
 /// Pass `None` to revert to `$HOME/.ssh/known_hosts`.
 pub fn set_sync_known_hosts_path(path: Option<PathBuf>) {
-    *SYNC_KNOWN_HOSTS_PATH.lock().unwrap() = path;
+    *SYNC_KNOWN_HOSTS_PATH.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = path;
 }
 
 fn sync_host_key_policy() -> Result<HostKeyPolicy, AppError> {
-    if let Some(p) = SYNC_KNOWN_HOSTS_PATH.lock().unwrap().clone() {
+    if let Some(p) = SYNC_KNOWN_HOSTS_PATH.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone() {
         return Ok(HostKeyPolicy::Strict(KnownHosts::new(p)));
     }
     KnownHosts::at_default()
@@ -218,14 +218,14 @@ impl SyncManager {
     }
 
     pub fn debounce_duration(&self) -> Duration {
-        *self.debounce.lock().unwrap()
+        *self.debounce.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Override the debounce window. `Duration::ZERO` disables auto-sync
     /// (every mutation must still call schedule, but the timer fires
     /// immediately). Mostly useful for tests.
     pub fn set_debounce_duration(&self, d: Duration) {
-        *self.debounce.lock().unwrap() = d;
+        *self.debounce.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = d;
     }
 
     pub async fn get(&self, profile_id: &str) -> Option<Arc<SyncEngine>> {
@@ -757,6 +757,26 @@ impl App {
         Ok(engine.list_devices().await?)
     }
 
+    pub async fn sync_revoke_device(
+        self: &Arc<Self>,
+        manager: &SyncManager,
+        profile_id: &str,
+        revoked_device_id: &str,
+        new_passphrase: &str,
+    ) -> Result<zeroterm_sync::engine::RekeyReport, AppError> {
+        let engine = manager
+            .get(profile_id)
+            .await
+            .ok_or_else(|| AppError::SyncEngineMissing(profile_id.to_string()))?;
+        Ok(engine
+            .revoke_device_and_rotate(
+                revoked_device_id,
+                new_passphrase,
+                Default::default(),
+            )
+            .await?)
+    }
+
     pub async fn sync_delete_remote_repo(
         self: &Arc<Self>,
         manager: &SyncManager,
@@ -809,16 +829,30 @@ impl App {
                     .bump_base_server_rev(&row.record_id, &row.remote_rev)?;
             }
             ConflictResolution::KeepRemote => {
+                // Conflict rows predate the causal columns, so preserve
+                // the record's current (clock, device) position — the
+                // resolution changes the value, not the sync history.
+                let (last_clock, last_device) = self
+                    .vault
+                    .find_full(&row.record_id)?
+                    .map(|f| (f.last_clock, f.last_device))
+                    .unwrap_or((0, String::new()));
                 if row.remote_payload.is_empty() {
                     // Remote was a tombstone → adopt delete.
-                    self.vault
-                        .apply_remote_delete(&row.record_id, &row.remote_rev)?;
+                    self.vault.apply_remote_delete(
+                        &row.record_id,
+                        &row.remote_rev,
+                        last_clock,
+                        &last_device,
+                    )?;
                 } else {
                     self.vault.apply_remote_upsert(
                         &row.record_id,
                         &row.kind,
                         &row.remote_payload,
                         &row.remote_rev,
+                        last_clock,
+                        &last_device,
                     )?;
                 }
             }
@@ -901,18 +935,33 @@ fn map_vault_err(e: zeroterm_vault::VaultError) -> SyncErrorKind {
 impl LocalRecordStore for VaultBackedStore {
     fn list_dirty(&self) -> Result<Vec<LocalRecord>, SyncErrorKind> {
         let dirty = self.app.vault.list_dirty().map_err(map_vault_err)?;
-        Ok(dirty
-            .into_iter()
-            .map(|d| LocalRecord {
+        let mut out = Vec::with_capacity(dirty.len());
+        for d in dirty {
+            // DirtyRecord doesn't carry the causal columns; the engine
+            // needs them for conflict decisions, so look them up.
+            let (server_rev, last_clock, last_device) = self
+                .app
+                .vault
+                .find_full(&d.id)
+                .map_err(map_vault_err)?
+                .map(|f| (f.server_rev, f.last_clock, f.last_device))
+                .unwrap_or((None, 0, String::new()));
+            out.push(LocalRecord {
                 id: d.id,
                 kind: d.kind,
-                plaintext: d.plaintext,
+                // DTO plaintext is Zeroizing; copy into the sync-crate
+                // LocalRecord (Vec<u8>). The Zeroizing source is wiped on drop.
+                plaintext: d.plaintext.to_vec(),
                 deleted: d.deleted,
                 local_rev: d.local_rev,
+                server_rev,
                 base_server_rev: d.base_server_rev,
                 dirty: true,
-            })
-            .collect())
+                last_clock,
+                last_device,
+            });
+        }
+        Ok(out)
     }
 
     fn find(&self, id: &str) -> Result<Option<LocalRecord>, SyncErrorKind> {
@@ -920,11 +969,14 @@ impl LocalRecordStore for VaultBackedStore {
         Ok(full.map(|f| LocalRecord {
             id: f.id,
             kind: f.kind,
-            plaintext: f.plaintext,
+            plaintext: f.plaintext.to_vec(),
             deleted: f.deleted,
             local_rev: f.local_rev.unwrap_or_default(),
+            server_rev: f.server_rev,
             base_server_rev: f.base_server_rev,
             dirty: f.dirty,
+            last_clock: f.last_clock,
+            last_device: f.last_device,
         }))
     }
 
@@ -934,24 +986,45 @@ impl LocalRecordStore for VaultBackedStore {
         kind: &str,
         plaintext: &[u8],
         server_rev: &str,
+        last_clock: u64,
+        last_device: &str,
     ) -> Result<(), SyncErrorKind> {
         self.app
             .vault
-            .apply_remote_upsert(id, kind, plaintext, server_rev)
+            .apply_remote_upsert(id, kind, plaintext, server_rev, last_clock, last_device)
             .map_err(map_vault_err)
     }
 
-    fn apply_delete(&self, id: &str, server_rev: &str) -> Result<(), SyncErrorKind> {
+    fn apply_delete(
+        &self,
+        id: &str,
+        server_rev: &str,
+        last_clock: u64,
+        last_device: &str,
+    ) -> Result<(), SyncErrorKind> {
         self.app
             .vault
-            .apply_remote_delete(id, server_rev)
+            .apply_remote_delete(id, server_rev, last_clock, last_device)
             .map_err(map_vault_err)
     }
 
-    fn mark_clean(&self, id: &str, server_rev: &str) -> Result<(), SyncErrorKind> {
+    fn mark_clean(
+        &self,
+        id: &str,
+        server_rev: &str,
+        expected_local_rev: &str,
+        last_clock: u64,
+        last_device: &str,
+    ) -> Result<bool, SyncErrorKind> {
         self.app
             .vault
-            .mark_clean(id, server_rev)
+            .mark_clean(
+                id,
+                server_rev,
+                Some(expected_local_rev),
+                last_clock,
+                last_device,
+            )
             .map_err(map_vault_err)
     }
 
@@ -984,11 +1057,33 @@ impl LocalRecordStore for VaultBackedStore {
             .map(|f| LocalRecord {
                 id: f.id,
                 kind: f.kind,
-                plaintext: f.plaintext,
+                plaintext: f.plaintext.to_vec(),
                 deleted: false,
                 local_rev: f.local_rev.unwrap_or_default(),
+                server_rev: f.server_rev,
                 base_server_rev: f.base_server_rev,
                 dirty: f.dirty,
+                last_clock: f.last_clock,
+                last_device: f.last_device,
+            })
+            .collect())
+    }
+
+    fn list_all_records(&self) -> Result<Vec<LocalRecord>, SyncErrorKind> {
+        let records = self.app.vault.list_all_records().map_err(map_vault_err)?;
+        Ok(records
+            .into_iter()
+            .map(|f| LocalRecord {
+                id: f.id,
+                kind: f.kind,
+                plaintext: f.plaintext.to_vec(),
+                deleted: f.deleted,
+                local_rev: f.local_rev.unwrap_or_default(),
+                server_rev: f.server_rev,
+                base_server_rev: f.base_server_rev,
+                dirty: f.dirty,
+                last_clock: f.last_clock,
+                last_device: f.last_device,
             })
             .collect())
     }

@@ -60,6 +60,20 @@ impl App {
         self.vault.vault_id()
     }
 
+    /// Encrypt a sensitive local blob under the vault's master key
+    /// (TAURI-7). Used by the desktop shell to protect config-dir files
+    /// like AI session history that hold secrets but aren't vault
+    /// records. `context` is a stable domain label (e.g. `"ai-sessions"`).
+    pub fn encrypt_local_blob(&self, context: &str, plaintext: &[u8]) -> Result<Vec<u8>, AppError> {
+        Ok(self.vault.encrypt_local_blob(context, plaintext)?)
+    }
+
+    /// Decrypt a blob produced by [`App::encrypt_local_blob`]. Returns the
+    /// plaintext as an owned `Vec` (the caller decides its lifetime).
+    pub fn decrypt_local_blob(&self, context: &str, blob: &[u8]) -> Result<Vec<u8>, AppError> {
+        Ok(self.vault.decrypt_local_blob(context, blob)?.to_vec())
+    }
+
     // -- AI profile CRUD ---------------------------------------------------
 
     pub fn list_ai_profiles(&self) -> Result<Vec<AiProfile>, AppError> {
@@ -76,7 +90,7 @@ impl App {
                 }
             }
         }
-        profiles.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        profiles.sort_by_key(|p| p.name.to_lowercase());
         Ok(profiles)
     }
 
@@ -540,8 +554,8 @@ mod tests {
             &path,
             "pw",
             Argon2Params {
-                m_cost: 8 * 1024,
-                t_cost: 1,
+                m_cost: 19 * 1024,
+                t_cost: 2,
                 p_cost: 1,
             },
         )

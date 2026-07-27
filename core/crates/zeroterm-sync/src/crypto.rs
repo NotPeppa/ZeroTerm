@@ -24,6 +24,13 @@ pub const SYNC_RECORD_INFO: &[u8] = b"zeroterm-sync-record-v1";
 /// HKDF info string for keyring-wrapped subkeys (see [`crate::keyring`]).
 pub const SYNC_KEYRING_INFO: &[u8] = b"zeroterm-sync-keyring-v1";
 
+/// HKDF info string for the manifest-authentication MAC key (SYNC-8).
+pub const SYNC_MANIFEST_MAC_INFO: &[u8] = b"zeroterm-sync-manifest-mac-v1";
+/// Domain-separated keys for authenticating the remaining repo metadata.
+pub const SYNC_KEYRING_MAC_INFO: &[u8] = b"zeroterm-sync-keyring-mac-v1";
+pub const SYNC_EVENT_MAC_INFO: &[u8] = b"zeroterm-sync-event-mac-v1";
+pub const SYNC_SNAPSHOT_MAC_INFO: &[u8] = b"zeroterm-sync-snapshot-mac-v1";
+
 /// The sync root key — 32 raw bytes, unwrapped by the keyring at join
 /// time and held in memory while sync is running.
 pub type SyncRootKey = SymmetricKey;
@@ -36,6 +43,25 @@ pub fn fresh_root_key() -> SyncRootKey {
     let mut k: SyncRootKey = Zeroizing::new([0u8; KEY_LEN]);
     k.as_mut().copy_from_slice(&bytes);
     k
+}
+
+/// Derive the manifest-MAC key from the sync root key (SYNC-8). A single
+/// fixed subkey (no per-object salt) authenticates the one mutable
+/// pointer file in the repo.
+pub fn derive_manifest_mac_key(root: &SyncRootKey) -> Zeroizing<[u8; KEY_LEN]> {
+    hkdf_subkey::<KEY_LEN>(root.as_ref(), b"manifest", SYNC_MANIFEST_MAC_INFO)
+}
+
+pub fn derive_keyring_mac_key(root: &SyncRootKey) -> Zeroizing<[u8; KEY_LEN]> {
+    hkdf_subkey::<KEY_LEN>(root.as_ref(), b"keyring", SYNC_KEYRING_MAC_INFO)
+}
+
+pub fn derive_event_mac_key(root: &SyncRootKey) -> Zeroizing<[u8; KEY_LEN]> {
+    hkdf_subkey::<KEY_LEN>(root.as_ref(), b"event", SYNC_EVENT_MAC_INFO)
+}
+
+pub fn derive_snapshot_mac_key(root: &SyncRootKey) -> Zeroizing<[u8; KEY_LEN]> {
+    hkdf_subkey::<KEY_LEN>(root.as_ref(), b"snapshot", SYNC_SNAPSHOT_MAC_INFO)
 }
 
 /// Derive a per-record subkey from the sync root key.

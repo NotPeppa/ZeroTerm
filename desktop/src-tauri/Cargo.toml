@@ -46,3 +46,7 @@ encoding_rs = "0.8"
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+
+[patch.crates-io]
+# Keep desktop builds on the same audited russh source as the core workspace.
+russh = { path = "../../core/vendor/russh" }

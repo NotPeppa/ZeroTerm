@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroize;
 
 use zeroterm_ssh::AuthMethod;
 
@@ -50,7 +51,12 @@ fn default_port() -> u16 {
 /// How to authenticate. Mirrors [`zeroterm_ssh::AuthMethod`] but stores
 /// material the vault can carry across devices (key bytes, not file
 /// paths).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// `Debug` is hand-written so `{:?}` never prints the password /
+/// passphrase / private-key PEM (SSH-14 / CORE-9). `Serialize` still
+/// emits the real fields — that ciphertext path is the vault's, and is
+/// encrypted at rest.
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum HostAuth {
     Password {
@@ -62,6 +68,39 @@ pub enum HostAuth {
         passphrase: Option<String>,
     },
     Agent,
+}
+
+impl std::fmt::Debug for HostAuth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HostAuth::Password { .. } => f.write_str("Password { value: <redacted> }"),
+            HostAuth::PrivateKey { passphrase, .. } => f
+                .debug_struct("PrivateKey")
+                .field("key_pem", &"<redacted>")
+                .field(
+                    "passphrase",
+                    &if passphrase.is_some() { "<redacted>" } else { "None" },
+                )
+                .finish(),
+            HostAuth::Agent => f.write_str("Agent"),
+        }
+    }
+}
+
+impl Drop for HostAuth {
+    fn drop(&mut self) {
+        match self {
+            Self::Password { value } => value.zeroize(),
+            Self::PrivateKey {
+                key_pem,
+                passphrase,
+            } => {
+                key_pem.zeroize();
+                passphrase.zeroize();
+            }
+            Self::Agent => {}
+        }
+    }
 }
 
 /// Saved forward spec. Mirrors the subset of OpenSSH `-L`/`-R`/`-D` syntax

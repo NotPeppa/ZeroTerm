@@ -24,9 +24,13 @@ tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"
 
 # SSH
-russh = "0.45"
-russh-keys = "0.45"
-russh-sftp = "2"
+# russh 0.62.x fixes the allocation advisories affecting <= 0.60.2 as well
+# as CVE-2025-54804 (CHANNEL_WINDOW_ADJUST overflow, DEP-1).
+# The Handler impl uses native `async fn`, so no
+# async-trait feature is needed. russh-keys was merged into `russh::keys`
+# in this line, so the separate crate is gone.
+russh = "0.62"
+russh-sftp = "2.3"
 
 # Errors
 thiserror = "1"
@@ -79,3 +83,10 @@ alacritty_terminal = { path = "vendor/alacritty_terminal", default-features = fa
 
 # Dev
 tempfile = "3"
+
+[patch.crates-io]
+# Fixed 0.62.4 with a narrow client-side extension that preserves an
+# OpenSSH host certificate through KEX and exposes it to Handler. Upstream
+# currently parses every K_S blob as a plain PublicKey, which makes
+# @cert-authority verification impossible at the application boundary.
+russh = { path = "vendor/russh" }

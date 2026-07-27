@@ -14,8 +14,8 @@ use zeroterm_sync::local_store::{InMemoryStore, LocalRecordStore};
 
 fn fast_kdf() -> Argon2Params {
     Argon2Params {
-        m_cost: 8 * 1024,
-        t_cost: 1,
+        m_cost: 19 * 1024,
+        t_cost: 2,
         p_cost: 1,
     }
 }
@@ -158,7 +158,7 @@ async fn compact_prunes_old_tombstones_via_store_hook() {
 
     // Seed a clean tombstone in the store. apply_delete stamps
     // deleted_at_ms = now, which with retention=0 days is "old enough".
-    LocalRecordStore::apply_delete(&*store_a, "ghost", "srv-1").unwrap();
+    LocalRecordStore::apply_delete(&*store_a, "ghost", "srv-1", 1, "dev-X").unwrap();
     assert!(store_a.find("ghost").unwrap().is_some());
 
     let report = engine_a.compact().await.unwrap();

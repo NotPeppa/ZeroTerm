@@ -15,7 +15,9 @@ use tracing::{debug, info, warn};
 use serde::Deserialize;
 use serde_json::json;
 
-use zeroterm_ssh::{ChannelEvent, HostKeyPolicy, KnownHosts, PtySize, Session, ShellChannel};
+use zeroterm_ssh::{
+    ChannelEvent, ConnectConfig, HostKeyPolicy, KnownHosts, PtySize, Session, ShellChannel,
+};
 
 use crate::error::{map_app_error, other, FfiError};
 use crate::listener::{ForeignHostKeyPrompt, HostKeyPromptCallback, PendingMap, SessionListener};
@@ -110,10 +112,48 @@ fn ai_profile_record(profile: zeroterm_app::AiProfile) -> AiProfileRecord {
 }
 
 fn ai_http_client() -> Result<reqwest::Client, FfiError> {
-    reqwest::Client::builder()
-        .timeout(Duration::from_secs(90))
-        .build()
-        .map_err(other)
+    let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(90));
+    // SSH-6: route through the internally-tracked proxy explicitly rather
+    // than relying on process environment variables (which we no longer
+    // mutate at runtime). `no_proxy()` first so a stale ambient env proxy
+    // can't apply; then add ours if configured.
+    builder = builder.no_proxy();
+    if let Some(proxy_url) = zeroterm_ssh::current_http_proxy() {
+        if let Ok(proxy) = reqwest::Proxy::all(&proxy_url) {
+            builder = builder.proxy(proxy);
+        }
+    }
+    builder.build().map_err(other)
+}
+
+/// Parse and vet an AI endpoint base URL (SSH-8).
+///
+/// The API key travels as a `Bearer` header on every request to this
+/// URL, so a plaintext `http://` endpoint to a non-loopback host would
+/// leak the key to anyone on the path. Require `https://` unless the
+/// host is loopback (a common local-proxy / self-hosted-model setup,
+/// where cleartext to 127.0.0.1 never leaves the machine).
+fn validate_ai_base_url(base_url: &str) -> Result<(), FfiError> {
+    let url = reqwest::Url::parse(base_url).map_err(other)?;
+    let scheme = url.scheme();
+    if scheme == "https" {
+        return Ok(());
+    }
+    let host = url.host_str().unwrap_or("");
+    let is_loopback = host.eq_ignore_ascii_case("localhost")
+        || host == "127.0.0.1"
+        || host == "::1"
+        || host == "[::1]"
+        || host.starts_with("127.");
+    if scheme == "http" && is_loopback {
+        return Ok(());
+    }
+    Err(FfiError::Other {
+        detail: format!(
+            "AI endpoint must use https:// (got {scheme}://{host}); \
+             plaintext is only allowed for loopback hosts"
+        ),
+    })
 }
 
 fn ai_http_error(status: u16, body: &str) -> FfiError {
@@ -145,7 +185,7 @@ impl ZeroTerm {
     /// Use a custom vault path instead of the OS default. Pass empty
     /// string to revert to the OS default.
     pub fn set_vault_path(&self, path: String) {
-        let mut guard = self.vault_path_override.lock().unwrap();
+        let mut guard = self.vault_path_override.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         *guard = if path.is_empty() {
             None
         } else {
@@ -159,7 +199,7 @@ impl ZeroTerm {
     /// On Android call with `context.filesDir.absolutePath` at startup
     /// before any vault/session operations.
     pub fn set_data_dir(&self, path: String) {
-        let mut guard = self.data_dir.lock().unwrap();
+        let mut guard = self.data_dir.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         *guard = if path.is_empty() {
             zeroterm_app::set_sync_known_hosts_path(None);
             None
@@ -172,19 +212,18 @@ impl ZeroTerm {
 
     /// Configure one process-wide HTTP CONNECT proxy for SSH and network
     /// clients. An empty value disables the proxy.
+    ///
+    /// SSH-6: this used to mutate the six proxy environment variables with
+    /// `std::env::set_var` so reqwest would pick the proxy up from the
+    /// environment. But `setenv` is not thread-safe — in a multi-threaded
+    /// tokio process it races other threads' `getenv` (reqwest /
+    /// getaddrinfo), and on glibc a concurrent `environ` reallocation can
+    /// segfault. Instead we keep the proxy only in the process-global
+    /// `RwLock` and have every HTTP client we build read it explicitly via
+    /// [`reqwest::ClientBuilder::proxy`]. Nothing touches the environment.
     pub fn set_network_proxy(&self, proxy_url: String) -> Result<String, FfiError> {
         let raw = proxy_url.trim();
         if raw.is_empty() {
-            for key in [
-                "HTTP_PROXY",
-                "HTTPS_PROXY",
-                "ALL_PROXY",
-                "http_proxy",
-                "https_proxy",
-                "all_proxy",
-            ] {
-                std::env::remove_var(key);
-            }
             zeroterm_ssh::set_global_http_proxy(None);
             return Ok(String::new());
         }
@@ -210,16 +249,6 @@ impl ZeroTerm {
         }
 
         let normalized = parsed.to_string();
-        for key in [
-            "HTTP_PROXY",
-            "HTTPS_PROXY",
-            "ALL_PROXY",
-            "http_proxy",
-            "https_proxy",
-            "all_proxy",
-        ] {
-            std::env::set_var(key, &normalized);
-        }
         zeroterm_ssh::set_global_http_proxy(Some(normalized.clone()));
         Ok(normalized)
     }
@@ -229,7 +258,7 @@ impl ZeroTerm {
     pub fn vault_status(&self) -> Result<VaultStatus, FfiError> {
         let path = self.resolved_vault_path()?;
         let exists = zeroterm_app::App::vault_exists(&path);
-        let unlocked = self.inner.lock().unwrap().is_some();
+        let unlocked = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).is_some();
         Ok(VaultStatus {
             path: path.display().to_string(),
             exists,
@@ -240,7 +269,7 @@ impl ZeroTerm {
     pub fn unlock(&self, password: String, remember: bool) -> Result<(), FfiError> {
         let path = self.resolved_vault_path()?;
         let app = Arc::new(zeroterm_app::App::open(&path, &password).map_err(map_app_error)?);
-        *self.inner.lock().unwrap() = Some(app);
+        *self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(app);
         if remember {
             if let Err(e) = zeroterm_app::keychain::save_master_password(&path, &password) {
                 tracing::warn!(error = %e, "could not cache master password in keychain");
@@ -260,7 +289,7 @@ impl ZeroTerm {
             std::fs::create_dir_all(parent).map_err(other)?;
         }
         let app = Arc::new(zeroterm_app::App::create(&path, &password).map_err(map_app_error)?);
-        *self.inner.lock().unwrap() = Some(app);
+        *self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(app);
         if remember {
             if let Err(e) = zeroterm_app::keychain::save_master_password(&path, &password) {
                 tracing::warn!(error = %e, "could not cache master password in keychain");
@@ -270,7 +299,7 @@ impl ZeroTerm {
     }
 
     pub fn lock(&self) {
-        *self.inner.lock().unwrap() = None;
+        *self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = None;
         // Drop any live sync engines; re-join after next unlock.
     }
 
@@ -300,7 +329,7 @@ impl ZeroTerm {
         };
         match zeroterm_app::App::open(&path, &pw) {
             Ok(app) => {
-                *self.inner.lock().unwrap() = Some(Arc::new(app));
+                *self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Arc::new(app));
                 Ok(true)
             }
             Err(zeroterm_app::AppError::Vault(zeroterm_app::VaultError::AuthenticationFailed)) => {
@@ -322,7 +351,7 @@ impl ZeroTerm {
     // -- AI ---------------------------------------------------------------
 
     pub fn list_ai_profiles(&self) -> Result<Vec<AiProfileRecord>, FfiError> {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
         Ok(app
             .list_ai_profiles()
@@ -333,7 +362,7 @@ impl ZeroTerm {
     }
 
     pub fn save_ai_profile(&self, input: AiProfileInput) -> Result<String, FfiError> {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
         let id = input.id.clone().filter(|id| !id.trim().is_empty());
         let existing = id
@@ -361,7 +390,7 @@ impl ZeroTerm {
         if base_url.is_empty() && provider == "openai" {
             base_url = "https://api.openai.com/v1".into();
         }
-        reqwest::Url::parse(&base_url).map_err(other)?;
+        validate_ai_base_url(&base_url)?;
         let profile = zeroterm_app::AiProfile {
             id: id.clone().unwrap_or_default(),
             name: input.name.trim().to_string(),
@@ -381,14 +410,14 @@ impl ZeroTerm {
     }
 
     pub fn delete_ai_profile(&self, id: String) -> Result<(), FfiError> {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
         app.delete_ai_profile(&id).map_err(map_app_error)
     }
 
     pub async fn list_ai_models(&self, profile_id: String) -> Result<Vec<String>, FfiError> {
         let profile = {
-            let guard = self.inner.lock().unwrap();
+            let guard = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
             app.find_ai_profile_by_id(&profile_id)
                 .map_err(map_app_error)?
@@ -432,7 +461,7 @@ impl ZeroTerm {
                 detail: "AI Base URL cannot be empty".into(),
             });
         }
-        reqwest::Url::parse(&base_url).map_err(other)?;
+        validate_ai_base_url(&base_url)?;
 
         let api_key = if api_key.trim().is_empty() {
             let id = profile_id
@@ -440,11 +469,11 @@ impl ZeroTerm {
                 .ok_or_else(|| FfiError::Other {
                     detail: "AI API key cannot be empty".into(),
                 })?;
-            let guard = self.inner.lock().unwrap();
+            let guard = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
             app.find_ai_profile_by_id(&id)
                 .map_err(map_app_error)?
-                .ok_or_else(|| FfiError::NotFound { detail: id })?
+                .ok_or(FfiError::NotFound { detail: id })?
                 .api_key
         } else {
             api_key.trim().to_string()
@@ -490,7 +519,7 @@ impl ZeroTerm {
         messages: Vec<AiChatMessage>,
     ) -> Result<AiChatResponse, FfiError> {
         let profile = {
-            let guard = self.inner.lock().unwrap();
+            let guard = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
             app.find_ai_profile_by_id(&profile_id)
                 .map_err(map_app_error)?
@@ -556,21 +585,21 @@ impl ZeroTerm {
     // -- hosts ------------------------------------------------------------
 
     pub fn list_hosts(&self) -> Result<Vec<HostSummary>, FfiError> {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
         let hosts = app.list_hosts().map_err(map_app_error)?;
         Ok(hosts.into_iter().map(host_to_summary).collect())
     }
 
     pub fn list_host_groups(&self) -> Result<Vec<HostGroupRecord>, FfiError> {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
         let groups = app.list_host_groups().map_err(map_app_error)?;
         Ok(groups.into_iter().map(host_group_to_record).collect())
     }
 
     pub fn save_host_group(&self, input: HostGroupInput) -> Result<String, FfiError> {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
         let group = zeroterm_app::HostGroup {
             id: input.id.clone().unwrap_or_default(),
@@ -587,13 +616,13 @@ impl ZeroTerm {
     }
 
     pub fn delete_host_group(&self, id: String) -> Result<(), FfiError> {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
         app.delete_host_group(&id).map_err(map_app_error)
     }
 
     pub fn get_host(&self, id: String) -> Result<HostDetail, FfiError> {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
         let host = app
             .find_host_by_id(&id)
@@ -608,7 +637,7 @@ impl ZeroTerm {
     /// `host.id` is set. Forwards / ProxyJump from the existing record
     /// are preserved on update.
     pub fn save_host(&self, host: HostInput) -> Result<String, FfiError> {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
         if let Some(ref id) = host.id {
             if !id.is_empty() {
@@ -632,7 +661,7 @@ impl ZeroTerm {
     }
 
     pub fn delete_host(&self, id: String) -> Result<(), FfiError> {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
         app.delete_host(&id).map_err(map_app_error)
     }
@@ -640,7 +669,7 @@ impl ZeroTerm {
     // -- snippets ---------------------------------------------------------
 
     pub fn list_snippets(&self) -> Result<Vec<SnippetRecord>, FfiError> {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
         let list = app.list_snippets().map_err(map_app_error)?;
         Ok(list
@@ -656,7 +685,7 @@ impl ZeroTerm {
     }
 
     pub fn get_snippet(&self, id: String) -> Result<SnippetRecord, FfiError> {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
         let s = app
             .find_snippet_by_id(&id)
@@ -674,7 +703,7 @@ impl ZeroTerm {
     }
 
     pub fn save_snippet(&self, input: SnippetInput) -> Result<String, FfiError> {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
         if let Some(ref id) = input.id {
             if !id.is_empty() {
@@ -700,13 +729,13 @@ impl ZeroTerm {
     }
 
     pub fn delete_snippet(&self, id: String) -> Result<(), FfiError> {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
         app.delete_snippet(&id).map_err(map_app_error)
     }
 
     pub fn rename_snippet_group(&self, old: String, new: String) -> Result<u32, FfiError> {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
         let n = app
             .rename_snippet_group(&old, &new)
@@ -715,7 +744,7 @@ impl ZeroTerm {
     }
 
     pub fn delete_snippet_group(&self, group: String) -> Result<u32, FfiError> {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
         let n = app.delete_snippet_group(&group).map_err(map_app_error)?;
         Ok(n as u32)
@@ -739,7 +768,7 @@ impl ZeroTerm {
         host_key_prompt: Arc<dyn HostKeyPromptCallback>,
     ) -> Result<u64, FfiError> {
         let host = {
-            let guard = self.inner.lock().unwrap();
+            let guard = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
             app.find_host_by_id(&host_id)
                 .map_err(map_app_error)?
@@ -754,6 +783,9 @@ impl ZeroTerm {
     /// Quick Connect: connect without a saved vault host. Vault must still
     /// be unlocked (session APIs live on the same object). Host is not
     /// written to the vault.
+    // uniffi-exported signature mirrors the mobile call site; the field
+    // list can't be bundled into a struct without changing the binding.
+    #[allow(clippy::too_many_arguments)]
     pub async fn connect_direct(
         &self,
         host: String,
@@ -767,7 +799,7 @@ impl ZeroTerm {
     ) -> Result<u64, FfiError> {
         // Require unlocked vault so mobile clients keep a consistent gate.
         {
-            let guard = self.inner.lock().unwrap();
+            let guard = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             guard.as_ref().ok_or(FfiError::VaultLocked)?;
         }
         let ephemeral = zeroterm_app::Host {
@@ -860,25 +892,24 @@ impl ZeroTerm {
             return Err(FfiError::Other { detail: "command cannot be empty".into() });
         }
         let host = {
-            let guard = self.inner.lock().unwrap();
+            let guard = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
             app.find_host_by_id(&host_id)
                 .map_err(map_app_error)?
                 .ok_or_else(|| FfiError::NotFound { detail: host_id.clone() })?
         };
         let known_hosts = self.resolved_known_hosts()?;
-        let cfg = {
-            let guard = self.inner.lock().unwrap();
-            let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
-            app.connect_config(
-                &host,
-                HostKeyPolicy::Strict(known_hosts),
-                Some(Duration::from_secs(15)),
-            )
-        };
-        let mut session = Session::connect(cfg).await.map_err(other)?;
+        let (cfg, jump_cfg) = self.saved_host_connect_configs(
+            &host,
+            HostKeyPolicy::Strict(known_hosts),
+        )?;
+        let (jump_session, session) =
+            connect_session_chain(cfg, jump_cfg).await.map_err(other)?;
         let (code, stdout, stderr) = session.exec(&command).await.map_err(other)?;
         let _ = session.disconnect().await;
+        if let Some(jump) = jump_session {
+            let _ = jump.disconnect().await;
+        }
         Ok(HostExecResult {
             code: code as i32,
             stdout: String::from_utf8_lossy(&stdout).to_string(),
@@ -891,7 +922,7 @@ impl ZeroTerm {
     /// Answer a pending host-key prompt. `accept = true` continues the
     /// SSH handshake; `false` cancels it.
     pub fn respond_host_key(&self, request_id: String, accept: bool) -> Result<(), FfiError> {
-        let tx_opt = self.pending_host_key.lock().unwrap().remove(&request_id);
+        let tx_opt = self.pending_host_key.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(&request_id);
         match tx_opt {
             Some(tx) => {
                 let _ = tx.send(accept);
@@ -910,7 +941,7 @@ impl ZeroTerm {
 
 impl ZeroTerm {
     pub(crate) fn resolved_known_hosts(&self) -> Result<KnownHosts, FfiError> {
-        if let Some(dir) = self.data_dir.lock().unwrap().clone() {
+        if let Some(dir) = self.data_dir.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone() {
             if let Err(e) = std::fs::create_dir_all(&dir) {
                 return Err(other(e));
             }
@@ -919,6 +950,39 @@ impl ZeroTerm {
         KnownHosts::at_default().ok_or_else(|| FfiError::Other {
             detail: "could not locate $HOME for known_hosts; call setDataDir first".into(),
         })
+    }
+
+    /// Resolve the target and its optional one-hop ProxyJump config while the
+    /// vault is unlocked. Both hops receive independent clones of the same
+    /// host-key policy so neither bypasses known_hosts verification (SSH-7).
+    pub(crate) fn saved_host_connect_configs(
+        &self,
+        host: &zeroterm_app::Host,
+        policy: HostKeyPolicy,
+    ) -> Result<(ConnectConfig, Option<ConnectConfig>), FfiError> {
+        let guard = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
+        let cfg = app.connect_config(host, policy.clone(), Some(Duration::from_secs(15)));
+        let jump_cfg = match host.proxy_jump_host_id.as_deref() {
+            Some(jump_id) => {
+                let jump_host = app
+                    .find_host_by_id(jump_id)
+                    .map_err(map_app_error)?
+                    .ok_or_else(|| FfiError::NotFound {
+                        detail: format!("ProxyJump host id '{jump_id}'"),
+                    })?;
+                Some(app.connect_config(
+                    &jump_host,
+                    policy,
+                    Some(Duration::from_secs(15)),
+                ))
+            }
+            None => None,
+        };
+        Ok((cfg, jump_cfg))
     }
 
     async fn spawn_session(
@@ -939,14 +1003,11 @@ impl ZeroTerm {
             prompt,
         };
 
-        let cfg = {
-            let guard = self.inner.lock().unwrap();
-            let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
-            app.connect_config(host, policy, Some(Duration::from_secs(15)))
-        };
+        let (cfg, jump_cfg) = self.saved_host_connect_configs(host, policy)?;
 
         info!(host = %host.host, port = host.port, "ffi: connecting");
-        let mut session = Session::connect(cfg).await.map_err(other)?;
+        let (jump_session, mut session) =
+            connect_session_chain(cfg, jump_cfg).await.map_err(other)?;
 
         let pty = PtySize::new(cols.max(1), rows.max(1));
         let channel = session.open_shell(pty).await.map_err(other)?;
@@ -956,7 +1017,16 @@ impl ZeroTerm {
 
         let sessions = self.sessions.clone();
         tokio::spawn(async move {
-            run_session_task(session_id, session, channel, control_rx, listener, sessions).await;
+            run_session_task(
+                session_id,
+                jump_session,
+                session,
+                channel,
+                control_rx,
+                listener,
+                sessions,
+            )
+            .await;
         });
 
         self.sessions
@@ -969,10 +1039,10 @@ impl ZeroTerm {
     }
 
     fn resolved_vault_path(&self) -> Result<PathBuf, FfiError> {
-        if let Some(p) = self.vault_path_override.lock().unwrap().clone() {
+        if let Some(p) = self.vault_path_override.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone() {
             return Ok(p);
         }
-        if let Some(dir) = self.data_dir.lock().unwrap().clone() {
+        if let Some(dir) = self.data_dir.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone() {
             return Ok(dir.join("zeroterm.vault"));
         }
         zeroterm_app::default_vault_path().ok_or(FfiError::Other {
@@ -1000,18 +1070,35 @@ impl ZeroTerm {
     }
 }
 
+pub(crate) async fn connect_session_chain(
+    cfg: ConnectConfig,
+    jump_cfg: Option<ConnectConfig>,
+) -> Result<(Option<Session>, Session), zeroterm_ssh::SshError> {
+    match jump_cfg {
+        Some(jump_cfg) => {
+            let jump = Session::connect(jump_cfg).await?;
+            let target = Session::connect_via(cfg, &jump).await?;
+            Ok((Some(jump), target))
+        }
+        None => Ok((None, Session::connect(cfg).await?)),
+    }
+}
+
 // --------------------------------------------------------------------------
 // per-session task
 // --------------------------------------------------------------------------
 
 async fn run_session_task(
     session_id: u64,
-    mut session: Session,
+    jump_session: Option<Session>,
+    session: Session,
     mut channel: ShellChannel,
     mut control_rx: mpsc::Receiver<SessionCommand>,
     listener: Arc<dyn SessionListener>,
     sessions: Arc<Mutex<HashMap<u64, SessionEntry>>>,
 ) {
+    // Keep the jump transport alive for the entire target PTY lifetime.
+    let _jump_session = jump_session;
     let mut last_exit: Option<u32> = None;
     let mut error_msg: Option<String> = None;
 
@@ -1063,5 +1150,5 @@ async fn run_session_task(
 
     let _ = session.disconnect().await;
     listener.on_closed(last_exit, error_msg);
-    sessions.lock().unwrap().remove(&session_id);
+    sessions.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(&session_id);
 }

@@ -1,0 +1,16 @@
+# cargo-audit configuration.
+#
+# Every exception requires a documented threat assessment in review.
+
+[advisories]
+ignore = [
+    # RUSTSEC-2023-0071 — rsa "Marvin" timing side-channel
+    # (CVE-2023-49092). russh's RSA feature currently pulls rsa
+    # 0.10.0-rc.18 and RustSec lists no fixed release. The exploitable
+    # primitive is attacker-chosen PKCS#1 v1.5 private-key decryption;
+    # ZeroTerm's SSH client uses RSA only for public-key verification and
+    # client authentication signatures, and exposes no RSA decryption
+    # oracle. Keep RSA interoperability, prefer Ed25519/ECDSA, and remove
+    # this exception when a fixed rsa/russh release becomes available.
+    "RUSTSEC-2023-0071",
+]

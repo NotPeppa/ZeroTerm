@@ -205,14 +205,16 @@ pub(crate) fn host_to_detail(h: zeroterm_app::Host) -> HostDetail {
         host: h.host,
         port: h.port,
         user: h.user,
-        auth: match h.auth {
-            zeroterm_app::HostAuth::Password { value } => HostAuthInput::Password { value },
+        auth: match &h.auth {
+            zeroterm_app::HostAuth::Password { value } => {
+                HostAuthInput::Password { value: value.clone() }
+            }
             zeroterm_app::HostAuth::PrivateKey {
                 key_pem,
                 passphrase,
             } => HostAuthInput::PrivateKey {
-                key_pem,
-                passphrase,
+                key_pem: key_pem.clone(),
+                passphrase: passphrase.clone(),
             },
             zeroterm_app::HostAuth::Agent => HostAuthInput::Agent,
         },

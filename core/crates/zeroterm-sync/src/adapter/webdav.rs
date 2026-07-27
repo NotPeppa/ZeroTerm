@@ -28,7 +28,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use quick_xml::events::Event;
-use quick_xml::Reader;
+use quick_xml::{Reader, XmlVersion};
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{Method, StatusCode};
 
@@ -410,7 +410,7 @@ impl SyncAdapter for WebDavAdapter {
                 // proxies) forbid deleting a collection directly but do
                 // allow deleting files inside it. Fallback to content wipe.
                 let mut listed = self.list("", true).await?;
-                listed.sort_by(|a, b| b.path.len().cmp(&a.path.len()));
+                listed.sort_by_key(|m| std::cmp::Reverse(m.path.len()));
                 for entry in listed {
                     let u = self.paths.url_of(&entry.path);
                     let rr = client.delete(&u).send().await.map_err(transport_err)?;
@@ -503,7 +503,7 @@ fn parse_propfind(xml: &str, server_prefix: &str) -> Result<Vec<ObjectMeta>, Err
             }
             Ok(Event::Text(t)) => {
                 let text = t
-                    .xml_content()
+                    .xml_content(XmlVersion::Implicit1_0)
                     .map_err(|e| {
                         Error::Io(std::io::Error::other(format!("propfind text decode: {e}")))
                     })?

@@ -1,18 +1,21 @@
+use std::borrow::Cow;
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::{OnceLock, RwLock};
 use std::time::Duration;
 use std::time::Instant;
 
-use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use russh::client::{self, Handle, Handler, Msg};
+use russh::keys::{Algorithm, Certificate, PrivateKeyWithHashAlg, PublicKey};
 use russh::{Channel, ChannelId, ChannelMsg, Disconnect};
-use russh_keys::key;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, Mutex};
 use url::Url;
+use zeroize::Zeroize;
 
 use crate::error::SshError;
 use crate::host_key::HostKeyPolicy;
@@ -21,7 +24,12 @@ use crate::sftp::map_sftp_err;
 /// Authentication credentials. The connection will try each entry in
 /// [`ConnectConfig::auth_methods`] in order, accepting the first one the
 /// server agrees to.
-#[derive(Debug, Clone)]
+///
+/// `Debug` is hand-written (not derived) so a stray `{:?}` — e.g. a
+/// future `tracing::debug!(?auth)` — can never print a password,
+/// passphrase, or private-key PEM. Only the variant and non-secret
+/// shape (the key path) are shown. See SSH-14.
+#[derive(Clone)]
 pub enum AuthMethod {
     Password(String),
     /// Private key on disk. `passphrase` is required if (and only if) the
@@ -41,6 +49,53 @@ pub enum AuthMethod {
     /// service named pipe on Windows). Tries every identity the agent
     /// offers, in agent-supplied order.
     Agent,
+}
+
+impl std::fmt::Debug for AuthMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AuthMethod::Password(_) => f.write_str("Password(<redacted>)"),
+            AuthMethod::PrivateKey { path, passphrase } => f
+                .debug_struct("PrivateKey")
+                .field("path", path)
+                .field(
+                    "passphrase",
+                    &if passphrase.is_some() {
+                        "<redacted>"
+                    } else {
+                        "None"
+                    },
+                )
+                .finish(),
+            AuthMethod::PrivateKeyData { passphrase, .. } => f
+                .debug_struct("PrivateKeyData")
+                .field("pem", &"<redacted>")
+                .field(
+                    "passphrase",
+                    &if passphrase.is_some() {
+                        "<redacted>"
+                    } else {
+                        "None"
+                    },
+                )
+                .finish(),
+            AuthMethod::Agent => f.write_str("Agent"),
+        }
+    }
+}
+
+impl Drop for AuthMethod {
+    fn drop(&mut self) {
+        match self {
+            Self::Password(password) => password.zeroize(),
+            Self::PrivateKey { passphrase, .. } => passphrase.zeroize(),
+            Self::PrivateKeyData { pem, passphrase } => {
+                pem.zeroize();
+                passphrase.zeroize();
+            }
+            Self::Agent => {}
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -106,13 +161,55 @@ pub(crate) struct RemoteForwardIncoming {
     pub originator_port: u32,
 }
 
-#[async_trait]
+type RemoteForwardKey = (String, u32);
+type RouteMap<T> = Arc<Mutex<HashMap<RemoteForwardKey, mpsc::UnboundedSender<T>>>>;
+type RemoteForwardRoutes = RouteMap<RemoteForwardIncoming>;
+pub(crate) type SharedHandle = Arc<Mutex<Handle<ZeroTermHandler>>>;
+
+/// A dedicated stream for one successful `tcpip-forward` request.
+///
+/// There is exactly one dispatcher per SSH session. It consumes russh's
+/// single `forwarded-tcpip` callback stream and routes each channel by the
+/// server-reported `(connected_address, connected_port)`. Giving each `-R`
+/// listener its own receiver prevents concurrent remote forwards from
+/// stealing and dropping one another's channels (SSH-5).
+pub(crate) struct RemoteForwardSubscription {
+    address: String,
+    port: u32,
+    incoming: mpsc::UnboundedReceiver<RemoteForwardIncoming>,
+    handle: SharedHandle,
+    routes: RemoteForwardRoutes,
+}
+
+impl RemoteForwardSubscription {
+    pub(crate) fn port(&self) -> u32 {
+        self.port
+    }
+
+    pub(crate) async fn recv(&mut self) -> Option<RemoteForwardIncoming> {
+        self.incoming.recv().await
+    }
+
+    /// Stop the server-side listener and remove this route. Cancellation is
+    /// best-effort because the underlying transport may already be closed.
+    pub(crate) async fn close(self, cancel_server_listener: bool) {
+        if cancel_server_listener {
+            let handle = self.handle.lock().await;
+            let _ = handle
+                .cancel_tcpip_forward(self.address.clone(), self.port)
+                .await;
+        }
+        self.routes.lock().await.remove(&(self.address, self.port));
+    }
+}
+
+/// russh's `Handler` uses native `async fn` (no `#[async_trait]`).
 impl Handler for ZeroTermHandler {
     type Error = russh::Error;
 
     async fn check_server_key(
         &mut self,
-        server_public_key: &key::PublicKey,
+        server_public_key: &PublicKey,
     ) -> Result<bool, Self::Error> {
         match self
             .policy
@@ -124,6 +221,15 @@ impl Handler for ZeroTermHandler {
         }
     }
 
+    async fn check_server_certificate(
+        &mut self,
+        server_certificate: &Certificate,
+    ) -> Result<bool, Self::Error> {
+        self.policy
+            .evaluate_certificate(&self.host, self.port, server_certificate)
+            .map_err(russh::Error::IO)
+    }
+
     async fn server_channel_open_forwarded_tcpip(
         &mut self,
         channel: Channel<Msg>,
@@ -131,8 +237,10 @@ impl Handler for ZeroTermHandler {
         connected_port: u32,
         originator_address: &str,
         originator_port: u32,
+        reply: client::ChannelOpenHandle,
         _session: &mut client::Session,
     ) -> Result<(), Self::Error> {
+        reply.accept().await;
         let _ = self.remote_forward_tx.send(RemoteForwardIncoming {
             channel,
             connected_address: connected_address.to_string(),
@@ -146,8 +254,11 @@ impl Handler for ZeroTermHandler {
 
 /// An authenticated SSH session.
 pub struct Session {
-    handle: Arc<Handle<ZeroTermHandler>>,
-    remote_forward_rx: Arc<Mutex<mpsc::UnboundedReceiver<RemoteForwardIncoming>>>,
+    // Global requests and channel opens share one connection handle. An async mutex
+    // gives both paths safe shared access and removes the old `Arc::get_mut`
+    // ordering failure when `-L`/`-D` cloned the handle before `-R` (SSH-4).
+    handle: SharedHandle,
+    remote_forward_routes: RemoteForwardRoutes,
 }
 
 static GLOBAL_HTTP_PROXY: OnceLock<RwLock<Option<String>>> = OnceLock::new();
@@ -320,11 +431,27 @@ async fn connect_tcp_via_http_proxy(
 /// We still leave `inactivity_timeout` unset on purpose (see `connect`): that
 /// is russh's idle-*kill* timer and would defeat the whole point.
 fn client_config() -> client::Config {
-    client::Config {
+    let mut config = client::Config {
         keepalive_interval: Some(Duration::from_secs(30)),
         keepalive_max: 3,
         ..Default::default()
-    }
+    };
+    let certificate_algorithms = [
+        "ssh-ed25519-cert-v01@openssh.com",
+        "ecdsa-sha2-nistp256-cert-v01@openssh.com",
+        "ecdsa-sha2-nistp384-cert-v01@openssh.com",
+        "ecdsa-sha2-nistp521-cert-v01@openssh.com",
+        "rsa-sha2-512-cert-v01@openssh.com",
+        "rsa-sha2-256-cert-v01@openssh.com",
+        "ssh-rsa-cert-v01@openssh.com",
+    ];
+    let mut host_key_algorithms = certificate_algorithms
+        .into_iter()
+        .map(|name| Algorithm::new(name).expect("valid OpenSSH certificate algorithm"))
+        .collect::<Vec<_>>();
+    host_key_algorithms.extend(config.preferred.key.iter().cloned());
+    config.preferred.key = Cow::Owned(host_key_algorithms);
+    config
 }
 
 impl Session {
@@ -393,10 +520,12 @@ impl Session {
             return Err(SshError::NoAuthMethod);
         }
 
-        let channel = jump
-            .handle
-            .channel_open_direct_tcpip(cfg.host.clone(), cfg.port as u32, "127.0.0.1", 0)
-            .await?;
+        let channel = {
+            let handle = jump.handle.lock().await;
+            handle
+                .channel_open_direct_tcpip(cfg.host.clone(), cfg.port as u32, "127.0.0.1", 0)
+                .await?
+        };
         let stream = channel.into_stream();
 
         let config = Arc::new(client_config());
@@ -428,7 +557,7 @@ impl Session {
     /// Cheap clone of the underlying russh handle. Used by long-lived
     /// background tasks (port-forward listeners) that need to open
     /// channels without exclusive access to the `Session`.
-    pub(crate) fn handle_clone(&self) -> Arc<Handle<ZeroTermHandler>> {
+    pub(crate) fn handle_clone(&self) -> SharedHandle {
         Arc::clone(&self.handle)
     }
 
@@ -437,31 +566,82 @@ impl Session {
     /// timeout). Long-lived supervisors (e.g. port forwards) poll this to
     /// notice a passive disconnect and reconnect.
     pub fn is_closed(&self) -> bool {
-        self.handle.is_closed()
+        // Channel/global requests hold the async mutex only until russh
+        // confirms the open. If a health poll lands during that brief window,
+        // report "not known closed" and let the next poll decide.
+        self.handle
+            .try_lock()
+            .map(|handle| handle.is_closed())
+            .unwrap_or(false)
     }
 
-    pub(crate) async fn tcpip_forward(
-        &mut self,
+    pub(crate) async fn request_remote_forward(
+        &self,
         address: &str,
         port: u32,
-    ) -> Result<u32, SshError> {
-        let handle = Arc::get_mut(&mut self.handle).ok_or_else(|| {
-            SshError::Io(std::io::Error::other(
-                "cannot request remote forward after SSH handle was cloned",
-            ))
-        })?;
-        Ok(handle.tcpip_forward(address.to_string(), port).await?)
-    }
+    ) -> Result<RemoteForwardSubscription, SshError> {
+        // Reject an exact duplicate before touching the server. Port zero is
+        // resolved by the server, so its effective key is checked below.
+        if port != 0
+            && self
+                .remote_forward_routes
+                .lock()
+                .await
+                .contains_key(&(address.to_string(), port))
+        {
+            return Err(SshError::Io(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                format!("remote forward {address}:{port} is already active"),
+            )));
+        }
 
-    pub(crate) fn remote_forward_receiver(
-        &self,
-    ) -> Arc<Mutex<mpsc::UnboundedReceiver<RemoteForwardIncoming>>> {
-        Arc::clone(&self.remote_forward_rx)
+        let allocated = {
+            let handle = self.handle.lock().await;
+            handle.tcpip_forward(address.to_string(), port).await?
+        };
+        let effective_port = if port == 0 { allocated } else { port };
+        let (tx, rx) = mpsc::unbounded_channel();
+        let key = (address.to_string(), effective_port);
+        let mut routes = self.remote_forward_routes.lock().await;
+        match routes.entry(key.clone()) {
+            Entry::Vacant(entry) => {
+                entry.insert(tx);
+            }
+            Entry::Occupied(_) => {
+                // This should only be possible if a server incorrectly hands
+                // the same allocated port to two port-zero requests. Preserve
+                // the existing route and cancel only our new request.
+                drop(routes);
+                let handle = self.handle.lock().await;
+                let _ = handle
+                    .cancel_tcpip_forward(address.to_string(), effective_port)
+                    .await;
+                return Err(SshError::Io(std::io::Error::new(
+                    std::io::ErrorKind::AlreadyExists,
+                    format!(
+                        "remote forward {}:{} is already active",
+                        address, effective_port
+                    ),
+                )));
+            }
+        }
+        drop(routes);
+
+        Ok(RemoteForwardSubscription {
+            address: address.to_string(),
+            port: effective_port,
+            incoming: rx,
+            handle: Arc::clone(&self.handle),
+            routes: Arc::clone(&self.remote_forward_routes),
+        })
     }
 
     /// Open an interactive shell on a freshly allocated PTY.
     pub async fn open_shell(&mut self, size: PtySize) -> Result<ShellChannel, SshError> {
-        let channel = self.handle.channel_open_session().await?;
+        let channel = {
+            let handle = self.handle.lock().await;
+            handle.channel_open_session().await?
+        };
 
         channel
             .request_pty(
@@ -483,7 +663,10 @@ impl Session {
     /// Open an SFTP subsystem on a fresh channel. Returns a wrapper with
     /// the file-management methods we expose to UIs.
     pub async fn sftp(&self) -> Result<crate::sftp::Sftp, SshError> {
-        let channel = self.handle.channel_open_session().await?;
+        let channel = {
+            let handle = self.handle.lock().await;
+            handle.channel_open_session().await?
+        };
         channel.request_subsystem(true, "sftp").await?;
         let session = russh_sftp::client::SftpSession::new_with_config(
             channel.into_stream(),
@@ -516,8 +699,11 @@ impl Session {
     }
 
     /// Execute a non-interactive command and collect stdout/stderr.
-    pub async fn exec(&mut self, command: &str) -> Result<(u32, Vec<u8>, Vec<u8>), SshError> {
-        let mut channel = self.handle.channel_open_session().await?;
+    pub async fn exec(&self, command: &str) -> Result<(u32, Vec<u8>, Vec<u8>), SshError> {
+        let mut channel = {
+            let handle = self.handle.lock().await;
+            handle.channel_open_session().await?
+        };
         channel.exec(true, command).await?;
 
         let mut code = 0;
@@ -526,9 +712,7 @@ impl Session {
         while let Some(msg) = channel.wait().await {
             match msg {
                 ChannelMsg::Data { data } => stdout.extend_from_slice(&data),
-                ChannelMsg::ExtendedData { data, ext: 1 } => {
-                    stderr.extend_from_slice(&data)
-                }
+                ChannelMsg::ExtendedData { data, ext: 1 } => stderr.extend_from_slice(&data),
                 ChannelMsg::ExitStatus { exit_status } => code = exit_status,
                 ChannelMsg::Close | ChannelMsg::Eof => break,
                 _ => {}
@@ -538,7 +722,8 @@ impl Session {
     }
 
     pub async fn disconnect(self) -> Result<(), SshError> {
-        self.handle
+        let handle = self.handle.lock().await;
+        handle
             .disconnect(Disconnect::ByApplication, "bye", "en")
             .await?;
         Ok(())
@@ -552,7 +737,10 @@ impl Session {
     /// repeated probes pile up against `MaxSessions` until new opens fail.
     pub async fn probe_rtt_ms(&self) -> Result<u32, SshError> {
         let start = Instant::now();
-        let channel = self.handle.channel_open_session().await?;
+        let channel = {
+            let handle = self.handle.lock().await;
+            handle.channel_open_session().await?
+        };
         // Best-effort close — failure here just means the server side will
         // clean up later, which is still better than leaking the slot.
         let _ = channel.close().await;
@@ -569,10 +757,16 @@ async fn authenticate(
     for method in &cfg.auth_methods {
         match try_authenticate(&mut handle, &cfg.username, method).await {
             Ok(true) => {
+                let handle = Arc::new(Mutex::new(handle));
+                let routes = Arc::new(Mutex::new(HashMap::new()));
+                tokio::spawn(dispatch_remote_forwards(
+                    remote_forward_rx,
+                    Arc::clone(&routes),
+                ));
                 return Ok(Session {
-                    handle: Arc::new(handle),
-                    remote_forward_rx: Arc::new(Mutex::new(remote_forward_rx)),
-                })
+                    handle,
+                    remote_forward_routes: routes,
+                });
             }
             Ok(false) => {
                 tracing::debug!(method = method_name(method), "auth method rejected");
@@ -586,6 +780,56 @@ async fn authenticate(
     Err(last_error.unwrap_or(SshError::AuthFailed))
 }
 
+async fn dispatch_remote_forwards(
+    mut incoming: mpsc::UnboundedReceiver<RemoteForwardIncoming>,
+    routes: RemoteForwardRoutes,
+) {
+    while let Some(item) = incoming.recv().await {
+        let key = (item.connected_address.clone(), item.connected_port);
+        match deliver_to_route(&routes, key.clone(), item).await {
+            RouteDelivery::Delivered => {}
+            RouteDelivery::ReceiverClosed => {
+                tracing::warn!(
+                    address = %key.0,
+                    port = key.1,
+                    "remote forward route receiver closed; dropping incoming channel"
+                );
+            }
+            RouteDelivery::Missing => {
+                tracing::warn!(
+                    address = %key.0,
+                    port = key.1,
+                    "no registered remote forward route; dropping incoming channel"
+                );
+            }
+        }
+    }
+    routes.lock().await.clear();
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RouteDelivery {
+    Delivered,
+    ReceiverClosed,
+    Missing,
+}
+
+async fn deliver_to_route<T>(
+    routes: &RouteMap<T>,
+    key: RemoteForwardKey,
+    item: T,
+) -> RouteDelivery {
+    let route = routes.lock().await.get(&key).cloned();
+    match route {
+        Some(tx) if tx.send(item).is_ok() => RouteDelivery::Delivered,
+        Some(_) => {
+            routes.lock().await.remove(&key);
+            RouteDelivery::ReceiverClosed
+        }
+        None => RouteDelivery::Missing,
+    }
+}
+
 async fn try_authenticate(
     handle: &mut Handle<ZeroTermHandler>,
     username: &str,
@@ -593,25 +837,53 @@ async fn try_authenticate(
 ) -> Result<bool, SshError> {
     match method {
         AuthMethod::Password(pw) => {
-            let ok = handle.authenticate_password(username, pw.clone()).await?;
-            Ok(ok)
+            // russh 0.54: auth methods return an `AuthResult`, not a bool.
+            Ok(handle
+                .authenticate_password(username, pw.clone())
+                .await?
+                .success())
         }
         AuthMethod::PrivateKey { path, passphrase } => {
-            let key_pair = russh_keys::load_secret_key(path, passphrase.as_deref())?;
-            let ok = handle
-                .authenticate_publickey(username, Arc::new(key_pair))
-                .await?;
-            Ok(ok)
+            let key = russh::keys::load_secret_key(path, passphrase.as_deref())?;
+            let hash_alg = best_rsa_hash(handle).await;
+            Ok(handle
+                .authenticate_publickey(
+                    username,
+                    PrivateKeyWithHashAlg::new(Arc::new(key), hash_alg),
+                )
+                .await?
+                .success())
         }
         AuthMethod::PrivateKeyData { pem, passphrase } => {
-            let key_pair = russh_keys::decode_secret_key(pem, passphrase.as_deref())?;
-            let ok = handle
-                .authenticate_publickey(username, Arc::new(key_pair))
-                .await?;
-            Ok(ok)
+            let key = russh::keys::decode_secret_key(pem, passphrase.as_deref())?;
+            let hash_alg = best_rsa_hash(handle).await;
+            Ok(handle
+                .authenticate_publickey(
+                    username,
+                    PrivateKeyWithHashAlg::new(Arc::new(key), hash_alg),
+                )
+                .await?
+                .success())
         }
         AuthMethod::Agent => crate::agent::try_agent_auth(handle, username).await,
     }
+}
+
+/// Negotiate the RSA signature hash the server supports (russh 0.54).
+/// Modern servers advertise `rsa-sha2-256`/`rsa-sha2-512` via the
+/// `server-sig-algs` extension; using the negotiated hash avoids the
+/// legacy SHA-1 `ssh-rsa` that many servers now reject. `None` (fall back
+/// to SHA-1) only when the server sent no extension or the query failed —
+/// and it's ignored for non-RSA keys anyway.
+pub(crate) async fn best_rsa_hash(
+    handle: &Handle<ZeroTermHandler>,
+) -> Option<russh::keys::HashAlg> {
+    handle
+        .best_supported_rsa_hash()
+        .await
+        .ok()
+        .flatten()
+        .flatten()
 }
 
 fn method_name(m: &AuthMethod) -> &'static str {
@@ -679,5 +951,48 @@ impl ShellChannel {
                 Some(_) => {}
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn remote_forward_routes_deliver_to_the_matching_listener_only() {
+        let routes: RouteMap<&'static str> = Arc::new(Mutex::new(HashMap::new()));
+        let (a_tx, mut a_rx) = mpsc::unbounded_channel();
+        let (b_tx, mut b_rx) = mpsc::unbounded_channel();
+        routes.lock().await.insert(("127.0.0.1".into(), 2201), a_tx);
+        routes.lock().await.insert(("127.0.0.1".into(), 2202), b_tx);
+
+        assert_eq!(
+            deliver_to_route(&routes, ("127.0.0.1".into(), 2202), "for-b").await,
+            RouteDelivery::Delivered
+        );
+        assert_eq!(b_rx.recv().await, Some("for-b"));
+        assert!(
+            a_rx.try_recv().is_err(),
+            "the other remote listener must not steal this channel"
+        );
+
+        assert_eq!(
+            deliver_to_route(&routes, ("127.0.0.1".into(), 2299), "missing").await,
+            RouteDelivery::Missing
+        );
+    }
+
+    #[tokio::test]
+    async fn closed_remote_forward_route_is_removed() {
+        let routes: RouteMap<&'static str> = Arc::new(Mutex::new(HashMap::new()));
+        let (tx, rx) = mpsc::unbounded_channel();
+        routes.lock().await.insert(("0.0.0.0".into(), 2200), tx);
+        drop(rx);
+
+        assert_eq!(
+            deliver_to_route(&routes, ("0.0.0.0".into(), 2200), "orphan").await,
+            RouteDelivery::ReceiverClosed
+        );
+        assert!(routes.lock().await.is_empty());
     }
 }

@@ -147,8 +147,10 @@ struct Inner {
 impl Terminal {
     pub fn new(cols: u16, rows: u16, scrollback: u32) -> Self {
         let size = TermSize::new(cols, rows);
-        let mut config = Config::default();
-        config.scrolling_history = scrollback as usize;
+        let config = Config {
+            scrolling_history: scrollback as usize,
+            ..Default::default()
+        };
         let term = Term::new(config, &size, VoidListener);
         Self {
             inner: Mutex::new(Inner {
@@ -164,19 +166,19 @@ impl Terminal {
 
     /// Apply a host palette and force a full redraw on next damage poll.
     pub fn set_palette(&self, palette: TerminalPalette) {
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         g.palette = palette;
         g.dirty = true;
         g.force_full = true;
     }
 
     pub fn palette(&self) -> TerminalPalette {
-        self.inner.lock().unwrap().palette
+        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).palette
     }
 
     /// Feed raw PTY bytes (VT sequences + text).
     pub fn feed(&self, data: &[u8]) {
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         // Split fields to satisfy the borrow checker (parser + term both mut).
         let Inner {
             ref mut term,
@@ -191,7 +193,7 @@ impl Terminal {
     }
 
     pub fn resize(&self, cols: u16, rows: u16) {
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let size = TermSize::new(cols, rows);
         if size.columns == g.size.columns && size.screen_lines == g.size.screen_lines {
             return;
@@ -202,16 +204,16 @@ impl Terminal {
     }
 
     pub fn cols(&self) -> u16 {
-        self.inner.lock().unwrap().size.columns as u16
+        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).size.columns as u16
     }
 
     pub fn rows(&self) -> u16 {
-        self.inner.lock().unwrap().size.screen_lines as u16
+        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).size.screen_lines as u16
     }
 
     /// Scroll display by `delta` lines (positive = scroll up into history).
     pub fn scroll_display(&self, delta: i32) {
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if delta == 0 {
             return;
         }
@@ -221,14 +223,14 @@ impl Terminal {
 
     /// Jump to the live bottom of the scrollback.
     pub fn scroll_to_bottom(&self) {
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         g.term.scroll_display(Scroll::Bottom);
         g.dirty = true;
     }
 
     /// Current display offset (0 = live bottom; larger = scrolled into history).
     pub fn display_offset(&self) -> u32 {
-        self.inner.lock().unwrap().term.grid().display_offset() as u32
+        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).term.grid().display_offset() as u32
     }
 
     /// Plain text of the current viewport (for copy-all). Trailing spaces trimmed per line.
@@ -249,7 +251,7 @@ impl Terminal {
     /// Collect damage since last call and reset the damage tracker.
     /// Returns `None` if nothing changed (callers can skip redraw).
     pub fn take_damage(&self) -> Option<DamageFrame> {
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let cols = g.size.columns;
         let rows = g.size.screen_lines;
         let was_dirty = g.dirty;
@@ -343,7 +345,7 @@ impl Terminal {
 
     /// Full viewport snapshot (ignores damage). Useful after resize.
     pub fn snapshot(&self) -> DamageFrame {
-        let g = self.inner.lock().unwrap();
+        let g = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let cols = g.size.columns;
         let rows = g.size.screen_lines;
         let content = g.term.renderable_content();

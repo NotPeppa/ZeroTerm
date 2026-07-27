@@ -2,6 +2,7 @@ package com.zeroterm.android.data
 
 import android.util.Log
 import androidx.lifecycle.DefaultLifecycleObserver
+import com.zeroterm.android.BuildConfig
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import com.zeroterm.ffi.ZeroTerm
@@ -131,11 +132,15 @@ class AutoSyncController(
                 for (p in profiles) {
                     runCatching {
                         zeroTerm.syncNow(p.id)
-                        Log.d(TAG, "auto-sync ok: ${p.name}")
+                        // AND-6: profile names/errors are user data; keep them
+                        // out of release Logcat.
+                        if (BuildConfig.DEBUG) Log.d(TAG, "auto-sync ok: ${p.name}")
                     }.onFailure { e ->
                         anyFailure = true
                         lastFail = e.message
-                        Log.w(TAG, "auto-sync failed for ${p.name}: ${e.message}")
+                        if (BuildConfig.DEBUG) {
+                            Log.w(TAG, "auto-sync failed for ${p.name}: ${e.message}")
+                        }
                     }
                 }
                 if (profiles.isEmpty()) {
@@ -152,7 +157,7 @@ class AutoSyncController(
             }.onFailure { e ->
                 consecutiveFailures += 1
                 lastError = e.message
-                Log.w(TAG, "auto-sync list failed: ${e.message}")
+                if (BuildConfig.DEBUG) Log.w(TAG, "auto-sync list failed: ${e.message}")
             }
             inFlight = false
             publish()

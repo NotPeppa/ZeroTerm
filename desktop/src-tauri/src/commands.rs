@@ -72,6 +72,10 @@ pub struct SystemFontDto {
 const AI_CONFIG_FILE: &str = "ai-config.json";
 const AI_SESSION_FILE: &str = "ai-sessions.json";
 const NETWORK_PROXY_FILE: &str = "network-proxy.json";
+/// Keychain profile id under which the proxy credential (userinfo of a
+/// `http://user:pass@host:port` proxy) is stored, so `network-proxy.json`
+/// never holds it in cleartext. See TAURI-3.
+const NETWORK_PROXY_KEYCHAIN_ID: &str = "__network_proxy__";
 const AI_KEYCHAIN_PROFILE: &str = "default";
 const AI_SESSION_MAX_ITEMS: usize = 80;
 const AI_STORE_VERSION: u32 = 2;
@@ -469,11 +473,32 @@ fn validate_network_proxy_url(url: &str) -> Result<String, String> {
     Ok(parsed.to_string())
 }
 
+/// Split a validated proxy URL into `(sanitized_url, credentialed_url)`.
+///
+/// The sanitized URL carries only scheme/host/port and is the only form ever
+/// written to `network-proxy.json`. When the input embeds a username/password,
+/// the full credentialed URL is returned separately so the caller can stash it
+/// in the OS keychain (never on disk). See TAURI-3.
+fn split_proxy_userinfo(validated_url: &str) -> Result<(String, Option<String>), String> {
+    let parsed =
+        reqwest::Url::parse(validated_url).map_err(|e| format!("Invalid proxy URL: {e}"))?;
+    let has_userinfo = !parsed.username().is_empty() || parsed.password().is_some();
+    let credentialed = has_userinfo.then(|| parsed.to_string());
+    let mut sanitized = parsed;
+    // These only fail for cannot-be-a-base URLs; http proxies never are.
+    let _ = sanitized.set_username("");
+    let _ = sanitized.set_password(None);
+    Ok((sanitized.to_string(), credentialed))
+}
+
 fn normalize_network_proxy_config(
     mut cfg: NetworkProxyConfig,
 ) -> Result<NetworkProxyConfig, String> {
     cfg.enabled = true;
-    cfg.url = validate_network_proxy_url(&cfg.url)?;
+    let validated = validate_network_proxy_url(&cfg.url)?;
+    // Never let userinfo survive into the on-disk / frontend-facing config.
+    let (sanitized, _credentialed) = split_proxy_userinfo(&validated)?;
+    cfg.url = sanitized;
     Ok(cfg)
 }
 
@@ -500,40 +525,103 @@ fn write_network_proxy_to_disk(cfg: &NetworkProxyConfig) -> Result<(), String> {
     fs::write(&path, text).map_err(|e| format!("writing {}: {e}", path.display()))
 }
 
-fn set_proxy_env_var(key: &str, value: Option<&str>) {
-    if let Some(v) = value {
-        env::set_var(key, v);
-    } else {
-        env::remove_var(key);
+/// The proxy URL to actually use for outbound requests: scheme/host/port from
+/// disk recombined with the credential from the OS keychain (if any). Returns
+/// `None` when no proxy is configured.
+fn effective_network_proxy_url() -> Option<String> {
+    let cfg = read_network_proxy_from_disk().ok().flatten()?;
+    let sanitized = reqwest::Url::parse(cfg.url.trim()).ok()?;
+    match zeroterm_app::keychain::get_sync_backend_credential(NETWORK_PROXY_KEYCHAIN_ID) {
+        Ok(Some(full)) => match reqwest::Url::parse(full.trim()) {
+            // Only apply the stored credential if it still targets the same
+            // proxy origin recorded on disk — guards a tampered disk file from
+            // redirecting the credential to a different host.
+            Ok(full_url)
+                if full_url.scheme() == sanitized.scheme()
+                    && full_url.host_str() == sanitized.host_str()
+                    && full_url.port_or_known_default() == sanitized.port_or_known_default() =>
+            {
+                Some(full_url.to_string())
+            }
+            _ => Some(sanitized.to_string()),
+        },
+        _ => Some(sanitized.to_string()),
     }
 }
 
-fn apply_network_proxy_config(cfg: Option<&NetworkProxyConfig>) {
-    let url = cfg.and_then(|v| {
-        let trimmed = v.url.trim();
-        if trimmed.is_empty() {
-            None
-        } else {
-            Some(trimmed)
-        }
-    });
-    for key in [
-        "HTTP_PROXY",
-        "HTTPS_PROXY",
-        "ALL_PROXY",
-        "http_proxy",
-        "https_proxy",
-        "all_proxy",
-    ] {
-        set_proxy_env_var(key, url);
+/// Push the current effective proxy into the process-global store that both
+/// the SSH layer and our reqwest clients read. Unlike the old code this never
+/// touches `*_PROXY` environment variables, which race reqwest's env reads on
+/// other threads (glibc `setenv`/`getenv` data race → possible crash). See
+/// TAURI-2.
+fn apply_network_proxy_config() {
+    zeroterm_ssh::set_global_http_proxy(effective_network_proxy_url());
+}
+
+/// Build a reqwest client that honours the configured proxy from our
+/// in-process store and ignores ambient `*_PROXY` env vars. Every desktop
+/// reqwest client must be built through here so proxy state lives in-process
+/// rather than in racy process-wide env vars (TAURI-2).
+fn build_http_client(timeout: Duration) -> Result<reqwest::Client, String> {
+    let mut builder = reqwest::Client::builder().no_proxy().timeout(timeout);
+    if let Some(proxy_url) = zeroterm_ssh::current_http_proxy() {
+        let proxy = reqwest::Proxy::all(proxy_url.as_str())
+            .map_err(|e| format!("invalid proxy configuration: {e}"))?;
+        builder = builder.proxy(proxy);
     }
-    zeroterm_ssh::set_global_http_proxy(url.map(|v| v.to_string()));
+    builder.build().map_err(|e| e.to_string())
+}
+
+/// One-time migration: older builds wrote `http://user:pass@host:port`
+/// straight into `network-proxy.json`. Move any such credential into the
+/// keychain and rewrite the file with only scheme/host/port.
+fn migrate_legacy_cleartext_proxy_credential() {
+    let path = match network_proxy_path() {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+    if !path.exists() {
+        return;
+    }
+    let text = match fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(_) => return,
+    };
+    let raw: NetworkProxyConfig = match serde_json::from_str(&text) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+    if raw.url.trim().is_empty() {
+        return;
+    }
+    let validated = match validate_network_proxy_url(&raw.url) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+    let (sanitized, credentialed) = match split_proxy_userinfo(&validated) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+    if let Some(full) = credentialed {
+        if zeroterm_app::keychain::save_sync_backend_credential(NETWORK_PROXY_KEYCHAIN_ID, &full)
+            .is_ok()
+        {
+            let cfg = NetworkProxyConfig {
+                enabled: raw.enabled,
+                url: sanitized,
+            };
+            let _ = write_network_proxy_to_disk(&cfg);
+            tracing::info!(
+                "migrated cleartext proxy credential from network-proxy.json into the OS keychain"
+            );
+        }
+    }
 }
 
 pub fn apply_saved_network_proxy_config() -> Result<Option<NetworkProxyConfig>, String> {
-    let cfg = read_network_proxy_from_disk()?;
-    apply_network_proxy_config(cfg.as_ref());
-    Ok(cfg)
+    migrate_legacy_cleartext_proxy_credential();
+    apply_network_proxy_config();
+    read_network_proxy_from_disk()
 }
 
 #[tauri::command]
@@ -545,9 +633,26 @@ pub async fn get_network_proxy_config() -> Result<Option<NetworkProxyConfig>, St
 pub async fn save_network_proxy_config(
     input: NetworkProxyConfig,
 ) -> Result<NetworkProxyConfig, String> {
-    let cfg = normalize_network_proxy_config(input)?;
+    let validated = validate_network_proxy_url(&input.url)?;
+    let (sanitized, credentialed) = split_proxy_userinfo(&validated)?;
+    let cfg = NetworkProxyConfig {
+        enabled: true,
+        url: sanitized,
+    };
+    // Stash the credential (if any) in the keychain first, and clear any
+    // stale one when the new URL has no userinfo — so the two never drift.
+    match &credentialed {
+        Some(full) => {
+            zeroterm_app::keychain::save_sync_backend_credential(NETWORK_PROXY_KEYCHAIN_ID, full)
+                .map_err(|e| format!("saving proxy credential to keychain: {e}"))?;
+        }
+        None => {
+            let _ =
+                zeroterm_app::keychain::forget_sync_backend_credential(NETWORK_PROXY_KEYCHAIN_ID);
+        }
+    }
     write_network_proxy_to_disk(&cfg)?;
-    apply_network_proxy_config(Some(&cfg));
+    apply_network_proxy_config();
     Ok(cfg)
 }
 
@@ -557,7 +662,8 @@ pub async fn clear_network_proxy_config() -> Result<(), String> {
     if path.exists() {
         fs::remove_file(&path).map_err(|e| format!("removing {}: {e}", path.display()))?;
     }
-    apply_network_proxy_config(None);
+    let _ = zeroterm_app::keychain::forget_sync_backend_credential(NETWORK_PROXY_KEYCHAIN_ID);
+    apply_network_proxy_config();
     Ok(())
 }
 
@@ -697,10 +803,7 @@ async fn send_ai_request_with_retry(
 
 async fn fetch_ai_models(base_url: &str, api_key: &str) -> Result<Vec<String>, String> {
     let endpoint = format!("{}/models", base_url.trim_end_matches('/'));
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-        .map_err(|e| e.to_string())?;
+    let client = build_http_client(Duration::from_secs(30))?;
     let response = send_ai_request_with_retry(client.get(endpoint).bearer_auth(api_key))
         .await
         .map_err(|e| format!("AI model request failed: {e}"))?;
@@ -797,14 +900,48 @@ fn normalize_ai_session_item(mut item: AiSessionItem) -> Option<AiSessionItem> {
     Some(item)
 }
 
-fn read_ai_sessions_from_disk() -> Result<Vec<AiSessionItem>, String> {
+/// Magic header marking an encrypted AI-session file (TAURI-7). Legacy
+/// plaintext files start with `[` (a JSON array), so the two are trivially
+/// distinguishable and old files keep loading.
+const AI_SESSION_ENC_MAGIC: &[u8] = b"ZTAIENC1\n";
+/// Vault blob context (AAD + subkey salt) for AI session history.
+const AI_SESSION_BLOB_CONTEXT: &str = "ai-sessions";
+
+/// True if `id`'s vault is unlocked; returns an owned handle so we don't
+/// hold the state mutex across file IO.
+fn optional_app(state: &State<'_, AppState>) -> Option<Arc<zeroterm_app::App>> {
+    state
+        .app
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
+
+fn read_ai_sessions_from_disk(app: Option<&zeroterm_app::App>) -> Result<Vec<AiSessionItem>, String> {
     let path = ai_session_path()?;
     if !path.exists() {
         return Ok(Vec::new());
     }
-    let text = fs::read_to_string(&path).map_err(|e| format!("reading {}: {e}", path.display()))?;
+    let bytes = fs::read(&path).map_err(|e| format!("reading {}: {e}", path.display()))?;
+
+    // Decrypt if the file is in the encrypted format; otherwise treat it
+    // as legacy cleartext JSON (and it'll be re-encrypted on the next
+    // write, once the vault is unlocked).
+    let json: Vec<u8> = if bytes.starts_with(AI_SESSION_ENC_MAGIC) {
+        // Encrypted: need the unlocked vault. If it's locked, treat as
+        // "not available yet" (empty) rather than erroring the UI — the
+        // history loads once the user unlocks.
+        let Some(app) = app else {
+            return Ok(Vec::new());
+        };
+        app.decrypt_local_blob(AI_SESSION_BLOB_CONTEXT, &bytes[AI_SESSION_ENC_MAGIC.len()..])
+            .map_err(|e| format!("decrypting AI history: {e}"))?
+    } else {
+        bytes
+    };
+
     let raw: Vec<AiSessionItem> =
-        serde_json::from_str(&text).map_err(|e| format!("parsing {}: {e}", path.display()))?;
+        serde_json::from_slice(&json).map_err(|e| format!("parsing {}: {e}", path.display()))?;
     let mut items: Vec<_> = raw
         .into_iter()
         .filter_map(normalize_ai_session_item)
@@ -814,13 +951,61 @@ fn read_ai_sessions_from_disk() -> Result<Vec<AiSessionItem>, String> {
     Ok(items)
 }
 
-fn write_ai_sessions_to_disk(items: &[AiSessionItem]) -> Result<(), String> {
+/// Write `contents` to `path`, truncating any existing file, and restrict the
+/// result to owner read/write (`0600`) on Unix. On other platforms this is a
+/// plain create+truncate write. Used for cleartext-but-sensitive config files.
+fn write_private_file(path: &Path, contents: &[u8]) -> std::io::Result<()> {
+    let mut opts = fs::OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut file = opts.open(path)?;
+    // `mode()` only applies when the file is newly created; normalise an
+    // existing file's permissions too.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(fs::Permissions::from_mode(0o600))?;
+    }
+    file.write_all(contents)
+}
+
+/// Persist AI sessions to `ai-sessions.json`.
+///
+/// TAURI-7 / FE-5: this file holds the full conversation history plus
+/// `command_results` (commands and their output), which can contain
+/// secrets. When the vault is unlocked it's sealed under the vault master
+/// key via `App::encrypt_local_blob` (a magic-prefixed `nonce||ciphertext`
+/// blob). If the vault is locked, refuse the write: owner-only permissions
+/// are useful defence in depth, but do not meet the vault's at-rest
+/// encryption guarantee. The read path still accepts legacy cleartext so it
+/// can be transparently upgraded on the first write after unlock.
+fn write_ai_sessions_to_disk(
+    items: &[AiSessionItem],
+    app: Option<&zeroterm_app::App>,
+) -> Result<(), String> {
     let path = ai_session_path()?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("creating {}: {e}", parent.display()))?;
     }
     let text = serde_json::to_string_pretty(items).map_err(|e| e.to_string())?;
-    fs::write(&path, text).map_err(|e| format!("writing {}: {e}", path.display()))
+
+    match app {
+        Some(app) => {
+            let blob = app
+                .encrypt_local_blob(AI_SESSION_BLOB_CONTEXT, text.as_bytes())
+                .map_err(|e| format!("encrypting AI history: {e}"))?;
+            let mut out = Vec::with_capacity(AI_SESSION_ENC_MAGIC.len() + blob.len());
+            out.extend_from_slice(AI_SESSION_ENC_MAGIC);
+            out.extend_from_slice(&blob);
+            write_private_file(&path, &out)
+                .map_err(|e| format!("writing {}: {e}", path.display()))
+        }
+        None => Err("vault is locked; refusing to persist AI history as plaintext".to_string()),
+    }
 }
 
 // --------------------------------------------------------------------------
@@ -886,7 +1071,9 @@ pub async fn set_background_image(path: String) -> Result<String, String> {
         .filter(|e| matches!(e.as_str(), "png" | "jpg" | "jpeg" | "webp" | "gif"))
         .ok_or_else(|| "unsupported image type (use PNG, JPG, WEBP or GIF)".to_string())?;
 
-    let metadata = fs::metadata(&src).map_err(|e| format!("reading {}: {e}", src.display()))?;
+    let metadata = tokio::fs::metadata(&src)
+        .await
+        .map_err(|e| format!("reading {}: {e}", src.display()))?;
     if metadata.len() > BACKGROUND_IMAGE_MAX_BYTES {
         return Err(format!(
             "image is {:.1} MB, above the {} MB limit",
@@ -895,16 +1082,22 @@ pub async fn set_background_image(path: String) -> Result<String, String> {
         ));
     }
 
-    let bytes = fs::read(&src).map_err(|e| format!("reading {}: {e}", src.display()))?;
+    let bytes = tokio::fs::read(&src)
+        .await
+        .map_err(|e| format!("reading {}: {e}", src.display()))?;
 
     let dir = background_dir()?;
-    fs::create_dir_all(&dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
+    tokio::fs::create_dir_all(&dir)
+        .await
+        .map_err(|e| format!("creating {}: {e}", dir.display()))?;
     // Drop any previously saved background under a different extension.
     if let Some(existing) = find_background_image()? {
-        let _ = fs::remove_file(existing);
+        let _ = tokio::fs::remove_file(existing).await;
     }
     let dest = dir.join(format!("{BACKGROUND_IMAGE_STEM}.{ext}"));
-    fs::write(&dest, &bytes).map_err(|e| format!("writing {}: {e}", dest.display()))?;
+    tokio::fs::write(&dest, &bytes)
+        .await
+        .map_err(|e| format!("writing {}: {e}", dest.display()))?;
 
     Ok(encode_data_url(&bytes, &ext))
 }
@@ -1106,7 +1299,7 @@ fn emit_ai_stream_error(app: &AppHandle, request_id: &str, error: String) {
 }
 
 fn take_ai_request_canceled(request_id: &str) -> bool {
-    canceled_ai_requests().lock().unwrap().remove(request_id)
+    canceled_ai_requests().lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(request_id)
 }
 
 fn parse_sse_frames(buffer: &mut String) -> Vec<String> {
@@ -1164,7 +1357,7 @@ pub async fn vault_status(state: State<'_, AppState>) -> Result<VaultStatus, Str
     let path = zeroterm_app::default_vault_path()
         .ok_or_else(|| "no default vault path on this OS".to_string())?;
     let exists = App::vault_exists(&path);
-    let unlocked = state.app.lock().unwrap().is_some();
+    let unlocked = state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner).is_some();
     Ok(VaultStatus {
         path: path.display().to_string(),
         exists,
@@ -1267,12 +1460,16 @@ pub async fn set_ai_profile_model(input: SetAiProfileModelInput) -> Result<AiCon
 }
 
 #[tauri::command]
-pub async fn list_ai_sessions() -> Result<Vec<AiSessionItem>, String> {
-    read_ai_sessions_from_disk()
+pub async fn list_ai_sessions(state: State<'_, AppState>) -> Result<Vec<AiSessionItem>, String> {
+    let app = optional_app(&state);
+    read_ai_sessions_from_disk(app.as_deref())
 }
 
 #[tauri::command]
-pub async fn save_ai_session(input: SaveAiSessionInput) -> Result<AiSessionItem, String> {
+pub async fn save_ai_session(
+    state: State<'_, AppState>,
+    input: SaveAiSessionInput,
+) -> Result<AiSessionItem, String> {
     let item = normalize_ai_session_item(AiSessionItem {
         id: input.id,
         title: input.title,
@@ -1286,37 +1483,40 @@ pub async fn save_ai_session(input: SaveAiSessionInput) -> Result<AiSessionItem,
     })
     .ok_or_else(|| "AI session is empty".to_string())?;
 
-    let mut items = read_ai_sessions_from_disk()?;
+    let app = optional_app(&state);
+    let mut items = read_ai_sessions_from_disk(app.as_deref())?;
     items.retain(|existing| existing.id != item.id);
     items.insert(0, item.clone());
     items.sort_by_key(|item| std::cmp::Reverse(item.updated_at));
     items.truncate(AI_SESSION_MAX_ITEMS);
-    write_ai_sessions_to_disk(&items)?;
+    write_ai_sessions_to_disk(&items, app.as_deref())?;
     Ok(item)
 }
 
 #[tauri::command]
-pub async fn delete_ai_session(id: String) -> Result<(), String> {
+pub async fn delete_ai_session(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let id = id.trim();
     if id.is_empty() {
         return Ok(());
     }
-    let mut items = read_ai_sessions_from_disk()?;
+    let app = optional_app(&state);
+    let mut items = read_ai_sessions_from_disk(app.as_deref())?;
     let before = items.len();
     items.retain(|item| item.id != id);
     if items.len() != before {
-        write_ai_sessions_to_disk(&items)?;
+        write_ai_sessions_to_disk(&items, app.as_deref())?;
     }
     Ok(())
 }
 
 #[tauri::command]
-pub async fn clear_ai_sessions() -> Result<(), String> {
-    write_ai_sessions_to_disk(&[])
+pub async fn clear_ai_sessions(state: State<'_, AppState>) -> Result<(), String> {
+    write_ai_sessions_to_disk(&[], optional_app(&state).as_deref())
 }
 
 #[tauri::command]
 pub async fn clear_ai_sessions_for_scope(
+    state: State<'_, AppState>,
     input: ClearAiSessionsForScopeInput,
 ) -> Result<(), String> {
     let scope_type = input.scope_type.trim();
@@ -1324,11 +1524,12 @@ pub async fn clear_ai_sessions_for_scope(
     if scope_type.is_empty() || scope_id.is_empty() {
         return Ok(());
     }
-    let mut items = read_ai_sessions_from_disk()?;
+    let app = optional_app(&state);
+    let mut items = read_ai_sessions_from_disk(app.as_deref())?;
     let before = items.len();
     items.retain(|item| item.scope_type != scope_type || item.scope_id != scope_id);
     if items.len() != before {
-        write_ai_sessions_to_disk(&items)?;
+        write_ai_sessions_to_disk(&items, app.as_deref())?;
     }
     Ok(())
 }
@@ -1429,10 +1630,7 @@ pub async fn ai_chat(
         "{}/chat/completions",
         profile.base_url.trim_end_matches('/')
     );
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(90))
-        .build()
-        .map_err(|e| e.to_string())?;
+    let client = build_http_client(Duration::from_secs(90))?;
     let mut body = json!({
         "model": profile.model,
         "messages": payload_messages,
@@ -1525,10 +1723,7 @@ pub async fn ai_chat_stream(app: AppHandle, input: AiChatStreamInput) -> Result<
         "{}/chat/completions",
         profile.base_url.trim_end_matches('/')
     );
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(120))
-        .build()
-        .map_err(|e| e.to_string())?;
+    let client = build_http_client(Duration::from_secs(120))?;
     let mut body = json!({
         "model": profile.model,
         "messages": payload_messages,
@@ -1747,7 +1942,7 @@ pub async fn unlock_vault(
     let path = zeroterm_app::default_vault_path()
         .ok_or_else(|| "no default vault path on this OS".to_string())?;
     let app = Arc::new(App::open(&path, &password).map_err(|e| e.to_string())?);
-    *state.app.lock().unwrap() = Some(app.clone());
+    *state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(app.clone());
     if remember {
         if let Err(e) = zeroterm_app::keychain::save_master_password(&path, &password) {
             tracing::warn!(error = %e, "could not cache master password in keychain");
@@ -1773,7 +1968,7 @@ pub async fn create_vault(
         std::fs::create_dir_all(parent).map_err(|e| format!("creating vault dir: {e}"))?;
     }
     let app = App::create(&path, &password).map_err(|e| e.to_string())?;
-    *state.app.lock().unwrap() = Some(Arc::new(app));
+    *state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Arc::new(app));
     if remember {
         if let Err(e) = zeroterm_app::keychain::save_master_password(&path, &password) {
             tracing::warn!(error = %e, "could not cache master password in keychain");
@@ -1785,8 +1980,8 @@ pub async fn create_vault(
 
 #[tauri::command]
 pub async fn lock_vault(state: State<'_, AppState>) -> Result<(), String> {
-    *state.app.lock().unwrap() = None;
-    state.sftp_handles.lock().unwrap().clear();
+    *state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    state.sftp_handles.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clear();
     state.sftp_pool.clear();
     state.transfer_manager.clear();
     // Locking the vault drops every cached sync engine too — they hold
@@ -1799,11 +1994,11 @@ pub async fn lock_vault(state: State<'_, AppState>) -> Result<(), String> {
 #[tauri::command]
 pub async fn clear_vault_data(state: State<'_, AppState>) -> Result<(), String> {
     {
-        let app_lock = state.app.lock().unwrap();
+        let app_lock = state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let app = app_lock.as_ref().ok_or("vault is locked")?;
         app.clear_vault_data().map_err(|e| e.to_string())?;
     }
-    state.sftp_handles.lock().unwrap().clear();
+    state.sftp_handles.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clear();
     state.sftp_pool.clear();
     state.transfer_manager.clear();
     state.sync.forget_all().await;
@@ -1840,7 +2035,7 @@ pub async fn try_keychain_unlock(state: State<'_, AppState>) -> Result<bool, Str
     match App::open(&path, &pw) {
         Ok(app) => {
             let app = Arc::new(app);
-            *state.app.lock().unwrap() = Some(app.clone());
+            *state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(app.clone());
             spawn_sync_engine_bootstrap(app, state.sync.clone(), path.clone());
             info!("vault unlocked from keychain cache");
             Ok(true)
@@ -2037,7 +2232,7 @@ pub struct HostSyncDiagnostics {
 
 #[tauri::command]
 pub async fn list_hosts(state: State<'_, AppState>) -> Result<Vec<HostSummary>, String> {
-    let app_lock = state.app.lock().unwrap();
+    let app_lock = state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let app = app_lock.as_ref().ok_or("vault is locked")?;
     let hosts = app.list_hosts().map_err(|e| e.to_string())?;
     Ok(hosts
@@ -2063,7 +2258,7 @@ pub async fn list_hosts(state: State<'_, AppState>) -> Result<Vec<HostSummary>, 
 pub async fn host_sync_diagnostics(
     state: State<'_, AppState>,
 ) -> Result<HostSyncDiagnostics, String> {
-    let app_lock = state.app.lock().unwrap();
+    let app_lock = state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let app = app_lock.as_ref().ok_or("vault is locked")?;
     let d = app.host_diagnostics().map_err(|e| e.to_string())?;
     Ok(HostSyncDiagnostics {
@@ -2301,7 +2496,7 @@ fn sync_backend_key_from_profile(profile: &SyncProfile) -> &'static str {
 
 #[tauri::command]
 pub async fn list_sync_profiles(state: State<'_, AppState>) -> Result<Vec<SyncProfileIO>, String> {
-    let app_lock = state.app.lock().unwrap();
+    let app_lock = state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let app = app_lock.as_ref().ok_or("vault is locked")?;
     let profiles = app.list_sync_profiles().map_err(|e| e.to_string())?;
     Ok(profiles.into_iter().map(profile_to_io).collect())
@@ -2314,7 +2509,7 @@ pub async fn save_sync_profile(
 ) -> Result<String, String> {
     let backend_key = sync_backend_key_from_input(&input).to_string();
     let credential = sync_profile_credential_from_input(&input);
-    let app_lock = state.app.lock().unwrap();
+    let app_lock = state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let app = app_lock.as_ref().ok_or("vault is locked")?;
     let existing = app
         .list_sync_profiles()
@@ -2342,7 +2537,7 @@ pub async fn update_sync_profile(
     input: SyncProfileInput,
 ) -> Result<(), String> {
     let credential = sync_profile_credential_from_input(&input);
-    let app_lock = state.app.lock().unwrap();
+    let app_lock = state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let app = app_lock.as_ref().ok_or("vault is locked")?;
     let p = profile_from_input(id.clone(), input)?;
     app.update_sync_profile(&p).map_err(|e| e.to_string())?;
@@ -2353,7 +2548,7 @@ pub async fn update_sync_profile(
 #[tauri::command]
 pub async fn delete_sync_profile(state: State<'_, AppState>, id: String) -> Result<(), String> {
     {
-        let app_lock = state.app.lock().unwrap();
+        let app_lock = state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let app = app_lock.as_ref().ok_or("vault is locked")?;
         app.delete_sync_profile(&id).map_err(|e| e.to_string())?;
     }
@@ -2377,7 +2572,7 @@ pub async fn delete_all_sync_profiles(
 ) -> Result<DeleteAllSyncProfilesResult, String> {
     let ai_keys = snapshot_ai_api_keys();
     let ids = {
-        let app_lock = state.app.lock().unwrap();
+        let app_lock = state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let app = app_lock.as_ref().ok_or("vault is locked")?;
         app.list_sync_profile_ids_raw().map_err(|e| e.to_string())?
     };
@@ -2385,7 +2580,7 @@ pub async fn delete_all_sync_profiles(
     let mut deleted_count = 0usize;
     for id in &ids {
         {
-            let app_lock = state.app.lock().unwrap();
+            let app_lock = state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             let app = app_lock.as_ref().ok_or("vault is locked")?;
             app.delete_sync_profile(id).map_err(|e| e.to_string())?;
         }
@@ -2505,7 +2700,7 @@ pub async fn sync_join_repo(
         .map_err(|e| e.to_string())?;
 
     let local_vault_id = {
-        let app_lock = state.app.lock().unwrap();
+        let app_lock = state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let app = app_lock.as_ref().ok_or("vault is locked")?;
         app.vault_id().to_string()
     };
@@ -2594,7 +2789,7 @@ pub async fn sync_list_devices(
     profile_id: String,
 ) -> Result<Vec<SyncDeviceEntry>, String> {
     let app = {
-        let guard = state.app.lock().unwrap();
+        let guard = state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         guard.as_ref().ok_or("vault is locked")?.clone()
     };
     let devices = app
@@ -2614,12 +2809,37 @@ pub async fn sync_list_devices(
 }
 
 #[tauri::command]
+pub async fn sync_revoke_device(
+    state: State<'_, AppState>,
+    profile_id: String,
+    device_id: String,
+    new_passphrase: String,
+    remember_passphrase: Option<bool>,
+) -> Result<zeroterm_sync::engine::RekeyReport, String> {
+    let (app, manager) = clone_app_and_sync(&state)?;
+    let report = app
+        .sync_revoke_device(&manager, &profile_id, &device_id, &new_passphrase)
+        .await
+        .map_err(|e| e.to_string())?;
+    if remember_passphrase.unwrap_or(false) {
+        if let Err(e) =
+            zeroterm_app::keychain::save_sync_encryption_secret(&profile_id, &new_passphrase)
+        {
+            tracing::warn!(profile_id = %profile_id, error = %e, "root rotation succeeded but the replacement sync passphrase could not be saved");
+        }
+    } else if let Err(e) = zeroterm_app::keychain::forget_sync_encryption_secret(&profile_id) {
+        tracing::warn!(profile_id = %profile_id, error = %e, "root rotation succeeded but the old remembered sync passphrase could not be removed");
+    }
+    Ok(report)
+}
+
+#[tauri::command]
 pub async fn sync_list_conflicts(
     state: State<'_, AppState>,
     _profile_id: String,
 ) -> Result<Vec<zeroterm_app::ConflictView>, String> {
     let app = {
-        let guard = state.app.lock().unwrap();
+        let guard = state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         guard.as_ref().ok_or("vault is locked")?.clone()
     };
     app.list_open_conflicts().map_err(|e| e.to_string())
@@ -2640,7 +2860,7 @@ pub async fn sync_resolve_conflict(
     resolution: SyncResolutionInput,
 ) -> Result<(), String> {
     let app = {
-        let guard = state.app.lock().unwrap();
+        let guard = state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         guard.as_ref().ok_or("vault is locked")?.clone()
     };
     let r = match resolution {
@@ -2687,7 +2907,7 @@ pub async fn sync_repo_stats(
 fn clone_app_and_sync(
     state: &State<'_, AppState>,
 ) -> Result<(Arc<zeroterm_app::App>, Arc<zeroterm_app::SyncManager>), String> {
-    let guard = state.app.lock().unwrap();
+    let guard = state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let app = guard.as_ref().ok_or("vault is locked")?.clone();
     let manager = state.sync.clone();
     Ok((app, manager))
@@ -3112,7 +3332,7 @@ fn group_to_dto(g: zeroterm_app::HostGroup) -> HostGroupDto {
 
 #[tauri::command]
 pub async fn list_host_groups(state: State<'_, AppState>) -> Result<Vec<HostGroupDto>, String> {
-    let app_lock = state.app.lock().unwrap();
+    let app_lock = state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let app = app_lock.as_ref().ok_or("vault is locked")?;
     let groups = app.list_host_groups().map_err(|e| e.to_string())?;
     Ok(groups.into_iter().map(group_to_dto).collect())
@@ -3216,7 +3436,7 @@ fn snippet_to_dto(s: zeroterm_app::Snippet) -> SnippetDto {
 
 #[tauri::command]
 pub async fn list_snippets(state: State<'_, AppState>) -> Result<Vec<SnippetDto>, String> {
-    let app_lock = state.app.lock().unwrap();
+    let app_lock = state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let app = app_lock.as_ref().ok_or("vault is locked")?;
     let snippets = app.list_snippets().map_err(|e| e.to_string())?;
     Ok(snippets.into_iter().map(snippet_to_dto).collect())
@@ -3296,12 +3516,91 @@ pub async fn delete_snippet_group(
     Ok(deleted)
 }
 
-/// Read a local text file (key material picked by the host editor).
-/// We don't whitelist arbitrary FS access via the `tauri-plugin-fs`
-/// permission machinery; this command takes a single path the user
-/// just selected via the dialog plugin and reads it as UTF-8.
+/// Upper bound for `read_local_text_file` — it exists to import key
+/// material, which is a few KiB. Anything larger is a wrong pick.
+const MAX_PICKED_TEXT_FILE_BYTES: u64 = 1024 * 1024;
+
+/// Open a native file-picker and, when the user picks something,
+/// remember the canonical path in the session's dialog-grant set.
+/// High-risk commands (`read_local_text_file`, `open_with_app`) only
+/// accept granted paths — this is what ties "the user chose this file"
+/// to the backend instead of trusting whatever string the webview sends.
 #[tauri::command]
-pub async fn read_local_text_file(path: String) -> Result<String, String> {
+pub async fn pick_local_file(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+    title: Option<String>,
+    default_path: Option<String>,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        let mut builder = app_handle.dialog().file();
+        if let Some(t) = title {
+            builder = builder.set_title(t);
+        }
+        if let Some(dir) = default_path {
+            let p = PathBuf::from(dir);
+            if p.is_dir() {
+                builder = builder.set_directory(p);
+            }
+        }
+        builder.blocking_pick_file()
+    })
+    .await
+    .map_err(|e| format!("dialog task failed: {e}"))?;
+
+    let Some(file_path) = picked else {
+        return Ok(None);
+    };
+    let path = file_path
+        .into_path()
+        .map_err(|e| format!("unsupported dialog result: {e}"))?;
+    let canonical = std::fs::canonicalize(&path)
+        .map_err(|e| format!("resolving {}: {e}", path.display()))?;
+    state
+        .dialog_grants
+        .lock()
+        .unwrap()
+        .insert(canonical.clone());
+    Ok(Some(canonical.to_string_lossy().to_string()))
+}
+
+/// True when `path` resolves to a file the user picked through
+/// [`pick_local_file`] this session.
+fn is_dialog_granted(state: &State<'_, AppState>, path: &str) -> bool {
+    let Ok(canonical) = std::fs::canonicalize(path) else {
+        return false;
+    };
+    state.dialog_grants.lock().unwrap_or_else(std::sync::PoisonError::into_inner).contains(&canonical)
+}
+
+/// Read a local text file (key material picked by the host editor).
+/// Only paths the user just selected through [`pick_local_file`] are
+/// accepted; this command is the designated reader for private keys, so
+/// letting the webview name arbitrary paths would hand any XSS a copy
+/// of `~/.ssh/id_rsa`.
+#[tauri::command]
+pub async fn read_local_text_file(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<String, String> {
+    if !is_dialog_granted(&state, &path) {
+        return Err(format!(
+            "`{path}` was not selected through the file picker; refusing to read it"
+        ));
+    }
+    let meta = std::fs::metadata(&path).map_err(|e| format!("stating {path}: {e}"))?;
+    if !meta.is_file() {
+        return Err(format!("`{path}` is not a regular file"));
+    }
+    if meta.len() > MAX_PICKED_TEXT_FILE_BYTES {
+        return Err(format!(
+            "`{path}` is {} bytes, above the {} byte import limit",
+            meta.len(),
+            MAX_PICKED_TEXT_FILE_BYTES
+        ));
+    }
     std::fs::read_to_string(&path).map_err(|e| format!("reading {path}: {e}"))
 }
 
@@ -3366,7 +3665,7 @@ pub async fn local_write_text(path: String, content: String) -> Result<u64, Stri
 
 #[tauri::command]
 pub async fn get_host(state: State<'_, AppState>, id: String) -> Result<HostFull, String> {
-    let app_lock = state.app.lock().unwrap();
+    let app_lock = state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let app = app_lock.as_ref().ok_or("vault is locked")?;
     let h = app
         .find_host_by_id(&id)
@@ -3406,7 +3705,7 @@ pub async fn reveal_host_credential(
     if master_password.is_empty() {
         return Err("master password is required".to_string());
     }
-    if state.app.lock().unwrap().is_none() {
+    if state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner).is_none() {
         return Err("vault is locked".to_string());
     }
     let path = zeroterm_app::default_vault_path()
@@ -3419,10 +3718,10 @@ pub async fn reveal_host_credential(
             .find_host_by_id(&id)
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("no host with id {id}"))?;
-        match (kind, host.auth) {
-            (HostCredentialKind::Password, HostAuth::Password { value }) => Ok(value),
+        match (kind, &host.auth) {
+            (HostCredentialKind::Password, HostAuth::Password { value }) => Ok(value.clone()),
             (HostCredentialKind::KeyPassphrase, HostAuth::PrivateKey { passphrase: Some(value), .. }) => {
-                Ok(value)
+                Ok(value.clone())
             }
             (HostCredentialKind::KeyPassphrase, HostAuth::PrivateKey { passphrase: None, .. }) => {
                 Err("this private key has no saved passphrase".to_string())
@@ -3692,13 +3991,14 @@ pub async fn collect_system_metrics(
         return local_metrics().await;
     }
     let (_host, cfg, jump_cfg) = build_connect_chain_for_host(&state, &app_handle, &host_id)?;
-    let (jump_session, mut session) = connect_host_sessions(cfg, jump_cfg).await?;
+    let session = state
+        .sftp_pool
+        .acquire_session(host_id, cfg, jump_cfg)
+        .await?;
     let (_code, stdout, stderr) = session
         .exec(METRICS_SCRIPT)
         .await
         .map_err(|e| e.to_string())?;
-    drop(session);
-    drop(jump_session);
     if stdout.is_empty() && !stderr.is_empty() {
         return Err(String::from_utf8_lossy(&stderr).to_string());
     }
@@ -3727,6 +4027,27 @@ fn shell_quote(arg: &str) -> String {
     out
 }
 
+/// Subcommands the Docker panel actually issues. `docker_exec` runs
+/// with app privileges (locally) or on the remote host, so the surface
+/// is pinned to container lifecycle/inspection verbs — notably NOT
+/// `run`/`exec`/`create`/`cp`/`build`, any of which would let an
+/// injected script mount the host filesystem or execute arbitrary code.
+const DOCKER_ALLOWED_SUBCOMMANDS: &[&str] = &[
+    "ps", "inspect", "logs", "stats", "start", "stop", "restart", "rm", "pause", "unpause",
+];
+
+fn validate_docker_args(args: &[String]) -> Result<(), String> {
+    let Some(sub) = args.first() else {
+        return Err("docker: no subcommand given".to_string());
+    };
+    if !DOCKER_ALLOWED_SUBCOMMANDS.contains(&sub.as_str()) {
+        return Err(format!(
+            "docker subcommand `{sub}` is not allowed from the UI"
+        ));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn docker_exec(
     state: State<'_, AppState>,
@@ -3734,6 +4055,7 @@ pub async fn docker_exec(
     host_id: Option<String>,
     args: Vec<String>,
 ) -> Result<DockerExecResult, String> {
+    validate_docker_args(&args)?;
     let host_id = host_id.unwrap_or_default();
     if host_id.is_empty() || host_id.starts_with("local-") {
         #[cfg(target_os = "windows")]
@@ -3756,15 +4078,16 @@ pub async fn docker_exec(
         });
     }
     let (_host, cfg, jump_cfg) = build_connect_chain_for_host(&state, &app_handle, &host_id)?;
-    let (jump_session, mut session) = connect_host_sessions(cfg, jump_cfg).await?;
+    let session = state
+        .sftp_pool
+        .acquire_session(host_id, cfg, jump_cfg)
+        .await?;
     let mut cmd = String::from("docker");
     for a in &args {
         cmd.push(' ');
         cmd.push_str(&shell_quote(a));
     }
     let (code, stdout, stderr) = session.exec(&cmd).await.map_err(|e| e.to_string())?;
-    drop(session);
-    drop(jump_session);
     Ok(DockerExecResult {
         code: code as i32,
         stdout: String::from_utf8_lossy(&stdout).to_string(),
@@ -3917,7 +4240,7 @@ async fn detect_remote_os_type(sftp: &zeroterm_ssh::Sftp) -> Option<String> {
 
 #[allow(dead_code)]
 fn persist_host_os_type(state: &AppState, host_id: &str, os_type: &str) -> Result<(), String> {
-    let app_lock = state.app.lock().unwrap();
+    let app_lock = state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let app = app_lock.as_ref().ok_or("vault is locked")?;
 
     let mut host = app
@@ -4016,7 +4339,7 @@ pub async fn connect_host(
         .await;
     });
 
-    state.sessions.lock().unwrap().insert(
+    state.sessions.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(
         session_id,
         SessionHandle {
             control_tx,
@@ -4034,13 +4357,13 @@ pub async fn connect_host(
 pub async fn list_port_forward_status(
     state: State<'_, AppState>,
 ) -> Result<Vec<PortForwardRuleStatus>, String> {
-    let app_lock = state.app.lock().unwrap();
+    let app_lock = state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let app = app_lock.as_ref().ok_or("vault is locked")?;
     let hosts = app.list_hosts().map_err(|e| e.to_string())?;
     let rules = app.list_port_forwards().map_err(|e| e.to_string())?;
     drop(app_lock);
 
-    let active = state.port_forwards.lock().unwrap();
+    let active = state.port_forwards.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let mut out = Vec::new();
     for host in hosts {
         for rule in rules.iter().filter(|rule| rule.host_id == host.id) {
@@ -4079,13 +4402,13 @@ pub async fn list_port_forward_status(
 pub async fn list_port_forward_hosts(
     state: State<'_, AppState>,
 ) -> Result<Vec<PortForwardHostStatus>, String> {
-    let app_lock = state.app.lock().unwrap();
+    let app_lock = state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let app = app_lock.as_ref().ok_or("vault is locked")?;
     let hosts = app.list_hosts().map_err(|e| e.to_string())?;
     let rules = app.list_port_forwards().map_err(|e| e.to_string())?;
     drop(app_lock);
 
-    let active = state.port_forwards.lock().unwrap();
+    let active = state.port_forwards.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let mut out = Vec::new();
     for host in hosts {
         let host_id = host.id.clone();
@@ -4154,7 +4477,7 @@ pub async fn update_port_forward_rule(
 /// the user just deleted. `cancel()` is non-blocking, so it's safe to call
 /// while holding the map lock.
 fn stop_port_forwards_where(state: &AppState, pred: impl Fn(&PortForwardHandle) -> bool) -> usize {
-    let mut map = state.port_forwards.lock().unwrap();
+    let mut map = state.port_forwards.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let ids: Vec<u64> = map
         .iter()
         .filter(|(_, h)| pred(h))
@@ -4309,7 +4632,7 @@ pub async fn start_port_forward(
     rule_id: String,
 ) -> Result<u64, String> {
     let (host_id, spec) = {
-        let app_lock = state.app.lock().unwrap();
+        let app_lock = state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let app = app_lock.as_ref().ok_or("vault is locked")?;
         let rule = app
             .find_port_forward_by_id(&rule_id)
@@ -4318,7 +4641,7 @@ pub async fn start_port_forward(
         (rule.host_id, rule.spec)
     };
     {
-        let active = state.port_forwards.lock().unwrap();
+        let active = state.port_forwards.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if active.values().any(|handle| handle.rule_id == rule_id) {
             return Err("port forward is already running".to_string());
         }
@@ -4339,7 +4662,7 @@ pub async fn start_port_forward(
     let id = state.next_port_forward_id.fetch_add(1, Ordering::SeqCst);
     let pf_state = Arc::new(std::sync::atomic::AtomicU8::new(PF_ACTIVE));
     let cancel = tokio_util::sync::CancellationToken::new();
-    state.port_forwards.lock().unwrap().insert(
+    state.port_forwards.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(
         id,
         PortForwardHandle {
             host_id: host_id.clone(),
@@ -4374,7 +4697,7 @@ pub async fn stop_port_forward(
     app_handle: AppHandle,
     id: u64,
 ) -> Result<(), String> {
-    let removed = state.port_forwards.lock().unwrap().remove(&id);
+    let removed = state.port_forwards.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(&id);
     match removed {
         Some(handle) => {
             // Cancelling makes the supervisor drop its sessions and forwards
@@ -4487,7 +4810,7 @@ pub async fn connect_quick_host(
         .await;
     });
 
-    state.sessions.lock().unwrap().insert(
+    state.sessions.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(
         session_id,
         SessionHandle {
             control_tx,
@@ -4549,13 +4872,40 @@ fn default_local_shell_command() -> CommandBuilder {
     }
 }
 
+/// Byte count of a torn multi-byte UTF-8 sequence at the end of `buf`, or 0
+/// when the buffer ends on a character boundary (or in bytes no continuation
+/// could ever complete).
+fn torn_utf8_tail_len(buf: &[u8]) -> usize {
+    for back in 1..=buf.len().min(3) {
+        let b = buf[buf.len() - back];
+        if b & 0xC0 == 0x80 {
+            continue; // continuation byte — keep scanning for its lead
+        }
+        let need = match b {
+            0xC2..=0xDF => 2,
+            0xE0..=0xEF => 3,
+            0xF0..=0xF4 => 4,
+            _ => return 0, // ASCII or a byte that can't start a sequence
+        };
+        return if need > back { back } else { 0 };
+    }
+    0
+}
+
 /// One step of the local-pty stream decode: appends a read chunk to `pending`
-/// and returns the bytes safe to forward now. ConPTY output is always UTF-8,
-/// but read() can split a multi-byte character at the chunk boundary — the
-/// torn tail (≤3 bytes) stays in `pending` until the next read completes it,
-/// instead of tripping the GBK fallback for the whole chunk. Input that is
-/// definitely not UTF-8 (winpty fallback or legacy tools writing a non-UTF-8
-/// codepage) is re-encoded from GBK.
+/// and returns the bytes safe to forward now. Shell output is UTF-8, but
+/// read() can split a multi-byte character at the chunk boundary — the torn
+/// tail (≤3 bytes) stays in `pending` until the next read completes it.
+///
+/// Bytes that are invalid mid-chunk are handled per platform. On Windows the
+/// whole chunk is re-encoded from GBK (winpty fallback or legacy tools
+/// writing the legacy codepage). Elsewhere only the invalid sequences are
+/// replaced with U+FFFD: Unix terminals are UTF-8-only, and a whole-chunk GBK
+/// fallback would let one stray byte (e.g. partial writes interleaving
+/// mid-character) mojibake an entire 8 KB frame. The Unix path also withholds
+/// a torn UTF-8 tail before replacing, so one bad chunk can't leave the next
+/// chunk starting on orphaned continuation bytes and cascade. (Not done for
+/// GBK — its trailing bytes overlap UTF-8 lead bytes and would be misheld.)
 fn decode_local_pty_chunk(pending: &mut Vec<u8>, chunk: &[u8]) -> Vec<u8> {
     pending.extend_from_slice(chunk);
     match std::str::from_utf8(pending) {
@@ -4564,11 +4914,16 @@ fn decode_local_pty_chunk(pending: &mut Vec<u8>, chunk: &[u8]) -> Vec<u8> {
             let tail = pending.split_off(e.valid_up_to());
             std::mem::replace(pending, tail)
         }
-        Err(_) => {
+        Err(_) if cfg!(windows) => {
             let (cow, _) = encoding_rs::GBK.decode_without_bom_handling(pending);
             let data = cow.into_owned().into_bytes();
             pending.clear();
             data
+        }
+        Err(_) => {
+            let tail = pending.split_off(pending.len() - torn_utf8_tail_len(pending));
+            let head = std::mem::replace(pending, tail);
+            String::from_utf8_lossy(&head).into_owned().into_bytes()
         }
     }
 }
@@ -4716,7 +5071,7 @@ pub async fn create_local_terminal_session(
         );
     });
 
-    state.local_sessions.lock().unwrap().insert(
+    state.local_sessions.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(
         session_id,
         LocalSessionHandle {
             writer_tx,
@@ -4735,7 +5090,7 @@ pub async fn send_input(
     data: Vec<u8>,
 ) -> Result<(), String> {
     let local_tx = {
-        let locals = state.local_sessions.lock().unwrap();
+        let locals = state.local_sessions.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         locals.get(&session_id).map(|h| h.writer_tx.clone())
     };
     if let Some(tx) = local_tx {
@@ -4746,7 +5101,7 @@ pub async fn send_input(
     }
 
     let tx = {
-        let sessions = state.sessions.lock().unwrap();
+        let sessions = state.sessions.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         sessions
             .get(&session_id)
             .ok_or_else(|| format!("session {session_id} not found"))?
@@ -4767,7 +5122,7 @@ pub async fn resize_session(
     rows: u16,
 ) -> Result<(), String> {
     let local_tx = {
-        let locals = state.local_sessions.lock().unwrap();
+        let locals = state.local_sessions.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         locals.get(&session_id).map(|h| h.resize_tx.clone())
     };
     if let Some(tx) = local_tx {
@@ -4776,7 +5131,7 @@ pub async fn resize_session(
     }
 
     let tx = {
-        let sessions = state.sessions.lock().unwrap();
+        let sessions = state.sessions.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         match sessions.get(&session_id) {
             Some(h) => h.control_tx.clone(),
             None => return Ok(()), // session already gone — ignore
@@ -4793,7 +5148,7 @@ pub async fn disconnect_session(
     session_id: u64,
 ) -> Result<(), String> {
     let local_tx_opt = {
-        let mut locals = state.local_sessions.lock().unwrap();
+        let mut locals = state.local_sessions.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         locals.remove(&session_id).map(|h| h.shutdown_tx)
     };
     if let Some(tx) = local_tx_opt {
@@ -4803,7 +5158,7 @@ pub async fn disconnect_session(
     }
 
     let tx_opt = {
-        let sessions = state.sessions.lock().unwrap();
+        let sessions = state.sessions.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         sessions.get(&session_id).map(|h| h.control_tx.clone())
     };
     if let Some(tx) = tx_opt {
@@ -4837,7 +5192,7 @@ pub async fn session_info(
     state: State<'_, AppState>,
     session_id: u64,
 ) -> Result<SessionInfo, String> {
-    let sessions = state.sessions.lock().unwrap();
+    let sessions = state.sessions.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let h = sessions
         .get(&session_id)
         .ok_or_else(|| format!("no session {session_id}"))?;
@@ -4858,7 +5213,7 @@ pub async fn respond_host_key(
     accept: bool,
     mode: Option<String>,
 ) -> Result<(), String> {
-    let tx = { state.pending_host_key.lock().unwrap().remove(&request_id) };
+    let tx = { state.pending_host_key.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(&request_id) };
     if let Some(tx) = tx {
         let response = if accept {
             match mode.as_deref() {
@@ -4975,11 +5330,44 @@ pub async fn local_remove(path: String) -> Result<(), String> {
 }
 
 fn validate_local_removable_dir(path: &Path) -> Result<(), String> {
-    if !path.is_absolute() || path.parent().is_none() {
-        return Err(format!(
-            "refusing to recursively remove unsafe directory: {}",
+    let refuse = |why: &str| {
+        Err(format!(
+            "refusing to recursively remove {}: {why}",
             path.display()
-        ));
+        ))
+    };
+    if !path.is_absolute() || path.parent().is_none() {
+        return refuse("not an absolute path with a parent");
+    }
+    // Resolve `..`/symlink games in the *parent*; keep the leaf as
+    // named so a symlinked leaf is removed as a link, not followed.
+    let Some(parent) = path.parent() else {
+        return refuse("no parent directory");
+    };
+    let Some(leaf) = path.file_name() else {
+        return refuse("no final path component");
+    };
+    let canonical = match parent.canonicalize() {
+        Ok(p) => p.join(leaf),
+        Err(e) => return Err(format!("resolving {}: {e}", path.display())),
+    };
+    // Never the filesystem root or a top-level directory (`/home`,
+    // `/Users`, `/etc`, `C:\Windows`, …). Count only named components
+    // so the Windows drive prefix doesn't inflate the depth.
+    let depth = canonical
+        .components()
+        .filter(|c| matches!(c, std::path::Component::Normal(_)))
+        .count();
+    if depth <= 1 {
+        return refuse("filesystem root or top-level directory");
+    }
+    // Never the user's home directory or any ancestor of it — an
+    // injected `local_remove_dir("/Users/me")` must not wipe the
+    // account even though it is "an absolute path with a parent".
+    if let Some(home) = dirs::home_dir().and_then(|h| h.canonicalize().ok()) {
+        if home.starts_with(&canonical) {
+            return refuse("the home directory (or an ancestor of it)");
+        }
     }
     Ok(())
 }
@@ -5056,14 +5444,57 @@ pub async fn temp_open_path(file_name: String) -> Result<String, String> {
     Ok(dir.join(target_name).to_string_lossy().to_string())
 }
 
+/// Is `app_path` an acceptable "open with" application target?
+///
+/// `app_path` becomes the executable in a `spawn()` (or the `-a`
+/// argument to macOS `open`), so an unconstrained value is arbitrary
+/// code execution the moment any XSS reaches `invoke`. We accept it only
+/// when it is a real application the user pointed us at:
+///   - a path the user picked this session through `pick_local_file`, or
+///   - an entry under a known system applications directory.
+fn validate_open_with_app(state: &State<'_, AppState>, app_path: &str) -> Result<(), String> {
+    if is_dialog_granted(state, app_path) {
+        return Ok(());
+    }
+    let canonical = std::fs::canonicalize(app_path)
+        .map_err(|e| format!("resolving application {app_path}: {e}"))?;
+
+    #[cfg(target_os = "macos")]
+    let roots: &[&str] = &["/Applications", "/System/Applications"];
+    #[cfg(target_os = "windows")]
+    let roots: &[&str] = &["C:\\Program Files", "C:\\Program Files (x86)"];
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    let roots: &[&str] = &["/usr/bin", "/usr/local/bin", "/opt", "/snap", "/var/lib/flatpak"];
+
+    let under_system_root = roots.iter().any(|r| {
+        std::fs::canonicalize(r)
+            .map(|root| canonical.starts_with(root))
+            .unwrap_or(false)
+    });
+    if under_system_root {
+        Ok(())
+    } else {
+        Err(format!(
+            "application `{app_path}` must be chosen through the picker or live under a system apps directory"
+        ))
+    }
+}
+
 #[tauri::command]
 #[allow(clippy::needless_return)]
-pub async fn open_with_app(file_path: String, app_path: String) -> Result<(), String> {
+pub async fn open_with_app(
+    state: State<'_, AppState>,
+    file_path: String,
+    app_path: String,
+) -> Result<(), String> {
+    validate_open_with_app(&state, &app_path)?;
+
     #[cfg(target_os = "macos")]
     {
         Command::new("open")
             .arg("-a")
             .arg(&app_path)
+            .arg("--")
             .arg(&file_path)
             .spawn()
             .map_err(|e| format!("open -a {} {}: {e}", app_path, file_path))?;
@@ -5082,6 +5513,7 @@ pub async fn open_with_app(file_path: String, app_path: String) -> Result<(), St
     #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
     {
         Command::new(&app_path)
+            .arg("--")
             .arg(&file_path)
             .spawn()
             .map_err(|e| format!("launch {} {}: {e}", app_path, file_path))?;
@@ -5116,7 +5548,40 @@ mod tests {
         assert!(validate_local_removable_dir(Path::new(".")).is_err());
         #[cfg(unix)]
         assert!(validate_local_removable_dir(Path::new("/")).is_err());
-        assert!(validate_local_removable_dir(&std::env::temp_dir().join("child")).is_ok());
+        // A real, deep, existing directory is fine.
+        let deep = std::env::temp_dir().join("zeroterm-rmtest-child");
+        std::fs::create_dir_all(&deep).unwrap();
+        assert!(validate_local_removable_dir(&deep).is_ok());
+        let _ = std::fs::remove_dir_all(&deep);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recursive_local_delete_rejects_top_level_and_home() {
+        // Top-level directories (depth <= 2) are refused.
+        assert!(validate_local_removable_dir(Path::new("/home")).is_err());
+        assert!(validate_local_removable_dir(Path::new("/etc")).is_err());
+        // The home directory itself is refused even though it is a deep
+        // absolute path with a parent.
+        if let Some(home) = dirs::home_dir() {
+            assert!(
+                validate_local_removable_dir(&home).is_err(),
+                "home dir must not be recursively removable"
+            );
+        }
+    }
+
+    #[test]
+    fn docker_args_allow_lifecycle_but_reject_run_and_exec() {
+        assert!(validate_docker_args(&["ps".into(), "-a".into()]).is_ok());
+        assert!(validate_docker_args(&["stop".into(), "abc".into()]).is_ok());
+        assert!(validate_docker_args(&["logs".into(), "abc".into()]).is_ok());
+        // The dangerous verbs an injected script would reach for.
+        assert!(validate_docker_args(&["run".into(), "-v".into(), "/:/host".into()]).is_err());
+        assert!(validate_docker_args(&["exec".into(), "c".into(), "sh".into()]).is_err());
+        assert!(validate_docker_args(&["cp".into()]).is_err());
+        assert!(validate_docker_args(&["build".into()]).is_err());
+        assert!(validate_docker_args(&[]).is_err());
     }
 
     #[test]
@@ -5131,6 +5596,7 @@ mod tests {
         assert!(pending.is_empty());
     }
 
+    #[cfg(windows)]
     #[test]
     fn local_pty_decode_still_falls_back_to_gbk() {
         // "你好" encoded as GBK, split so the first read alone looks like an
@@ -5141,6 +5607,37 @@ mod tests {
         out.extend(decode_local_pty_chunk(&mut pending, &gbk[..1]));
         out.extend(decode_local_pty_chunk(&mut pending, &gbk[1..]));
         assert_eq!(String::from_utf8(out).unwrap(), "你好");
+        assert!(pending.is_empty());
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn local_pty_decode_replaces_stray_byte_without_gbk_mojibake() {
+        // One invalid byte inside a chunk of box-drawing characters must not
+        // re-decode the whole chunk as GBK ("──" would become "鈹€鈹€").
+        let mut bytes = "─".as_bytes().to_vec();
+        bytes.push(0xFF);
+        bytes.extend_from_slice("─".as_bytes());
+        let mut pending = Vec::new();
+        let out = decode_local_pty_chunk(&mut pending, &bytes);
+        assert_eq!(String::from_utf8(out).unwrap(), "─\u{FFFD}─");
+        assert!(pending.is_empty());
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn local_pty_decode_does_not_cascade_after_stray_byte() {
+        // A chunk holding both an invalid byte and a torn trailing character:
+        // the torn tail must stay pending so the next chunk doesn't start on
+        // orphaned continuation bytes and mojibake in turn.
+        let full = "─│".as_bytes(); // two 3-byte characters
+        let mut first = vec![0xFFu8];
+        first.extend_from_slice(&full[..4]); // "─" + first byte of "│"
+        let mut pending = Vec::new();
+        let mut out = Vec::new();
+        out.extend(decode_local_pty_chunk(&mut pending, &first));
+        out.extend(decode_local_pty_chunk(&mut pending, &full[4..]));
+        assert_eq!(String::from_utf8(out).unwrap(), "\u{FFFD}─│");
         assert!(pending.is_empty());
     }
 

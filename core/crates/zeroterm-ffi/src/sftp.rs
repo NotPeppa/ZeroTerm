@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use tokio::io::AsyncWriteExt;
 use tokio_util::sync::CancellationToken;
@@ -12,7 +11,7 @@ use tracing::info;
 use zeroterm_ssh::{FileKind, HostKeyPolicy, ProgressTick, Session, Sftp};
 
 use crate::error::{map_app_error, other, FfiError};
-use crate::facade::ZeroTerm;
+use crate::facade::{connect_session_chain, ZeroTerm};
 use crate::listener::{ForeignHostKeyPrompt, HostKeyPromptCallback};
 
 // -- types ------------------------------------------------------------------
@@ -55,6 +54,8 @@ pub trait TransferListener: Send + Sync {
 // -- handle storage (on ZeroTerm via extension fields in facade) ------------
 
 pub(crate) struct SftpEntry {
+    /// A ProxyJump transport must outlive the target transport/channel.
+    _jump_session: Option<Session>,
     /// Keep the SSH session alive for the SFTP channel lifetime.
     _session: Session,
     sftp: Arc<Sftp>,
@@ -104,7 +105,7 @@ impl ZeroTerm {
         host_key_prompt: Arc<dyn HostKeyPromptCallback>,
     ) -> Result<u64, FfiError> {
         let host = {
-            let guard = self.inner.lock().unwrap();
+            let guard = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
             app.find_host_by_id(&host_id)
                 .map_err(map_app_error)?
@@ -122,19 +123,17 @@ impl ZeroTerm {
             store: known_hosts,
             prompt,
         };
-        let cfg = {
-            let guard = self.inner.lock().unwrap();
-            let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
-            app.connect_config(&host, policy, Some(Duration::from_secs(15)))
-        };
+        let (cfg, jump_cfg) = self.saved_host_connect_configs(&host, policy)?;
 
         info!(host = %host.host, "ffi: sftp open");
-        let session = Session::connect(cfg).await.map_err(other)?;
+        let (jump_session, session) =
+            connect_session_chain(cfg, jump_cfg).await.map_err(other)?;
         let sftp = session.sftp().await.map_err(map_ssh)?;
         let id = self.next_sftp_id.fetch_add(1, Ordering::SeqCst);
-        self.sftp_handles.lock().unwrap().insert(
+        self.sftp_handles.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(
             id,
             SftpEntry {
+                _jump_session: jump_session,
                 _session: session,
                 sftp: Arc::new(sftp),
             },
@@ -143,7 +142,7 @@ impl ZeroTerm {
     }
 
     pub async fn sftp_close(&self, sftp_id: u64) -> Result<(), FfiError> {
-        let removed = self.sftp_handles.lock().unwrap().remove(&sftp_id);
+        let removed = self.sftp_handles.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(&sftp_id);
         if removed.is_none() {
             return Err(FfiError::NotFound {
                 detail: format!("sftp {sftp_id}"),
@@ -244,8 +243,23 @@ impl ZeroTerm {
         emit("queued", 0, None, None);
         emit("running", 0, None, None);
 
+        // SSH-10: download into a sibling temp file and only rename over
+        // the destination on success. The old code created (truncating)
+        // the destination directly, so a mid-download failure with
+        // `overwrite=true` destroyed the user's existing file. The temp
+        // lives in the same directory so the final rename is atomic on
+        // the same filesystem.
+        let tmp = local.with_file_name(format!(
+            "{}.zt-dl-{}.part",
+            local
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("download"),
+            transfer_id
+        ));
+
         let result = async {
-            let mut file = tokio::fs::File::create(&local).await.map_err(other)?;
+            let mut file = tokio::fs::File::create(&tmp).await.map_err(other)?;
             sftp.download_to_writer(
                 &remote,
                 &mut file,
@@ -267,11 +281,15 @@ impl ZeroTerm {
             .await
             .map_err(map_ssh)?;
             file.flush().await.map_err(other)?;
+            drop(file);
+            // Commit: atomically replace the destination only now that the
+            // full payload is on disk.
+            tokio::fs::rename(&tmp, &local).await.map_err(other)?;
             Ok::<(), FfiError>(())
         }
         .await;
 
-        self.transfer_cancels.lock().unwrap().remove(&transfer_id);
+        self.transfer_cancels.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(&transfer_id);
         match result {
             Ok(()) => {
                 emit("success", 0, None, None);
@@ -285,7 +303,9 @@ impl ZeroTerm {
                     "error"
                 };
                 emit(status, 0, None, Some(msg.clone()));
-                let _ = tokio::fs::remove_file(&local).await;
+                // Only the partial temp is removed; the user's existing
+                // file (if any) was never touched.
+                let _ = tokio::fs::remove_file(&tmp).await;
                 Err(e)
             }
         }
@@ -307,14 +327,13 @@ impl ZeroTerm {
                 detail: local_path.clone(),
             });
         }
-        if !overwrite {
-            if sftp.stat(&remote).await.is_ok() {
-                return Err(FfiError::AlreadyExists);
-            }
+        if !overwrite && sftp.stat(&remote).await.is_ok() {
+            return Err(FfiError::AlreadyExists);
         }
 
         let meta = tokio::fs::metadata(&local).await.map_err(other)?;
-        let size_hint = Some(meta.len());
+        let size_total = meta.len();
+        let size_hint = Some(size_total);
 
         let transfer_id = self.next_transfer_id.fetch_add(1, Ordering::SeqCst);
         let cancel = CancellationToken::new();
@@ -365,10 +384,10 @@ impl ZeroTerm {
         }
         .await;
 
-        self.transfer_cancels.lock().unwrap().remove(&transfer_id);
+        self.transfer_cancels.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(&transfer_id);
         match result {
             Ok(()) => {
-                emit("success", size_hint.unwrap_or(0), size_hint, None);
+                emit("success", size_total, size_hint, None);
                 Ok(transfer_id)
             }
             Err(e) => {
@@ -385,7 +404,7 @@ impl ZeroTerm {
     }
 
     pub fn sftp_cancel_transfer(&self, transfer_id: u64) -> Result<(), FfiError> {
-        if let Some(token) = self.transfer_cancels.lock().unwrap().get(&transfer_id) {
+        if let Some(token) = self.transfer_cancels.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(&transfer_id) {
             token.cancel();
             Ok(())
         } else {

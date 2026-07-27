@@ -189,7 +189,7 @@ impl KeychainStore {
     /// Fetch a secret by its logical key. Migrates the matching legacy
     /// item into the consolidated blob on first miss.
     fn get_secret(&self, key: &str) -> Result<Option<String>, KeychainError> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         self.ensure_loaded(&mut inner);
 
         if let Some(v) = inner.secrets_mut().get(key) {
@@ -213,14 +213,14 @@ impl KeychainStore {
     }
 
     fn set_secret(&self, key: String, value: &str) -> Result<(), KeychainError> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         self.ensure_loaded(&mut inner);
         inner.secrets_mut().insert(key, value.to_string());
         Self::persist(&mut inner)
     }
 
     fn remove_secret(&self, key: &str) -> Result<(), KeychainError> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         self.ensure_loaded(&mut inner);
         let existed = inner.secrets_mut().remove(key).is_some();
         // Always clear any stray legacy item too.
@@ -249,7 +249,7 @@ impl KeychainStore {
 
     /// Drop the in-memory cache so the next access re-reads the keychain.
     pub fn invalidate(&self) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         inner.loaded = false;
         inner.secrets = None;
     }

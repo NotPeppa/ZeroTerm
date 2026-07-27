@@ -261,6 +261,14 @@ impl SyncAdapter for SftpAdapter {
 
     async fn read(&self, key: &str) -> Result<Option<Vec<u8>>, Error> {
         let path = self.full(key);
+        // SYNC-12: stat first and refuse oversized objects so a hostile
+        // server can't OOM the client with a giant download.
+        match self.sftp.stat(&path).await {
+            Ok(m) if m.size > crate::engine::MAX_SYNC_OBJECT_BYTES => return Err(Error::Corrupt),
+            Ok(_) => {}
+            Err(e) if is_not_found(&e) => return Ok(None),
+            Err(e) => return Err(map_ssh_err(e)),
+        }
         match self.sftp.download_to_vec(&path).await {
             Ok(bytes) => Ok(Some(bytes)),
             Err(e) if is_not_found(&e) => Ok(None),
@@ -307,6 +315,7 @@ impl SyncAdapter for SftpAdapter {
     }
 
     async fn write_new(&self, key: &str, bytes: &[u8]) -> Result<ObjectMeta, Error> {
+        validate_repo_relative_path(key)?; // SYNC-14 defence in depth
         self.ensure_dirs_for(key).await?;
         // Best-effort existence check before upload. SFTP doesn't have
         // a true "create new" mode without server extensions, so a
@@ -317,10 +326,20 @@ impl SyncAdapter for SftpAdapter {
             return Err(Error::AlreadyExists);
         }
         let path = self.full(key);
+        // Crash-atomic: upload to a sibling temp path, then rename into
+        // place. A dropped connection mid-upload otherwise leaves a
+        // truncated event at the final path, which stalls every
+        // reader's apply pass (SYNC-5). The temp suffix has no event
+        // extension, so listers ignore it even if orphaned.
+        let tmp = format!("{path}.tmp-{}", random_hex_suffix());
         self.sftp
-            .upload_from_slice(&path, bytes)
+            .upload_from_slice(&tmp, bytes)
             .await
             .map_err(map_ssh_err)?;
+        if let Err(e) = self.sftp.rename(&tmp, &path).await {
+            let _ = self.sftp.remove_file(&tmp).await;
+            return Err(map_ssh_err(e));
+        }
         Ok(self.stat(key).await?.unwrap_or(ObjectMeta {
             path: key.to_string(),
             size: bytes.len() as u64,
@@ -329,6 +348,7 @@ impl SyncAdapter for SftpAdapter {
     }
 
     async fn write_atomic(&self, key: &str, bytes: &[u8]) -> Result<ObjectMeta, Error> {
+        validate_repo_relative_path(key)?; // SYNC-14 defence in depth
         self.ensure_dirs_for(key).await?;
         let path = self.full(key);
 
@@ -364,6 +384,8 @@ impl SyncAdapter for SftpAdapter {
     }
 
     async fn rename(&self, from: &str, to: &str) -> Result<(), Error> {
+        validate_repo_relative_path(from)?; // SYNC-14 defence in depth
+        validate_repo_relative_path(to)?;
         self.ensure_dirs_for(to).await?;
         let f = self.full(from);
         let t = self.full(to);

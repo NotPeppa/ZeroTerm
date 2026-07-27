@@ -153,6 +153,10 @@ class SessionManager(
                         sessions.remove(prev.sessionId)
                         if (_active.value?.sessionId == prev.sessionId) _active.value = null
                     }
+                    // AND-3: free the native VT (10k-line scrollback) now that
+                    // this terminal has left the sessions map; destroy() is
+                    // idempotent so a concurrent onClosed can't double-free.
+                    runCatching { prev.terminal.destroy() }
                 }
 
                 val term = Terminal(cols, rows, 10_000u)
@@ -177,7 +181,13 @@ class SessionManager(
                             }
                             found
                         }
-                        if (sid != null) publishClosed(sid, exitCode, message)
+                        if (sid != null) {
+                            // AND-3: session ended and was removed from the map —
+                            // release its native terminal. (The found == null
+                            // early-close branch destroys it below instead.)
+                            runCatching { term.destroy() }
+                            publishClosed(sid, exitCode, message)
+                        }
                     }
                 }
                 val prompt = object : HostKeyPromptCallback {
@@ -185,7 +195,14 @@ class SessionManager(
                         _hostKeyPrompt.value = HostKeyPrompt(requestId, info, stored)
                     }
                 }
-                val sessionId = connect(term, listener, prompt)
+                val sessionId = try {
+                    connect(term, listener, prompt)
+                } catch (e: Throwable) {
+                    // AND-3: connect failed, so this terminal never entered the
+                    // sessions map — free it here instead of leaking it.
+                    runCatching { term.destroy() }
+                    throw e
+                }
                 val active = ActiveSession(sessionId, hostId, hostLabel, term)
                 val earlyClose = synchronized(sessionStateLock) {
                     sessions[sessionId] = active
@@ -196,6 +213,9 @@ class SessionManager(
                     }
                 }
                 if (earlyClose != null) {
+                    // AND-3: closed before we could publish — it was removed from
+                    // the map again, so destroy the native terminal.
+                    runCatching { term.destroy() }
                     publishClosed(sessionId, earlyClose.exitCode, earlyClose.message)
                 } else {
                     _frameTick.value = frameGen.incrementAndGet()
@@ -246,10 +266,13 @@ class SessionManager(
     suspend fun disconnect(sessionId: ULong? = null) = connectMutex.withLock {
         val sid = sessionId ?: _active.value?.sessionId ?: return@withLock
         withContext(Dispatchers.Default) { runCatching { zeroTerm.disconnectSession(sid) } }
-        synchronized(sessionStateLock) {
-            sessions.remove(sid)
+        val removed = synchronized(sessionStateLock) {
+            val session = sessions.remove(sid)
             if (_active.value?.sessionId == sid) _active.value = null
+            session
         }
+        // AND-3: release the native terminal for the disconnected session.
+        runCatching { removed?.terminal?.destroy() }
         updateFgs()
     }
 
@@ -259,10 +282,14 @@ class SessionManager(
             withContext(Dispatchers.Default) {
                 ids.forEach { sid -> runCatching { zeroTerm.disconnectSession(sid) } }
             }
-            synchronized(sessionStateLock) {
+            val removed = synchronized(sessionStateLock) {
+                val terminals = sessions.values.map { it.terminal }
                 sessions.clear()
                 _active.value = null
+                terminals
             }
+            // AND-3: release every native terminal we just cleared.
+            removed.forEach { runCatching { it.destroy() } }
             updateFgs()
         }
     }

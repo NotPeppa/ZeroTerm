@@ -6,23 +6,34 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 
 /**
- * Shows BiometricPrompt (fingerprint / face / device credential) and
- * invokes [onSuccess] only after the user authenticates.
+ * Shows BiometricPrompt at BIOMETRIC_STRONG and, on success, hands back
+ * the authenticated [BiometricPrompt.CryptoObject].
+ *
+ * STRONG (Class 3) is required because the cached master password is
+ * sealed with a Keystore key created for `AUTH_BIOMETRIC_STRONG`; a WEAK
+ * prompt can't unlock that key, and — more importantly — WEAK biometrics
+ * aren't bound to Keystore at all, which is what made the old gate
+ * bypassable (AND-1).
  */
 object BiometricGate {
+    private const val STRONG = BiometricManager.Authenticators.BIOMETRIC_STRONG
+
     fun canAuthenticate(activity: FragmentActivity): Boolean {
         val mgr = BiometricManager.from(activity)
-        val result = mgr.canAuthenticate(
-            BiometricManager.Authenticators.BIOMETRIC_WEAK,
-        )
-        return result == BiometricManager.BIOMETRIC_SUCCESS
+        return mgr.canAuthenticate(STRONG) == BiometricManager.BIOMETRIC_SUCCESS
     }
 
+    /**
+     * Run a strong-biometric prompt bound to [cryptoObject]. [onSuccess]
+     * receives the authenticated CryptoObject whose cipher is now
+     * unlocked for a single `doFinal`.
+     */
     fun authenticate(
         activity: FragmentActivity,
+        cryptoObject: BiometricPrompt.CryptoObject,
         title: String = activity.getString(com.zeroterm.android.R.string.biometric_title),
         subtitle: String = activity.getString(com.zeroterm.android.R.string.biometric_subtitle),
-        onSuccess: () -> Unit,
+        onSuccess: (BiometricPrompt.CryptoObject) -> Unit,
         onError: (String) -> Unit,
         onCancel: () -> Unit = {},
     ) {
@@ -32,7 +43,14 @@ object BiometricGate {
             executor,
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                    onSuccess()
+                    val crypto = result.cryptoObject
+                    if (crypto == null) {
+                        // Should not happen for a CryptoObject prompt, but
+                        // never fall back to an unauthenticated path.
+                        onError("biometric result missing crypto object")
+                    } else {
+                        onSuccess(crypto)
+                    }
                 }
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
@@ -59,11 +77,9 @@ object BiometricGate {
             // confirmation button after a successful scan.
             .setConfirmationRequired(false)
             .setNegativeButtonText(activity.getString(com.zeroterm.android.R.string.common_cancel))
-            .setAllowedAuthenticators(
-                BiometricManager.Authenticators.BIOMETRIC_WEAK,
-            )
+            .setAllowedAuthenticators(STRONG)
             .build()
 
-        prompt.authenticate(info)
+        prompt.authenticate(info, cryptoObject)
     }
 }

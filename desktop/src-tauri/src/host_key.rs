@@ -9,6 +9,8 @@
 //!   4. That command pulls our sender out of the map and resolves the
 //!      future, unblocking the SSH handshake.
 
+use std::time::Duration;
+
 use async_trait::async_trait;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
@@ -18,6 +20,32 @@ use tracing::warn;
 use zeroterm_ssh::{HostKeyInfo, HostKeyPrompt, MismatchAction};
 
 use crate::state::AppState;
+
+/// How long to wait for the human to answer a host-key prompt before giving
+/// up and rejecting. The connect timeout (15s) does not cover this segment,
+/// so without a bound an abandoned prompt (window closed, event missed) would
+/// leave the handshake hung indefinitely. See TAURI-4.
+const HOST_KEY_PROMPT_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Removes its `pending_host_key` entry on drop, so the entry never leaks no
+/// matter which path (timeout, emit failure, normal response, dropped sender)
+/// unwinds [`TauriHostKeyPrompt::ask`].
+struct PendingHostKeyGuard {
+    app_handle: AppHandle,
+    request_id: String,
+}
+
+impl Drop for PendingHostKeyGuard {
+    fn drop(&mut self) {
+        if let Some(state) = self.app_handle.try_state::<AppState>() {
+            state
+                .pending_host_key
+                .lock()
+                .unwrap()
+                .remove(&self.request_id);
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -71,19 +99,32 @@ impl TauriHostKeyPrompt {
                 .unwrap()
                 .insert(request_id.clone(), tx);
         }
+        // From here on the guard removes the pending entry on every exit
+        // path (timeout, emit failure, response, dropped sender).
+        let _guard = PendingHostKeyGuard {
+            app_handle: self.app_handle.clone(),
+            request_id: request_id.clone(),
+        };
 
         if let Err(e) = self.app_handle.emit("host-key-prompt", payload) {
             warn!(error = %e, "failed to emit host-key-prompt");
-            // Clean up the pending entry so it doesn't leak.
-            if let Some(state) = self.app_handle.try_state::<AppState>() {
-                state.pending_host_key.lock().unwrap().remove(&request_id);
-            }
             return HostKeyResponse::Reject;
         }
 
-        // Default to reject if the frontend disappears (window closed,
-        // dropped sender, etc.). Better than silently auto-accepting.
-        rx.await.unwrap_or(HostKeyResponse::Reject)
+        // Bound the human-response wait: an abandoned prompt must not hang the
+        // handshake forever. Default to reject on timeout or if the frontend
+        // disappears (window closed, dropped sender) — never auto-accept.
+        match tokio::time::timeout(HOST_KEY_PROMPT_TIMEOUT, rx).await {
+            Ok(Ok(resp)) => resp,
+            Ok(Err(_)) => HostKeyResponse::Reject,
+            Err(_) => {
+                warn!(
+                    request_id = %request_id,
+                    "host-key prompt timed out with no response; rejecting"
+                );
+                HostKeyResponse::Reject
+            }
+        }
     }
 }
 

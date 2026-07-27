@@ -8689,6 +8689,26 @@ body[data-app-theme="light"] .settings-sync-method-row .zt-select-trigger:hover 
   white-space: nowrap;
 }
 
+.settings-sync-device-side {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.settings-sync-device-revoke {
+  min-height: 28px;
+  padding: 4px 9px;
+  border-color: rgba(255, 107, 129, 0.28);
+  color: #ff9aab;
+  font-size: 11px;
+}
+
+.settings-sync-device-revoke:hover:not(:disabled) {
+  border-color: rgba(255, 107, 129, 0.56);
+  background: rgba(255, 107, 129, 0.09);
+}
+
 .settings-sync-device-row:last-child {
   border-bottom: 0;
 }

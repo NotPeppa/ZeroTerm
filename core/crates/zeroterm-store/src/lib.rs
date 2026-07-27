@@ -56,6 +56,16 @@ pub struct Record {
     /// Free-form marker the sync engine writes when a record is in a
     /// conflict state (e.g. "remote_newer", "needs_user_resolution").
     pub conflict_state: Option<String>,
+
+    /// Lamport clock of the last sync event this replica incorporated
+    /// for this record (applied remote event or own push). 0 for rows
+    /// that have never crossed the sync layer. Added in schema v3; the
+    /// sync engine's merge guard drops incoming events that lose the
+    /// `(last_clock, last_device)` total order.
+    pub last_clock: i64,
+    /// Device id that authored the event `last_clock` refers to. Used
+    /// as the deterministic tie-breaker for equal clocks.
+    pub last_device: String,
 }
 
 /// Key/value blob storage for vault metadata (KDF salt, params, verifier).
@@ -66,22 +76,53 @@ pub struct MetaEntry {
 }
 
 /// A persisted conflict record awaiting user resolution. See RFC-002 §14.
-#[derive(Debug, Clone)]
+///
+/// Since schema v3 the payload columns hold *vault-encrypted* bytes and
+/// the nonce columns carry the AEAD nonces (`None` marks a legacy
+/// plaintext row written before v3 — those are re-encrypted lazily on
+/// the first unlock). The store itself stays crypto-blind: encryption /
+/// decryption happens in `zeroterm-vault`.
+#[derive(Clone)]
 pub struct ConflictRow {
     pub id: String,
     pub record_id: String,
     pub kind: String,
     pub local_payload: Vec<u8>,
     pub remote_payload: Vec<u8>,
+    /// AEAD nonce for `local_payload`. `None` = legacy plaintext row.
+    pub local_nonce: Option<Vec<u8>>,
+    /// AEAD nonce for `remote_payload`. `None` = legacy plaintext row.
+    pub remote_nonce: Option<Vec<u8>>,
     pub local_rev: String,
     pub remote_rev: String,
     pub detected_at: i64,
     pub resolved_at: Option<i64>,
 }
 
+impl std::fmt::Debug for ConflictRow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Payloads may hold decrypted secrets when this struct travels
+        // through the vault's read path — never let them into logs.
+        f.debug_struct("ConflictRow")
+            .field("id", &self.id)
+            .field("record_id", &self.record_id)
+            .field("kind", &self.kind)
+            .field("local_payload", &format!("<{} bytes>", self.local_payload.len()))
+            .field(
+                "remote_payload",
+                &format!("<{} bytes>", self.remote_payload.len()),
+            )
+            .field("local_rev", &self.local_rev)
+            .field("remote_rev", &self.remote_rev)
+            .field("detected_at", &self.detected_at)
+            .field("resolved_at", &self.resolved_at)
+            .finish()
+    }
+}
+
 /// SQLite schema we know how to produce. Bumping this requires adding a
 /// migration step in [`run_migrations`].
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 const MIGRATION_V1: &str = r#"
 CREATE TABLE IF NOT EXISTS vault_meta (
@@ -133,6 +174,14 @@ CREATE INDEX IF NOT EXISTS idx_sync_conflicts_open
     ON sync_conflicts (record_id) WHERE resolved_at IS NULL;
 "#;
 
+const MIGRATION_V3: &str = r#"
+ALTER TABLE records ADD COLUMN last_clock  INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE records ADD COLUMN last_device TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE sync_conflicts ADD COLUMN local_nonce  BLOB;
+ALTER TABLE sync_conflicts ADD COLUMN remote_nonce BLOB;
+"#;
+
 /// Local SQLite store. Cheap to clone via `Arc`; internally serializes
 /// access through a `Mutex<Connection>`.
 pub struct Store {
@@ -146,6 +195,10 @@ impl Store {
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
+        // Zero freed pages on delete/update so residual plaintext (e.g.
+        // pre-v3 conflict payloads) doesn't linger in the file after the
+        // row is rewritten or removed.
+        conn.pragma_update(None, "secure_delete", "ON")?;
         run_migrations(&mut conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
@@ -164,7 +217,7 @@ impl Store {
     // -- meta ---------------------------------------------------------------
 
     pub fn put_meta(&self, key: &str, value: &[u8]) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         conn.execute(
             "INSERT OR REPLACE INTO vault_meta (key, value) VALUES (?1, ?2)",
             params![key, value],
@@ -173,7 +226,7 @@ impl Store {
     }
 
     pub fn get_meta(&self, key: &str) -> Result<Option<Vec<u8>>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let value: Option<Vec<u8>> = conn
             .query_row(
                 "SELECT value FROM vault_meta WHERE key = ?1",
@@ -187,7 +240,7 @@ impl Store {
     // -- sync_state (mirror of vault_meta, scoped to the sync layer) --------
 
     pub fn put_sync_state(&self, key: &str, value: &[u8]) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         conn.execute(
             "INSERT OR REPLACE INTO sync_state (key, value) VALUES (?1, ?2)",
             params![key, value],
@@ -196,7 +249,7 @@ impl Store {
     }
 
     pub fn get_sync_state(&self, key: &str) -> Result<Option<Vec<u8>>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let value: Option<Vec<u8>> = conn
             .query_row(
                 "SELECT value FROM sync_state WHERE key = ?1",
@@ -208,14 +261,14 @@ impl Store {
     }
 
     pub fn delete_sync_state(&self, key: &str) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         conn.execute("DELETE FROM sync_state WHERE key = ?1", params![key])?;
         Ok(())
     }
 
     /// Remove all user and sync data while keeping schema intact.
     pub fn clear_all_data(&self) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let tx = conn.unchecked_transaction()?;
         tx.execute("DELETE FROM records", [])?;
         tx.execute("DELETE FROM sync_state", [])?;
@@ -227,9 +280,9 @@ impl Store {
     // -- records ------------------------------------------------------------
 
     /// Highest version number across all records. 0 if the table is empty.
-    /// Used by the vault to assign monotonically increasing versions.
+    /// Used by the vault to report the current version high-water.
     pub fn max_version(&self) -> Result<i64, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let v: Option<i64> = conn
             .query_row("SELECT MAX(version) FROM records", [], |row| row.get(0))
             .optional()?
@@ -237,15 +290,56 @@ impl Store {
         Ok(v.unwrap_or(0))
     }
 
+    /// Atomically allocate the next record version (CORE-6).
+    ///
+    /// The old pattern — `max_version()` then a separate `upsert_record`
+    /// — leaves a window where two concurrent Tauri commands both read
+    /// the same max and both write `N+1`, producing duplicate versions.
+    /// Because `records_since` filters on `version > since`, a duplicate
+    /// or non-monotonic version can make a record silently skipped in an
+    /// incremental sync pull. Here the read-and-increment happens inside
+    /// one transaction under the connection mutex, so every caller gets a
+    /// distinct, strictly increasing number. The counter is seeded from
+    /// `MAX(version)` on first use so existing vaults keep their sequence.
+    /// Gaps (if a caller allocates a version then fails to write the row)
+    /// are harmless — monotonicity is what matters.
+    pub fn next_version(&self) -> Result<i64, StoreError> {
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let tx = conn.unchecked_transaction()?;
+        let stored: Option<Vec<u8>> = tx
+            .query_row(
+                "SELECT value FROM vault_meta WHERE key = 'version_counter'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let base: i64 = match stored {
+            Some(b) if b.len() == 8 => i64::from_le_bytes(b.try_into().unwrap()),
+            _ => tx
+                .query_row("SELECT COALESCE(MAX(version), 0) FROM records", [], |r| {
+                    r.get(0)
+                })?,
+        };
+        let next = base.saturating_add(1);
+        tx.execute(
+            "INSERT INTO vault_meta (key, value) VALUES ('version_counter', ?1) \
+             ON CONFLICT(key) DO UPDATE SET value = ?1",
+            params![next.to_le_bytes().to_vec()],
+        )?;
+        tx.commit()?;
+        Ok(next)
+    }
+
     pub fn upsert_record(&self, rec: &Record) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         conn.execute(
             r#"
             INSERT INTO records (
                 id, kind, ciphertext, nonce, version, updated_at, deleted,
-                local_rev, server_rev, base_server_rev, dirty, conflict_state
+                local_rev, server_rev, base_server_rev, dirty, conflict_state,
+                last_clock, last_device
             )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
             ON CONFLICT(id) DO UPDATE SET
                 kind            = excluded.kind,
                 ciphertext      = excluded.ciphertext,
@@ -257,7 +351,9 @@ impl Store {
                 server_rev      = excluded.server_rev,
                 base_server_rev = excluded.base_server_rev,
                 dirty           = excluded.dirty,
-                conflict_state  = excluded.conflict_state
+                conflict_state  = excluded.conflict_state,
+                last_clock      = excluded.last_clock,
+                last_device     = excluded.last_device
             "#,
             params![
                 rec.id,
@@ -272,17 +368,20 @@ impl Store {
                 rec.base_server_rev,
                 rec.dirty as i64,
                 rec.conflict_state,
+                rec.last_clock,
+                rec.last_device,
             ],
         )?;
         Ok(())
     }
 
     pub fn get_record(&self, id: &str) -> Result<Option<Record>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let rec = conn
             .query_row(
                 "SELECT id, kind, ciphertext, nonce, version, updated_at, deleted, \
-                        local_rev, server_rev, base_server_rev, dirty, conflict_state \
+                        local_rev, server_rev, base_server_rev, dirty, conflict_state, \
+                    last_clock, last_device \
                  FROM records WHERE id = ?1",
                 params![id],
                 row_to_record,
@@ -293,10 +392,11 @@ impl Store {
 
     /// All non-deleted records of a given `kind`, ordered by version.
     pub fn list_records(&self, kind: &str) -> Result<Vec<Record>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut stmt = conn.prepare(
             "SELECT id, kind, ciphertext, nonce, version, updated_at, deleted, \
-                    local_rev, server_rev, base_server_rev, dirty, conflict_state \
+                    local_rev, server_rev, base_server_rev, dirty, conflict_state, \
+                    last_clock, last_device \
              FROM records WHERE kind = ?1 AND deleted = 0 ORDER BY version",
         )?;
         let rows = stmt.query_map(params![kind], row_to_record)?;
@@ -311,10 +411,11 @@ impl Store {
     /// layer uses this to compute outbound deltas. Order is ascending so
     /// callers can stream incrementally.
     pub fn records_since(&self, since: i64) -> Result<Vec<Record>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut stmt = conn.prepare(
             "SELECT id, kind, ciphertext, nonce, version, updated_at, deleted, \
-                    local_rev, server_rev, base_server_rev, dirty, conflict_state \
+                    local_rev, server_rev, base_server_rev, dirty, conflict_state, \
+                    last_clock, last_device \
              FROM records WHERE version > ?1 ORDER BY version",
         )?;
         let rows = stmt.query_map(params![since], row_to_record)?;
@@ -328,10 +429,11 @@ impl Store {
     /// All records (including tombstones) currently marked dirty. The sync
     /// layer's push step drains this list.
     pub fn dirty_records(&self) -> Result<Vec<Record>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut stmt = conn.prepare(
             "SELECT id, kind, ciphertext, nonce, version, updated_at, deleted, \
-                    local_rev, server_rev, base_server_rev, dirty, conflict_state \
+                    local_rev, server_rev, base_server_rev, dirty, conflict_state, \
+                    last_clock, last_device \
              FROM records WHERE dirty = 1 ORDER BY updated_at",
         )?;
         let rows = stmt.query_map([], row_to_record)?;
@@ -350,7 +452,7 @@ impl Store {
     ///
     /// Returns the number of rows physically removed.
     pub fn prune_old_tombstones(&self, cutoff_unix_ms: i64) -> Result<usize, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let removed = conn.execute(
             "DELETE FROM records WHERE deleted = 1 AND dirty = 0 AND updated_at < ?1",
             params![cutoff_unix_ms],
@@ -358,32 +460,67 @@ impl Store {
         Ok(removed)
     }
 
-    /// Clear the dirty flag and record the `server_rev` returned by the
-    /// remote after a successful push. Leaves the rest of the row alone.
-    pub fn mark_clean(&self, id: &str, server_rev: &str) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
-        let n = conn.execute(
-            "UPDATE records SET dirty = 0, server_rev = ?2, base_server_rev = ?2, \
-                                 conflict_state = NULL \
+    /// Record a successful push: advance the record's sync lineage
+    /// (`server_rev`, `base_server_rev`, `last_clock`, `last_device`)
+    /// and clear the dirty flag — but only clear it when the row's
+    /// `local_rev` still equals `expected_local_rev`. If the user edited
+    /// the record again while the push was in flight, the lineage still
+    /// advances (the pushed event *is* now the remote parent of the
+    /// pending edit) but the row stays dirty so the newer edit gets
+    /// pushed on the next pass instead of being silently stranded.
+    ///
+    /// Returns `true` when the dirty flag was actually cleared.
+    pub fn mark_clean(
+        &self,
+        id: &str,
+        server_rev: &str,
+        expected_local_rev: Option<&str>,
+        last_clock: i64,
+        last_device: &str,
+    ) -> Result<bool, StoreError> {
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let tx = conn.unchecked_transaction()?;
+        // Lineage always advances (the event is on the wire regardless);
+        // last_clock only moves forward so a concurrent apply that
+        // already recorded a newer event isn't rolled back.
+        let n = tx.execute(
+            "UPDATE records SET \
+                 server_rev      = ?2, \
+                 base_server_rev = ?2, \
+                 last_device     = CASE WHEN last_clock < ?3 THEN ?4 ELSE last_device END, \
+                 last_clock      = CASE WHEN last_clock < ?3 THEN ?3 ELSE last_clock END \
              WHERE id = ?1",
-            params![id, server_rev],
+            params![id, server_rev, last_clock, last_device],
         )?;
         if n == 0 {
             return Err(StoreError::NotFound(id.to_string()));
         }
-        Ok(())
+        let cleared = match expected_local_rev {
+            None => tx.execute(
+                "UPDATE records SET dirty = 0, conflict_state = NULL WHERE id = ?1",
+                params![id],
+            )?,
+            Some(rev) => tx.execute(
+                "UPDATE records SET dirty = 0, conflict_state = NULL \
+                 WHERE id = ?1 AND (local_rev = ?2 OR (?2 = '' AND local_rev IS NULL))",
+                params![id, rev],
+            )?,
+        };
+        tx.commit()?;
+        Ok(cleared > 0)
     }
 
     // -- sync_conflicts -----------------------------------------------------
 
     pub fn insert_conflict(&self, c: &ConflictRow) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         conn.execute(
             r#"
             INSERT OR REPLACE INTO sync_conflicts
                 (id, record_id, kind, local_payload, remote_payload,
+                 local_nonce, remote_nonce,
                  local_rev, remote_rev, detected_at, resolved_at)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
             "#,
             params![
                 c.id,
@@ -391,6 +528,8 @@ impl Store {
                 c.kind,
                 c.local_payload,
                 c.remote_payload,
+                c.local_nonce,
+                c.remote_nonce,
                 c.local_rev,
                 c.remote_rev,
                 c.detected_at,
@@ -402,9 +541,10 @@ impl Store {
 
     /// All conflicts still awaiting resolution (i.e. `resolved_at IS NULL`).
     pub fn list_open_conflicts(&self) -> Result<Vec<ConflictRow>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut stmt = conn.prepare(
             "SELECT id, record_id, kind, local_payload, remote_payload, \
+                    local_nonce, remote_nonce, \
                     local_rev, remote_rev, detected_at, resolved_at \
              FROM sync_conflicts WHERE resolved_at IS NULL ORDER BY detected_at",
         )?;
@@ -416,12 +556,54 @@ impl Store {
         Ok(out)
     }
 
+    /// Every conflict row, resolved or not. Used by the vault's lazy
+    /// re-encryption sweep for rows written before schema v3.
+    pub fn list_all_conflicts(&self) -> Result<Vec<ConflictRow>, StoreError> {
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut stmt = conn.prepare(
+            "SELECT id, record_id, kind, local_payload, remote_payload, \
+                    local_nonce, remote_nonce, \
+                    local_rev, remote_rev, detected_at, resolved_at \
+             FROM sync_conflicts ORDER BY detected_at",
+        )?;
+        let rows = stmt.query_map([], row_to_conflict)?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
+    /// Overwrite a conflict row's payloads + nonces in place. Used when
+    /// upgrading legacy plaintext rows to encrypted form.
+    pub fn update_conflict_payloads(
+        &self,
+        id: &str,
+        local_payload: &[u8],
+        local_nonce: &[u8],
+        remote_payload: &[u8],
+        remote_nonce: &[u8],
+    ) -> Result<(), StoreError> {
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let n = conn.execute(
+            "UPDATE sync_conflicts SET local_payload = ?2, local_nonce = ?3, \
+                                        remote_payload = ?4, remote_nonce = ?5 \
+             WHERE id = ?1",
+            params![id, local_payload, local_nonce, remote_payload, remote_nonce],
+        )?;
+        if n == 0 {
+            return Err(StoreError::NotFound(id.to_string()));
+        }
+        Ok(())
+    }
+
     /// Look up a single conflict by id (resolved or not).
     pub fn get_conflict(&self, id: &str) -> Result<Option<ConflictRow>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let row = conn
             .query_row(
                 "SELECT id, record_id, kind, local_payload, remote_payload, \
+                        local_nonce, remote_nonce, \
                         local_rev, remote_rev, detected_at, resolved_at \
                  FROM sync_conflicts WHERE id = ?1",
                 params![id],
@@ -434,7 +616,7 @@ impl Store {
     /// Delete all resolved conflicts older than `keep_recent` newest. The
     /// retention sweep uses this; sync correctness doesn't depend on it.
     pub fn trim_resolved_conflicts(&self, keep_recent: usize) -> Result<usize, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let removed = conn.execute(
             "DELETE FROM sync_conflicts \
              WHERE resolved_at IS NOT NULL \
@@ -453,7 +635,7 @@ impl Store {
     /// row stays in the table for audit (cleaned up later by the retention
     /// policy).
     pub fn resolve_conflict(&self, id: &str, resolved_at: i64) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let n = conn.execute(
             "UPDATE sync_conflicts SET resolved_at = ?2 WHERE id = ?1",
             params![id, resolved_at],
@@ -479,6 +661,8 @@ fn row_to_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<Record> {
         base_server_rev: row.get(9)?,
         dirty: row.get::<_, i64>(10)? != 0,
         conflict_state: row.get(11)?,
+        last_clock: row.get(12)?,
+        last_device: row.get(13)?,
     })
 }
 
@@ -489,10 +673,12 @@ fn row_to_conflict(row: &rusqlite::Row<'_>) -> rusqlite::Result<ConflictRow> {
         kind: row.get(2)?,
         local_payload: row.get(3)?,
         remote_payload: row.get(4)?,
-        local_rev: row.get(5)?,
-        remote_rev: row.get(6)?,
-        detected_at: row.get(7)?,
-        resolved_at: row.get(8)?,
+        local_nonce: row.get(5)?,
+        remote_nonce: row.get(6)?,
+        local_rev: row.get(7)?,
+        remote_rev: row.get(8)?,
+        detected_at: row.get(9)?,
+        resolved_at: row.get(10)?,
     })
 }
 
@@ -523,6 +709,14 @@ fn run_migrations(conn: &mut Connection) -> Result<(), StoreError> {
         tracing::info!("store: migrated to schema v2");
     }
 
+    if current < 3 {
+        let tx = conn.transaction()?;
+        tx.execute_batch(MIGRATION_V3)?;
+        tx.pragma_update(None, "user_version", 3)?;
+        tx.commit()?;
+        tracing::info!("store: migrated to schema v3");
+    }
+
     Ok(())
 }
 
@@ -544,6 +738,8 @@ mod tests {
             base_server_rev: None,
             dirty: false,
             conflict_state: None,
+            last_clock: 0,
+            last_device: String::new(),
         }
     }
 
@@ -608,20 +804,86 @@ mod tests {
         a.local_rev = Some("rev-1".into());
         store.upsert_record(&a).unwrap();
 
-        store.mark_clean("a", "srv-1").unwrap();
+        let cleared = store
+            .mark_clean("a", "srv-1", Some("rev-1"), 7, "dev-A")
+            .unwrap();
+        assert!(cleared);
         let after = store.get_record("a").unwrap().unwrap();
         assert!(!after.dirty);
         assert_eq!(after.server_rev.as_deref(), Some("srv-1"));
         assert_eq!(after.base_server_rev.as_deref(), Some("srv-1"));
+        assert_eq!(after.last_clock, 7);
+        assert_eq!(after.last_device, "dev-A");
     }
 
     #[test]
     fn mark_clean_missing_id_errors() {
         let store = Store::open_memory().unwrap();
         assert!(matches!(
-            store.mark_clean("ghost", "srv-1"),
+            store.mark_clean("ghost", "srv-1", None, 1, "dev"),
             Err(StoreError::NotFound(_))
         ));
+    }
+
+    #[test]
+    fn mark_clean_keeps_dirty_when_local_rev_moved_during_push() {
+        // SYNC-2 regression: an edit made while the push was uploading
+        // must not be silently stranded — the row keeps its dirty flag
+        // while the lineage still advances to the pushed revision.
+        let store = Store::open_memory().unwrap();
+        let mut a = rec("a", "host", 1);
+        a.dirty = true;
+        a.local_rev = Some("rev-2-edited-mid-push".into());
+        store.upsert_record(&a).unwrap();
+
+        let cleared = store
+            .mark_clean("a", "srv-1", Some("rev-1-as-read-at-push-start"), 7, "dev-A")
+            .unwrap();
+        assert!(!cleared);
+        let after = store.get_record("a").unwrap().unwrap();
+        assert!(after.dirty, "concurrent edit must stay dirty");
+        assert_eq!(after.server_rev.as_deref(), Some("srv-1"));
+        assert_eq!(after.base_server_rev.as_deref(), Some("srv-1"));
+        assert_eq!(after.last_clock, 7);
+    }
+
+    #[test]
+    fn mark_clean_never_regresses_last_clock() {
+        let store = Store::open_memory().unwrap();
+        let mut a = rec("a", "host", 1);
+        a.dirty = true;
+        a.local_rev = Some("rev-1".into());
+        a.last_clock = 50;
+        a.last_device = "dev-B".into();
+        store.upsert_record(&a).unwrap();
+
+        store
+            .mark_clean("a", "srv-1", Some("rev-1"), 7, "dev-A")
+            .unwrap();
+        let after = store.get_record("a").unwrap().unwrap();
+        assert_eq!(after.last_clock, 50, "older clock must not roll back");
+        assert_eq!(after.last_device, "dev-B");
+    }
+
+    #[test]
+    fn next_version_is_monotonic_and_seeds_from_existing_max() {
+        let store = Store::open_memory().unwrap();
+        // Seed a record at version 5 (as a legacy vault would have).
+        store.upsert_record(&rec("a", "host", 5)).unwrap();
+        // First allocation continues from the existing max, not from 1.
+        assert_eq!(store.next_version().unwrap(), 6);
+        assert_eq!(store.next_version().unwrap(), 7);
+        assert_eq!(store.next_version().unwrap(), 8);
+        // The counter persists independently of MAX(version): allocating
+        // doesn't require a row to have been written for the number.
+        assert_eq!(store.max_version().unwrap(), 5);
+    }
+
+    #[test]
+    fn next_version_fresh_db_starts_at_one() {
+        let store = Store::open_memory().unwrap();
+        assert_eq!(store.next_version().unwrap(), 1);
+        assert_eq!(store.next_version().unwrap(), 2);
     }
 
     #[test]
@@ -650,6 +912,8 @@ mod tests {
             kind: "host".into(),
             local_payload: b"L".to_vec(),
             remote_payload: b"R".to_vec(),
+            local_nonce: Some(vec![1; 24]),
+            remote_nonce: Some(vec![2; 24]),
             local_rev: "L1".into(),
             remote_rev: "R1".into(),
             detected_at: 100,
@@ -718,7 +982,7 @@ mod tests {
         let version: u32 = conn
             .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
             .unwrap() as u32;
-        assert_eq!(version, 2);
+        assert_eq!(version, SCHEMA_VERSION);
 
         let got: Option<String> = conn
             .query_row(

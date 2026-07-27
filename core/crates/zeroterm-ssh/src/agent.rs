@@ -11,12 +11,11 @@
 //! PuTTY's Pageant is intentionally NOT supported — different wire
 //! format. May land as a separate adapter later.
 //!
-//! russh 0.45's agent API uses an "owning" pattern: each call consumes
-//! the `AgentClient` and returns a fresh one alongside the result. The
-//! loop here threads the agent through each per-key auth attempt.
+//! The agent can return either plain public keys or OpenSSH certificates;
+//! russh exposes distinct authentication entry points for the two.
 
 use russh::client::Handle;
-use russh_keys::agent::client::AgentClient;
+use russh::keys::agent::{client::AgentClient, AgentIdentity};
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::error::SshError;
@@ -84,15 +83,36 @@ where
     }
     tracing::debug!(count = identities.len(), "agent identities available");
 
+    // Negotiate the RSA signature hash (ignored for non-RSA).
+    let hash_alg = handle
+        .best_supported_rsa_hash()
+        .await
+        .ok()
+        .flatten()
+        .flatten();
+
     for key in identities {
-        let (returned_signer, auth_result) = handle
-            .authenticate_future(username.to_string(), key.clone(), agent)
-            .await;
-        agent = returned_signer;
+        let auth_result = match key {
+            AgentIdentity::PublicKey { key, .. } => {
+                handle
+                    .authenticate_publickey_with(username.to_string(), key, hash_alg, &mut agent)
+                    .await
+            }
+            AgentIdentity::Certificate { certificate, .. } => {
+                handle
+                    .authenticate_certificate_with(
+                        username.to_string(),
+                        certificate,
+                        hash_alg,
+                        &mut agent,
+                    )
+                    .await
+            }
+        };
 
         match auth_result {
-            Ok(true) => return Ok(true),
-            Ok(false) => {
+            Ok(r) if r.success() => return Ok(true),
+            Ok(_) => {
                 tracing::debug!("agent identity rejected by server");
                 continue;
             }

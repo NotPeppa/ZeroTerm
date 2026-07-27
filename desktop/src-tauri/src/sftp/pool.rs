@@ -41,7 +41,20 @@ impl SftpPool {
     }
 
     pub(crate) fn clear(&self) {
-        self.hosts.lock().unwrap().clear();
+        self.hosts.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clear();
+    }
+
+    /// Borrow the host's shared authenticated SSH connection without opening
+    /// an SFTP channel. Lightweight remote commands (metrics, Docker panel)
+    /// use this path so polling does not perform a fresh handshake every time.
+    pub(crate) async fn acquire_session(
+        &self,
+        host_id: String,
+        cfg: ConnectConfig,
+        jump_cfg: Option<ConnectConfig>,
+    ) -> Result<Arc<Session>, String> {
+        let host = self.upsert_host(host_id, cfg, jump_cfg);
+        host.connect_session().await
     }
 
     pub(crate) async fn open_panel_channel(
@@ -92,8 +105,8 @@ impl SftpPool {
     }
 
     pub(crate) fn get_channel(&self, host_id: &str, channel_id: u64) -> Option<Arc<Sftp>> {
-        let host = self.hosts.lock().unwrap().get(host_id).cloned()?;
-        let state = host.state.lock().unwrap();
+        let host = self.hosts.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(host_id).cloned()?;
+        let state = host.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         state
             .channels
             .get(&channel_id)
@@ -104,7 +117,7 @@ impl SftpPool {
     }
 
     pub(crate) fn close_channel(&self, host_id: &str, channel_id: u64) -> bool {
-        let Some(host) = self.hosts.lock().unwrap().get(host_id).cloned() else {
+        let Some(host) = self.hosts.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(host_id).cloned() else {
             return false;
         };
         let removed = host.release_panel_channel(channel_id);
@@ -119,13 +132,13 @@ impl SftpPool {
         host_id: &str,
         channel_id: u64,
     ) -> Result<Arc<Sftp>, String> {
-        let Some(host) = self.hosts.lock().unwrap().get(host_id).cloned() else {
+        let Some(host) = self.hosts.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(host_id).cloned() else {
             return Err(string_error(format!("no sftp host pool for {host_id}")));
         };
         let _channel_open_guard = host.channel_open_lock.lock().await;
 
         let (panel_refs, borrower_refs) = {
-            let state = host.state.lock().unwrap();
+            let state = host.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             match state.channels.get(&channel_id) {
                 Some(ChannelEntry::Ready {
                     panel_refs,
@@ -151,7 +164,7 @@ impl SftpPool {
         host.invalidate_connection();
         let sftp = self.open_sftp_for_host(&host).await?;
 
-        let mut state = host.state.lock().unwrap();
+        let mut state = host.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         state.channels.insert(
             channel_id,
             ChannelEntry::Ready {
@@ -169,7 +182,7 @@ impl SftpPool {
         cfg: ConnectConfig,
         jump_cfg: Option<ConnectConfig>,
     ) -> Arc<HostPool> {
-        let mut hosts = self.hosts.lock().unwrap();
+        let mut hosts = self.hosts.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let host = hosts
             .entry(host_id.clone())
             .or_insert_with(|| Arc::new(HostPool::new(host_id, cfg.clone(), jump_cfg.clone())))
@@ -183,7 +196,7 @@ impl SftpPool {
             return;
         }
         host.invalidate_connection();
-        let mut hosts = self.hosts.lock().unwrap();
+        let mut hosts = self.hosts.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if host.is_idle() {
             hosts.remove(host_id);
         }
@@ -206,7 +219,7 @@ impl SftpPool {
     }
 
     fn reserve_panel_channel(&self, host: &Arc<HostPool>) -> Result<ChannelReservation, String> {
-        let mut state = host.state.lock().unwrap();
+        let mut state = host.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
 
         for (&channel_id, entry) in state.channels.iter_mut() {
             if let ChannelEntry::Ready {
@@ -242,7 +255,7 @@ impl SftpPool {
         &self,
         host: &Arc<HostPool>,
     ) -> Result<ChannelReservation, String> {
-        let mut state = host.state.lock().unwrap();
+        let mut state = host.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
 
         for (&channel_id, entry) in state.channels.iter_mut() {
             if let ChannelEntry::Ready {
@@ -291,7 +304,7 @@ impl SftpPool {
 
         let sftp = self.open_sftp_for_host(&host).await?;
 
-        let mut state = host.state.lock().unwrap();
+        let mut state = host.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         state.channels.insert(
             channel_id,
             ChannelEntry::Ready {
@@ -379,7 +392,7 @@ impl HostPool {
     }
 
     fn update_config(&self, cfg: ConnectConfig, jump_cfg: Option<ConnectConfig>) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         state.cfg = cfg;
         state.jump_cfg = jump_cfg;
     }
@@ -394,14 +407,14 @@ impl HostPool {
     }
 
     fn first_ready_channel_id(&self) -> Option<u64> {
-        self.state.lock().unwrap().channels.iter().find_map(
+        self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner).channels.iter().find_map(
             |(&channel_id, entry)| matches!(entry, ChannelEntry::Ready { .. }).then_some(channel_id),
         )
     }
 
     async fn connect_session(&self) -> Result<Arc<Session>, String> {
         {
-            let mut state = self.state.lock().unwrap();
+            let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             if let Some(session) = state.session.clone() {
                 if !session.is_closed() {
                     return Ok(session);
@@ -413,7 +426,7 @@ impl HostPool {
 
         let _connect_guard = self.connect_lock.lock().await;
         let (cfg, jump_cfg) = {
-            let mut state = self.state.lock().unwrap();
+            let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             if let Some(session) = state.session.clone() {
                 if !session.is_closed() {
                     return Ok(session);
@@ -442,7 +455,7 @@ impl HostPool {
                 .map_err(ssh_error),
         };
 
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         state.connecting = false;
         match connected {
             Ok((session, jump_session)) => {
@@ -455,7 +468,7 @@ impl HostPool {
     }
 
     fn invalidate_connection(&self) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         state.session = None;
         state.jump_session = None;
         state.connecting = false;
@@ -464,7 +477,7 @@ impl HostPool {
     /// Release one panel's reference. A shared SFTP channel remains live
     /// until the last panel closes it.
     fn release_panel_channel(&self, channel_id: u64) -> Option<bool> {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let should_remove = match state.channels.get_mut(&channel_id) {
             Some(ChannelEntry::Ready {
                 panel_refs,
@@ -493,7 +506,7 @@ impl HostPool {
     /// Release a transfer worker's borrowed reference. Borrowers share the
     /// live SFTP channel rather than opening extra SSH session channels.
     fn release_borrower_channel(&self, channel_id: u64) -> Option<bool> {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let should_remove = match state.channels.get_mut(&channel_id) {
             Some(ChannelEntry::Ready {
                 panel_refs,
@@ -519,7 +532,7 @@ impl HostPool {
     }
 
     fn is_idle(&self) -> bool {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         !state.connecting && state.channels.is_empty()
     }
 }

@@ -16,8 +16,8 @@ use zeroterm_sync::local_store::{InMemoryStore, LocalRecordStore};
 
 fn fast_kdf() -> Argon2Params {
     Argon2Params {
-        m_cost: 8 * 1024,
-        t_cost: 1,
+        m_cost: 19 * 1024,
+        t_cost: 2,
         p_cost: 1,
     }
 }
@@ -362,7 +362,7 @@ async fn compact_snapshots_local_live_records_even_if_their_events_were_pruned()
     // Live + clean locally, but with no event in the repo (its event was
     // "pruned"). apply_upsert marks it clean and writes nothing to events/.
     store_a
-        .apply_upsert("rec-orphan", "snippet", b"docker ps -a", "srv-1")
+        .apply_upsert("rec-orphan", "snippet", b"docker ps -a", "srv-1", 1, "dev-X")
         .unwrap();
 
     engine_a.compact().await.unwrap();

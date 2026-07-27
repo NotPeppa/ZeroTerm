@@ -49,6 +49,24 @@ impl RepoPaths {
         "keyring.json"
     }
 
+    pub fn keyrings_dir() -> &'static str {
+        "keyrings"
+    }
+
+    pub fn keyring_filename(root_epoch: u64, id: &str) -> String {
+        format!("keyrings/keyring-{root_epoch:012}-{id}.json")
+    }
+
+    pub fn is_keyring_path(path: &str) -> bool {
+        path == Self::keyring()
+            || (path.starts_with("keyrings/keyring-")
+                && path.ends_with(".json")
+                && !path.contains("..")
+                && path.bytes().all(|b| {
+                    b.is_ascii_alphanumeric() || matches!(b, b'/' | b'-' | b'_' | b'.')
+                }))
+    }
+
     pub fn snapshots_dir() -> &'static str {
         "snapshots"
     }

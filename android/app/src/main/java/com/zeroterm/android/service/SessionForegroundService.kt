@@ -120,6 +120,11 @@ class SessionForegroundService : Service() {
             Intent(this, MainActivity::class.java).apply {
                 action = MainActivity.ACTION_OPEN_ACTIVE_SESSION
                 flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                // AND-7: stamp the intent as internally originated + restrict
+                // delivery to our own package so MainActivity can reject the
+                // same custom action arriving from a third-party app.
+                setPackage(packageName)
+                putExtra(MainActivity.EXTRA_INTERNAL_NAV, true)
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )

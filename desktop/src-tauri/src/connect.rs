@@ -17,7 +17,7 @@ pub(crate) fn build_connect_chain_for_host(
     app_handle: &AppHandle,
     host_id: &str,
 ) -> Result<ConnectChain, String> {
-    let app_lock = state.app.lock().unwrap();
+    let app_lock = state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let app = app_lock.as_ref().ok_or("vault is locked")?;
 
     let host = app

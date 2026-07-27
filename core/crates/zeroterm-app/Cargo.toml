@@ -23,6 +23,7 @@ serde_json = { workspace = true }
 dirs = { workspace = true }
 keyring = { workspace = true }
 tokio = { workspace = true }
+zeroize = { workspace = true }
 
 thiserror = { workspace = true }
 tracing = { workspace = true }

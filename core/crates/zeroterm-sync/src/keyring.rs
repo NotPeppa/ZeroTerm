@@ -5,7 +5,8 @@
 //!   `keyring.json`
 //!   ```text
 //!   {
-//!     "schema_version": 1,
+//!     "schema_version": 2,
+//!     "root_epoch": 1,
 //!     "entries": [
 //!       {
 //!         "device_id": "...",
@@ -15,15 +16,16 @@
 //!         "wrap_ct_b64": "..."   // sealed (sync_root_key, AAD = device_id)
 //!       },
 //!       ...
-//!     ]
+//!     ],
+//!     "mac_b64": "..."          // MAC of the complete entry set
 //!   }
 //!   ```
 //!
 //! Adding a device = append a new entry (the inviter unwraps with their
 //! own passphrase, then re-wraps with the invitee's passphrase). Revoking
-//! a device = remove the entry **and** rotate the root key (otherwise the
-//! revoked passphrase still works against old ciphertexts the device
-//! already copied). Root rotation is M7; for M1 we only support enroll.
+//! a device removes the entry and rotates both the root key and
+//! passphrase. The whole entry set is MACed by the new root key so a
+//! backend cannot splice an old/revoked entry into the new epoch.
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use serde::{Deserialize, Serialize};
@@ -40,15 +42,31 @@ use crate::error::Error;
 /// On-disk schema version for the keyring file. Bumped if the layout
 /// ever changes — the AAD format is part of the layout, so bumping this
 /// would also rotate which AAD bytes are tagged.
-pub const KEYRING_SCHEMA: u32 = 1;
+pub const KEYRING_SCHEMA: u32 = 2;
 
 /// AAD tag bound into every wrap ciphertext. Includes the device id so
 /// one device's wrapped key can't be replayed as another's.
-fn wrap_aad(device_id: &str) -> Vec<u8> {
-    let mut aad = Vec::with_capacity(b"zeroterm-sync-keyring-v1|".len() + device_id.len());
-    aad.extend_from_slice(b"zeroterm-sync-keyring-v1|");
+fn wrap_aad(device_id: &str, root_epoch: u64) -> Vec<u8> {
+    let label: &[u8] = if root_epoch == 0 {
+        b"zeroterm-sync-keyring-v1|"
+    } else {
+        b"zeroterm-sync-keyring-v2|"
+    };
+    let mut aad = Vec::with_capacity(label.len() + 24 + device_id.len());
+    aad.extend_from_slice(label);
+    if root_epoch > 0 {
+        aad.extend_from_slice(root_epoch.to_string().as_bytes());
+        aad.push(b'|');
+    }
     aad.extend_from_slice(device_id.as_bytes());
     aad
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyringMacStatus {
+    Valid,
+    Absent,
+    Invalid,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -90,14 +108,23 @@ pub struct KeyringEntry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Keyring {
     pub schema_version: u32,
+    /// Generation of the sync root key. Epoch 0 is the legacy,
+    /// unauthenticated keyring format.
+    #[serde(default)]
+    pub root_epoch: u64,
     pub entries: Vec<KeyringEntry>,
+    /// HMAC over the entire keyring with this field blank.
+    #[serde(default)]
+    pub mac_b64: String,
 }
 
 impl Default for Keyring {
     fn default() -> Self {
         Self {
             schema_version: KEYRING_SCHEMA,
+            root_epoch: 0,
             entries: Vec::new(),
+            mac_b64: String::new(),
         }
     }
 }
@@ -122,7 +149,42 @@ impl Keyring {
                 max: KEYRING_SCHEMA,
             });
         }
+        let mut seen = std::collections::HashSet::with_capacity(me.entries.len());
+        if me.entries.iter().any(|entry| !seen.insert(&entry.device_id)) {
+            return Err(Error::Corrupt);
+        }
         Ok(me)
+    }
+
+    fn mac_input(&self) -> Result<Vec<u8>, Error> {
+        let mut bare = self.clone();
+        bare.mac_b64.clear();
+        bare.to_json()
+    }
+
+    pub fn sign(&mut self, mac_key: &[u8]) -> Result<(), Error> {
+        self.mac_b64.clear();
+        let tag = zeroterm_crypto::hmac_sha256(mac_key, &self.mac_input()?);
+        self.mac_b64 = B64.encode(tag);
+        Ok(())
+    }
+
+    pub fn verify_mac(&self, mac_key: &[u8]) -> KeyringMacStatus {
+        if self.mac_b64.is_empty() {
+            return KeyringMacStatus::Absent;
+        }
+        let Ok(input) = self.mac_input() else {
+            return KeyringMacStatus::Invalid;
+        };
+        let expected = zeroterm_crypto::hmac_sha256(mac_key, &input);
+        let Ok(got) = B64.decode(self.mac_b64.as_bytes()) else {
+            return KeyringMacStatus::Invalid;
+        };
+        if zeroterm_crypto::constant_time_eq(&got, &expected) {
+            KeyringMacStatus::Valid
+        } else {
+            KeyringMacStatus::Invalid
+        }
     }
 }
 
@@ -135,10 +197,20 @@ pub fn wrap_root_key(
     params: Argon2Params,
     root: &SyncRootKey,
 ) -> Result<KeyringEntry, Error> {
+    wrap_root_key_for_epoch(device_id, passphrase, params, root, 0)
+}
+
+pub fn wrap_root_key_for_epoch(
+    device_id: &str,
+    passphrase: &str,
+    params: Argon2Params,
+    root: &SyncRootKey,
+    root_epoch: u64,
+) -> Result<KeyringEntry, Error> {
     let salt = zeroterm_crypto::random_bytes(16);
     let wrap_key = derive_key_argon2id(passphrase.as_bytes(), &salt, params)?;
     let nonce = random_nonce();
-    let aad = wrap_aad(device_id);
+    let aad = wrap_aad(device_id, root_epoch);
     let ct = aead_encrypt(&wrap_key, &nonce, root.as_ref(), &aad)?;
 
     Ok(KeyringEntry {
@@ -153,6 +225,14 @@ pub fn wrap_root_key(
 /// Unwrap the sync root key for `device_id` using the given passphrase.
 /// Wrong passphrase ⇒ [`Error::AuthenticationFailed`].
 pub fn unwrap_root_key(entry: &KeyringEntry, passphrase: &str) -> Result<SyncRootKey, Error> {
+    unwrap_root_key_for_epoch(entry, passphrase, 0)
+}
+
+pub fn unwrap_root_key_for_epoch(
+    entry: &KeyringEntry,
+    passphrase: &str,
+    root_epoch: u64,
+) -> Result<SyncRootKey, Error> {
     let salt = B64
         .decode(entry.kdf_salt_b64.as_bytes())
         .map_err(|_| Error::Base64)?;
@@ -167,7 +247,7 @@ pub fn unwrap_root_key(entry: &KeyringEntry, passphrase: &str) -> Result<SyncRoo
     }
 
     let wrap_key = derive_key_argon2id(passphrase.as_bytes(), &salt, entry.kdf_params.into())?;
-    let aad = wrap_aad(&entry.device_id);
+    let aad = wrap_aad(&entry.device_id, root_epoch);
     let plain =
         aead_decrypt(&wrap_key, &nonce, &ct, &aad).map_err(|_| Error::AuthenticationFailed)?;
 
@@ -189,8 +269,8 @@ mod tests {
 
     fn fast_params() -> Argon2Params {
         Argon2Params {
-            m_cost: 8 * 1024,
-            t_cost: 1,
+            m_cost: 19 * 1024,
+            t_cost: 2,
             p_cost: 1,
         }
     }
@@ -251,7 +331,9 @@ mod tests {
         let b = wrap_root_key("dev-B", "pw-b", fast_params(), &root).unwrap();
         let kr = Keyring {
             schema_version: KEYRING_SCHEMA,
+            root_epoch: 0,
             entries: vec![a, b],
+            mac_b64: String::new(),
         };
         let bytes = kr.to_json().unwrap();
         let back = Keyring::from_json(&bytes).unwrap();
@@ -269,5 +351,31 @@ mod tests {
             Keyring::from_json(json),
             Err(Error::SchemaTooNew { .. })
         ));
+    }
+
+    #[test]
+    fn collection_mac_detects_entry_splicing() {
+        let root = fresh_root_key();
+        let entry =
+            wrap_root_key_for_epoch("dev-A", "pw", fast_params(), &root, 1).unwrap();
+        let mut keyring = Keyring {
+            schema_version: KEYRING_SCHEMA,
+            root_epoch: 1,
+            entries: vec![entry.clone()],
+            mac_b64: String::new(),
+        };
+        let mac_key = crate::crypto::derive_keyring_mac_key(&root);
+        keyring.sign(mac_key.as_ref()).unwrap();
+        assert_eq!(
+            keyring.verify_mac(mac_key.as_ref()),
+            KeyringMacStatus::Valid
+        );
+        let mut spliced = entry;
+        spliced.device_id = "dev-B".into();
+        keyring.entries.push(spliced);
+        assert_eq!(
+            keyring.verify_mac(mac_key.as_ref()),
+            KeyringMacStatus::Invalid
+        );
     }
 }

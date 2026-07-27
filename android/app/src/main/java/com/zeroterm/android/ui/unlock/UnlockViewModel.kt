@@ -6,11 +6,13 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.zeroterm.android.R
 import com.zeroterm.android.data.ZeroTermRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class UnlockUiState(
     val vaultExists: Boolean = false,
@@ -22,6 +24,15 @@ data class UnlockUiState(
     val loading: Boolean = false,
     val error: String? = null,
     val unlocked: Boolean = false,
+    /**
+     * When non-null, the vault is unlocked and the user asked to be
+     * remembered — the UI must run the biometric encrypt prompt to seal
+     * this plaintext into [MasterPasswordStore], then call
+     * [UnlockViewModel.finishBiometricEnroll]. Held transiently and
+     * never displayed or logged. `unlocked` stays false until the enroll
+     * step resolves so the screen doesn't navigate away mid-prompt.
+     */
+    val enrollPassword: String? = null,
 )
 
 class UnlockViewModel(
@@ -36,30 +47,53 @@ class UnlockViewModel(
     }
 
     fun refreshStatus() {
-        val status = runCatching { repository.vaultStatus() }.getOrNull()
-        _state.update {
-            it.copy(
-                vaultExists = status?.exists == true,
-                vaultPath = status?.path.orEmpty(),
-                hasCachedPassword = repository.hasCachedPassword(),
-                unlocked = status?.unlocked == true || repository.unlocked.value,
-            )
+        // AND-8: vaultStatus() is a synchronous JNI call and hasCachedPassword()
+        // touches EncryptedSharedPreferences — keep both off the main thread to
+        // avoid jank/ANR, mirroring how unlock()/create() already dispatch.
+        viewModelScope.launch {
+            val (status, cached) = withContext(Dispatchers.IO) {
+                val s = runCatching { repository.vaultStatus() }.getOrNull()
+                s to repository.hasCachedPassword()
+            }
+            _state.update {
+                it.copy(
+                    vaultExists = status?.exists == true,
+                    vaultPath = status?.path.orEmpty(),
+                    hasCachedPassword = cached,
+                    unlocked = status?.unlocked == true || repository.unlocked.value,
+                )
+            }
         }
     }
 
     fun prepareForUnlock() {
-        val status = runCatching { repository.vaultStatus() }.getOrNull()
+        // AND-8: reset the UI-critical fields synchronously so the unlock
+        // screen, when navigated to right after locking, never observes a
+        // stale unlocked=true (its LaunchedEffect would bounce straight back
+        // to Hosts). The synchronous JNI vaultStatus() and the prefs-backed
+        // hasCachedPassword() lookup then run off the main thread and patch in
+        // their results.
         _state.update {
             it.copy(
-                vaultExists = status?.exists == true,
-                vaultPath = status?.path.orEmpty(),
                 password = "",
                 confirmPassword = "",
-                hasCachedPassword = repository.hasCachedPassword(),
                 loading = false,
                 error = null,
                 unlocked = false,
             )
+        }
+        viewModelScope.launch {
+            val (status, cached) = withContext(Dispatchers.IO) {
+                val s = runCatching { repository.vaultStatus() }.getOrNull()
+                s to repository.hasCachedPassword()
+            }
+            _state.update {
+                it.copy(
+                    vaultExists = status?.exists == true,
+                    vaultPath = status?.path.orEmpty(),
+                    hasCachedPassword = cached,
+                )
+            }
         }
     }
 
@@ -94,8 +128,23 @@ class UnlockViewModel(
             }
             result.fold(
                 onSuccess = {
-                    _state.update {
-                        it.copy(loading = false, unlocked = true, password = "", confirmPassword = "")
+                    if (s.remember) {
+                        // Hand the plaintext to the UI for the biometric
+                        // encrypt step; don't mark unlocked until it
+                        // resolves. Password field is cleared from the UI
+                        // but retained in enrollPassword for sealing.
+                        _state.update {
+                            it.copy(
+                                loading = false,
+                                enrollPassword = s.password,
+                                password = "",
+                                confirmPassword = "",
+                            )
+                        }
+                    } else {
+                        _state.update {
+                            it.copy(loading = false, unlocked = true, password = "", confirmPassword = "")
+                        }
                     }
                 },
                 onFailure = { e ->
@@ -108,6 +157,15 @@ class UnlockViewModel(
                 },
             )
         }
+    }
+
+    /**
+     * Called by the UI once the biometric encrypt prompt has resolved
+     * (whether it sealed the password or the user skipped/failed it).
+     * Either way the vault is already unlocked, so proceed.
+     */
+    fun finishBiometricEnroll() {
+        _state.update { it.copy(enrollPassword = null, unlocked = true) }
     }
 
     fun unlockWithBiometricPassword(password: String) {

@@ -17,6 +17,21 @@ pub enum Error {
     #[error("sync passphrase rejected")]
     AuthenticationFailed,
 
+    #[error("device is not enrolled in the authenticated keyring")]
+    DeviceNotEnrolled,
+
+    #[error("the current device cannot revoke itself")]
+    CannotRevokeCurrentDevice,
+
+    #[error("a local record changed during root-key rotation; retry the operation")]
+    RekeyConcurrentEdit,
+
+    #[error("the replacement sync passphrase must not be empty")]
+    EmptyPassphrase,
+
+    #[error("the replacement sync passphrase must differ from every existing device passphrase")]
+    PassphraseNotRotated,
+
     #[error("vault_id mismatch (local={local}, remote={remote})")]
     VaultIdMismatch { local: String, remote: String },
 

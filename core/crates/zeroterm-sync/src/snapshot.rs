@@ -15,7 +15,20 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
 
-pub const SNAPSHOT_SCHEMA: u32 = 1;
+/// Schema 2 (current): adds tombstone entries (`deleted` /
+/// `deleted_at`). A snapshot that carries deletions is how a device
+/// that slept through both the delete event *and* its retention window
+/// still learns about the deletion — without this, compaction could
+/// silently resurrect deleted records fleet-wide (SYNC-3). Readers
+/// accept schema 1 (all records live); writers always emit schema 2.
+pub const SNAPSHOT_SCHEMA: u32 = 2;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SnapshotMacStatus {
+    Valid,
+    Absent,
+    Invalid,
+}
 
 /// One row in the snapshot: identity + ciphertext envelope. The
 /// engine decrypts these the same way it decrypts an `Upsert` event's
@@ -31,6 +44,19 @@ pub struct SnapshotRecord {
     /// the snapshot was taken. Lets late-arriving events be ordered
     /// against the snapshot without re-reading the whole event log.
     pub last_clock: u64,
+    /// True for a tombstone entry: the record was deleted and this row
+    /// carries no payload. Joiners must materialise the tombstone
+    /// locally so stale upserts can't resurrect it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub deleted: bool,
+    /// Epoch-millis of the delete event; drives tombstone retention
+    /// inside the snapshot. 0 for live records.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub deleted_at: i64,
+}
+
+fn is_zero(v: &i64) -> bool {
+    *v == 0
 }
 
 impl SnapshotRecord {
@@ -54,6 +80,10 @@ pub struct Snapshot {
     pub vault_id: String,
     pub created_at: i64,
     pub records: Vec<SnapshotRecord>,
+    #[serde(default)]
+    pub root_epoch: u64,
+    #[serde(default)]
+    pub mac_b64: String,
 }
 
 impl Snapshot {
@@ -70,6 +100,8 @@ impl Snapshot {
             vault_id: vault_id.into(),
             created_at,
             records: Vec::new(),
+            root_epoch: 0,
+            mac_b64: String::new(),
         }
     }
 
@@ -89,6 +121,29 @@ impl Snapshot {
             nonce_b64: B64.encode(nonce),
             ciphertext_b64: B64.encode(ciphertext),
             last_clock,
+            deleted: false,
+            deleted_at: 0,
+        });
+    }
+
+    /// Append a tombstone entry (no payload).
+    pub fn push_tombstone(
+        &mut self,
+        record_id: impl Into<String>,
+        kind: impl Into<String>,
+        revision: impl Into<String>,
+        last_clock: u64,
+        deleted_at: i64,
+    ) {
+        self.records.push(SnapshotRecord {
+            record_id: record_id.into(),
+            kind: kind.into(),
+            revision: revision.into(),
+            nonce_b64: String::new(),
+            ciphertext_b64: String::new(),
+            last_clock,
+            deleted: true,
+            deleted_at,
         });
     }
 
@@ -105,6 +160,38 @@ impl Snapshot {
             });
         }
         Ok(s)
+    }
+
+    fn mac_input(&self) -> Result<Vec<u8>, Error> {
+        let mut bare = self.clone();
+        bare.mac_b64.clear();
+        bare.to_json()
+    }
+
+    pub fn sign(&mut self, mac_key: &[u8]) -> Result<(), Error> {
+        self.mac_b64.clear();
+        let input = self.mac_input()?;
+        let tag = zeroterm_crypto::hmac_sha256(mac_key, &input);
+        self.mac_b64 = B64.encode(tag);
+        Ok(())
+    }
+
+    pub fn verify_mac(&self, mac_key: &[u8]) -> SnapshotMacStatus {
+        if self.mac_b64.is_empty() {
+            return SnapshotMacStatus::Absent;
+        }
+        let Ok(input) = self.mac_input() else {
+            return SnapshotMacStatus::Invalid;
+        };
+        let expected = zeroterm_crypto::hmac_sha256(mac_key, &input);
+        let Ok(got) = B64.decode(self.mac_b64.as_bytes()) else {
+            return SnapshotMacStatus::Invalid;
+        };
+        if zeroterm_crypto::constant_time_eq(&got, &expected) {
+            SnapshotMacStatus::Valid
+        } else {
+            SnapshotMacStatus::Invalid
+        }
     }
 }
 
@@ -146,11 +233,69 @@ mod tests {
             vault_id: "v".into(),
             created_at: 0,
             records: Vec::new(),
+            root_epoch: 0,
+            mac_b64: String::new(),
         };
         let bytes = serde_json::to_vec(&s).unwrap();
         assert!(matches!(
             Snapshot::from_json(&bytes),
             Err(Error::SchemaTooNew { .. })
         ));
+    }
+
+    #[test]
+    fn tombstone_entries_roundtrip() {
+        let mut s = Snapshot::new("snap-3", "vlt", 50, 100);
+        s.push("rec-live", "host", "rev-1", &[0u8; 24], &[1], 40);
+        s.push_tombstone("rec-dead", "host", "rev-2", 45, 99);
+
+        let back = Snapshot::from_json(&s.to_json().unwrap()).unwrap();
+        assert_eq!(back.records.len(), 2);
+        let dead = back
+            .records
+            .iter()
+            .find(|r| r.record_id == "rec-dead")
+            .unwrap();
+        assert!(dead.deleted);
+        assert_eq!(dead.deleted_at, 99);
+        assert_eq!(dead.last_clock, 45);
+        assert!(!back.records[0].deleted);
+    }
+
+    #[test]
+    fn schema_1_snapshots_parse_with_all_records_live() {
+        // Hand-build a v1 document (no deleted/deleted_at fields).
+        let json = br#"{
+            "schema_version": 1,
+            "snapshot_id": "old",
+            "head_clock": 9,
+            "vault_id": "vlt",
+            "created_at": 1,
+            "records": [{
+                "record_id": "r1", "kind": "host", "revision": "rev",
+                "nonce_b64": "", "ciphertext_b64": "", "last_clock": 5
+            }]
+        }"#;
+        let back = Snapshot::from_json(json).unwrap();
+        assert!(!back.records[0].deleted);
+        assert_eq!(back.records[0].deleted_at, 0);
+    }
+
+    #[test]
+    fn snapshot_mac_authenticates_tombstones() {
+        let key = [3u8; 32];
+        let mut snapshot = Snapshot::new("snap", "vlt", 5, 10);
+        snapshot.root_epoch = 1;
+        snapshot.push_tombstone("dead", "host", "rev", 5, 10);
+        snapshot.sign(&key).unwrap();
+        assert_eq!(
+            snapshot.verify_mac(&key),
+            SnapshotMacStatus::Valid
+        );
+        snapshot.records[0].deleted = false;
+        assert_eq!(
+            snapshot.verify_mac(&key),
+            SnapshotMacStatus::Invalid
+        );
     }
 }

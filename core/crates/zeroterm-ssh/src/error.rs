@@ -211,7 +211,7 @@ pub enum SshError {
     Io(#[from] std::io::Error),
 
     #[error("key error: {0}")]
-    Key(#[from] russh_keys::Error),
+    Key(#[from] russh::keys::Error),
 
     #[error("sftp error ({kind}): {message}")]
     Sftp {

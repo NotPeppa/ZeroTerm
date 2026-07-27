@@ -50,6 +50,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.biometric.BiometricPrompt
 import androidx.fragment.app.FragmentActivity
 import com.zeroterm.android.R
 import com.zeroterm.android.ZeroTermApp
@@ -75,7 +76,9 @@ fun UnlockScreen(
         if (state.unlocked) onUnlocked()
     }
 
-    // Auto-prompt biometric when cache exists
+    // Auto-prompt biometric when cache exists. The prompt is bound to a
+    // decrypt cipher (CryptoObject): only a successful strong-biometric
+    // scan unlocks the Keystore key that can decrypt the cached password.
     LaunchedEffect(state.hasCachedPassword, state.vaultExists) {
         if (
             !biometricAttempted &&
@@ -86,19 +89,55 @@ fun UnlockScreen(
             BiometricGate.canAuthenticate(activity)
         ) {
             biometricAttempted = true
-            BiometricGate.authenticate(
-                activity = activity,
-                title = biometricTitle,
-                subtitle = biometricSubtitle,
-                onSuccess = {
-                    val pw = app.container.passwordStore.load()
-                    if (pw != null) {
-                        viewModel.unlockWithBiometricPassword(pw)
-                    }
-                },
-                onError = { /* fall through to password UI */ },
-                onCancel = { /* fall through to password UI */ },
-            )
+            val cipher = runCatching { app.container.passwordStore.decryptCipher() }.getOrNull()
+            if (cipher != null) {
+                BiometricGate.authenticate(
+                    activity = activity,
+                    cryptoObject = BiometricPrompt.CryptoObject(cipher),
+                    title = biometricTitle,
+                    subtitle = biometricSubtitle,
+                    onSuccess = { crypto ->
+                        val pw = crypto.cipher?.let { app.container.passwordStore.finishLoad(it) }
+                        if (pw != null) {
+                            viewModel.unlockWithBiometricPassword(pw)
+                        }
+                    },
+                    onError = { /* fall through to password UI */ },
+                    onCancel = { /* fall through to password UI */ },
+                )
+            }
+        }
+    }
+
+    // After a successful "remember me" unlock, seal the master password
+    // with a biometric-bound encrypt cipher. If no strong biometric is
+    // available (or the user cancels), we simply don't cache — the vault
+    // is already unlocked either way. This replaces the old insecure
+    // path that stored the password with no authentication binding.
+    LaunchedEffect(state.enrollPassword) {
+        val pw = state.enrollPassword ?: return@LaunchedEffect
+        if (activity != null && BiometricGate.canAuthenticate(activity)) {
+            val cipher = runCatching { app.container.passwordStore.encryptCipher() }.getOrNull()
+            if (cipher != null) {
+                BiometricGate.authenticate(
+                    activity = activity,
+                    cryptoObject = BiometricPrompt.CryptoObject(cipher),
+                    title = biometricTitle,
+                    subtitle = biometricSubtitle,
+                    onSuccess = { crypto ->
+                        crypto.cipher?.let {
+                            runCatching { app.container.passwordStore.finishSave(it, pw) }
+                        }
+                        viewModel.finishBiometricEnroll()
+                    },
+                    onError = { viewModel.finishBiometricEnroll() },
+                    onCancel = { viewModel.finishBiometricEnroll() },
+                )
+            } else {
+                viewModel.finishBiometricEnroll()
+            }
+        } else {
+            viewModel.finishBiometricEnroll()
         }
     }
 
@@ -243,16 +282,24 @@ fun UnlockScreen(
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(
                     onClick = {
-                        BiometricGate.authenticate(
-                            activity = activity,
-                            title = biometricTitle,
-                            subtitle = biometricSubtitle,
-                            onSuccess = {
-                                val pw = app.container.passwordStore.load()
-                                if (pw != null) viewModel.unlockWithBiometricPassword(pw)
-                            },
-                            onError = {},
-                        )
+                        val cipher = runCatching {
+                            app.container.passwordStore.decryptCipher()
+                        }.getOrNull()
+                        if (cipher != null) {
+                            BiometricGate.authenticate(
+                                activity = activity,
+                                cryptoObject = BiometricPrompt.CryptoObject(cipher),
+                                title = biometricTitle,
+                                subtitle = biometricSubtitle,
+                                onSuccess = { crypto ->
+                                    val pw = crypto.cipher?.let {
+                                        app.container.passwordStore.finishLoad(it)
+                                    }
+                                    if (pw != null) viewModel.unlockWithBiometricPassword(pw)
+                                },
+                                onError = {},
+                            )
+                        }
                     },
                     enabled = !state.loading,
                     modifier = Modifier.fillMaxWidth(),

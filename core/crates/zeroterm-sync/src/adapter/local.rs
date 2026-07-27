@@ -13,7 +13,7 @@ use async_trait::async_trait;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
-use crate::adapter::{ObjectMeta, SyncAdapter};
+use crate::adapter::{validate_repo_relative_path, ObjectMeta, SyncAdapter};
 use crate::error::Error;
 use crate::repo;
 
@@ -74,7 +74,19 @@ impl SyncAdapter for LocalAdapter {
     }
 
     async fn read(&self, key: &str) -> Result<Option<Vec<u8>>, Error> {
-        match fs::read(self.full(key)).await {
+        let path = self.full(key);
+        // SYNC-12: refuse to slurp an object larger than the cap so a
+        // corrupt/hostile repo can't OOM us. Checked before the read
+        // allocates.
+        match fs::metadata(&path).await {
+            Ok(m) if m.len() > crate::engine::MAX_SYNC_OBJECT_BYTES => {
+                return Err(Error::Corrupt);
+            }
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(Error::Io(e)),
+        }
+        match fs::read(&path).await {
             Ok(b) => Ok(Some(b)),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(Error::Io(e)),
@@ -145,29 +157,53 @@ impl SyncAdapter for LocalAdapter {
     }
 
     async fn write_new(&self, key: &str, bytes: &[u8]) -> Result<ObjectMeta, Error> {
+        // SYNC-14: validate the key before `full()`, which would happily
+        // `push("..")` out of the repo root. Engine keys are already
+        // safe; this is defence in depth against a future caller.
+        validate_repo_relative_path(key)?;
         let p = self.full(key);
         if let Some(parent) = p.parent() {
             fs::create_dir_all(parent).await?;
         }
-        let mut f = match fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&p)
-            .await
-        {
-            Ok(f) => f,
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                return Err(Error::AlreadyExists)
-            }
-            Err(e) => return Err(Error::Io(e)),
+        // Crash-atomic: write the full payload to a sibling temp file,
+        // then rename into place. Writing directly to the final path
+        // would leave a truncated event where a crash / dropped
+        // connection interrupted `write_all` — and one undecodable
+        // object under `events/` stalls every reader (SYNC-5). The
+        // temp name has no event extension, so listers never see it.
+        if fs::metadata(&p).await.is_ok() {
+            return Err(Error::AlreadyExists);
+        }
+        let tmp_name = match p.file_name().and_then(|n| n.to_str()) {
+            Some(name) => format!(".{name}.tmp-{}", random_suffix()),
+            None => return Err(Error::Corrupt),
         };
-        f.write_all(bytes).await?;
-        f.flush().await?;
-        drop(f);
+        let tmp = p
+            .parent()
+            .map(|d| d.join(&tmp_name))
+            .unwrap_or_else(|| PathBuf::from(&tmp_name));
+        {
+            let mut f = match fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&tmp)
+                .await
+            {
+                Ok(f) => f,
+                Err(e) => return Err(Error::Io(e)),
+            };
+            f.write_all(bytes).await?;
+            f.flush().await?;
+        }
+        if let Err(e) = fs::rename(&tmp, &p).await {
+            let _ = fs::remove_file(&tmp).await;
+            return Err(Error::Io(e));
+        }
         self.stat(key).await?.ok_or(Error::Corrupt)
     }
 
     async fn write_atomic(&self, key: &str, bytes: &[u8]) -> Result<ObjectMeta, Error> {
+        validate_repo_relative_path(key)?;
         let p = self.full(key);
         if let Some(parent) = p.parent() {
             fs::create_dir_all(parent).await?;
@@ -199,6 +235,8 @@ impl SyncAdapter for LocalAdapter {
     }
 
     async fn rename(&self, from: &str, to: &str) -> Result<(), Error> {
+        validate_repo_relative_path(from)?;
+        validate_repo_relative_path(to)?;
         let f = self.full(from);
         let t = self.full(to);
         if let Some(parent) = t.parent() {

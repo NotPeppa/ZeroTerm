@@ -107,7 +107,7 @@ pub async fn sftp_open(
         .await?;
 
     let sftp_id = state.next_sftp_id.fetch_add(1, Ordering::SeqCst);
-    state.sftp_handles.lock().unwrap().insert(
+    state.sftp_handles.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(
         sftp_id,
         SftpHandle {
             host_id,
@@ -173,7 +173,7 @@ pub(crate) async fn acquire_transfer_sftp(
 
 #[tauri::command]
 pub async fn sftp_close(state: State<'_, AppState>, sftp_id: u64) -> Result<(), String> {
-    let removed = state.sftp_handles.lock().unwrap().remove(&sftp_id);
+    let removed = state.sftp_handles.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(&sftp_id);
     if let Some(handle) = removed {
         state
             .sftp_pool
@@ -323,7 +323,9 @@ pub async fn sftp_upload(
 ) -> Result<u64, String> {
     let overwrite = overwrite.unwrap_or(false);
     let host_id = lookup_sftp_host_id(&state, sftp_id)?;
-    let metadata = std::fs::metadata(&local).map_err(|e| format!("stating {local}: {e}"))?;
+    let metadata = tokio::fs::metadata(&local)
+        .await
+        .map_err(|e| format!("stating {local}: {e}"))?;
     let size_hint = Some(metadata.len());
     if !overwrite {
         with_resilient_panel_sftp(&state, sftp_id, |sftp| {

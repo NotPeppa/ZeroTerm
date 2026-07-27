@@ -642,6 +642,7 @@ private fun AboutPageContent() {
                     url = url,
                     fileName = result.apkName ?: "zeroterm-${result.latestVersion}.apk",
                     expectedSize = result.apkSize,
+                    expectedSha256 = result.apkSha256,
                     onProgress = { downloadProgress = it },
                 )
             }

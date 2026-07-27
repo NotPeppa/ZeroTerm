@@ -938,6 +938,13 @@ const I18N = {
     "settings.sync.devices.this_device": "This device",
     "settings.sync.devices.current_badge": "Current",
     "settings.sync.devices.last_seen": "Last seen {when}",
+    "settings.sync.devices.revoke": "Revoke",
+    "settings.sync.devices.revoke_title": "Revoke device and rotate keys",
+    "settings.sync.devices.revoke_confirm": "Revoke {device}? The passphrase currently entered above becomes the new sync passphrase. The repository root key and complete snapshot will be rotated; every retained device must reconnect with the new passphrase.",
+    "settings.sync.devices.revoke_progress": "Rotating the sync root key and re-encrypting the repository...",
+    "settings.sync.devices.revoke_done": "Device revoked. Root key rotated to epoch {epoch}; share the new passphrase with retained devices.",
+    "settings.sync.devices.revoke_failed": "Device revocation failed: {error}",
+    "settings.sync.devices.new_passphrase_required": "Enter a new sync passphrase above before revoking a device.",
     "settings.sync.conflicts.title": "Conflict Inbox",
     "settings.sync.conflicts.empty": "No conflicts pending.",
     "settings.sync.conflicts.no_profile": "Configure a sync profile to see conflicts.",
@@ -1829,6 +1836,13 @@ const I18N = {
     "settings.sync.devices.this_device": "本机",
     "settings.sync.devices.current_badge": "当前设备",
     "settings.sync.devices.last_seen": "最后在线 {when}",
+    "settings.sync.devices.revoke": "撤销",
+    "settings.sync.devices.revoke_title": "撤销设备并轮换密钥",
+    "settings.sync.devices.revoke_confirm": "确定撤销 {device} 吗？上方当前输入的密码将成为新的同步密码。仓库根密钥和完整快照会被轮换，所有保留设备都必须使用新密码重新连接。",
+    "settings.sync.devices.revoke_progress": "正在轮换同步根密钥并重新加密仓库...",
+    "settings.sync.devices.revoke_done": "设备已撤销，根密钥已轮换到第 {epoch} 代；请把新密码安全地提供给保留设备。",
+    "settings.sync.devices.revoke_failed": "撤销设备失败：{error}",
+    "settings.sync.devices.new_passphrase_required": "撤销设备前，请先在上方输入一个新的同步密码。",
     "settings.sync.conflicts.title": "冲突收件箱",
     "settings.sync.conflicts.empty": "暂无待解决冲突。",
     "settings.sync.conflicts.no_profile": "请先配置同步以查看冲突。",
@@ -4835,6 +4849,23 @@ function getAiPaneKey() {
   return pane.sessionId !== null ? `session:${pane.sessionId}` : `pane:${pane.id}`;
 }
 
+// FE-3: drop every per-pane / per-session Map entry for a torn-down pane or
+// session so these Maps don't grow unbounded. session:/pane: keys are minted
+// monotonically and never reused, so an evicted key is never looked up again.
+// `no-terminal` is the shared fallback key and must never be evicted here.
+function forgetAiPaneState(paneKey) {
+  if (!paneKey || paneKey === "no-terminal") return;
+  aiRequestStateByPane.delete(paneKey);
+  aiConversationByPane.delete(paneKey);
+  terminalSidePanelByPane.delete(paneKey);
+  // aiSessionIdentityByPane is keyed by `${scopeType}:${scopeId}:${paneKey}`,
+  // so evict every scope whose entry belongs to this pane/session.
+  const suffix = `:${paneKey}`;
+  for (const key of Array.from(aiSessionIdentityByPane.keys())) {
+    if (key.endsWith(suffix)) aiSessionIdentityByPane.delete(key);
+  }
+}
+
 function getAiSessionScope() {
   const pane = getActivePane();
   if (!pane) {
@@ -5115,6 +5146,26 @@ function storeAiConversationForActivePane({ persist = true } = {}) {
   }
 }
 
+// FE-6: AI-returned markdown links are attacker-influenced, so restrict the
+// href to a safe-protocol allowlist. Strips control chars / surrounding
+// whitespace and parses defensively; `javascript:`, `data:`, etc. (in any
+// case) fall back to "#".
+function safeAiLinkHref(raw) {
+  const cleaned = String(raw ?? "").replace(/[\u0000-\u001F\u007F]/g, "").trim();
+  if (!cleaned) return "#";
+  let url;
+  try {
+    url = new URL(cleaned);
+  } catch {
+    return "#";
+  }
+  const protocol = url.protocol.toLowerCase();
+  if (protocol === "http:" || protocol === "https:" || protocol === "mailto:") {
+    return url.href;
+  }
+  return "#";
+}
+
 function renderAiMarkdown(text) {
   const fragment = document.createDocumentFragment();
   const lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
@@ -5147,7 +5198,7 @@ function renderAiMarkdown(text) {
         const link = match.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
         const a = document.createElement("a");
         a.textContent = link?.[1] || match;
-        a.href = link?.[2] || "#";
+        a.href = safeAiLinkHref(link?.[2]);
         a.target = "_blank";
         a.rel = "noreferrer";
         frag.appendChild(a);
@@ -5501,10 +5552,28 @@ async function runCommandInActiveTerminal(command) {
   }
 }
 
-function requestAiCommandApproval(command) {
+// FE-4: executeAiCommand() throws this when the user declines the execution
+// confirmation, so callers can tell "declined" apart from a real failure.
+function makeAiCommandCanceledError() {
+  const err = new Error("AI command execution canceled by user");
+  err.aiCommandCanceled = true;
+  return err;
+}
+
+function isAiCommandCanceled(err) {
+  return Boolean(err && err.aiCommandCanceled);
+}
+
+async function requestAiCommandApproval(command) {
   const text = normalizeAiCommandBlock(command);
   if (!text) return;
-  return executeAiCommand(text);
+  try {
+    await executeAiCommand(text);
+  } catch {
+    // executeAiCommand() surfaces real failures via toast, and a declined
+    // confirmation is simply a no-op. Swallow here so the inline click
+    // handler never produces an unhandled promise rejection.
+  }
 }
 
 async function executeAiCommand(command) {
@@ -5513,6 +5582,20 @@ async function executeAiCommand(command) {
     showToast("当前没有可执行命令的终端会话。", "error", 3600);
     return;
   }
+  // FE-4: never auto-run an AI-produced command. Terminal output — partly
+  // controlled by the remote host — is fed back to the model, so a malicious
+  // host could steer the AI into suggesting a harmful command. Require an
+  // explicit, per-execution confirmation that shows the exact command first.
+  // openConfirmDialog renders `message` via textContent, so the command is
+  // shown literally with no HTML-injection risk.
+  const approved = await openConfirmDialog({
+    title: "执行 AI 建议的命令？",
+    message: `将在当前终端执行以下命令：\n\n${command}`,
+    okText: "执行",
+    cancelText: "取消",
+    danger: true,
+  });
+  if (!approved) throw makeAiCommandCanceledError();
   refitActiveTerminalPanes({ reason: "ai-command-before", forceBottom: true, frames: 1 });
   const buffer = pane.term?.buffer?.active;
   const cursor = buffer ? buffer.length : 0;
@@ -6039,7 +6122,15 @@ function enhanceAiCodeBlocks(root) {
             updateAiMultiCommandControls(messageNode);
           }
           run.textContent = "已执行";
-        } catch {
+        } catch (e) {
+          if (isAiCommandCanceled(e)) {
+            // FE-4: user declined the confirmation — restore the button so the
+            // command can still be approved later, and don't mark it failed.
+            block.classList.remove("approved");
+            run.disabled = Boolean(restoredResult);
+            run.textContent = restoredResult ? "已执行" : (commands.length > 1 ? `批准 ${index + 1}` : "批准执行");
+            return;
+          }
           if (commandState) updateAiMultiCommandControls(messageNode);
           run.textContent = "失败";
         }
@@ -9255,13 +9346,16 @@ async function refreshSyncDevices() {
       return;
     }
     for (const device of visibleDevices) {
+      const deviceId = device.deviceId || device.device_id || "";
+      const deviceName = device.name || deviceId || t("settings.sync.devices.this_device");
+      const isCurrent = Boolean(device.isCurrent || device.is_current);
       const li = document.createElement("li");
       li.className = "settings-sync-device-row";
       const main = document.createElement("div");
       main.className = "settings-sync-device-main";
       const name = document.createElement("strong");
-      name.textContent = device.name || device.deviceId || device.device_id || t("settings.sync.devices.this_device");
-      if (device.isCurrent || device.is_current) {
+      name.textContent = deviceName;
+      if (isCurrent) {
         const badge = document.createElement("em");
         badge.className = "settings-sync-device-current";
         badge.textContent = t("settings.sync.devices.current_badge");
@@ -9269,15 +9363,73 @@ async function refreshSyncDevices() {
         name.appendChild(badge);
       }
       const idText = document.createElement("span");
-      idText.textContent = device.deviceId || device.device_id || "";
+      idText.textContent = deviceId;
       main.append(name, idText);
+      const side = document.createElement("div");
+      side.className = "settings-sync-device-side";
       const lastSeen = document.createElement("span");
       lastSeen.className = "settings-sync-device-seen";
       const at = Number(device.lastSeenAt ?? device.last_seen_at ?? 0);
       lastSeen.textContent = at > 0
         ? t("settings.sync.devices.last_seen", { when: formatRelativeTime(at) })
         : "";
-      li.append(main, lastSeen);
+      side.appendChild(lastSeen);
+      if (!isCurrent && deviceId) {
+        const revoke = document.createElement("button");
+        revoke.type = "button";
+        revoke.className = "settings-sync-device-revoke";
+        revoke.textContent = t("settings.sync.devices.revoke");
+        revoke.addEventListener("click", async () => {
+          const newPassphrase = settingsSyncEncPassword?.value || "";
+          if (!newPassphrase) {
+            if (settingsSyncStatus) {
+              settingsSyncStatus.textContent = t("settings.sync.devices.new_passphrase_required");
+            }
+            settingsSyncEncPassword?.focus();
+            return;
+          }
+          const confirmed = await openConfirmDialog({
+            title: t("settings.sync.devices.revoke_title"),
+            message: t("settings.sync.devices.revoke_confirm", { device: deviceName }),
+            okText: t("settings.sync.devices.revoke"),
+            cancelText: t("input.button.cancel"),
+            danger: true,
+          });
+          if (!confirmed) return;
+          revoke.disabled = true;
+          if (settingsSyncStatus) {
+            settingsSyncStatus.textContent = t("settings.sync.devices.revoke_progress");
+          }
+          try {
+            const report = await invoke("sync_revoke_device", {
+              profileId: id,
+              deviceId,
+              newPassphrase,
+              rememberPassphrase: Boolean(settingsSyncRememberPassphrase?.checked),
+            });
+            if (settingsSyncEncPassword) settingsSyncEncPassword.value = "";
+            if (settingsSyncStatus) {
+              settingsSyncStatus.textContent = t("settings.sync.devices.revoke_done", {
+                epoch: report.rootEpoch ?? report.root_epoch ?? "?",
+              });
+            }
+            await Promise.all([
+              refreshSyncDevices(),
+              refreshSyncRepoStats(),
+              refreshSyncStatusLine(),
+            ]);
+          } catch (error) {
+            revoke.disabled = false;
+            if (settingsSyncStatus) {
+              settingsSyncStatus.textContent = t("settings.sync.devices.revoke_failed", {
+                error: userFriendlySyncError(error),
+              });
+            }
+          }
+        });
+        side.appendChild(revoke);
+      }
+      li.append(main, side);
       settingsSyncDevicesList.appendChild(li);
     }
   } catch (e) {
@@ -11941,6 +12093,12 @@ groupsMenuDelete?.addEventListener("click", async () => {
   renderHosts();
 });
 
+// FE-8: last-resort logging for promise rejections that nothing else handled,
+// so failures in fire-and-forget async work don't vanish silently.
+window.addEventListener("unhandledrejection", (event) => {
+  console.error("Unhandled promise rejection:", event?.reason);
+});
+
 window.addEventListener("click", () => hideHostsContextMenu());
 window.addEventListener("click", () => hideGroupsContextMenu());
 window.addEventListener("click", () => hideThemeModeMenu());
@@ -13347,12 +13505,10 @@ function syncQuickConnectAuthSections() {
 }
 
 async function pickQuickConnectKeyFile() {
-  const chosen = await invoke("plugin:dialog|open", {
-    options: {
-      multiple: false,
-      directory: false,
-      title: t("host_editor.key.pick_title"),
-    },
+  // Route through the backend picker so the chosen path is authorized
+  // for read_local_text_file (webview-supplied paths are refused).
+  const chosen = await invoke("pick_local_file", {
+    title: t("host_editor.key.pick_title"),
   });
   if (!chosen) return;
   const path = String(chosen);
@@ -14907,6 +15063,10 @@ async function disconnectPaneSession(pane, { dispose }) {
     } catch (e) {
       console.warn("disconnect_session failed", e);
     }
+    // FE-3: the session key is dead the moment its session is torn down —
+    // including the reconnect path, which mints a fresh session id. Drop its
+    // per-session AI/side-panel Map entries so they don't accumulate.
+    forgetAiPaneState(`session:${sid}`);
   }
 
   if (pane.dataUnlisten) {
@@ -14980,6 +15140,11 @@ async function closeTab(tabId) {
 
   await Promise.all(tab.panes.map((pane) => disconnectPaneSession(pane, { dispose: true })));
 
+  // FE-3: the panes are disposed for good, so also drop the Map entries keyed
+  // by their disconnected-state `pane:${id}` key. (Their `session:${sid}`
+  // entries were already evicted inside disconnectPaneSession.)
+  for (const pane of tab.panes) forgetAiPaneState(`pane:${pane.id}`);
+
   termState.tabs.splice(idx, 1);
 
   if (termState.tabs.length === 0) {
@@ -15031,6 +15196,9 @@ async function closeActiveSplit() {
   const pane = tab.panes[removeIndex];
 
   await disconnectPaneSession(pane, { dispose: true });
+  // FE-3: pane disposed for good — drop its disconnected-state `pane:${id}`
+  // Map entries (session key already evicted inside disconnectPaneSession).
+  forgetAiPaneState(`pane:${pane.id}`);
   tab.panes.splice(removeIndex, 1);
   tab.layout = "single";
   tab.activePaneId = tab.panes[0].id;
@@ -15510,12 +15678,9 @@ function syncAuthSections() {
 }
 
 async function pickKeyFile() {
-  const chosen = await invoke("plugin:dialog|open", {
-    options: {
-      multiple: false,
-      directory: false,
-      title: t("host_editor.key.pick_title"),
-    },
+  // Backend picker authorizes the path for read_local_text_file.
+  const chosen = await invoke("pick_local_file", {
+    title: t("host_editor.key.pick_title"),
   });
 
   if (!chosen) return;
@@ -17328,13 +17493,12 @@ async function openEntryWithLocalApp(pane, entry) {
     : isWindowsPlatform
       ? "C:\\Program Files"
       : "/usr/bin";
-  const picked = await invoke("plugin:dialog|open", {
-    options: {
-      multiple: false,
-      directory: false,
-      title: t("files.menu.open_with"),
-      defaultPath: defaultAppPath,
-    },
+  // Backend picker authorizes the chosen application path so
+  // open_with_app will accept it (webview-supplied app paths are
+  // refused unless they live under a system apps directory).
+  const picked = await invoke("pick_local_file", {
+    title: t("files.menu.open_with"),
+    defaultPath: defaultAppPath,
   });
   if (!picked) return;
 

@@ -14,8 +14,8 @@ const WRONG_PASSWORD: &str = "wrong horse";
 // In production we use the defaults (64 MiB / 3 iter) — see RFC §4.1.
 fn demo_params() -> Argon2Params {
     Argon2Params {
-        m_cost: 8 * 1024,
-        t_cost: 1,
+        m_cost: 19 * 1024,
+        t_cost: 2,
         p_cost: 1,
     }
 }

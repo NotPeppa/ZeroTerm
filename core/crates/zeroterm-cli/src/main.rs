@@ -411,7 +411,7 @@ async fn run_session(
                 target_host,
                 target_port,
             } if *enabled => zeroterm_ssh::forward_remote(
-                &mut session,
+                &session,
                 bind_addr,
                 *bind_port,
                 target_host.clone(),

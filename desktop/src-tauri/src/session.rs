@@ -139,6 +139,6 @@ pub async fn run(
     // Remove ourselves from the registry so the frontend can't accidentally
     // address a dead session.
     if let Some(state) = app_handle.try_state::<AppState>() {
-        state.sessions.lock().unwrap().remove(&session_id);
+        state.sessions.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(&session_id);
     }
 }

@@ -445,7 +445,16 @@ async fn download_remote_file_to_temp_once<F>(
 where
     F: FnMut(zeroterm_ssh::ProgressTick) + Send,
 {
-    let file = tokio::fs::File::create(temp_path)
+    // Remove any leftover from a previous attempt (the retry path reuses this
+    // exact temp path), then create with O_EXCL so a pre-planted symlink at
+    // the temp path fails instead of being followed and written through. If an
+    // attacker re-plants a symlink in the tiny window after the remove,
+    // `create_new` still refuses it (EEXIST). See TAURI-9.
+    let _ = tokio::fs::remove_file(temp_path).await;
+    let file = tokio::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(temp_path)
         .await
         .map_err(zeroterm_ssh::SshError::Io)?;
     let mut file = tokio::io::BufWriter::new(file);

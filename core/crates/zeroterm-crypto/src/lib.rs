@@ -28,6 +28,17 @@ pub const MAX_ARGON2_MEMORY_KIB: u32 = 256 * 1024;
 pub const MAX_ARGON2_ITERATIONS: u32 = 10;
 pub const MAX_ARGON2_LANES: u32 = 16;
 
+/// Resource floors for Argon2 parameters (CORE-5). Reject not just
+/// oversized parameters but dangerously *weak* ones, so a
+/// misconfigured caller (or a hostile file that lowers the cost to make
+/// an offline password guess cheap) can't produce a permanently weakened
+/// vault. 19 MiB / t=2 is the OWASP 2023 Argon2id floor; ZeroTerm's own
+/// default (64 MiB / 3) sits well above it. Argon2's own minimums
+/// (m ≥ 8·lanes, t ≥ 1, lanes ≥ 1) still apply on top.
+pub const MIN_ARGON2_MEMORY_KIB: u32 = 19 * 1024;
+pub const MIN_ARGON2_ITERATIONS: u32 = 2;
+pub const MIN_ARGON2_LANES: u32 = 1;
+
 /// A 32-byte symmetric key that auto-zeroes on drop.
 pub type SymmetricKey = Zeroizing<[u8; KEY_LEN]>;
 
@@ -116,6 +127,18 @@ pub fn derive_key_argon2id(
     {
         return Err(CryptoError::InvalidParams);
     }
+    if params.m_cost < MIN_ARGON2_MEMORY_KIB
+        || params.t_cost < MIN_ARGON2_ITERATIONS
+        || params.p_cost < MIN_ARGON2_LANES
+    {
+        tracing::error!(
+            m_cost = params.m_cost,
+            t_cost = params.t_cost,
+            p_cost = params.p_cost,
+            "Argon2 parameters below the minimum security floor"
+        );
+        return Err(CryptoError::InvalidParams);
+    }
     let argon_params = Params::new(params.m_cost, params.t_cost, params.p_cost, Some(KEY_LEN))
         .map_err(|e| {
             tracing::error!(error = ?e, "invalid Argon2 params");
@@ -144,6 +167,21 @@ pub fn hkdf_subkey<const N: usize>(ikm: &[u8], salt: &[u8], info: &[u8]) -> Zero
     hk.expand(info, okm.as_mut())
         .expect("HKDF-SHA256 expand within max length");
     okm
+}
+
+/// HMAC-SHA256 keyed message authentication code. Used to authenticate
+/// sync metadata (the manifest) under a key derived from the sync root
+/// key, so a backend that can rewrite files but doesn't hold the root key
+/// can't forge or tamper with it (SYNC-8).
+pub fn hmac_sha256(key: &[u8], data: &[u8]) -> [u8; 32] {
+    use hmac::Mac;
+    // HMAC accepts a key of any length; `new_from_slice` never errors.
+    // Fully qualified because `KeyInit` (in scope for the AEAD) also
+    // exposes a `new_from_slice`.
+    let mut mac = <hmac::Hmac<Sha256> as Mac>::new_from_slice(key)
+        .expect("HMAC accepts keys of any length");
+    mac.update(data);
+    mac.finalize().into_bytes().into()
 }
 
 /// XChaCha20-Poly1305 encrypt. Caller supplies a 24-byte nonce.
@@ -220,8 +258,8 @@ mod tests {
 
     fn fast_params() -> Argon2Params {
         Argon2Params {
-            m_cost: 8 * 1024,
-            t_cost: 1,
+            m_cost: 19 * 1024,
+            t_cost: 2,
             p_cost: 1,
         }
     }
@@ -272,6 +310,49 @@ mod tests {
                 Err(CryptoError::InvalidParams)
             ));
         }
+    }
+
+    #[test]
+    fn argon2_rejects_below_security_floor_parameters() {
+        // CORE-5: dangerously weak parameters must be refused so a
+        // misconfiguration can't mint a permanently weakened vault.
+        let salt = b"sixteen-byte-slt";
+        for params in [
+            Argon2Params {
+                m_cost: MIN_ARGON2_MEMORY_KIB - 1,
+                ..fast_params()
+            },
+            Argon2Params {
+                t_cost: MIN_ARGON2_ITERATIONS - 1,
+                ..fast_params()
+            },
+            // The historical "fast" test value (8 MiB / t=1) is now
+            // below the floor and must be rejected.
+            Argon2Params {
+                m_cost: 8 * 1024,
+                t_cost: 1,
+                p_cost: 1,
+            },
+        ] {
+            assert!(
+                matches!(
+                    derive_key_argon2id(b"pw", salt, params),
+                    Err(CryptoError::InvalidParams)
+                ),
+                "expected floor rejection for {params:?}"
+            );
+        }
+        // The floor value itself is accepted.
+        assert!(derive_key_argon2id(
+            b"pw",
+            salt,
+            Argon2Params {
+                m_cost: MIN_ARGON2_MEMORY_KIB,
+                t_cost: MIN_ARGON2_ITERATIONS,
+                p_cost: MIN_ARGON2_LANES,
+            }
+        )
+        .is_ok());
     }
 
     #[test]

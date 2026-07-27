@@ -7,10 +7,10 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use russh_keys::key::PublicKey;
-use russh_keys::PublicKeyBase64;
+use russh::keys::PublicKeyBase64;
+use russh::keys::{Certificate, PublicKey};
 
-use crate::known_hosts::{KnownHostStatus, KnownHosts};
+use crate::known_hosts::{KnownHostCertificateStatus, KnownHostStatus, KnownHosts};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MismatchAction {
@@ -34,8 +34,9 @@ impl HostKeyInfo {
         Self {
             host: host.to_string(),
             port,
-            key_type: key.name().to_string(),
-            fingerprint: key.fingerprint(),
+            key_type: key.algorithm().as_str().to_string(),
+            // OpenSSH-style SHA256 fingerprint: `SHA256:<base64-no-pad>`.
+            fingerprint: key.fingerprint(russh::keys::HashAlg::Sha256).to_string(),
         }
     }
 }
@@ -97,12 +98,20 @@ impl HostKeyPolicy {
 
             HostKeyPolicy::Strict(store) => match store.check(host, port, key)? {
                 KnownHostStatus::Trusted => Ok(true),
-                KnownHostStatus::Unknown | KnownHostStatus::Mismatch { .. } => Ok(false),
+                KnownHostStatus::Unknown
+                | KnownHostStatus::Mismatch { .. }
+                | KnownHostStatus::Revoked => Ok(false),
             },
 
             HostKeyPolicy::Interactive { store, prompt } => {
                 match store.check(host, port, key)? {
                     KnownHostStatus::Trusted => Ok(true),
+                    // An explicitly revoked key is never up for
+                    // negotiation — no prompt, hard reject.
+                    KnownHostStatus::Revoked => {
+                        tracing::warn!(host, port, "offered host key is marked @revoked");
+                        Ok(false)
+                    }
                     KnownHostStatus::Unknown => {
                         let info = HostKeyInfo::from_key(host, port, key);
                         let accept = prompt.on_unknown(info).await;
@@ -147,9 +156,42 @@ impl HostKeyPolicy {
             }
         }
     }
+
+    /// Run the policy against an OpenSSH host certificate.
+    ///
+    /// Interactive mode deliberately does not offer TOFU for certificates:
+    /// trusting a leaf certificate would become stale at renewal time and
+    /// bypass the CA model. Add the CA to known_hosts explicitly instead.
+    pub(crate) fn evaluate_certificate(
+        &self,
+        host: &str,
+        port: u16,
+        certificate: &Certificate,
+    ) -> std::io::Result<bool> {
+        match self {
+            HostKeyPolicy::AcceptAll => Ok(true),
+            HostKeyPolicy::Strict(store) | HostKeyPolicy::Interactive { store, .. } => {
+                match store.check_certificate(host, port, certificate)? {
+                    KnownHostCertificateStatus::Trusted => Ok(true),
+                    KnownHostCertificateStatus::Unknown => {
+                        tracing::warn!(host, port, "no matching @cert-authority entry");
+                        Ok(false)
+                    }
+                    KnownHostCertificateStatus::Revoked => {
+                        tracing::warn!(host, port, "host certificate key or CA is @revoked");
+                        Ok(false)
+                    }
+                    KnownHostCertificateStatus::Invalid { reason } => {
+                        tracing::warn!(host, port, %reason, "invalid host certificate");
+                        Ok(false)
+                    }
+                }
+            }
+        }
+    }
 }
 
-/// Helper, exposed because `russh_keys::key::PublicKey` doesn't directly
+/// Helper, exposed because `russh::keys::PublicKey` doesn't directly
 /// give a base64-string round-trip without the trait imported.
 #[allow(dead_code)]
 pub(crate) fn public_key_base64(k: &PublicKey) -> String {

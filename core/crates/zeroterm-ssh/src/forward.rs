@@ -23,7 +23,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use russh::client::{Handle, Msg};
+use russh::client::Msg;
 use russh::Channel;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -31,7 +31,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
 
 use crate::error::SshError;
-use crate::session::Session;
+use crate::session::{RemoteForwardSubscription, Session, SharedHandle};
 
 /// Live forward. Drop to stop the listener and any in-flight bridges.
 pub struct ForwardHandle {
@@ -91,7 +91,7 @@ pub async fn forward_local(
 
 async fn local_loop(
     listener: TcpListener,
-    handle: Arc<Handle<crate::session::ZeroTermHandler>>,
+    handle: SharedHandle,
     target_host: String,
     target_port: u16,
     cancel: CancellationToken,
@@ -130,21 +130,24 @@ async fn local_loop(
 }
 
 async fn bridge_to_target(
-    handle: Arc<Handle<crate::session::ZeroTermHandler>>,
+    handle: SharedHandle,
     target_host: String,
     target_port: u16,
     mut tcp: TcpStream,
     peer: SocketAddr,
     cancel: CancellationToken,
 ) -> Result<(), SshError> {
-    let channel = handle
-        .channel_open_direct_tcpip(
-            target_host,
-            target_port as u32,
-            peer.ip().to_string(),
-            peer.port() as u32,
-        )
-        .await?;
+    let channel = {
+        let handle = handle.lock().await;
+        handle
+            .channel_open_direct_tcpip(
+                target_host,
+                target_port as u32,
+                peer.ip().to_string(),
+                peer.port() as u32,
+            )
+            .await?
+    };
     let mut stream = channel.into_stream();
     tokio::select! {
         _ = cancel.cancelled() => {}
@@ -183,30 +186,24 @@ pub async fn forward_dynamic(
 
 /// `ssh -R bind:port:host:hport` — remote listener forwarded back to a local target.
 pub async fn forward_remote(
-    session: &mut Session,
+    session: &Session,
     bind_addr: &str,
     bind_port: u16,
     target_host: String,
     target_port: u16,
 ) -> Result<ForwardHandle, SshError> {
-    let allocated_port = session.tcpip_forward(bind_addr, bind_port as u32).await?;
-    let remote_port = if bind_port == 0 {
-        allocated_port
-    } else {
-        bind_port as u32
-    };
+    let subscription = session
+        .request_remote_forward(bind_addr, bind_port as u32)
+        .await?;
+    let remote_port = subscription.port();
     let local: SocketAddr = "0.0.0.0:0"
         .parse()
         .map_err(|e| SshError::Io(io_err(format!("remote addr parse failed: {e}"))))?;
     let cancel = CancellationToken::new();
     let cancel_for_task = cancel.clone();
-    let incoming = session.remote_forward_receiver();
-
     debug!(remote = %format!("{bind_addr}:{remote_port}"), target = %format!("{target_host}:{target_port}"), "remote forward requested");
     tokio::spawn(remote_loop(
-        incoming,
-        bind_addr.to_string(),
-        remote_port,
+        subscription,
         target_host,
         target_port,
         cancel_for_task,
@@ -216,31 +213,22 @@ pub async fn forward_remote(
 }
 
 async fn remote_loop(
-    incoming: Arc<
-        tokio::sync::Mutex<
-            tokio::sync::mpsc::UnboundedReceiver<crate::session::RemoteForwardIncoming>,
-        >,
-    >,
-    bind_addr: String,
-    bind_port: u32,
+    mut subscription: RemoteForwardSubscription,
     target_host: String,
     target_port: u16,
     cancel: CancellationToken,
 ) {
+    let mut cancelled = false;
     loop {
         let next = tokio::select! {
-            _ = cancel.cancelled() => break,
-            item = async {
-                let mut rx = incoming.lock().await;
-                rx.recv().await
-            } => item,
+            _ = cancel.cancelled() => {
+                cancelled = true;
+                break;
+            },
+            item = subscription.recv() => item,
         };
         match next {
             Some(item) => {
-                if item.connected_address != bind_addr || item.connected_port != bind_port {
-                    debug!(connected_address = %item.connected_address, connected_port = item.connected_port, expected = %format!("{bind_addr}:{bind_port}"), "ignoring forwarded-tcpip for another remote listener");
-                    continue;
-                }
                 let target_host = target_host.clone();
                 let cancel = cancel.clone();
                 tokio::spawn(async move {
@@ -261,6 +249,7 @@ async fn remote_loop(
             None => break,
         }
     }
+    subscription.close(cancelled).await;
 }
 
 async fn bridge_remote_channel(
@@ -285,19 +274,16 @@ async fn bridge_remote_channel(
     Ok(())
 }
 
-async fn socks_loop(
-    listener: TcpListener,
-    handle: Arc<Handle<crate::session::ZeroTermHandler>>,
-    cancel: CancellationToken,
-) {
+async fn socks_loop(listener: TcpListener, handle: SharedHandle, cancel: CancellationToken) {
     loop {
         tokio::select! {
             _ = cancel.cancelled() => break,
             res = listener.accept() => match res {
                 Ok((tcp, peer)) => {
                     let handle = Arc::clone(&handle);
+                    let cancel = cancel.clone();
                     tokio::spawn(async move {
-                        if let Err(e) = handle_socks(tcp, peer, handle).await {
+                        if let Err(e) = handle_socks(tcp, peer, handle, cancel).await {
                             debug!(error = %e, "socks connection ended");
                         }
                     });
@@ -314,7 +300,8 @@ async fn socks_loop(
 async fn handle_socks(
     mut tcp: TcpStream,
     peer: SocketAddr,
-    handle: Arc<Handle<crate::session::ZeroTermHandler>>,
+    handle: SharedHandle,
+    cancel: CancellationToken,
 ) -> Result<(), SshError> {
     // -- auth negotiation -------------------------------------------------
     let mut hdr = [0u8; 2];
@@ -369,15 +356,18 @@ async fn handle_socks(
     let target_port = u16::from_be_bytes(port_buf);
 
     // -- open SSH channel -------------------------------------------------
-    let channel = match handle
-        .channel_open_direct_tcpip(
-            target_host.clone(),
-            target_port as u32,
-            peer.ip().to_string(),
-            peer.port() as u32,
-        )
-        .await
-    {
+    let channel_result = {
+        let handle = handle.lock().await;
+        handle
+            .channel_open_direct_tcpip(
+                target_host.clone(),
+                target_port as u32,
+                peer.ip().to_string(),
+                peer.port() as u32,
+            )
+            .await
+    };
+    let channel = match channel_result {
         Ok(c) => c,
         Err(e) => {
             // Generic failure (rep=0x01) — server unreachable.
@@ -390,7 +380,18 @@ async fn handle_socks(
     tcp.write_all(&[5, 0, 0, 1, 0, 0, 0, 0, 0, 0]).await?;
 
     let mut stream = channel.into_stream();
-    let _ = tokio::io::copy_bidirectional(&mut tcp, &mut stream).await;
+    // SSH-11: bind the relay to the forward's cancel token like
+    // `bridge_to_target` does, so tearing down the dynamic forward
+    // actually drops in-flight SOCKS connections instead of leaving them
+    // copying until the peer closes.
+    tokio::select! {
+        _ = cancel.cancelled() => {}
+        res = tokio::io::copy_bidirectional(&mut tcp, &mut stream) => {
+            if let Err(e) = res {
+                debug!(error = %e, "socks relay ended with error");
+            }
+        }
+    }
     Ok(())
 }
 

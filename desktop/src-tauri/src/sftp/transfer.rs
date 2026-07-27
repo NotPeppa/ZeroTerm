@@ -51,7 +51,7 @@ impl TransferManager {
     }
 
     pub(crate) fn clear(&self) {
-        self.transfers.lock().unwrap().clear();
+        self.transfers.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clear();
     }
 
     pub(crate) fn register(
@@ -79,7 +79,7 @@ impl TransferManager {
             files_total: None,
             error: None,
         };
-        self.transfers.lock().unwrap().insert(
+        self.transfers.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(
             transfer_id,
             TransferRecord {
                 token: token.clone(),
@@ -92,7 +92,7 @@ impl TransferManager {
 
     pub(crate) fn mark_running(&self, app_handle: &AppHandle, transfer_id: u64) {
         let event = {
-            let mut transfers = self.transfers.lock().unwrap();
+            let mut transfers = self.transfers.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             let Some(record) = transfers.get_mut(&transfer_id) else {
                 return;
             };
@@ -116,7 +116,7 @@ impl TransferManager {
         files_total: Option<u64>,
     ) {
         let event = {
-            let mut transfers = self.transfers.lock().unwrap();
+            let mut transfers = self.transfers.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             let Some(record) = transfers.get_mut(&transfer_id) else {
                 return;
             };
@@ -170,7 +170,7 @@ impl TransferManager {
 
     pub(crate) fn cancel(&self, app_handle: &AppHandle, transfer_id: u64) {
         let event = {
-            let mut transfers = self.transfers.lock().unwrap();
+            let mut transfers = self.transfers.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             let Some(record) = transfers.get_mut(&transfer_id) else {
                 return;
             };
@@ -196,7 +196,7 @@ impl TransferManager {
     }
 
     pub(crate) fn remove(&self, transfer_id: u64) {
-        self.transfers.lock().unwrap().remove(&transfer_id);
+        self.transfers.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(&transfer_id);
     }
 
     fn finish(
@@ -209,7 +209,7 @@ impl TransferManager {
         error: Option<TransferErrorDto>,
     ) {
         let event = {
-            let mut transfers = self.transfers.lock().unwrap();
+            let mut transfers = self.transfers.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             let Some(record) = transfers.get_mut(&transfer_id) else {
                 return;
             };
@@ -373,7 +373,7 @@ impl TransferSink {
         let done = self.files_done.fetch_add(1, Ordering::SeqCst) + 1;
         let total = self.files_total.load(Ordering::SeqCst);
         if total > 0 && done >= total {
-            let current_file = self.state.lock().unwrap().current_file.clone();
+            let current_file = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner).current_file.clone();
             self.emit_progress_snapshot(&current_file, None, None);
         }
     }
@@ -420,11 +420,19 @@ impl TransferSink {
         if delta == 0 {
             return;
         }
+        // Saturating CAS so a concurrent over-rewind can't underflow the
+        // stored counter and wrap it to ~u64::MAX (plain `fetch_sub` does,
+        // and `saturating_sub` on its return only fixes the local copy). The
+        // closure always returns `Some`, so this never yields `Err`. See
+        // TAURI-5.
         let bytes_done = self
             .bytes_done
-            .fetch_sub(delta, Ordering::SeqCst)
-            .saturating_sub(delta);
-        let mut s = self.state.lock().unwrap();
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |cur| {
+                Some(cur.saturating_sub(delta))
+            })
+            .map(|prev| prev.saturating_sub(delta))
+            .unwrap_or(0);
+        let mut s = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         s.last_emit_bytes = s.last_emit_bytes.min(bytes_done);
         s.last_activity_at = Instant::now();
     }
@@ -441,7 +449,7 @@ impl TransferSink {
         let now = Instant::now();
         let bytes_done = self.bytes_done.load(Ordering::SeqCst);
 
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         s.last_activity_at = now;
         s.current_file = current_file.to_string();
         if s.has_baseline && now.duration_since(s.last_emit_at) < Duration::from_millis(250) {
@@ -465,7 +473,7 @@ impl TransferSink {
         let bytes_done = self.bytes_done.fetch_add(delta, Ordering::SeqCst) + delta;
         let total = self.total.load(Ordering::Relaxed);
 
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         s.last_activity_at = now;
         s.current_file = current_file.to_string();
         let is_done = total > 0 && bytes_done >= total;
@@ -548,7 +556,7 @@ where
 
     let outcome = loop {
         let deadline = {
-            let s = sink.state.lock().unwrap();
+            let s = sink.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             s.last_activity_at + IDLE_TIMEOUT
         };
         tokio::select! {
@@ -558,7 +566,7 @@ where
             }
             _ = tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)) => {
                 let idle = {
-                    let s = sink.state.lock().unwrap();
+                    let s = sink.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                     Instant::now().duration_since(s.last_activity_at)
                 };
                 if idle >= IDLE_TIMEOUT {
@@ -657,7 +665,7 @@ where
 
     let cb: Box<dyn FnMut(zeroterm_ssh::ProgressTick) + Send> = Box::new(move |tick| {
         let now = Instant::now();
-        let mut s = progress_state.lock().unwrap();
+        let mut s = progress_state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let is_done = matches!(tick.total, Some(t) if tick.bytes_done >= t);
         s.last_activity_at = now;
         if tick.total.is_some() {
@@ -713,7 +721,7 @@ where
 
     let outcome: Result<u64, String> = loop {
         let deadline = {
-            let s = watchdog_state.lock().unwrap();
+            let s = watchdog_state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             s.last_activity_at + IDLE_TIMEOUT
         };
         tokio::select! {
@@ -726,11 +734,11 @@ where
             }
             _ = tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)) => {
                 let idle = {
-                    let s = watchdog_state.lock().unwrap();
+                    let s = watchdog_state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                     Instant::now().duration_since(s.last_activity_at)
                 };
                 if idle >= IDLE_TIMEOUT {
-                    let last_bytes = watchdog_state.lock().unwrap().last_emit_bytes;
+                    let last_bytes = watchdog_state.lock().unwrap_or_else(std::sync::PoisonError::into_inner).last_emit_bytes;
                     if let Some(token) = transfer_manager.token(transfer_id) {
                         token.cancel();
                     }
@@ -751,9 +759,9 @@ where
 
     let final_bytes = match &outcome {
         Ok(n) => *n,
-        Err(_) => watchdog_state.lock().unwrap().last_emit_bytes,
+        Err(_) => watchdog_state.lock().unwrap_or_else(std::sync::PoisonError::into_inner).last_emit_bytes,
     };
-    let final_total = watchdog_state.lock().unwrap().last_total;
+    let final_total = watchdog_state.lock().unwrap_or_else(std::sync::PoisonError::into_inner).last_total;
     match &outcome {
         Ok(_) => transfer_manager.finish_success(app_handle, transfer_id, final_bytes, final_total),
         Err(message) => {

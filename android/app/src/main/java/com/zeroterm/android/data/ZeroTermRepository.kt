@@ -47,11 +47,18 @@ class ZeroTermRepository(
 
     fun hasCachedPassword(): Boolean = passwordStore.hasPassword()
 
+    // NOTE on `remember`: caching the master password now requires a
+    // biometric-authenticated encrypt cipher (AND-1), which only the UI
+    // can drive via BiometricPrompt. So unlock/create no longer persist
+    // the password themselves — they only ensure any stale cache is
+    // dropped. When `remember` is set, the UnlockScreen runs the
+    // biometric enroll step (MasterPasswordStore.encryptCipher +
+    // finishSave) after a successful unlock.
     suspend fun unlock(password: String, remember: Boolean): Result<Unit> =
         withContext(Dispatchers.Default) {
             runCatching {
                 zeroTerm.unlock(password, false)
-                if (remember) passwordStore.save(password) else passwordStore.clear()
+                passwordStore.clear()
                 afterUnlock()
             }.mapFfi()
         }
@@ -60,7 +67,7 @@ class ZeroTermRepository(
         withContext(Dispatchers.Default) {
             runCatching {
                 zeroTerm.create(password, false)
-                if (remember) passwordStore.save(password) else passwordStore.clear()
+                passwordStore.clear()
                 afterUnlock()
             }.mapFfi()
         }

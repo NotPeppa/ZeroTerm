@@ -79,12 +79,40 @@ impl zeroterm_ssh::HostKeyPrompt for ForeignHostKeyPrompt {
     }
 }
 
+/// Removes its `request_id` from the pending map on drop, so the
+/// `oneshot::Sender` is cleaned up no matter how `ask()` exits — normal
+/// completion, foreign-side drop, or the SSH `connect_timeout`
+/// cancelling the whole `ask()` future mid-`await` (SSH-12). Without
+/// this, each abandoned connection leaked one entry forever.
+struct PendingGuard {
+    pending: PendingMap,
+    request_id: String,
+}
+
+impl Drop for PendingGuard {
+    fn drop(&mut self) {
+        self.pending
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&self.request_id);
+    }
+}
+
 impl ForeignHostKeyPrompt {
     async fn ask(&self, info: zeroterm_ssh::HostKeyInfo, stored: Option<String>) -> bool {
         let request_id = uuid::Uuid::now_v7().to_string();
         let (tx, rx) = oneshot::channel::<bool>();
 
-        self.pending.lock().unwrap().insert(request_id.clone(), tx);
+        self.pending
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(request_id.clone(), tx);
+        // From here on, any exit path (including the future being dropped
+        // when connect_timeout fires) removes the pending entry.
+        let _guard = PendingGuard {
+            pending: self.pending.clone(),
+            request_id: request_id.clone(),
+        };
 
         let ffi_info: HostKeyInfo = info.into();
         self.foreign.on_prompt(request_id.clone(), ffi_info, stored);
@@ -92,11 +120,6 @@ impl ForeignHostKeyPrompt {
         match rx.await {
             Ok(accept) => accept,
             Err(_) => {
-                // `respond_host_key` always removes the entry before
-                // sending; getting here means the foreign side dropped
-                // the response without calling respond. Clean up just
-                // in case, and reject by default.
-                self.pending.lock().unwrap().remove(&request_id);
                 tracing::warn!(
                     request_id,
                     "host-key prompt dropped without a response — rejecting"

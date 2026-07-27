@@ -71,11 +71,11 @@ pub(crate) fn record_transfer_issue(
     path: String,
     error: String,
 ) {
-    issues.lock().unwrap().push(TransferIssue { path, error });
+    issues.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(TransferIssue { path, error });
 }
 
 pub(crate) fn finish_transfer_issues(issues: &Mutex<Vec<TransferIssue>>) -> Result<(), String> {
-    let issues = issues.lock().unwrap();
+    let issues = issues.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     if issues.is_empty() {
         return Ok(());
     }

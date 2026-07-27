@@ -29,7 +29,14 @@ pub const EVENT_SCHEMA: u32 = 1;
 /// misinterpreted as a tiny binary frame.
 const ZTLOG_MAGIC: &[u8; 4] = b"ZTLG";
 /// Highest .ztlog frame version this binary understands.
-pub const ZTLOG_SCHEMA: u8 = 1;
+pub const ZTLOG_SCHEMA: u8 = 2;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EventMacStatus {
+    Valid,
+    Absent,
+    Invalid,
+}
 
 /// What this event does to the record. Tombstones go through `Delete`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,6 +71,13 @@ pub struct RemoteEvent {
     /// The encrypted record payload. Empty for `Delete`.
     pub nonce_b64: String,
     pub ciphertext_b64: String,
+    /// Sync root generation and an envelope MAC. Epoch 0 with no MAC is
+    /// the legacy format; epoch 1+ requires a valid MAC before any
+    /// metadata (especially a tombstone) is acted on.
+    #[serde(default)]
+    pub root_epoch: u64,
+    #[serde(default)]
+    pub mac_b64: String,
 }
 
 impl RemoteEvent {
@@ -92,6 +106,37 @@ impl RemoteEvent {
             .map_err(|_| Error::Base64)
     }
 
+    fn mac_input(&self) -> Result<Vec<u8>, Error> {
+        let mut bare = self.clone();
+        bare.mac_b64.clear();
+        bare.to_json()
+    }
+
+    pub fn sign(&mut self, mac_key: &[u8]) -> Result<(), Error> {
+        self.mac_b64.clear();
+        let tag = zeroterm_crypto::hmac_sha256(mac_key, &self.mac_input()?);
+        self.mac_b64 = B64.encode(tag);
+        Ok(())
+    }
+
+    pub fn verify_mac(&self, mac_key: &[u8]) -> EventMacStatus {
+        if self.mac_b64.is_empty() {
+            return EventMacStatus::Absent;
+        }
+        let Ok(input) = self.mac_input() else {
+            return EventMacStatus::Invalid;
+        };
+        let expected = zeroterm_crypto::hmac_sha256(mac_key, &input);
+        let Ok(got) = B64.decode(self.mac_b64.as_bytes()) else {
+            return EventMacStatus::Invalid;
+        };
+        if zeroterm_crypto::constant_time_eq(&got, &expected) {
+            EventMacStatus::Valid
+        } else {
+            EventMacStatus::Invalid
+        }
+    }
+
     /// Serialise to the binary `.ztlog` frame format (M10).
     ///
     /// Layout (little-endian throughout):
@@ -100,12 +145,14 @@ impl RemoteEvent {
     ///   - 1B op (`0x01` upsert, `0x02` delete)
     ///   - 8B lamport_clock
     ///   - 8B created_at
+    ///   - 8B root_epoch (frame v2+)
     ///   - 6× (u16 len + utf-8 bytes): event_id, device_id, vault_id,
     ///     record_id, kind, revision
     ///   - 1B parent flag (0 / 1) + u16-len-prefixed parent_revision
     ///     when present
     ///   - 1B nonce len (0–255) + raw nonce bytes
     ///   - 4B ciphertext len + raw ciphertext bytes
+    ///   - u16-len-prefixed MAC (frame v2+)
     pub fn to_bytes(&self) -> Result<Vec<u8>, Error> {
         let nonce = self.decode_nonce()?;
         let ct = self.decode_ciphertext()?;
@@ -131,6 +178,7 @@ impl RemoteEvent {
         });
         out.extend_from_slice(&self.lamport_clock.to_le_bytes());
         out.extend_from_slice(&self.created_at.to_le_bytes());
+        out.extend_from_slice(&self.root_epoch.to_le_bytes());
 
         write_str(&mut out, &self.event_id)?;
         write_str(&mut out, &self.device_id)?;
@@ -153,6 +201,7 @@ impl RemoteEvent {
         let ct_len: u32 = ct.len().try_into().map_err(|_| Error::Corrupt)?;
         out.extend_from_slice(&ct_len.to_le_bytes());
         out.extend_from_slice(&ct);
+        write_str(&mut out, &self.mac_b64)?;
 
         Ok(out)
     }
@@ -184,6 +233,11 @@ impl RemoteEvent {
 
         let lamport_clock = u64::from_le_bytes(r.take_array::<8>()?);
         let created_at = i64::from_le_bytes(r.take_array::<8>()?);
+        let root_epoch = if schema >= 2 {
+            u64::from_le_bytes(r.take_array::<8>()?)
+        } else {
+            0
+        };
 
         let event_id = r.take_str()?;
         let device_id = r.take_str()?;
@@ -204,6 +258,11 @@ impl RemoteEvent {
 
         let ct_len = u32::from_le_bytes(r.take_array::<4>()?) as usize;
         let ct = r.take(ct_len)?.to_vec();
+        let mac_b64 = if schema >= 2 {
+            r.take_str()?
+        } else {
+            String::new()
+        };
 
         if !r.is_empty() {
             // Trailing bytes after a well-formed frame indicate either
@@ -226,6 +285,8 @@ impl RemoteEvent {
             parent_revision,
             nonce_b64: B64.encode(&nonce),
             ciphertext_b64: B64.encode(&ct),
+            root_epoch,
+            mac_b64,
         })
     }
 
@@ -316,6 +377,8 @@ pub fn new_upsert(
         parent_revision,
         nonce_b64: B64.encode(nonce),
         ciphertext_b64: B64.encode(ciphertext),
+        root_epoch: 0,
+        mac_b64: String::new(),
     }
 }
 
@@ -346,6 +409,8 @@ pub fn new_delete(
         parent_revision,
         nonce_b64: String::new(),
         ciphertext_b64: String::new(),
+        root_epoch: 0,
+        mac_b64: String::new(),
     }
 }
 
@@ -419,6 +484,27 @@ mod tests {
         let bytes = ev.to_json().unwrap();
         let back = RemoteEvent::from_json(&bytes).unwrap();
         assert!(matches!(back.decode_nonce(), Err(Error::Base64)));
+    }
+
+    #[test]
+    fn event_mac_authenticates_delete_metadata() {
+        let key = [7u8; 32];
+        let mut ev = new_delete(
+            "evt-delete",
+            "dev-A",
+            9,
+            10,
+            "vlt",
+            "rec-1",
+            "host",
+            "rev-2",
+            None,
+        );
+        ev.root_epoch = 1;
+        ev.sign(&key).unwrap();
+        assert_eq!(ev.verify_mac(&key), EventMacStatus::Valid);
+        ev.record_id = "rec-other".into();
+        assert_eq!(ev.verify_mac(&key), EventMacStatus::Invalid);
     }
 
     #[test]
