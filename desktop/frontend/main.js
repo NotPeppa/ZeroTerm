@@ -460,6 +460,7 @@ const I18N = {
     "terminal.pane.empty": "Empty pane",
     "terminal.status.connecting": "connecting...",
     "terminal.status.connected": "connected",
+    "terminal.status.unresponsive": "unresponsive",
     "terminal.status.disconnected": "disconnected",
     "terminal.button.reconnect": "Reconnect",
     "terminal.status.local": "local",
@@ -1365,6 +1366,7 @@ const I18N = {
     "terminal.pane.empty": "空窗格",
     "terminal.status.connecting": "连接中...",
     "terminal.status.connected": "已连接",
+    "terminal.status.unresponsive": "无响应",
     "terminal.status.disconnected": "已断开",
     "terminal.button.reconnect": "重新连接",
     "terminal.status.local": "本地",
@@ -13417,7 +13419,13 @@ function createPane(host) {
     savedStatus: null,
     dataUnlisten: null,
     latencyUnlisten: null,
+    latencyStoppedUnlisten: null,
     closedUnlisten: null,
+    lastAliveAt: 0,
+    aliveWatchdogArmed: false,
+    aliveWatchdogTimer: null,
+    unresponsiveSince: null,
+    preUnresponsiveStatus: null,
     osc7HandlerDispose: null,
     attention: null,
     attnQuietTimer: null,
@@ -15032,13 +15040,51 @@ async function wirePaneSessionEvents(pane, sessionId) {
     pane.latencyUnlisten();
     pane.latencyUnlisten = null;
   }
+  if (pane.latencyStoppedUnlisten) {
+    pane.latencyStoppedUnlisten();
+    pane.latencyStoppedUnlisten = null;
+  }
   if (pane.closedUnlisten) {
     pane.closedUnlisten();
     pane.closedUnlisten = null;
   }
+  stopPaneAliveWatchdog(pane);
+
+  // Liveness watchdog. The backend streams an RTT probe every 3s; once that
+  // stream has started, silence (no latency AND no data events) means the
+  // link is stalling even though no `session:closed` has arrived yet — the
+  // backend needs ~20s of consecutive probe timeouts before it declares
+  // death. Downgrade the status to "unresponsive" in the meantime so the
+  // user isn't staring at a stale "connected". Armed only after the first
+  // latency event: servers that refuse extra session channels never emit
+  // any, and the backend tells us via `session:latency-stopped` when it
+  // gives up on probing, so we don't misread that silence as a hang.
+  pane.lastAliveAt = Date.now();
+  pane.aliveWatchdogArmed = false;
+  const markPaneAlive = () => {
+    pane.lastAliveAt = Date.now();
+    if (pane.unresponsiveSince == null) return;
+    pane.unresponsiveSince = null;
+    if (pane.statusEl && pane.preUnresponsiveStatus != null) {
+      pane.statusEl.textContent = pane.preUnresponsiveStatus;
+    }
+    pane.preUnresponsiveStatus = null;
+  };
+  const UNRESPONSIVE_AFTER_MS = 12000;
+  pane.aliveWatchdogTimer = setInterval(() => {
+    if (!pane.aliveWatchdogArmed || pane.sessionId !== sessionId) return;
+    if (pane.unresponsiveSince != null) return;
+    if (Date.now() - pane.lastAliveAt < UNRESPONSIVE_AFTER_MS) return;
+    pane.unresponsiveSince = Date.now();
+    if (pane.statusEl) {
+      pane.preUnresponsiveStatus = pane.statusEl.textContent;
+      pane.statusEl.textContent = t("terminal.status.unresponsive");
+    }
+  }, 3000);
 
   pane.dataUnlisten = await listen("session:data", (ev) => {
     if (ev.payload.sessionId !== sessionId) return;
+    markPaneAlive();
     if (!pane.term) return;
     const stickToBottom = isPaneTerminalNearBottom(pane);
     writePaneTerminalData(pane, new Uint8Array(ev.payload.data), { stickToBottom });
@@ -15047,11 +15093,22 @@ async function wirePaneSessionEvents(pane, sessionId) {
 
   pane.latencyUnlisten = await listen("session:latency", (ev) => {
     if (ev.payload.sessionId !== sessionId) return;
+    pane.aliveWatchdogArmed = true;
+    markPaneAlive();
     if (!pane.latencyEl) return;
     const rtt = Number(ev.payload.rttMs);
     if (!Number.isFinite(rtt) || rtt < 0) return;
     pane.latencyEl.textContent = `${Math.round(rtt)}ms`;
     pane.latencyEl.hidden = false;
+  });
+
+  pane.latencyStoppedUnlisten = await listen("session:latency-stopped", (ev) => {
+    if (ev.payload.sessionId !== sessionId) return;
+    // Probe permanently disabled server-side — its silence no longer means
+    // anything, so stop watching and drop the stale RTT reading.
+    pane.aliveWatchdogArmed = false;
+    markPaneAlive();
+    if (pane.latencyEl) pane.latencyEl.hidden = true;
   });
 
   pane.closedUnlisten = await listen("session:closed", (ev) => {
@@ -15063,6 +15120,7 @@ async function wirePaneSessionEvents(pane, sessionId) {
         : `\r\n\x1b[2m${t("terminal.closed.disconnected")}\x1b[0m\r\n`;
 
     pane.sessionId = null;
+    stopPaneAliveWatchdog(pane);
     clearPaneAttention(pane);
     if (pane.statusEl) pane.statusEl.textContent = t("terminal.status.disconnected");
     if (pane.latencyEl) pane.latencyEl.hidden = true;
@@ -15070,6 +15128,16 @@ async function wirePaneSessionEvents(pane, sessionId) {
     if (pane.term) writePaneTerminalData(pane, tail, { stickToBottom: true });
   });
 
+}
+
+function stopPaneAliveWatchdog(pane) {
+  if (pane.aliveWatchdogTimer != null) {
+    clearInterval(pane.aliveWatchdogTimer);
+    pane.aliveWatchdogTimer = null;
+  }
+  pane.aliveWatchdogArmed = false;
+  pane.unresponsiveSince = null;
+  pane.preUnresponsiveStatus = null;
 }
 
 async function disconnectPaneSession(pane, { dispose }) {
@@ -15099,10 +15167,15 @@ async function disconnectPaneSession(pane, { dispose }) {
     pane.latencyUnlisten();
     pane.latencyUnlisten = null;
   }
+  if (pane.latencyStoppedUnlisten) {
+    pane.latencyStoppedUnlisten();
+    pane.latencyStoppedUnlisten = null;
+  }
   if (pane.closedUnlisten) {
     pane.closedUnlisten();
     pane.closedUnlisten = null;
   }
+  stopPaneAliveWatchdog(pane);
 
   if (dispose) {
     if (pane.pendingResizeTimer !== null) {
