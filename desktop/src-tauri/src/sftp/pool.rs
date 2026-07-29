@@ -44,6 +44,37 @@ impl SftpPool {
         self.hosts.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clear();
     }
 
+    /// Latch `host_id` onto `SftpTuning::CONSERVATIVE` after an upload stall
+    /// and re-open its live SFTP channel so the shallower pipeline takes
+    /// effect immediately — the depth is negotiated at channel creation and
+    /// can't be changed in place.
+    ///
+    /// Returns `false` if the host was already conservative, so a caller can
+    /// avoid retrying an upload that has already been retried on this tier.
+    /// `refresh_channel` keeps the existing `channel_id` and refcounts, so
+    /// open file panels stay valid across the swap.
+    pub(crate) async fn downgrade_uploads(&self, host_id: &str) -> bool {
+        let Some(host) = self.hosts.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(host_id).cloned()
+        else {
+            return false;
+        };
+        if host.conservative_uploads.swap(true, Ordering::SeqCst) {
+            return false;
+        }
+        tracing::warn!(
+            host_id,
+            "SFTP uploads stalled; falling back to the conservative pipeline for this host"
+        );
+        if let Some(channel_id) = host.first_ready_channel_id() {
+            if let Err(err) = self.refresh_channel(host_id, channel_id).await {
+                // The next channel open still picks up the new tier, so this
+                // only costs the in-flight retry.
+                tracing::warn!(host_id, error = %err, "could not re-open SFTP channel after downgrade");
+            }
+        }
+        true
+    }
+
     /// Borrow the host's shared authenticated SSH connection without opening
     /// an SFTP channel. Lightweight remote commands (metrics, Docker panel)
     /// use this path so polling does not perform a fresh handshake every time.
@@ -324,7 +355,10 @@ impl SftpPool {
         loop {
             attempts += 1;
             let session = host.connect_session().await?;
-            let opened = match tokio::time::timeout(SFTP_OPEN_TIMEOUT, session.sftp()).await {
+            let tuning = host.upload_tuning();
+            let opened = match tokio::time::timeout(SFTP_OPEN_TIMEOUT, session.sftp_tuned(tuning))
+                .await
+            {
                 Ok(result) => result.map_err(ssh_error),
                 Err(_) => Err(ipc_error(
                     "TIMEOUT",
@@ -372,6 +406,11 @@ struct HostPool {
     /// Serializes SFTP subsystem opens so concurrent panes do not create
     /// multiple SSH session channels before one becomes ready.
     channel_open_lock: AsyncMutex<()>,
+    /// Set once this host has stalled on our default upload pipeline, so
+    /// every channel opened afterwards uses `SftpTuning::CONSERVATIVE`.
+    /// Latches on purpose: a server that can't keep up won't start being
+    /// able to mid-session, and re-probing costs a 90s stall each time.
+    conservative_uploads: std::sync::atomic::AtomicBool,
 }
 
 impl HostPool {
@@ -380,6 +419,7 @@ impl HostPool {
             host_id,
             connect_lock: AsyncMutex::new(()),
             channel_open_lock: AsyncMutex::new(()),
+            conservative_uploads: std::sync::atomic::AtomicBool::new(false),
             state: Mutex::new(HostState {
                 cfg,
                 jump_cfg,
@@ -388,6 +428,14 @@ impl HostPool {
                 connecting: false,
                 channels: HashMap::new(),
             }),
+        }
+    }
+
+    fn upload_tuning(&self) -> zeroterm_ssh::SftpTuning {
+        if self.conservative_uploads.load(Ordering::SeqCst) {
+            zeroterm_ssh::SftpTuning::CONSERVATIVE
+        } else {
+            zeroterm_ssh::SftpTuning::FAST
         }
     }
 

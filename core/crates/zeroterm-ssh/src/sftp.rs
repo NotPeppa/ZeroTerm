@@ -86,12 +86,63 @@ pub struct ProgressTick {
 /// links while still remaining responsive to cancel / progress updates.
 pub const DEFAULT_CHUNK: usize = 512 * 1024;
 
-/// Conservative upload packet size for broad SFTP-server compatibility.
-/// Some embedded servers accept a large SSH channel write but never
-/// acknowledge an oversized SFTP WRITE, leaving the final file close stuck.
-/// With four requests in flight this keeps a 128 KiB window without
-/// overwhelming older or embedded SFTP servers.
-pub const DEFAULT_UPLOAD_CHUNK: usize = 32 * 1024;
+/// Default upload packet size. An SFTP upload's ceiling is
+/// `chunk * concurrent_writes / RTT`, so this pairs with
+/// [`SftpTuning::FAST`] to keep several megabytes in flight — roughly what
+/// OpenSSH's own `sftp`/`scp` sustain. Servers that advertise
+/// `limits@openssh.com` clamp the on-the-wire request to their own
+/// `write_len`, so oversizing here is harmless against them.
+pub const DEFAULT_UPLOAD_CHUNK: usize = 128 * 1024;
+
+/// Upload packet size for servers that choke on large writes. Some embedded
+/// SFTP servers accept a large SSH channel write but never acknowledge an
+/// oversized SFTP WRITE, leaving the final file close stuck. Paired with
+/// [`SftpTuning::CONSERVATIVE`] this keeps the old 128 KiB window.
+pub const CONSERVATIVE_UPLOAD_CHUNK: usize = 32 * 1024;
+
+/// Per-channel upload pipeline settings.
+///
+/// `max_concurrent_writes` and `max_packet_len` are negotiated when the SFTP
+/// channel is created and cannot be changed afterwards, so switching tiers
+/// means opening a fresh channel. [`is_upload_stall`] tells a caller when
+/// that's worth doing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SftpTuning {
+    /// Bytes handed to a single `write()` call during an upload.
+    pub upload_chunk: usize,
+    /// SFTP WRITE requests allowed in flight before we wait for an ack.
+    pub max_concurrent_writes: usize,
+    /// Upper bound on one SFTP packet. Only takes effect against servers
+    /// that do *not* advertise `limits@openssh.com`; those that do supply
+    /// their own (larger) read/write lengths.
+    pub max_packet_len: u32,
+}
+
+impl SftpTuning {
+    /// Default tier. ~4 MiB of writes in flight, which the SSH channel
+    /// window (russh default: 2 MiB) then caps — the same effective ceiling
+    /// `scp` runs at.
+    pub const FAST: Self = Self {
+        upload_chunk: DEFAULT_UPLOAD_CHUNK,
+        max_concurrent_writes: 32,
+        max_packet_len: 256 * 1024,
+    };
+
+    /// Compatibility tier for SFTP servers that stall on a deep pipeline or
+    /// large packets: a 128 KiB window of 32 KiB requests. This is what the
+    /// whole client used before per-host tuning existed.
+    pub const CONSERVATIVE: Self = Self {
+        upload_chunk: CONSERVATIVE_UPLOAD_CHUNK,
+        max_concurrent_writes: 4,
+        max_packet_len: 32 * 1024,
+    };
+}
+
+impl Default for SftpTuning {
+    fn default() -> Self {
+        Self::FAST
+    }
+}
 
 /// Default number of READ requests kept in flight against a single file
 /// during a parallel download. A single-flight SFTP read is bounded by
@@ -114,24 +165,63 @@ const ABORT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 /// (READs go through the timed request path and don't need this.)
 const WRITE_STALL_TIMEOUT: Duration = Duration::from_secs(90);
 
+/// Substring stamped into every write-stall error. Callers match on it to
+/// tell "this server can't keep up with our pipeline" apart from the other
+/// things that surface as a `Timeout`, so they can retry on a channel opened
+/// with [`SftpTuning::CONSERVATIVE`]. Public because the message survives
+/// being flattened to a string across the IPC boundary, which is where the
+/// desktop layer recovers it — see [`is_upload_stall`] for the typed check.
+pub const UPLOAD_STALL_MARKER: &str = "stalled without server acknowledgement";
+
 fn write_stall_error(what: &str) -> SshError {
     SshError::Sftp {
         kind: SftpErrorKind::Timeout,
         message: format!(
-            "sftp {what} stalled for {}s without server acknowledgement",
+            "sftp {what} {UPLOAD_STALL_MARKER} for {}s",
             WRITE_STALL_TIMEOUT.as_secs()
         ),
     }
 }
 
+/// True when `err` is an upload that died because the server stopped
+/// acknowledging our pipelined WRITEs — the signal that this host needs
+/// [`SftpTuning::CONSERVATIVE`]. Other timeouts (slow listings, overloaded
+/// servers) do not match: downgrading on those would cost throughput for no
+/// reason.
+pub fn is_upload_stall(err: &SshError) -> bool {
+    matches!(
+        err,
+        SshError::Sftp {
+            kind: SftpErrorKind::Timeout,
+            message,
+        } if message.contains(UPLOAD_STALL_MARKER)
+    )
+}
+
 /// Live SFTP channel. Drop closes the underlying SSH channel.
 pub struct Sftp {
     inner: SftpSession,
+    tuning: SftpTuning,
 }
 
 impl Sftp {
-    pub(crate) fn from_session(session: SftpSession) -> Self {
-        Self { inner: session }
+    pub(crate) fn from_session(session: SftpSession, tuning: SftpTuning) -> Self {
+        Self {
+            inner: session,
+            tuning,
+        }
+    }
+
+    /// The tier this channel was opened with. Upload callers should feed
+    /// [`SftpTuning::upload_chunk`] as their `chunk_size` so the request size
+    /// matches the window the channel actually negotiated.
+    pub fn tuning(&self) -> SftpTuning {
+        self.tuning
+    }
+
+    /// Convenience accessor for `self.tuning().upload_chunk`.
+    pub fn upload_chunk(&self) -> usize {
+        self.tuning.upload_chunk
     }
 
     /// List the entries directly under `path`. Symlinks are reported as
@@ -525,7 +615,7 @@ impl Sftp {
         self.upload_from_reader(
             remote,
             &mut cursor,
-            DEFAULT_UPLOAD_CHUNK,
+            self.tuning.upload_chunk,
             Some(data.len() as u64),
             CancellationToken::new(),
             |_| {},

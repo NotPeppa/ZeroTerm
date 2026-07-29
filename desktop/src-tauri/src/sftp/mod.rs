@@ -14,8 +14,9 @@ use crate::editor::{
 use crate::file_dto::{kind_str, DirEntryDto, FilePermissionModeDto};
 use crate::sftp::file::{
     cleanup_stale_remote_temp_entries, download_remote_file_to_local,
-    ensure_remote_target_available, is_retryable_transfer_error, upload_local_path_to_remote_once,
-    upload_reader_to_remote_atomic, upload_slice_to_remote_atomic,
+    downgrade_uploads_if_stalled, ensure_remote_target_available, is_retryable_transfer_error,
+    upload_local_path_to_remote_once, upload_reader_to_remote_atomic,
+    upload_slice_to_remote_atomic,
 };
 use crate::sftp::path::{
     detect_local_kind, detect_remote_kind, is_local_path_within, is_remote_path_within,
@@ -31,6 +32,7 @@ use crate::sftp::tree::{
 use crate::state::{AppState, SftpHandle};
 use zeroterm_ssh::{SftpErrorKind, SshError};
 
+pub(crate) mod direct;
 pub(crate) mod file;
 pub(crate) mod path;
 pub(crate) mod pool;
@@ -378,6 +380,7 @@ pub async fn sftp_upload(
                         error = %err,
                         "direct upload lost its SFTP channel, retrying once with a fresh channel"
                     );
+                    downgrade_uploads_if_stalled(retry_state, &retry_host_id, &err).await;
                     let guard =
                         open_ephemeral_sftp(retry_state, &retry_app_handle, &retry_host_id).await?;
                     upload_local_path_to_remote_once(

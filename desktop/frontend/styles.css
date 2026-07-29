@@ -9101,6 +9101,33 @@ body[data-app-theme="light"] .settings-sync-method-row .zt-select-trigger:hover 
   font-variant-numeric: tabular-nums;
 }
 
+/* Route badge for remote→remote copies. Sits between the name and the stats
+   so it can't push the numbers around as it appears mid-transfer. */
+.sftp-transfer-route {
+  flex: 0 0 auto;
+  font-size: 10px;
+  line-height: 1.6;
+  letter-spacing: 0.02em;
+  padding: 0 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.sftp-transfer-route.is-direct {
+  color: #6ee7b7;
+  background: rgba(110, 231, 183, 0.1);
+  border-color: rgba(110, 231, 183, 0.28);
+}
+
+/* Warmer than the direct badge: relaying is the case worth noticing, since
+   it's what makes an otherwise fast copy run at this machine's uplink. */
+.sftp-transfer-route.is-relay {
+  color: #fcd34d;
+  background: rgba(252, 211, 77, 0.1);
+  border-color: rgba(252, 211, 77, 0.28);
+}
+
 .sftp-transfer-row.status-error .sftp-transfer-stats {
   color: #fca5a5;
 }

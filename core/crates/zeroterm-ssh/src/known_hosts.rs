@@ -111,6 +111,54 @@ impl KnownHosts {
         ))
     }
 
+    /// Every non-revoked plain host key we trust for `(host, port)`, rendered
+    /// as canonical `known_hosts` lines.
+    ///
+    /// Used to hand a *third party* the keys we've already verified — notably
+    /// a remote-to-remote copy, where the source host needs to authenticate
+    /// the destination and has no `known_hosts` entry of its own. Emitting
+    /// freshly-rendered lines rather than the stored text means hashed entries
+    /// come out in the plain form the far end can use, and `@cert-authority`
+    /// lines (which carry different semantics) are left behind.
+    ///
+    /// An empty result means "we have nothing to vouch with" — callers must
+    /// treat that as *don't proceed*, never as "skip host key checking".
+    pub fn trusted_lines(&self, host: &str, port: u16) -> std::io::Result<Vec<String>> {
+        let content = match std::fs::read_to_string(&self.path) {
+            Ok(s) => s,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(e) => return Err(e),
+        };
+
+        let mut revoked: Vec<&str> = Vec::new();
+        let mut trusted: Vec<(&str, &str)> = Vec::new();
+        for raw in content.lines() {
+            let line = raw.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let Some(p) = parse_line(line) else {
+                continue;
+            };
+            if !host_field_matches(p.host_field, host, port) {
+                continue;
+            }
+            match p.marker {
+                Some("revoked") => revoked.push(p.b64),
+                // @cert-authority and friends aren't plain host keys.
+                Some(_) => {}
+                None => trusted.push((p.keytype, p.b64)),
+            }
+        }
+
+        let pattern = host_pattern(host, port);
+        Ok(trusted
+            .into_iter()
+            .filter(|(_, b64)| !revoked.contains(b64))
+            .map(|(keytype, b64)| format!("{pattern} {} {b64}", canonical_key_type(keytype)))
+            .collect())
+    }
+
     /// Validate an OpenSSH host certificate against matching
     /// `@cert-authority` entries.
     pub fn check_certificate(

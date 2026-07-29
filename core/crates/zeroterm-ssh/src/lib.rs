@@ -23,10 +23,11 @@ pub use forward::{forward_dynamic, forward_local, forward_remote, ForwardHandle}
 pub use host_key::{HostKeyInfo, HostKeyPolicy, HostKeyPrompt, MismatchAction};
 pub use known_hosts::{KnownHostCertificateStatus, KnownHostStatus, KnownHosts};
 pub use session::{
-    current_http_proxy, set_global_http_proxy, AuthMethod, ChannelEvent, ConnectConfig, PtySize,
-    Session, ShellChannel,
+    current_http_proxy, set_global_http_proxy, AuthMethod, ChannelEvent, ConnectConfig, ExecStream,
+    PtySize, Session, ShellChannel,
 };
 pub use sftp::{
-    DirEntry, FileKind, FileMetadata, ProgressTick, Sftp, DEFAULT_CHUNK,
-    DEFAULT_DOWNLOAD_PARALLELISM, DEFAULT_UPLOAD_CHUNK,
+    is_upload_stall, DirEntry, FileKind, FileMetadata, ProgressTick, Sftp, SftpTuning,
+    CONSERVATIVE_UPLOAD_CHUNK, DEFAULT_CHUNK, DEFAULT_DOWNLOAD_PARALLELISM, DEFAULT_UPLOAD_CHUNK,
+    UPLOAD_STALL_MARKER,
 };

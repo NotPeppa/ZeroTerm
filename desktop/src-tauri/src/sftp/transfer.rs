@@ -34,6 +34,11 @@ pub(crate) struct TransferEvent {
     pub current_file: Option<String>,
     pub files_done: Option<u64>,
     pub files_total: Option<u64>,
+    /// How the bytes are moving: `"direct"` (server-to-server) or `"relay"`
+    /// (through this machine). `None` until a remote-to-remote copy picks a
+    /// route; local↔remote transfers never set it. The UI surfaces this so a
+    /// relay-speed transfer is explained rather than just slow.
+    pub route: Option<&'static str>,
     pub error: Option<TransferErrorDto>,
 }
 
@@ -77,6 +82,7 @@ impl TransferManager {
             current_file: None,
             files_done: None,
             files_total: None,
+            route: None,
             error: None,
         };
         self.transfers.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(
@@ -97,6 +103,26 @@ impl TransferManager {
                 return;
             };
             record.event.status = "running";
+            record.event.clone()
+        };
+        let _ = app_handle.emit("sftp:transfer", event);
+    }
+
+    /// Record which path a remote-to-remote copy ended up taking. Emitted
+    /// immediately so the UI can label the transfer while it runs, not just
+    /// once it finishes.
+    pub(crate) fn set_route(
+        &self,
+        app_handle: &AppHandle,
+        transfer_id: u64,
+        route: crate::sftp::direct::TransferRoute,
+    ) {
+        let event = {
+            let mut transfers = self.transfers.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let Some(record) = transfers.get_mut(&transfer_id) else {
+                return;
+            };
+            record.event.route = Some(route.as_str());
             record.event.clone()
         };
         let _ = app_handle.emit("sftp:transfer", event);

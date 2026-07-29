@@ -708,6 +708,10 @@ const I18N = {
     "files.transfer.expand": "Expand",
     "files.transfer.files_progress": "{done}/{total} files",
     "files.transfer.items_progress": "{done}/{total} items",
+    "files.transfer.route.direct": "direct",
+    "files.transfer.route.direct_hint": "Copied server to server — the data never passed through this machine.",
+    "files.transfer.route.relay": "via this PC",
+    "files.transfer.route.relay_hint": "The source server can't reach the destination directly, so the data is being relayed through this machine. Speed is limited by your own connection.",
     "editor.title": "Edit Remote File",
     "editor.title.dirty": "Edit Remote File *",
     "editor.hint.default": "Supports common UTF-8 text files. Press Ctrl/Cmd + S to save.",
@@ -1607,6 +1611,10 @@ const I18N = {
     "files.transfer.expand": "展开",
     "files.transfer.files_progress": "文件 {done}/{total}",
     "files.transfer.items_progress": "项目 {done}/{total}",
+    "files.transfer.route.direct": "服务器直连",
+    "files.transfer.route.direct_hint": "数据在两台服务器之间直接传输,未经过本机。",
+    "files.transfer.route.relay": "经本机中转",
+    "files.transfer.route.relay_hint": "源服务器无法直接连到目标服务器,数据正经由本机中转,速度受本机带宽限制。",
     "editor.title": "编辑远程文件",
     "editor.title.dirty": "编辑远程文件 *",
     "editor.hint.default": "支持常见 UTF-8 文本文件。按 Ctrl/Cmd + S 保存。",
@@ -3164,10 +3172,21 @@ function buildSftpTransferRow(item) {
   name.className = "sftp-transfer-name";
   name.textContent = sftpTransferTitle(item);
   name.title = `${item.source || ""} → ${item.destination || ""}`;
+  top.append(name);
+  // Only remote→remote copies carry a route. The relay badge is the one that
+  // earns its place: it tells the user why a copy between two fast servers is
+  // running at this machine's uplink speed.
+  if (item.route === "direct" || item.route === "relay") {
+    const route = document.createElement("span");
+    route.className = `sftp-transfer-route is-${item.route}`;
+    route.textContent = t(`files.transfer.route.${item.route}`);
+    route.title = t(`files.transfer.route.${item.route}_hint`);
+    top.append(route);
+  }
   const stats = document.createElement("span");
   stats.className = "sftp-transfer-stats";
   stats.textContent = sftpTransferStatsText(item);
-  top.append(name, stats);
+  top.append(stats);
 
   const progress = document.createElement("div");
   progress.className = "sftp-transfer-progress";
@@ -3346,6 +3365,9 @@ listen("sftp:transfer", (ev) => {
     currentFile: currentFileRaw ? String(currentFileRaw) : null,
     filesDone,
     filesTotal,
+    // Sticky: once a remote→remote copy has picked a route, keep showing it
+    // even if a later event omits the field.
+    route: payload.route ?? sftpTransferItems.get(transferId)?.route ?? null,
     error: payload.error
       ? {
           code: String(payload.error.code || "OTHER"),

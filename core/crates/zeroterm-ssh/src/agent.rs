@@ -20,6 +20,40 @@ use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::error::SshError;
 
+/// Open a connection to the local SSH agent.
+///
+/// Shared by agent *authentication* (which wraps this in an `AgentClient`)
+/// and agent *forwarding*, which pumps the raw protocol bytes between this
+/// transport and a channel the remote server opens back to us.
+/// `AgentClient::connect_env` is exactly `connect_uds($SSH_AUTH_SOCK)`, so
+/// going through the raw socket here costs authentication nothing while
+/// giving forwarding the stream it needs.
+#[cfg(unix)]
+pub(crate) async fn connect_local_agent() -> Result<tokio::net::UnixStream, SshError> {
+    let sock = std::env::var_os("SSH_AUTH_SOCK").ok_or_else(|| {
+        SshError::AgentUnavailable("$SSH_AUTH_SOCK is not set. Is ssh-agent running?".into())
+    })?;
+    tokio::net::UnixStream::connect(&sock).await.map_err(|e| {
+        SshError::AgentUnavailable(format!(
+            "couldn't reach SSH agent via $SSH_AUTH_SOCK: {e}. Is ssh-agent running?"
+        ))
+    })
+}
+
+#[cfg(windows)]
+pub(crate) async fn connect_local_agent(
+) -> Result<tokio::net::windows::named_pipe::NamedPipeClient, SshError> {
+    use tokio::net::windows::named_pipe::ClientOptions;
+    const PIPE: &str = r"\\.\pipe\openssh-ssh-agent";
+    ClientOptions::new().open(PIPE).map_err(|e| {
+        SshError::AgentUnavailable(format!(
+            "couldn't open OpenSSH agent pipe `{PIPE}`: {e}. \
+             Run `Set-Service ssh-agent -StartupType Automatic; Start-Service ssh-agent` \
+             from an elevated PowerShell, then `ssh-add` your key."
+        ))
+    })
+}
+
 /// Try to authenticate with every identity the local SSH agent offers.
 /// Returns `Ok(true)` on the first success, `Ok(false)` if the agent
 /// is reachable but no identity worked, and an `Err` only when the
@@ -31,28 +65,10 @@ pub(crate) async fn try_agent_auth<H>(
 where
     H: russh::client::Handler + 'static,
 {
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     {
-        let agent = AgentClient::connect_env().await.map_err(|e| {
-            SshError::AgentUnavailable(format!(
-                "couldn't reach SSH agent via $SSH_AUTH_SOCK: {e}. Is ssh-agent running?"
-            ))
-        })?;
-        run_loop(handle, username, agent).await
-    }
-    #[cfg(windows)]
-    {
-        use tokio::net::windows::named_pipe::ClientOptions;
-        const PIPE: &str = r"\\.\pipe\openssh-ssh-agent";
-        let pipe = ClientOptions::new().open(PIPE).map_err(|e| {
-            SshError::AgentUnavailable(format!(
-                "couldn't open OpenSSH agent pipe `{PIPE}`: {e}. \
-                 Run `Set-Service ssh-agent -StartupType Automatic; Start-Service ssh-agent` \
-                 from an elevated PowerShell, then `ssh-add` your key."
-            ))
-        })?;
-        let agent = AgentClient::connect(pipe);
-        run_loop(handle, username, agent).await
+        let transport = connect_local_agent().await?;
+        run_loop(handle, username, AgentClient::connect(transport)).await
     }
     #[cfg(not(any(unix, windows)))]
     {

@@ -63,6 +63,12 @@ pub struct AppState {
 
     pub next_port_forward_id: AtomicU64,
 
+    /// Cached verdicts on whether one host can copy straight to another,
+    /// keyed by `(source_host_id, target_host_id)`. Probing costs an SSH
+    /// round trip plus an auth handshake, which would otherwise be paid once
+    /// per file when copying a directory tree.
+    pub direct_probes: crate::sftp::direct::DirectProbeCache,
+
     /// Canonical paths the user explicitly picked through a native file
     /// dialog this session (`pick_local_file`). High-risk commands that
     /// exist only to act on a just-picked path (`read_local_text_file`,
@@ -88,6 +94,7 @@ impl AppState {
             local_sessions: Mutex::new(HashMap::new()),
             port_forwards: Mutex::new(HashMap::new()),
             next_port_forward_id: AtomicU64::new(1),
+            direct_probes: crate::sftp::direct::DirectProbeCache::default(),
             dialog_grants: Mutex::new(HashSet::new()),
         }
     }

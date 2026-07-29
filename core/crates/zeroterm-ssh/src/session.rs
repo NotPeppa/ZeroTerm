@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::Arc;
 use std::sync::{OnceLock, RwLock};
 use std::time::Duration;
@@ -144,6 +145,13 @@ impl PtySize {
     }
 }
 
+/// Which of a command's two output streams a chunk came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecStream {
+    Stdout,
+    Stderr,
+}
+
 /// russh `Handler` carrying the host-key policy and the host coordinates
 /// it needs to consult `known_hosts`.
 pub(crate) struct ZeroTermHandler {
@@ -151,6 +159,31 @@ pub(crate) struct ZeroTermHandler {
     host: String,
     port: u16,
     remote_forward_tx: mpsc::UnboundedSender<RemoteForwardIncoming>,
+    /// Number of operations currently allowed to reach the local SSH agent
+    /// through this session. Agent forwarding hands the remote host the
+    /// ability to authenticate *as you* for as long as it is on, so it stays
+    /// off by default and is granted only for the span of a command that
+    /// needs it (see [`Session::exec_forwarding_agent`]). A counter rather
+    /// than a flag so overlapping transfers on a pooled session can't have
+    /// the first one to finish revoke the second one's grant.
+    agent_forward_grants: Arc<AtomicUsize>,
+}
+
+/// Keeps agent forwarding enabled for as long as it is alive. Revokes on
+/// drop, including when the guarded future is cancelled or errors out.
+pub(crate) struct AgentForwardGrant(Arc<AtomicUsize>);
+
+impl AgentForwardGrant {
+    fn new(grants: Arc<AtomicUsize>) -> Self {
+        grants.fetch_add(1, AtomicOrdering::SeqCst);
+        Self(grants)
+    }
+}
+
+impl Drop for AgentForwardGrant {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, AtomicOrdering::SeqCst);
+    }
 }
 
 pub(crate) struct RemoteForwardIncoming {
@@ -250,6 +283,47 @@ impl Handler for ZeroTermHandler {
         });
         Ok(())
     }
+
+    /// Serve the local SSH agent to a remote that we granted forwarding to.
+    ///
+    /// russh's default implementation accepts unconditionally and then drops
+    /// the channel, so this override matters in both directions: it refuses
+    /// the channel outright on sessions that never asked for forwarding, and
+    /// actually proxies the agent protocol on the ones that did.
+    ///
+    /// A failure here (no agent running, agent closed the socket) only kills
+    /// this one channel — the remote sees its agent request fail, which for
+    /// an `ssh`/`scp` invocation means falling back to its other auth
+    /// methods. The SSH session itself stays healthy.
+    async fn server_channel_open_agent_forward(
+        &mut self,
+        channel: Channel<Msg>,
+        reply: client::ChannelOpenHandle,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        if self.agent_forward_grants.load(AtomicOrdering::SeqCst) == 0 {
+            reply
+                .reject(russh::ChannelOpenFailure::AdministrativelyProhibited)
+                .await;
+            return Ok(());
+        }
+        reply.accept().await;
+
+        tokio::spawn(async move {
+            let mut agent = match crate::agent::connect_local_agent().await {
+                Ok(agent) => agent,
+                Err(e) => {
+                    tracing::warn!(error = %e, "agent forwarding requested but no local agent");
+                    return;
+                }
+            };
+            let mut stream = channel.into_stream();
+            if let Err(e) = tokio::io::copy_bidirectional(&mut stream, &mut agent).await {
+                tracing::debug!(error = %e, "forwarded agent channel closed");
+            }
+        });
+        Ok(())
+    }
 }
 
 /// An authenticated SSH session.
@@ -259,6 +333,8 @@ pub struct Session {
     // ordering failure when `-L`/`-D` cloned the handle before `-R` (SSH-4).
     handle: SharedHandle,
     remote_forward_routes: RemoteForwardRoutes,
+    /// Shared with this session's `ZeroTermHandler`; see the field there.
+    agent_forward_grants: Arc<AtomicUsize>,
 }
 
 static GLOBAL_HTTP_PROXY: OnceLock<RwLock<Option<String>>> = OnceLock::new();
@@ -470,11 +546,13 @@ impl Session {
         let config = Arc::new(client_config());
 
         let (remote_forward_tx, remote_forward_rx) = mpsc::unbounded_channel();
+        let agent_forward_grants = Arc::new(AtomicUsize::new(0));
         let handler = ZeroTermHandler {
             policy: cfg.host_key_policy.clone(),
             host: cfg.host.clone(),
             port: cfg.port,
             remote_forward_tx,
+            agent_forward_grants: Arc::clone(&agent_forward_grants),
         };
 
         let handle = if let Some(proxy_url) = current_http_proxy() {
@@ -509,7 +587,7 @@ impl Session {
             }
         };
 
-        authenticate(handle, &cfg, remote_forward_rx).await
+        authenticate(handle, &cfg, remote_forward_rx, agent_forward_grants).await
     }
 
     /// Same as [`Session::connect`], but the underlying TCP transport
@@ -530,11 +608,13 @@ impl Session {
 
         let config = Arc::new(client_config());
         let (remote_forward_tx, remote_forward_rx) = mpsc::unbounded_channel();
+        let agent_forward_grants = Arc::new(AtomicUsize::new(0));
         let handler = ZeroTermHandler {
             policy: cfg.host_key_policy.clone(),
             host: cfg.host.clone(),
             port: cfg.port,
             remote_forward_tx,
+            agent_forward_grants: Arc::clone(&agent_forward_grants),
         };
 
         let connect_fut = client::connect_stream(config, stream, handler);
@@ -551,7 +631,7 @@ impl Session {
             None => connect_fut.await?,
         };
 
-        authenticate(handle, &cfg, remote_forward_rx).await
+        authenticate(handle, &cfg, remote_forward_rx, agent_forward_grants).await
     }
 
     /// Cheap clone of the underlying russh handle. Used by long-lived
@@ -663,6 +743,17 @@ impl Session {
     /// Open an SFTP subsystem on a fresh channel. Returns a wrapper with
     /// the file-management methods we expose to UIs.
     pub async fn sftp(&self) -> Result<crate::sftp::Sftp, SshError> {
+        self.sftp_tuned(crate::sftp::SftpTuning::default()).await
+    }
+
+    /// [`Self::sftp`] with an explicit upload tier. The pipeline depth and
+    /// packet ceiling are negotiated once, at channel creation, so a caller
+    /// that needs to drop to [`SftpTuning::CONSERVATIVE`] after a stall
+    /// (see [`crate::sftp::is_upload_stall`]) has to open a new channel.
+    pub async fn sftp_tuned(
+        &self,
+        tuning: crate::sftp::SftpTuning,
+    ) -> Result<crate::sftp::Sftp, SshError> {
         let channel = {
             let handle = self.handle.lock().await;
             handle.channel_open_session().await?
@@ -671,15 +762,11 @@ impl Session {
         let session = russh_sftp::client::SftpSession::new_with_config(
             channel.into_stream(),
             russh_sftp::client::Config {
-                // SFTP v3 servers, especially embedded implementations,
-                // commonly limit WRITE data to 32 KiB without advertising
-                // `limits@openssh.com`. Sending our former 1 MiB packets
-                // left their final write acknowledgement pending forever.
-                max_packet_len: 32 * 1024,
-                // Keep the pipeline deliberately shallow. Some embedded SFTP
-                // servers stop acknowledging a full 16-request window, which
-                // makes even sub-megabyte uploads hang at finalization.
-                max_concurrent_writes: 4,
+                // Only binds servers that don't advertise
+                // `limits@openssh.com`; the ones that do hand us their own
+                // read/write lengths, which russh-sftp prefers over this.
+                max_packet_len: tuning.max_packet_len,
+                max_concurrent_writes: tuning.max_concurrent_writes,
                 // Per-request timeout. 30s was too aggressive for slow
                 // servers and large directory listings — a timed-out
                 // request leaves an orphaned response that desyncs the
@@ -695,7 +782,7 @@ impl Session {
         )
         .await
         .map_err(map_sftp_err)?;
-        Ok(crate::sftp::Sftp::from_session(session))
+        Ok(crate::sftp::Sftp::from_session(session, tuning))
     }
 
     /// Execute a non-interactive command and collect stdout/stderr.
@@ -719,6 +806,54 @@ impl Session {
             }
         }
         Ok((code, stdout, stderr))
+    }
+
+    /// Execute `command` with the local SSH agent forwarded to it, streaming
+    /// output to `on_output` as it arrives instead of buffering the lot.
+    ///
+    /// This is what lets a remote-to-remote copy run entirely between the two
+    /// servers: the `scp`/`rsync` we start on this host authenticates to the
+    /// far host with *your* keys, over a channel this session proxies back to
+    /// your agent. Forwarding is granted only for the lifetime of the returned
+    /// future — see [`ZeroTermHandler::agent_forward_grants`].
+    ///
+    /// Streaming matters for progress: `rsync --info=progress2` reports on
+    /// stdout as it goes, and a buffered read would surface all of it at the
+    /// end. Returns the command's exit status.
+    ///
+    /// Note that agent forwarding lets anyone with root on this host use your
+    /// keys while the command runs. Only call it for hosts the user has
+    /// deliberately targeted.
+    pub async fn exec_forwarding_agent<F>(
+        &self,
+        command: &str,
+        mut on_output: F,
+    ) -> Result<u32, SshError>
+    where
+        F: FnMut(ExecStream, &[u8]) + Send,
+    {
+        let _grant = AgentForwardGrant::new(Arc::clone(&self.agent_forward_grants));
+
+        let mut channel = {
+            let handle = self.handle.lock().await;
+            handle.channel_open_session().await?
+        };
+        // Must precede `exec`: the server binds the forwarding request to the
+        // session channel before the command's environment is set up.
+        channel.agent_forward(true).await?;
+        channel.exec(true, command).await?;
+
+        let mut code = 0;
+        while let Some(msg) = channel.wait().await {
+            match msg {
+                ChannelMsg::Data { data } => on_output(ExecStream::Stdout, &data),
+                ChannelMsg::ExtendedData { data, ext: 1 } => on_output(ExecStream::Stderr, &data),
+                ChannelMsg::ExitStatus { exit_status } => code = exit_status,
+                ChannelMsg::Close | ChannelMsg::Eof => break,
+                _ => {}
+            }
+        }
+        Ok(code)
     }
 
     pub async fn disconnect(self) -> Result<(), SshError> {
@@ -752,6 +887,7 @@ async fn authenticate(
     mut handle: Handle<ZeroTermHandler>,
     cfg: &ConnectConfig,
     remote_forward_rx: mpsc::UnboundedReceiver<RemoteForwardIncoming>,
+    agent_forward_grants: Arc<AtomicUsize>,
 ) -> Result<Session, SshError> {
     let mut last_error: Option<SshError> = None;
     for method in &cfg.auth_methods {
@@ -766,6 +902,7 @@ async fn authenticate(
                 return Ok(Session {
                     handle,
                     remote_forward_routes: routes,
+                    agent_forward_grants,
                 });
             }
             Ok(false) => {

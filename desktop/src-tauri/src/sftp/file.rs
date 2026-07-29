@@ -39,7 +39,7 @@ fn unique_sibling_path(target: &Path, tag: &str) -> PathBuf {
     parent.join(format!(".{file_name}.zeroterm-{tag}-{pid}-{nanos:x}.part"))
 }
 
-fn unique_remote_temp_path(target: &str, tag: &str) -> String {
+pub(crate) fn unique_remote_temp_path(target: &str, tag: &str) -> String {
     let unique = uuid::Uuid::new_v4().to_string();
     format!("{target}.zeroterm-{tag}-{unique}")
 }
@@ -228,7 +228,7 @@ pub(crate) async fn ensure_remote_target_available(
     Ok(())
 }
 
-async fn finalize_remote_upload_target(
+pub(crate) async fn finalize_remote_upload_target(
     sftp: &zeroterm_ssh::Sftp,
     temp_path: &str,
     target: &str,
@@ -298,7 +298,7 @@ where
         .upload_from_reader(
             &temp_target,
             src,
-            zeroterm_ssh::DEFAULT_UPLOAD_CHUNK,
+            sftp.upload_chunk(),
             size_hint,
             cancel,
             on_progress,
@@ -342,6 +342,22 @@ pub(crate) async fn upload_slice_to_remote_atomic(
         |_| {},
     )
     .await
+}
+
+/// Call before retrying a failed upload: when the failure was our write
+/// pipeline outrunning the server, latch the host onto
+/// `SftpTuning::CONSERVATIVE` so the retry runs on a shallower channel.
+/// No-op for every other error — a plain dropped channel says nothing about
+/// how much the server can absorb, and downgrading on those would cost
+/// throughput permanently.
+///
+/// Matches on the string because the typed `SshError` has already been
+/// flattened for IPC by the time the retry sites see it;
+/// `zeroterm_ssh::UPLOAD_STALL_MARKER` is the single source of truth.
+pub(crate) async fn downgrade_uploads_if_stalled(state: &AppState, host_id: &str, err: &str) {
+    if err.contains(zeroterm_ssh::UPLOAD_STALL_MARKER) {
+        state.sftp_pool.downgrade_uploads(host_id).await;
+    }
 }
 
 pub(crate) fn is_retryable_transfer_error(err: &str) -> bool {

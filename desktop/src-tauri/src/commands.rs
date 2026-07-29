@@ -1984,6 +1984,8 @@ pub async fn lock_vault(state: State<'_, AppState>) -> Result<(), String> {
     state.sftp_handles.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clear();
     state.sftp_pool.clear();
     state.transfer_manager.clear();
+    // Probe verdicts embed host coordinates and the keys we'd lend out.
+    state.direct_probes.clear();
     // Locking the vault drops every cached sync engine too — they hold
     // the unwrapped sync root key in memory and shouldn't outlive the
     // master key.
@@ -2001,6 +2003,7 @@ pub async fn clear_vault_data(state: State<'_, AppState>) -> Result<(), String> 
     state.sftp_handles.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clear();
     state.sftp_pool.clear();
     state.transfer_manager.clear();
+    state.direct_probes.clear();
     state.sync.forget_all().await;
     Ok(())
 }

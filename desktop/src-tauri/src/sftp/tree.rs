@@ -7,9 +7,10 @@ use tauri::{AppHandle, Manager};
 use tracing::warn;
 use zeroterm_ssh::Sftp;
 
+use crate::sftp::direct::{try_direct_file_copy, DirectAttempt, TransferRoute};
 use crate::sftp::file::{
-    download_remote_file_to_local, ensure_remote_target_available, is_retryable_transfer_error,
-    upload_local_path_to_remote_once, upload_reader_to_remote_atomic,
+    download_remote_file_to_local, downgrade_uploads_if_stalled, ensure_remote_target_available,
+    is_retryable_transfer_error, upload_local_path_to_remote_once, upload_reader_to_remote_atomic,
 };
 use crate::sftp::path::{
     detect_local_kind, detect_remote_kind, normalize_remote_path, remote_join_path,
@@ -1114,12 +1115,9 @@ async fn stream_local_file_to_remote(
                                 error = %err,
                                 "upload lost its SFTP channel, retrying once with a fresh channel"
                             );
-                            let guard = open_ephemeral_sftp(
-                                state,
-                                app,
-                                retry_host_id.expect("checked above"),
-                            )
-                            .await?;
+                            let host_id = retry_host_id.expect("checked above");
+                            downgrade_uploads_if_stalled(state, host_id, &err).await;
+                            let guard = open_ephemeral_sftp(state, app, host_id).await?;
                             upload_local_path_to_remote_once(
                                 guard.sftp().as_ref(),
                                 &source,
@@ -1185,12 +1183,9 @@ async fn stream_local_file_to_remote(
                         "aggregate upload lost its SFTP channel, retrying current file once"
                     );
                     let state = app_handle.state::<AppState>();
-                    let guard = open_ephemeral_sftp(
-                        &state,
-                        &app_handle,
-                        retry_host_id.expect("checked above"),
-                    )
-                    .await?;
+                    let host_id = retry_host_id.expect("checked above");
+                    downgrade_uploads_if_stalled(&state, host_id, &err).await;
+                    let guard = open_ephemeral_sftp(&state, &app_handle, host_id).await?;
                     attempt_bytes.store(0, std::sync::atomic::Ordering::SeqCst);
                     let source_label = source.display().to_string();
                     let sink_for_retry = sink.clone();
@@ -1596,6 +1591,49 @@ async fn stream_remote_file_to_remote(
                 transfer_id,
                 move |progress_cb| async move {
                     let mut progress_cb = progress_cb;
+                    if let (Some(src_id), Some(dst_id)) =
+                        (source_retry_host_id, target_retry_host_id)
+                    {
+                        match try_direct_file_copy(
+                            state,
+                            app,
+                            src_id,
+                            dst_id,
+                            &source,
+                            &target,
+                            size_hint,
+                            overwrite,
+                            cancel_for_body.clone(),
+                            source_sftp.as_ref(),
+                            target_sftp.as_ref(),
+                            &mut *progress_cb,
+                        )
+                        .await
+                        {
+                            DirectAttempt::Done(bytes) => {
+                                state.transfer_manager.set_route(
+                                    app,
+                                    transfer_id,
+                                    TransferRoute::Direct,
+                                );
+                                return Ok(bytes);
+                            }
+                            DirectAttempt::Cancelled => {
+                                return Err(ipc_error("CANCELLED", "transfer cancelled"));
+                            }
+                            DirectAttempt::Fallback(reason) => {
+                                warn!(
+                                    source = %source,
+                                    destination = %target,
+                                    reason = %reason,
+                                    "server-to-server copy unavailable, relaying through this machine"
+                                );
+                            }
+                        }
+                    }
+                    state
+                        .transfer_manager
+                        .set_route(app, transfer_id, TransferRoute::Relay);
                     let first = pipe_remote_file_to_remote(
                         Arc::clone(&source_sftp),
                         source.clone(),
@@ -1664,6 +1702,70 @@ async fn stream_remote_file_to_remote(
             let sink_for_progress = sink.clone();
             let attempt_bytes = Arc::new(std::sync::atomic::AtomicU64::new(0));
             let attempt_bytes_for_progress = Arc::clone(&attempt_bytes);
+
+            if let (Some(src_id), Some(dst_id)) = (source_retry_host_id, target_retry_host_id) {
+                let state = app_handle.state::<AppState>();
+                let sink_for_direct = sink.clone();
+                let direct_label = source.clone();
+                let direct_seen = Arc::new(std::sync::atomic::AtomicU64::new(0));
+                let direct_seen_for_cb = Arc::clone(&direct_seen);
+                let outcome = try_direct_file_copy(
+                    &state,
+                    &app_handle,
+                    src_id,
+                    dst_id,
+                    &source,
+                    &target,
+                    None,
+                    overwrite,
+                    cancel.clone(),
+                    source_sftp.as_ref(),
+                    target_sftp.as_ref(),
+                    &mut move |tick: zeroterm_ssh::ProgressTick| {
+                        use std::sync::atomic::Ordering;
+                        let prev = direct_seen_for_cb.swap(tick.bytes_done, Ordering::SeqCst);
+                        let delta = tick.bytes_done.saturating_sub(prev);
+                        if delta > 0 {
+                            sink_for_direct.add_bytes(delta, &direct_label);
+                        }
+                    },
+                )
+                .await;
+                match outcome {
+                    DirectAttempt::Done(_) => {
+                        state.transfer_manager.set_route(
+                            &app_handle,
+                            sink.transfer_id(),
+                            TransferRoute::Direct,
+                        );
+                        return Ok(());
+                    }
+                    DirectAttempt::Cancelled => {
+                        return Err(ipc_error("CANCELLED", "transfer cancelled"));
+                    }
+                    DirectAttempt::Fallback(reason) => {
+                        // Nothing landed at the destination, but partial
+                        // progress was already reported to the shared sink —
+                        // wind it back so the relay doesn't double-count.
+                        let seen = direct_seen.load(std::sync::atomic::Ordering::SeqCst);
+                        if seen > 0 {
+                            sink.rewind_bytes(seen);
+                        }
+                        warn!(
+                            source = %source,
+                            destination = %target,
+                            reason = %reason,
+                            "server-to-server copy unavailable, relaying through this machine"
+                        );
+                        state.transfer_manager.set_route(
+                            &app_handle,
+                            sink.transfer_id(),
+                            TransferRoute::Relay,
+                        );
+                    }
+                }
+            }
+
             let first: Result<u64, String> = pipe_remote_file_to_remote(
                 Arc::clone(&source_sftp),
                 source.clone(),
