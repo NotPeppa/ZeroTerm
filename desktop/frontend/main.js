@@ -13932,20 +13932,6 @@ document.addEventListener("click", (ev) => {
 
 const TERMINAL_ATTENTION_QUIET_MS = 450;
 const TERMINAL_ATTENTION_SCAN_ROWS = 14;
-const TERMINAL_ATTENTION_ALT_SCAN_ROWS = 10;
-const TERMINAL_ATTENTION_PROMPT_PATTERNS = [
-  // Selection cursor sitting on a numbered option: "❯ 1. Yes" (claude, gemini).
-  /[❯›]\s{0,3}\d{1,2}[.)]\s/,
-  // Numbered yes/no options rendered without a cursor glyph.
-  /^\s*\d{1,2}[.)]\s+(?:yes|no)\b/im,
-  // Question headers agent CLIs print above their option list.
-  /\b(?:do you want|would you like)\b/i,
-  // Classic inline confirmations: (y/n), [Y/n], (yes/no).
-  /[([](?:y\/n|yes\/no)[)\]]/i,
-  /\b(?:press )?(?:enter|return) to (?:continue|confirm)\b/i,
-  // Chinese confirmation prompts.
-  /是否(?:继续|允许|执行|应用|覆盖)|请选择|请确认|等待(?:确认|授权)/,
-];
 
 let termAttentionLastActiveTabId = null;
 // Whether we currently have an outstanding OS attention request. Guards against
@@ -14049,15 +14035,16 @@ function paneBufferTail(pane, rowCount) {
 function evaluatePaneAttentionPrompt(pane) {
   if (!pane?.term || pane.sessionId === null || pane.attention) return;
   if (isPaneOnUserScreen(pane)) return;
-  // Full-screen TUIs (alternate buffer) keep their dialog near the bottom of
-  // the screen; inline CLIs leave the prompt at the end of the scrollback.
+  // Alternate-buffer TUIs often center permission dialogs vertically, so scan
+  // the complete visible screen. Inline CLIs leave prompts at the end of the
+  // scrollback, where a small tail avoids matching stale questions.
   const isAltScreen = pane.term.buffer.active.type === "alternate";
   const tail = paneBufferTail(
     pane,
-    isAltScreen ? TERMINAL_ATTENTION_ALT_SCAN_ROWS : TERMINAL_ATTENTION_SCAN_ROWS
+    isAltScreen ? pane.term.buffer.active.length : TERMINAL_ATTENTION_SCAN_ROWS
   );
   if (!tail) return;
-  if (TERMINAL_ATTENTION_PROMPT_PATTERNS.some((re) => re.test(tail))) {
+  if (window.ZeroTermAttention?.terminalTextNeedsAttention(tail)) {
     triggerPaneAttention(pane, "prompt");
   }
 }
@@ -14862,13 +14849,14 @@ function refreshPaneTerminal(pane) {
   }
 }
 
-function writePaneTerminalData(pane, data, { stickToBottom = false } = {}) {
+function writePaneTerminalData(pane, data, { stickToBottom = false, onParsed = null } = {}) {
   if (!pane?.term) return;
   pane.term.write(data, () => {
     if (!pane.term) return;
     if (stickToBottom) pane.term.scrollToBottom();
     syncPaneViewportScroll(pane);
     refreshPaneTerminal(pane);
+    if (typeof onParsed === "function") onParsed();
   });
 }
 
@@ -15160,8 +15148,15 @@ async function wirePaneSessionEvents(pane, sessionId) {
     markPaneAlive();
     if (!pane.term) return;
     const stickToBottom = isPaneTerminalNearBottom(pane);
-    writePaneTerminalData(pane, new Uint8Array(ev.payload.data), { stickToBottom });
-    schedulePaneAttentionScan(pane);
+    writePaneTerminalData(pane, new Uint8Array(ev.payload.data), {
+      stickToBottom,
+      // xterm parses writes asynchronously. Start the quiet-period timer only
+      // after this chunk is reflected in its buffer; otherwise a short final
+      // prompt can be scanned before it exists on screen.
+      onParsed: () => {
+        if (pane.sessionId === sessionId) schedulePaneAttentionScan(pane);
+      },
+    });
   });
 
   pane.latencyUnlisten = await listen("session:latency", (ev) => {
