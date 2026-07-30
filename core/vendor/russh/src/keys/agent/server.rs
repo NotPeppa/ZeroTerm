@@ -88,6 +88,38 @@ impl Agent for () {
     }
 }
 
+/// ZeroTerm patch: answer the agent protocol on one already-connected
+/// stream, offering a fixed set of identities.
+///
+/// Unlike [`serve`], which listens for connections and starts with an empty
+/// key store that clients populate via `add identity`, this serves exactly
+/// the keys it was given and nothing else — the remote peer can list and
+/// sign with them but cannot add, remove, or lock. Built for lending
+/// specific credentials over a forwarded `auth-agent@openssh.com` channel.
+///
+/// Returns when the peer closes the stream (surfaced as an I/O error by the
+/// framing loop, which callers are expected to ignore).
+pub async fn serve_stream<S>(stream: S, identities: Vec<Arc<PrivateKey>>) -> Result<(), Error>
+where
+    S: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static,
+{
+    let mut map = HashMap::new();
+    let now = SystemTime::now();
+    for key in identities {
+        let blob = key.public_key().key_data().encoded()?;
+        map.insert(blob, (key, now, Vec::new()));
+    }
+    Connection {
+        lock: Lock(Arc::new(RwLock::new(CryptoVec::new()))),
+        keys: KeyStore(Arc::new(RwLock::new(map))),
+        agent: Some(()),
+        s: stream,
+        buf: Vec::new(),
+    }
+    .run()
+    .await
+}
+
 struct Connection<S: AsyncRead + AsyncWrite + Send + 'static, A: Agent> {
     lock: Lock,
     keys: KeyStore,
@@ -351,8 +383,25 @@ impl<S: AsyncRead + AsyncWrite + Send + Unpin + 'static, A: Agent + Send + Sync 
         };
         writebuf.push(msg::SIGN_RESPONSE);
         let data = Bytes::decode(r)?;
+        // ZeroTerm patch: honor the client's signature flags. RFC draft
+        // agent protocol defines SSH_AGENT_RSA_SHA2_256 (2) and
+        // SSH_AGENT_RSA_SHA2_512 (4); ignoring them means RSA keys sign
+        // with SHA-1 (`ssh-rsa`), which OpenSSH ≥ 8.8 rejects by default.
+        let flags = u32::decode(r).unwrap_or(0);
+        let hash_alg = match key.algorithm() {
+            ssh_key::Algorithm::Rsa { .. } => {
+                if flags & 4 != 0 {
+                    Some(ssh_key::HashAlg::Sha512)
+                } else if flags & 2 != 0 {
+                    Some(ssh_key::HashAlg::Sha256)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
 
-        sign_with_hash_alg(&PrivateKeyWithHashAlg::new(key, None), &data)?.encode(writebuf)?;
+        sign_with_hash_alg(&PrivateKeyWithHashAlg::new(key, hash_alg), &data)?.encode(writebuf)?;
 
         let len = writebuf.len();
         BigEndian::write_u32(writebuf, (len - 4) as u32);
@@ -368,6 +417,39 @@ mod tests {
 
     use super::{Connection, KeyStore, Lock, MAX_AGENT_FRAME_LEN};
     use crate::keys::Error;
+
+    /// ZeroTerm patch: `serve_stream` must offer exactly the preset keys and
+    /// produce verifiable signatures — it is what lends a vault credential
+    /// over a forwarded agent channel.
+    #[test]
+    fn serve_stream_offers_preset_identities_and_signs() -> std::io::Result<()> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+
+        runtime.block_on(async {
+            let (server, client_stream) = tokio::io::duplex(4096);
+            let key =
+                ssh_key::PrivateKey::random(&mut rand::rng(), ssh_key::Algorithm::Ed25519).unwrap();
+            let public = key.public_key().clone();
+            tokio::spawn(super::serve_stream(server, vec![std::sync::Arc::new(key)]));
+
+            let mut client = crate::keys::agent::client::AgentClient::connect(client_stream);
+            let identities = client.request_identities().await.unwrap();
+            assert_eq!(identities.len(), 1);
+
+            let data = b"zeroterm agent test".to_vec();
+            let sig = client
+                .sign_request_signature(&public, None, &data)
+                .await
+                .unwrap();
+            use signature::Verifier;
+            public.key_data().verify(&data, &sig).unwrap();
+            Ok::<(), std::io::Error>(())
+        })?;
+
+        Ok(())
+    }
 
     #[test]
     fn oversized_agent_request_is_rejected_before_allocation() -> std::io::Result<()> {

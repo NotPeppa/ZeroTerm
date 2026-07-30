@@ -10,7 +10,7 @@ use std::time::Instant;
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use russh::client::{self, Handle, Handler, Msg};
-use russh::keys::{Algorithm, Certificate, PrivateKeyWithHashAlg, PublicKey};
+use russh::keys::{Algorithm, Certificate, PrivateKey, PrivateKeyWithHashAlg, PublicKey};
 use russh::{Channel, ChannelId, ChannelMsg, Disconnect};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -167,7 +167,18 @@ pub(crate) struct ZeroTermHandler {
     /// than a flag so overlapping transfers on a pooled session can't have
     /// the first one to finish revoke the second one's grant.
     agent_forward_grants: Arc<AtomicUsize>,
+    /// Identities currently lent to forwarded agent channels. When
+    /// non-empty, an opened agent channel is answered by an in-process
+    /// agent offering exactly these keys (vault credentials for a specific
+    /// destination) instead of proxying the user's whole system agent —
+    /// see [`Session::exec_forwarding_agent_with_identities`].
+    forward_identities: ForwardIdentities,
 }
+
+/// Keys lent to the forwarded agent channel, shared between [`Session`]
+/// and its [`ZeroTermHandler`]. Guarded by a std mutex: touched only to
+/// push/remove/snapshot, never held across an await.
+pub(crate) type ForwardIdentities = Arc<std::sync::Mutex<Vec<Arc<PrivateKey>>>>;
 
 /// Keeps agent forwarding enabled for as long as it is alive. Revokes on
 /// drop, including when the guarded future is cancelled or errors out.
@@ -183,6 +194,42 @@ impl AgentForwardGrant {
 impl Drop for AgentForwardGrant {
     fn drop(&mut self) {
         self.0.fetch_sub(1, AtomicOrdering::SeqCst);
+    }
+}
+
+/// Adds keys to [`ForwardIdentities`] for its lifetime and removes exactly
+/// those keys on drop (including cancellation), so overlapping operations
+/// on a pooled session can't revoke one another's identities.
+struct IdentityLease {
+    list: ForwardIdentities,
+    added: Vec<Arc<PrivateKey>>,
+}
+
+impl IdentityLease {
+    fn new(list: ForwardIdentities, keys: Vec<Arc<PrivateKey>>) -> Self {
+        if !keys.is_empty() {
+            list.lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .extend(keys.iter().cloned());
+        }
+        Self { list, added: keys }
+    }
+}
+
+impl Drop for IdentityLease {
+    fn drop(&mut self) {
+        if self.added.is_empty() {
+            return;
+        }
+        let mut list = self
+            .list
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for key in &self.added {
+            if let Some(pos) = list.iter().position(|k| Arc::ptr_eq(k, key)) {
+                list.swap_remove(pos);
+            }
+        }
     }
 }
 
@@ -309,6 +356,27 @@ impl Handler for ZeroTermHandler {
         }
         reply.accept().await;
 
+        // Two credential sources, strictly ordered: identities explicitly
+        // lent for this operation (vault keys scoped to one destination)
+        // win; only when none were lent do we fall back to proxying the
+        // user's whole system agent. Serving the lent set in-process keeps
+        // the far host from ever seeing identities beyond the one the
+        // operation needs.
+        let lent = self
+            .forward_identities
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        if !lent.is_empty() {
+            tokio::spawn(async move {
+                let stream = channel.into_stream();
+                if let Err(e) = russh::keys::agent::server::serve_stream(stream, lent).await {
+                    tracing::debug!(error = %e, "in-process agent channel closed");
+                }
+            });
+            return Ok(());
+        }
+
         tokio::spawn(async move {
             let mut agent = match crate::agent::connect_local_agent().await {
                 Ok(agent) => agent,
@@ -335,6 +403,8 @@ pub struct Session {
     remote_forward_routes: RemoteForwardRoutes,
     /// Shared with this session's `ZeroTermHandler`; see the field there.
     agent_forward_grants: Arc<AtomicUsize>,
+    /// Shared with this session's `ZeroTermHandler`; see the field there.
+    forward_identities: ForwardIdentities,
 }
 
 static GLOBAL_HTTP_PROXY: OnceLock<RwLock<Option<String>>> = OnceLock::new();
@@ -547,12 +617,14 @@ impl Session {
 
         let (remote_forward_tx, remote_forward_rx) = mpsc::unbounded_channel();
         let agent_forward_grants = Arc::new(AtomicUsize::new(0));
+        let forward_identities: ForwardIdentities = Arc::default();
         let handler = ZeroTermHandler {
             policy: cfg.host_key_policy.clone(),
             host: cfg.host.clone(),
             port: cfg.port,
             remote_forward_tx,
             agent_forward_grants: Arc::clone(&agent_forward_grants),
+            forward_identities: Arc::clone(&forward_identities),
         };
 
         let handle = if let Some(proxy_url) = current_http_proxy() {
@@ -587,7 +659,14 @@ impl Session {
             }
         };
 
-        authenticate(handle, &cfg, remote_forward_rx, agent_forward_grants).await
+        authenticate(
+            handle,
+            &cfg,
+            remote_forward_rx,
+            agent_forward_grants,
+            forward_identities,
+        )
+        .await
     }
 
     /// Same as [`Session::connect`], but the underlying TCP transport
@@ -609,12 +688,14 @@ impl Session {
         let config = Arc::new(client_config());
         let (remote_forward_tx, remote_forward_rx) = mpsc::unbounded_channel();
         let agent_forward_grants = Arc::new(AtomicUsize::new(0));
+        let forward_identities: ForwardIdentities = Arc::default();
         let handler = ZeroTermHandler {
             policy: cfg.host_key_policy.clone(),
             host: cfg.host.clone(),
             port: cfg.port,
             remote_forward_tx,
             agent_forward_grants: Arc::clone(&agent_forward_grants),
+            forward_identities: Arc::clone(&forward_identities),
         };
 
         let connect_fut = client::connect_stream(config, stream, handler);
@@ -631,7 +712,14 @@ impl Session {
             None => connect_fut.await?,
         };
 
-        authenticate(handle, &cfg, remote_forward_rx, agent_forward_grants).await
+        authenticate(
+            handle,
+            &cfg,
+            remote_forward_rx,
+            agent_forward_grants,
+            forward_identities,
+        )
+        .await
     }
 
     /// Cheap clone of the underlying russh handle. Used by long-lived
@@ -827,12 +915,36 @@ impl Session {
     pub async fn exec_forwarding_agent<F>(
         &self,
         command: &str,
+        on_output: F,
+    ) -> Result<u32, SshError>
+    where
+        F: FnMut(ExecStream, &[u8]) + Send,
+    {
+        self.exec_forwarding_agent_with_identities(command, Vec::new(), on_output)
+            .await
+    }
+
+    /// [`Self::exec_forwarding_agent`], but the forwarded agent channel is
+    /// answered in-process with exactly `identities` instead of proxying the
+    /// system agent. This is how vault-stored keys work for server-to-server
+    /// copies: the key never leaves this machine and the far host sees only
+    /// the identity the operation needs — strictly less exposure than
+    /// lending the whole system agent. An empty `identities` falls back to
+    /// the system agent proxy.
+    ///
+    /// The lease lasts for the lifetime of the returned future; overlapping
+    /// calls on a pooled session each add and remove their own keys.
+    pub async fn exec_forwarding_agent_with_identities<F>(
+        &self,
+        command: &str,
+        identities: Vec<Arc<PrivateKey>>,
         mut on_output: F,
     ) -> Result<u32, SshError>
     where
         F: FnMut(ExecStream, &[u8]) + Send,
     {
         let _grant = AgentForwardGrant::new(Arc::clone(&self.agent_forward_grants));
+        let _lease = IdentityLease::new(Arc::clone(&self.forward_identities), identities);
 
         let mut channel = {
             let handle = self.handle.lock().await;
@@ -888,6 +1000,7 @@ async fn authenticate(
     cfg: &ConnectConfig,
     remote_forward_rx: mpsc::UnboundedReceiver<RemoteForwardIncoming>,
     agent_forward_grants: Arc<AtomicUsize>,
+    forward_identities: ForwardIdentities,
 ) -> Result<Session, SshError> {
     let mut last_error: Option<SshError> = None;
     for method in &cfg.auth_methods {
@@ -903,6 +1016,7 @@ async fn authenticate(
                     handle,
                     remote_forward_routes: routes,
                     agent_forward_grants,
+                    forward_identities,
                 });
             }
             Ok(false) => {

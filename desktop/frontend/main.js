@@ -713,6 +713,7 @@ const I18N = {
     "files.transfer.route.direct_hint": "Copied server to server — the data never passed through this machine.",
     "files.transfer.route.relay": "via this PC",
     "files.transfer.route.relay_hint": "The source server can't reach the destination directly, so the data is being relayed through this machine. Speed is limited by your own connection.",
+    "files.transfer.route.relay_reason": "Reason: ",
     "editor.title": "Edit Remote File",
     "editor.title.dirty": "Edit Remote File *",
     "editor.hint.default": "Supports common UTF-8 text files. Press Ctrl/Cmd + S to save.",
@@ -1617,6 +1618,7 @@ const I18N = {
     "files.transfer.route.direct_hint": "数据在两台服务器之间直接传输,未经过本机。",
     "files.transfer.route.relay": "经本机中转",
     "files.transfer.route.relay_hint": "源服务器无法直接连到目标服务器,数据正经由本机中转,速度受本机带宽限制。",
+    "files.transfer.route.relay_reason": "原因：",
     "editor.title": "编辑远程文件",
     "editor.title.dirty": "编辑远程文件 *",
     "editor.hint.default": "支持常见 UTF-8 文本文件。按 Ctrl/Cmd + S 保存。",
@@ -3182,7 +3184,12 @@ function buildSftpTransferRow(item) {
     const route = document.createElement("span");
     route.className = `sftp-transfer-route is-${item.route}`;
     route.textContent = t(`files.transfer.route.${item.route}`);
-    route.title = t(`files.transfer.route.${item.route}_hint`);
+    // The relay hint carries the concrete DirectUnavailable reason when the
+    // backend attempted a direct copy — "which precondition failed" beats
+    // the generic explanation.
+    route.title = item.route === "relay" && item.routeReason
+      ? `${t("files.transfer.route.relay_hint")}\n\n${t("files.transfer.route.relay_reason")}${item.routeReason}`
+      : t(`files.transfer.route.${item.route}_hint`);
     top.append(route);
   }
   const stats = document.createElement("span");
@@ -3370,6 +3377,10 @@ listen("sftp:transfer", (ev) => {
     // Sticky: once a remote→remote copy has picked a route, keep showing it
     // even if a later event omits the field.
     route: payload.route ?? sftpTransferItems.get(transferId)?.route ?? null,
+    routeReason: payload.routeReason
+      ?? payload.route_reason
+      ?? sftpTransferItems.get(transferId)?.routeReason
+      ?? null,
     error: payload.error
       ? {
           code: String(payload.error.code || "OTHER"),

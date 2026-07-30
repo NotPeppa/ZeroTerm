@@ -39,6 +39,11 @@ pub(crate) struct TransferEvent {
     /// route; local↔remote transfers never set it. The UI surfaces this so a
     /// relay-speed transfer is explained rather than just slow.
     pub route: Option<&'static str>,
+    /// Why the relay route was taken (the `DirectUnavailable` reason), so
+    /// the UI can say *which* precondition failed instead of a generic
+    /// "can't reach it directly". `None` for direct routes and for relays
+    /// where direct was never attempted.
+    pub route_reason: Option<String>,
     pub error: Option<TransferErrorDto>,
 }
 
@@ -83,6 +88,7 @@ impl TransferManager {
             files_done: None,
             files_total: None,
             route: None,
+            route_reason: None,
             error: None,
         };
         self.transfers.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(
@@ -110,12 +116,14 @@ impl TransferManager {
 
     /// Record which path a remote-to-remote copy ended up taking. Emitted
     /// immediately so the UI can label the transfer while it runs, not just
-    /// once it finishes.
+    /// once it finishes. `reason` explains a relay verdict (see
+    /// [`TransferEvent::route_reason`]).
     pub(crate) fn set_route(
         &self,
         app_handle: &AppHandle,
         transfer_id: u64,
         route: crate::sftp::direct::TransferRoute,
+        reason: Option<String>,
     ) {
         let event = {
             let mut transfers = self.transfers.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -123,6 +131,7 @@ impl TransferManager {
                 return;
             };
             record.event.route = Some(route.as_str());
+            record.event.route_reason = reason;
             record.event.clone()
         };
         let _ = app_handle.emit("sftp:transfer", event);

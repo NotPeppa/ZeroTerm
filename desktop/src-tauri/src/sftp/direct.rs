@@ -16,13 +16,13 @@
 //! direct copying is reported unavailable and the caller relays.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use tauri::AppHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
-use zeroterm_ssh::{ExecStream, KnownHosts, Session};
+use zeroterm_ssh::{decode_secret_key, AuthMethod, ExecStream, KnownHosts, PrivateKey, Session};
 
 use crate::connect::build_connect_chain_for_host;
 use crate::sftp::{ipc_error, string_error};
@@ -104,6 +104,22 @@ pub(crate) struct DirectPlan {
     /// Canonical `known_hosts` lines for the destination, taken from keys we
     /// already verified ourselves.
     known_hosts_lines: Vec<String>,
+    /// Destination credentials lent to the source host's copy command via the
+    /// in-process agent. Empty means "proxy the system agent" (the pre-vault
+    /// behavior, still right when the destination is configured for agent
+    /// auth).
+    identities: LentIdentities,
+}
+
+/// Vault keys destined for the forwarded agent. A newtype purely so
+/// `DirectPlan`'s derived `Debug` can never print key material.
+#[derive(Clone, Default)]
+pub(crate) struct LentIdentities(Vec<Arc<PrivateKey>>);
+
+impl std::fmt::Debug for LentIdentities {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "LentIdentities({} key(s))", self.0.len())
+    }
 }
 
 /// Why a host pair can't use the direct path. Carried so the caller can log
@@ -181,6 +197,7 @@ async fn probe(
     target_login: &str,
     target_port: u16,
     known_hosts_lines: &[String],
+    identities: LentIdentities,
 ) -> Result<DirectPlan, DirectUnavailable> {
     let preamble = match build_preamble(known_hosts_lines) {
         Ok(p) => p,
@@ -198,7 +215,7 @@ async fn probe(
 
     let mut out = String::new();
     let status = session
-        .exec_forwarding_agent(&script, |stream, chunk| {
+        .exec_forwarding_agent_with_identities(&script, identities.0.clone(), |stream, chunk| {
             if stream == ExecStream::Stdout {
                 out.push_str(&String::from_utf8_lossy(chunk));
             }
@@ -242,6 +259,7 @@ async fn probe(
         target_login: target_login.to_string(),
         target_port,
         known_hosts_lines: known_hosts_lines.to_vec(),
+        identities,
     })
 }
 
@@ -281,6 +299,52 @@ async fn plan_uncached(
         ));
     }
 
+    // Work out which credentials the source host can be lent for the
+    // destination. A vault-stored key is decoded here and served by the
+    // in-process agent; agent auth keeps the old system-agent proxy; a
+    // password can't cross an agent channel at all, so say so up front
+    // instead of paying a probe that is guaranteed to fail.
+    let mut lent_keys: Vec<Arc<PrivateKey>> = Vec::new();
+    let mut has_agent_auth = false;
+    for method in &target_cfg.auth_methods {
+        match method {
+            AuthMethod::PrivateKeyData { pem, passphrase } => {
+                let key = decode_secret_key(pem, passphrase.as_deref()).map_err(|e| {
+                    DirectUnavailable(format!(
+                        "destination key from the vault could not be decoded: {e}"
+                    ))
+                })?;
+                lent_keys.push(Arc::new(key));
+            }
+            AuthMethod::PrivateKey { path, passphrase } => {
+                let pem = std::fs::read_to_string(path).map_err(|e| {
+                    DirectUnavailable(format!(
+                        "destination key file {} could not be read: {e}",
+                        path.display()
+                    ))
+                })?;
+                let key = decode_secret_key(&pem, passphrase.as_deref()).map_err(|e| {
+                    DirectUnavailable(format!(
+                        "destination key file {} could not be decoded: {e}",
+                        path.display()
+                    ))
+                })?;
+                lent_keys.push(Arc::new(key));
+            }
+            AuthMethod::Agent => has_agent_auth = true,
+            AuthMethod::Password(_) => {}
+        }
+    }
+    if lent_keys.is_empty() && !has_agent_auth {
+        return Err(DirectUnavailable(
+            "destination host is configured for password authentication; \
+             a direct copy needs key-based auth (a vault key, key file, or \
+             ssh-agent identity the destination accepts)"
+                .into(),
+        ));
+    }
+    let identities = LentIdentities(lent_keys);
+
     let known_hosts = KnownHosts::at_default()
         .ok_or_else(|| DirectUnavailable("could not locate known_hosts".into()))?;
     let lines = known_hosts
@@ -306,7 +370,7 @@ async fn plan_uncached(
         .map_err(DirectUnavailable)?;
 
     let login = format!("{}@{}", target_cfg.username, target_cfg.host);
-    probe(&session, &login, target_cfg.port, &lines).await
+    probe(&session, &login, target_cfg.port, &lines, identities).await
 }
 
 /// Build the copy invocation that runs inside [`build_preamble`]'s shell.
@@ -387,24 +451,28 @@ where
     let stdout_for_cb = std::sync::Arc::clone(&stdout_tail);
     let stderr_for_cb = std::sync::Arc::clone(&stderr_tail);
 
-    let exec = session.exec_forwarding_agent(&script, move |stream, chunk| {
-        let text = String::from_utf8_lossy(chunk);
-        match stream {
-            ExecStream::Stdout => {
-                if let Some(bytes) = parse_rsync_progress(&text) {
-                    on_bytes(bytes);
+    let exec = session.exec_forwarding_agent_with_identities(
+        &script,
+        plan.identities.0.clone(),
+        move |stream, chunk| {
+            let text = String::from_utf8_lossy(chunk);
+            match stream {
+                ExecStream::Stdout => {
+                    if let Some(bytes) = parse_rsync_progress(&text) {
+                        on_bytes(bytes);
+                    }
+                    push_tail(
+                        &mut stdout_for_cb.lock().unwrap_or_else(std::sync::PoisonError::into_inner),
+                        &text,
+                    );
                 }
-                push_tail(
-                    &mut stdout_for_cb.lock().unwrap_or_else(std::sync::PoisonError::into_inner),
+                ExecStream::Stderr => push_tail(
+                    &mut stderr_for_cb.lock().unwrap_or_else(std::sync::PoisonError::into_inner),
                     &text,
-                );
+                ),
             }
-            ExecStream::Stderr => push_tail(
-                &mut stderr_for_cb.lock().unwrap_or_else(std::sync::PoisonError::into_inner),
-                &text,
-            ),
-        }
-    });
+        },
+    );
 
     let status = tokio::select! {
         biased;
@@ -814,6 +882,7 @@ mod tests {
             target_login: "deploy@files.example.com".into(),
             target_port: 2222,
             known_hosts_lines: vec!["files.example.com ssh-ed25519 AAAA".into()],
+            identities: LentIdentities::default(),
         }
     }
 

@@ -1591,6 +1591,7 @@ async fn stream_remote_file_to_remote(
                 transfer_id,
                 move |progress_cb| async move {
                     let mut progress_cb = progress_cb;
+                    let mut relay_reason: Option<String> = None;
                     if let (Some(src_id), Some(dst_id)) =
                         (source_retry_host_id, target_retry_host_id)
                     {
@@ -1615,6 +1616,7 @@ async fn stream_remote_file_to_remote(
                                     app,
                                     transfer_id,
                                     TransferRoute::Direct,
+                                    None,
                                 );
                                 return Ok(bytes);
                             }
@@ -1628,12 +1630,13 @@ async fn stream_remote_file_to_remote(
                                     reason = %reason,
                                     "server-to-server copy unavailable, relaying through this machine"
                                 );
+                                relay_reason = Some(reason);
                             }
                         }
                     }
                     state
                         .transfer_manager
-                        .set_route(app, transfer_id, TransferRoute::Relay);
+                        .set_route(app, transfer_id, TransferRoute::Relay, relay_reason);
                     let first = pipe_remote_file_to_remote(
                         Arc::clone(&source_sftp),
                         source.clone(),
@@ -1737,6 +1740,7 @@ async fn stream_remote_file_to_remote(
                             &app_handle,
                             sink.transfer_id(),
                             TransferRoute::Direct,
+                            None,
                         );
                         return Ok(());
                     }
@@ -1761,6 +1765,7 @@ async fn stream_remote_file_to_remote(
                             &app_handle,
                             sink.transfer_id(),
                             TransferRoute::Relay,
+                            Some(reason),
                         );
                     }
                 }

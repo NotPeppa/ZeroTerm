@@ -1,7 +1,7 @@
 # ZeroTerm russh patch
 
 - Base: crates.io `russh` 0.62.4
-- Scope: client host-certificate KEX only
+- Scope: client host-certificate KEX; agent-server stream serving
 
 Upstream 0.62.4 decodes every server `K_S` value as a plain `PublicKey`.
 That prevents an application from advertising OpenSSH certificate host-key
@@ -20,3 +20,16 @@ validity-window, host-principal, critical-option, and revocation checks.
 `crates/zeroterm-ssh/tests/live_sshd.rs` has been exercised against a real
 OpenSSH server configured with `HostCertificate`, using a known_hosts file
 that contains only a matching `@cert-authority` entry.
+
+## Agent server additions
+
+`keys::agent::server` gains:
+
+1. `serve_stream(stream, identities)` — answers the agent protocol on a
+   single already-connected stream with a fixed, caller-supplied identity
+   set. Used to lend a specific vault key over a forwarded
+   `auth-agent@openssh.com` channel (server-to-server copies) without
+   exposing the whole system agent.
+2. Sign requests now honor the client's `SSH_AGENT_RSA_SHA2_256`/`_512`
+   flags instead of always signing RSA with SHA-1, which OpenSSH ≥ 8.8
+   rejects by default.
