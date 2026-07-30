@@ -1183,6 +1183,8 @@ const I18N = {
     "settings.terminal.selection_menu_order.label": "Context menu order",
     "settings.terminal.selection_menu_order.hint": "Drag items to customize the right-click menu order shown after selecting terminal text.",
     "settings.terminal.selection_menu_order.reset": "Reset order",
+    "settings.terminal.attention_flash.label": "Flash the taskbar icon while a background tab waits",
+    "settings.terminal.attention_flash.hint": "When a CLI in a background tab is waiting for your confirmation, flash the taskbar icon (bounce the Dock icon on macOS). Stops as soon as you return to the window.",
     "settings.sftp.title": "SFTP",
     "settings.sftp.follow.label": "Directory follow",
     "settings.sftp.follow.hint": "Remote directory follow uses shell OSC 7 hints. If the shell does not emit OSC 7, the SFTP pane stays where you leave it.",
@@ -2087,6 +2089,8 @@ const I18N = {
     "settings.terminal.selection_menu_order.label": "右键菜单排序",
     "settings.terminal.selection_menu_order.hint": "拖动调整选中终端文本后右键菜单里的功能展示顺序。",
     "settings.terminal.selection_menu_order.reset": "恢复默认",
+    "settings.terminal.attention_flash.label": "后台等待时闪烁任务栏图标",
+    "settings.terminal.attention_flash.hint": "后台标签页里的 CLI 等待确认时，闪烁任务栏图标提醒你（macOS 为跳动 Dock 图标）；回到窗口后自动停止。",
     "settings.sftp.title": "SFTP",
     "settings.sftp.follow.label": "目录跟随",
     "settings.sftp.follow.hint": "远端目录跟随现在依赖 shell 发出的 OSC 7 提示；如果 shell 不发送 OSC 7，SFTP 面板会保持在你当前停留的位置。",
@@ -6649,6 +6653,7 @@ const settingsTerminalCwd = document.getElementById("settings-terminal-cwd");
 const settingsTerminalCwdBrowse = document.getElementById("settings-terminal-cwd-browse");
 const settingsTerminalSelectionMenuOrder = document.getElementById("settings-terminal-selection-menu-order");
 const settingsTerminalSelectionMenuOrderReset = document.getElementById("settings-terminal-selection-menu-order-reset");
+const settingsTerminalAttentionFlash = document.getElementById("settings-terminal-attention-flash");
 const settingsTerminalFontPreview = document.getElementById("settings-terminal-font-preview");
 const terminalThemeListLight = document.getElementById("terminal-theme-list-light");
 const terminalThemeListDark = document.getElementById("terminal-theme-list-dark");
@@ -6765,6 +6770,7 @@ const SETTINGS_KEY_TERMINAL_LOCAL_SHELL = "zeroterm.settings.terminal.local_shel
 const SETTINGS_KEY_TERMINAL_LOCAL_CWD = "zeroterm.settings.terminal.local_cwd";
 const SETTINGS_KEY_TERMINAL_LINE_HEIGHT = "zeroterm.settings.terminal.line_height";
 const SETTINGS_KEY_TERMINAL_SELECTION_MENU_ORDER = "zeroterm.settings.terminal.selection_menu_order";
+const SETTINGS_KEY_TERMINAL_ATTENTION_FLASH = "zeroterm.settings.terminal.attention_flash";
 const TERMINAL_SELECTION_MENU_DEFAULT_ORDER = Object.freeze(["url", "search", "copy", "execute", "sftp", "ai"]);
 const SETTINGS_KEY_APP_BG_OPACITY = "zeroterm.settings.app_background.opacity";
 const SETTINGS_KEY_APP_BG_BLUR = "zeroterm.settings.app_background.blur";
@@ -7350,6 +7356,7 @@ async function resetLocalSettingsToDefaults() {
     SETTINGS_KEY_TERMINAL_LOCAL_CWD,
     SETTINGS_KEY_TERMINAL_LINE_HEIGHT,
     SETTINGS_KEY_TERMINAL_SELECTION_MENU_ORDER,
+    SETTINGS_KEY_TERMINAL_ATTENTION_FLASH,
     SETTINGS_KEY_APP_BG_OPACITY,
     SETTINGS_KEY_APP_BG_BLUR,
     SETTINGS_KEY_APP_BG_ENABLED,
@@ -7402,6 +7409,9 @@ async function resetLocalSettingsToDefaults() {
   populateLocalShellSelect();
   updateLocalShellCurrentHint();
   if (settingsTerminalCwd) settingsTerminalCwd.value = getLocalCwd();
+  if (settingsTerminalAttentionFlash) {
+    settingsTerminalAttentionFlash.checked = isTerminalAttentionFlashEnabled();
+  }
   applyAppTheme();
   applyTerminalThemeToAllPanes();
   syncTerminalFontPreview();
@@ -8585,6 +8595,9 @@ function setWorkspaceMode(mode) {
     populateLocalShellSelect();
     updateLocalShellCurrentHint();
     if (settingsTerminalCwd) settingsTerminalCwd.value = getLocalCwd();
+    if (settingsTerminalAttentionFlash) {
+      settingsTerminalAttentionFlash.checked = isTerminalAttentionFlashEnabled();
+    }
     renderTerminalSelectionMenuOrderSettings();
     syncTerminalFontPreview();
     syncTerminalThemeCardsActive();
@@ -11625,6 +11638,8 @@ function applyI18n() {
   setText("settings-terminal-selection-menu-order-label", "settings.terminal.selection_menu_order.label");
   setText("settings-terminal-selection-menu-order-hint", "settings.terminal.selection_menu_order.hint");
   setText("settings-terminal-selection-menu-order-reset", "settings.terminal.selection_menu_order.reset");
+  setText("settings-terminal-attention-flash-label", "settings.terminal.attention_flash.label");
+  setText("settings-terminal-attention-flash-hint", "settings.terminal.attention_flash.hint");
   renderTerminalSelectionMenuOrderSettings();
   updateLocalShellCurrentHint();
   setText("settings-nav-sftp", "settings.nav.sftp");
@@ -12831,6 +12846,13 @@ settingsTerminalSelectionMenuOrderReset?.addEventListener("click", () => {
   applyTerminalSelectionMenuOrder();
   renderTerminalSelectionMenuOrderSettings();
 });
+settingsTerminalAttentionFlash?.addEventListener("change", () => {
+  localStorage.setItem(
+    SETTINGS_KEY_TERMINAL_ATTENTION_FLASH,
+    settingsTerminalAttentionFlash.checked ? "true" : "false"
+  );
+  if (!settingsTerminalAttentionFlash.checked) cancelWindowAttentionFlash();
+});
 settingsTerminalLineHeight?.addEventListener("change", () => {
   localStorage.setItem(SETTINGS_KEY_TERMINAL_LINE_HEIGHT, String(settingsTerminalLineHeight.value || "1.25"));
   applyTerminalThemeToAllPanes();
@@ -13902,6 +13924,11 @@ document.addEventListener("click", (ev) => {
 // The badge only appears while the pane is out of the user's view (background
 // tab, other workspace, unfocused window) and clears as soon as the user looks
 // at the tab again or types into the pane.
+//
+// A badge is invisible when the whole window is behind other apps, so in that
+// case we also ask the OS for attention: on Windows the taskbar icon flashes
+// until the window is focused (WeChat-style), on macOS the dock icon bounces,
+// on Linux the urgency hint is set. Off switch: Settings › Terminal.
 
 const TERMINAL_ATTENTION_QUIET_MS = 450;
 const TERMINAL_ATTENTION_SCAN_ROWS = 14;
@@ -13921,6 +13948,35 @@ const TERMINAL_ATTENTION_PROMPT_PATTERNS = [
 ];
 
 let termAttentionLastActiveTabId = null;
+// Whether we currently have an outstanding OS attention request. Guards against
+// re-flashing on every bell while the window is already flashing, and tells us
+// whether the stop call is worth making.
+let termAttentionFlashActive = false;
+
+function isTerminalAttentionFlashEnabled() {
+  return localStorage.getItem(SETTINGS_KEY_TERMINAL_ATTENTION_FLASH) !== "false";
+}
+
+// Only flashes when the window itself is in the background: a flash aimed at a
+// window the user is already looking at is noise (and a no-op on Windows/macOS
+// anyway) — the tab badge covers the background-tab-in-focused-window case.
+function requestWindowAttentionFlash() {
+  if (termAttentionFlashActive || document.hasFocus()) return;
+  if (!isTerminalAttentionFlashEnabled()) return;
+  termAttentionFlashActive = true;
+  invoke("request_window_attention", { flash: true }).catch((e) => {
+    termAttentionFlashActive = false;
+    console.warn("request_window_attention failed", e);
+  });
+}
+
+function cancelWindowAttentionFlash() {
+  if (!termAttentionFlashActive) return;
+  termAttentionFlashActive = false;
+  invoke("request_window_attention", { flash: false }).catch((e) => {
+    console.warn("cancel window attention failed", e);
+  });
+}
 
 function findTerminalTabForPane(pane) {
   return termState.tabs.find((tab) => tab.panes.includes(pane)) || null;
@@ -13937,6 +13993,7 @@ function isPaneOnUserScreen(pane) {
 function triggerPaneAttention(pane, kind) {
   if (!pane || pane.sessionId === null) return;
   if (isPaneOnUserScreen(pane)) return;
+  requestWindowAttentionFlash();
   if (pane.attention) {
     pane.attention = kind;
     return;
@@ -14064,11 +14121,16 @@ function syncTerminalAttentionOnWorkspaceRender() {
     termAttentionLastActiveTabId = activeId;
   }
   if (workspaceMode === "terminal" && document.hasFocus()) {
+    // Safety net in case the window regained focus without a DOM focus event:
+    // a stale flash flag would otherwise block the next flash.
+    cancelWindowAttentionFlash();
     clearTabAttention(getActiveTab(), { rerender: false });
   }
 }
 
 window.addEventListener("focus", () => {
+  // Stop the taskbar flash whatever workspace the user lands in — they're back.
+  cancelWindowAttentionFlash();
   if (workspaceMode !== "terminal") return;
   clearTabAttention(getActiveTab());
 });

@@ -127,6 +127,7 @@ pub fn run() {
             commands::forget_keychain,
             commands::open_new_window,
             commands::destroy_current_window,
+            commands::request_window_attention,
             commands::app_version,
             commands::check_for_update,
             commands::install_update,

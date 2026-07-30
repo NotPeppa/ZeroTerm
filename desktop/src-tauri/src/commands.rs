@@ -2139,6 +2139,21 @@ pub fn destroy_current_window(window: tauri::WebviewWindow) -> Result<(), String
     window.destroy().map_err(|e| e.to_string())
 }
 
+/// Ask the OS to point the user at this window: a flashing taskbar button on
+/// Windows, a bouncing dock icon on macOS, the urgency hint on Linux. Used when
+/// a CLI in a background tab starts waiting on the user (see the terminal
+/// attention badge in the frontend) and ZeroTerm itself sits behind other
+/// windows. `Critical` keeps flashing until the window is focused; `flash =
+/// false` stops it, which also clears the highlight Windows otherwise leaves on
+/// the taskbar button. No-op when the window is already the active one.
+#[tauri::command]
+pub fn request_window_attention(window: tauri::WebviewWindow, flash: bool) -> Result<(), String> {
+    let request = flash.then_some(tauri::UserAttentionType::Critical);
+    window
+        .request_user_attention(request)
+        .map_err(|e| e.to_string())
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateInfo {
