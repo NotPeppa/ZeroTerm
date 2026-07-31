@@ -1,19 +1,16 @@
 //! Server-to-server copies that never touch this machine.
 //!
-//! The relay path in [`crate::sftp::tree::pipe_remote_file_to_remote`] streams
-//! `A -> here -> B`, so a remote-to-remote copy is capped by *our* uplink even
-//! when both servers sit on gigabit links. This module runs `rsync`/`scp` on
-//! the source host instead, so the bytes go straight from A to B.
+//! Remote-to-remote copies run `rsync`/`scp` on the source host, so file bytes
+//! go straight from A to B and never traverse this machine.
 //!
 //! The thing that makes it possible is SSH agent forwarding: A has no
 //! credentials for B, so we lend it ours for the duration of the command
 //! (see [`zeroterm_ssh::Session::exec_forwarding_agent`]). That is also why
-//! this path is strictly opt-in per transfer and falls back to the relay
-//! rather than trying to make itself work — see [`probe`].
+//! this path is scoped to the lifetime of the transfer — see [`probe`].
 //!
 //! Host key checking is *never* relaxed. A gets a temporary `known_hosts`
 //! containing the keys we already verified for B; if we have none to lend,
-//! direct copying is reported unavailable and the caller relays.
+//! direct copying is reported unavailable and the caller fails explicitly.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -25,6 +22,7 @@ use tracing::warn;
 use zeroterm_ssh::{decode_secret_key, AuthMethod, ExecStream, KnownHosts, PrivateKey, Session};
 
 use crate::connect::build_connect_chain_for_host;
+use crate::sftp::transfer::run_tree_transfer;
 use crate::sftp::{ipc_error, string_error};
 use crate::state::AppState;
 
@@ -51,9 +49,13 @@ impl TransferRoute {
 const PROBE_TTL: Duration = Duration::from_secs(60);
 
 /// How long the probe waits for A to reach B before declaring direct
-/// unavailable. Deliberately short: the fallback is always available, so
-/// spending 30s discovering a firewall is worse than just relaying.
+/// unavailable. Deliberately short: remote-to-remote copies fail explicitly
+/// when the hosts cannot connect, so a firewall should be reported promptly.
 const PROBE_CONNECT_TIMEOUT_SECS: u32 = 10;
+/// Backstop for abnormal app termination. Removing an authorized key does not
+/// terminate an SSH connection that already authenticated, so a short lease is
+/// sufficient even for transfers that continue for hours.
+const EPHEMERAL_AUTHORIZATION_TTL_SECS: u64 = 15 * 60;
 
 /// Exit codes the remote preamble reserves for its own failures. Chosen high
 /// to avoid colliding with anything `rsync` (0-35) or `scp` return.
@@ -85,6 +87,70 @@ pub(crate) fn sh_quote(s: &str) -> String {
     out
 }
 
+fn authorized_keys_lock_script() -> &'static str {
+    "zt_ssh_dir=\"$HOME/.ssh\"\n\
+     zt_auth=\"$zt_ssh_dir/authorized_keys\"\n\
+     zt_lock=\"$zt_ssh_dir/.zeroterm-authorized-keys.lock\"\n\
+     umask 077\n\
+     mkdir -p \"$zt_ssh_dir\" || exit 71\n\
+     chmod 700 \"$zt_ssh_dir\" || exit 70\n\
+     zt_tries=0\n\
+     while ! mkdir \"$zt_lock\" 2>/dev/null; do\n\
+       zt_tries=$((zt_tries + 1))\n\
+       [ \"$zt_tries\" -lt 10 ] || exit 72\n\
+       sleep 1\n\
+     done\n\
+     trap 'rmdir \"$zt_lock\" 2>/dev/null || true' EXIT INT TERM HUP\n"
+}
+
+fn build_install_authorized_key_script(marker: &str, public_key: &str) -> String {
+    let raw_marker = marker;
+    let marker = sh_quote(raw_marker);
+    let line = sh_quote(&format!(
+        "no-port-forwarding,no-agent-forwarding,no-X11-forwarding,no-pty {public_key} {marker_raw}",
+        marker_raw = raw_marker
+    ));
+    format!(
+        "{}\
+         [ ! -L \"$zt_auth\" ] || exit 73\n\
+         touch \"$zt_auth\" || exit 74\n\
+         chmod 600 \"$zt_auth\" || exit 75\n\
+         if ! grep -F {marker} \"$zt_auth\" >/dev/null 2>&1; then\n\
+           printf '\\n%s\\n' {line} >> \"$zt_auth\" || exit 76\n\
+         fi\n",
+        authorized_keys_lock_script(),
+    )
+}
+
+fn build_remove_authorized_key_script(marker: &str) -> String {
+    let marker = sh_quote(marker);
+    format!(
+        "{}\
+         [ ! -L \"$zt_auth\" ] || exit 73\n\
+         [ -f \"$zt_auth\" ] || exit 0\n\
+         zt_tmp=\"$zt_ssh_dir/.authorized_keys.zeroterm.$$\"\n\
+         awk -v marker={marker} 'index($0, marker) == 0 {{ print }}' \"$zt_auth\" > \"$zt_tmp\" || exit 77\n\
+         chmod 600 \"$zt_tmp\" || exit 78\n\
+         mv \"$zt_tmp\" \"$zt_auth\" || exit 79\n",
+        authorized_keys_lock_script(),
+    )
+}
+
+fn build_authorization_watchdog_script(marker: &str) -> String {
+    let cleanup = format!(
+        "sleep {EPHEMERAL_AUTHORIZATION_TTL_SECS}\n{}",
+        build_remove_authorized_key_script(marker)
+    );
+    format!(
+        "if command -v nohup >/dev/null 2>&1; then \
+           nohup sh -c {} >/dev/null 2>&1 </dev/null & \
+         else \
+           exit 80; \
+         fi\n",
+        sh_quote(&cleanup)
+    )
+}
+
 /// Which copy tool the source host has available. `rsync` is preferred: it
 /// reports machine-readable aggregate progress and handles trees natively.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -109,6 +175,10 @@ pub(crate) struct DirectPlan {
     /// behavior, still right when the destination is configured for agent
     /// auth).
     identities: LentIdentities,
+    /// Password-only destinations are bootstrapped with a task-scoped public
+    /// key. The private half never leaves ZeroTerm; the source sees it only
+    /// through the in-process agent for the lifetime of the copy command.
+    ephemeral_authorization: Option<EphemeralAuthorization>,
 }
 
 /// Vault keys destined for the forwarded agent. A newtype purely so
@@ -120,6 +190,12 @@ impl std::fmt::Debug for LentIdentities {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "LentIdentities({} key(s))", self.0.len())
     }
+}
+
+#[derive(Debug, Clone)]
+struct EphemeralAuthorization {
+    target_host_id: String,
+    marker: String,
 }
 
 /// Why a host pair can't use the direct path. Carried so the caller can log
@@ -135,7 +211,10 @@ pub(crate) struct DirectProbeCache(Mutex<ProbeCache>);
 
 impl DirectProbeCache {
     fn get(&self, key: &(String, String)) -> Option<Result<DirectPlan, DirectUnavailable>> {
-        let cache = self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let cache = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let (at, verdict) = cache.get(key)?;
         (at.elapsed() < PROBE_TTL).then(|| verdict.clone())
     }
@@ -148,7 +227,160 @@ impl DirectProbeCache {
     }
 
     pub(crate) fn clear(&self) {
-        self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clear();
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+    }
+}
+
+async fn install_ephemeral_authorization(
+    state: &AppState,
+    target_host_id: &str,
+    target_cfg: zeroterm_ssh::ConnectConfig,
+    target_jump: Option<zeroterm_ssh::ConnectConfig>,
+) -> Result<(LentIdentities, EphemeralAuthorization), DirectUnavailable> {
+    let (identity, public_key) =
+        zeroterm_ssh::generate_ephemeral_ed25519_identity().map_err(DirectUnavailable)?;
+    let marker = format!("zeroterm-transfer-{}", uuid::Uuid::new_v4());
+    let session = state
+        .sftp_pool
+        .acquire_session(target_host_id.to_string(), target_cfg, target_jump)
+        .await
+        .map_err(|e| {
+            DirectUnavailable(format!(
+                "could not open the password-authenticated destination session: {e}"
+            ))
+        })?;
+
+    let install = build_install_authorized_key_script(&marker, &public_key);
+    let (status, stdout, stderr) = session
+        .exec(&install)
+        .await
+        .map_err(|e| DirectUnavailable(format!("installing temporary transfer key: {e}")))?;
+    if status != 0 {
+        let stderr = String::from_utf8_lossy(&stderr);
+        let stdout = String::from_utf8_lossy(&stdout);
+        let detail = if stderr.trim().is_empty() {
+            stdout.trim()
+        } else {
+            stderr.trim()
+        };
+        return Err(DirectUnavailable(format!(
+            "destination refused the temporary transfer key (status {status}){}",
+            if detail.is_empty() {
+                String::new()
+            } else {
+                format!(": {detail}")
+            }
+        )));
+    }
+
+    // Best-effort crash cleanup. Normal completion removes the key
+    // immediately; this remote watchdog covers process or machine failure.
+    let watchdog_error = match session
+        .exec(&build_authorization_watchdog_script(&marker))
+        .await
+    {
+        Ok((0, _, _)) => None,
+        Ok((status, _, stderr)) => {
+            Some(format!(
+                "cleanup watchdog exited with status {status}: {}",
+                String::from_utf8_lossy(&stderr).trim()
+            ))
+        }
+        Err(err) => Some(format!("starting cleanup watchdog: {err}")),
+    };
+    if let Some(error) = watchdog_error {
+        // A temporary login without a crash backstop is not an acceptable
+        // lease. Remove it on the session that installed it and fail closed.
+        match session
+            .exec(&build_remove_authorized_key_script(&marker))
+            .await
+        {
+            Ok((0, _, _)) => {}
+            Ok((status, _, stderr)) => {
+                warn!(
+                    target_host_id,
+                    marker,
+                    status,
+                    stderr = %String::from_utf8_lossy(&stderr).trim(),
+                    "cleanup after watchdog setup failure also failed"
+                );
+            }
+            Err(cleanup_err) => {
+                warn!(
+                    target_host_id,
+                    marker,
+                    error = %cleanup_err,
+                    "cleanup after watchdog setup failure also failed"
+                );
+            }
+        }
+        return Err(DirectUnavailable(format!(
+            "temporary transfer key was not installed safely: {error}"
+        )));
+    }
+
+    Ok((
+        LentIdentities(vec![identity]),
+        EphemeralAuthorization {
+            target_host_id: target_host_id.to_string(),
+            marker,
+        },
+    ))
+}
+
+async fn remove_ephemeral_authorization(
+    state: &AppState,
+    app_handle: &AppHandle,
+    authorization: &EphemeralAuthorization,
+) -> Result<(), String> {
+    let (_host, cfg, jump) =
+        build_connect_chain_for_host(state, app_handle, &authorization.target_host_id)?;
+    let session = state
+        .sftp_pool
+        .acquire_session(authorization.target_host_id.clone(), cfg, jump)
+        .await?;
+    let (status, stdout, stderr) = session
+        .exec(&build_remove_authorized_key_script(&authorization.marker))
+        .await
+        .map_err(|e| format!("removing temporary transfer key: {e}"))?;
+    if status == 0 {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&stderr);
+    let stdout = String::from_utf8_lossy(&stdout);
+    let detail = if stderr.trim().is_empty() {
+        stdout.trim()
+    } else {
+        stderr.trim()
+    };
+    Err(format!(
+        "removing temporary transfer key exited with status {status}{}",
+        if detail.is_empty() {
+            String::new()
+        } else {
+            format!(": {detail}")
+        }
+    ))
+}
+
+async fn release_direct_plan_authorization(
+    state: &AppState,
+    app_handle: &AppHandle,
+    plan: &DirectPlan,
+) {
+    let Some(authorization) = plan.ephemeral_authorization.as_ref() else {
+        return;
+    };
+    if let Err(err) = remove_ephemeral_authorization(state, app_handle, authorization).await {
+        warn!(
+            target_host_id = %authorization.target_host_id,
+            marker = %authorization.marker,
+            error = %err,
+            "temporary transfer key cleanup failed; remote watchdog remains armed"
+        );
     }
 }
 
@@ -191,7 +423,9 @@ fn ssh_options() -> String {
 ///
 /// One round trip answers everything that matters: whether a copy tool
 /// exists, whether A can reach B's SSH port, and whether agent forwarding
-/// actually produced a working credential. Any "no" means relay.
+/// actually produced a working credential. Any "no" means direct transfer is
+/// unavailable; remote-to-remote callers must surface that instead of relaying
+/// file bytes through this machine.
 async fn probe(
     session: &Session,
     target_login: &str,
@@ -204,11 +438,14 @@ async fn probe(
         Err(e) => return Err(DirectUnavailable(e)),
     };
     let opts = ssh_options();
+    let remote_probe = sh_quote(
+        "command -v rsync >/dev/null 2>&1 && echo ZT_REMOTE_RSYNC; exit 0",
+    );
     let script = format!(
         "{preamble}\
          command -v rsync >/dev/null 2>&1 && echo ZT_RSYNC\n\
          command -v scp >/dev/null 2>&1 && echo ZT_SCP\n\
-         ssh {opts} -p {target_port} {login} true >/dev/null 2>&1 && echo ZT_AUTH_OK\n\
+         ssh {opts} -p {target_port} {login} {remote_probe} 2>/dev/null && echo ZT_AUTH_OK\n\
          exit 0\n",
         login = sh_quote(target_login),
     );
@@ -244,7 +481,7 @@ async fn probe(
                 .into(),
         ));
     }
-    let tool = if out.contains("ZT_RSYNC") {
+    let tool = if out.contains("ZT_RSYNC") && out.contains("ZT_REMOTE_RSYNC") {
         CopyTool::Rsync
     } else if out.contains("ZT_SCP") {
         CopyTool::Scp
@@ -260,6 +497,7 @@ async fn probe(
         target_port,
         known_hosts_lines: known_hosts_lines.to_vec(),
         identities,
+        ephemeral_authorization: None,
     })
 }
 
@@ -280,7 +518,14 @@ pub(crate) async fn plan_direct_copy(
     }
 
     let verdict = plan_uncached(state, app_handle, source_host_id, target_host_id).await;
-    state.direct_probes.put(key, verdict.clone());
+    // A cached plan may outlive a temporary authorized_keys lease. Stable
+    // key/agent plans and negative capability probes are safe to cache.
+    if !matches!(
+        &verdict,
+        Ok(plan) if plan.ephemeral_authorization.is_some()
+    ) {
+        state.direct_probes.put(key, verdict.clone());
+    }
     verdict
 }
 
@@ -301,11 +546,12 @@ async fn plan_uncached(
 
     // Work out which credentials the source host can be lent for the
     // destination. A vault-stored key is decoded here and served by the
-    // in-process agent; agent auth keeps the old system-agent proxy; a
-    // password can't cross an agent channel at all, so say so up front
-    // instead of paying a probe that is guaranteed to fail.
+    // in-process agent; agent auth keeps the old system-agent proxy. A saved
+    // password is used only to install a task-scoped public key below — the
+    // password itself is never sent to the source host.
     let mut lent_keys: Vec<Arc<PrivateKey>> = Vec::new();
     let mut has_agent_auth = false;
+    let mut has_password_auth = false;
     for method in &target_cfg.auth_methods {
         match method {
             AuthMethod::PrivateKeyData { pem, passphrase } => {
@@ -332,18 +578,14 @@ async fn plan_uncached(
                 lent_keys.push(Arc::new(key));
             }
             AuthMethod::Agent => has_agent_auth = true,
-            AuthMethod::Password(_) => {}
+            AuthMethod::Password(_) => has_password_auth = true,
         }
     }
-    if lent_keys.is_empty() && !has_agent_auth {
+    if lent_keys.is_empty() && !has_agent_auth && !has_password_auth {
         return Err(DirectUnavailable(
-            "destination host is configured for password authentication; \
-             a direct copy needs key-based auth (a vault key, key file, or \
-             ssh-agent identity the destination accepts)"
-                .into(),
+            "destination has no usable key, agent, or password authentication method".into(),
         ));
     }
-    let identities = LentIdentities(lent_keys);
 
     let known_hosts = KnownHosts::at_default()
         .ok_or_else(|| DirectUnavailable("could not locate known_hosts".into()))?;
@@ -370,7 +612,53 @@ async fn plan_uncached(
         .map_err(DirectUnavailable)?;
 
     let login = format!("{}@{}", target_cfg.username, target_cfg.host);
-    probe(&session, &login, target_cfg.port, &lines, identities).await
+    if !lent_keys.is_empty() || has_agent_auth {
+        match probe(
+            &session,
+            &login,
+            target_cfg.port,
+            &lines,
+            LentIdentities(lent_keys),
+        )
+        .await
+        {
+            Ok(plan) => return Ok(plan),
+            Err(err) if !has_password_auth => return Err(err),
+            Err(err) => warn!(
+                source_host_id,
+                target_host_id,
+                reason = %err.0,
+                "configured key/agent could not establish direct transfer; trying a temporary key"
+            ),
+        }
+    }
+
+    let (identities, authorization) = install_ephemeral_authorization(
+        state,
+        target_host_id,
+        target_cfg.clone(),
+        target_jump.clone(),
+    )
+    .await?;
+    match probe(&session, &login, target_cfg.port, &lines, identities).await {
+        Ok(mut plan) => {
+            plan.ephemeral_authorization = Some(authorization);
+            Ok(plan)
+        }
+        Err(err) => {
+            if let Err(cleanup_err) =
+                remove_ephemeral_authorization(state, app_handle, &authorization).await
+            {
+                warn!(
+                    target_host_id,
+                    marker = %authorization.marker,
+                    error = %cleanup_err,
+                    "temporary key cleanup after failed direct probe failed"
+                );
+            }
+            Err(err)
+        }
+    }
 }
 
 /// Build the copy invocation that runs inside [`build_preamble`]'s shell.
@@ -379,7 +667,12 @@ async fn plan_uncached(
 /// live pair of hosts — it's the part where a mistake is both easy to make
 /// and expensive (a mis-quoted `-e` silently disables host key checking's
 /// key source; a mis-quoted path is a command injection).
-fn build_copy_command(plan: &DirectPlan, source_path: &str, dest_path: &str, is_dir: bool) -> String {
+fn build_copy_command(
+    plan: &DirectPlan,
+    source_path: &str,
+    dest_path: &str,
+    is_dir: bool,
+) -> String {
     let opts = ssh_options();
     let port = plan.target_port;
     let remote_spec = sh_quote(&format!("{}:{}", plan.target_login, dest_path));
@@ -403,10 +696,15 @@ fn build_copy_command(plan: &DirectPlan, source_path: &str, dest_path: &str, is_
         }
         CopyTool::Scp => {
             let recurse = if is_dir { "-r " } else { "" };
-            format!(
-                "scp {recurse}-p {opts} -P {port} -- {src} {remote_spec}",
-                src = sh_quote(source_path),
-            )
+            // As with rsync's trailing slash, `/.` copies the directory's
+            // contents into the destination instead of nesting its basename
+            // below a destination directory the caller already created.
+            let src = if is_dir {
+                sh_quote(&format!("{}/.", source_path.trim_end_matches('/')))
+            } else {
+                sh_quote(source_path)
+            };
+            format!("scp {recurse}-p {opts} -P {port} -- {src} {remote_spec}",)
         }
     }
 }
@@ -462,12 +760,16 @@ where
                         on_bytes(bytes);
                     }
                     push_tail(
-                        &mut stdout_for_cb.lock().unwrap_or_else(std::sync::PoisonError::into_inner),
+                        &mut stdout_for_cb
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner),
                         &text,
                     );
                 }
                 ExecStream::Stderr => push_tail(
-                    &mut stderr_for_cb.lock().unwrap_or_else(std::sync::PoisonError::into_inner),
+                    &mut stderr_for_cb
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner),
                     &text,
                 ),
             }
@@ -491,8 +793,12 @@ where
         )),
         EXIT_MKTEMP_FAILED => Err(string_error("source host could not create a temp file")),
         code => {
-            let stderr = stderr_tail.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-            let stdout = stdout_tail.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let stderr = stderr_tail
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let stdout = stdout_tail
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             let detail = if stderr.trim().is_empty() {
                 stdout.trim().to_string()
             } else {
@@ -508,6 +814,86 @@ where
             )))
         }
     }
+}
+
+/// Copy a complete directory tree with one remote `rsync`/`scp` command.
+///
+/// Planning once per tree is both faster and safer than opening a fresh
+/// source-to-destination SSH connection for every file. The destination
+/// directory is created by the caller before this starts.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn copy_direct_directory(
+    state: &AppState,
+    app_handle: &AppHandle,
+    source_host_id: &str,
+    target_host_id: &str,
+    source_path: &str,
+    target_path: &str,
+) -> Result<(), String> {
+    let source_label = source_path.to_string();
+    let destination_label = target_path.to_string();
+    let source_host_id = source_host_id.to_string();
+    let target_host_id = target_host_id.to_string();
+    let source_path = source_path.to_string();
+    let target_path = target_path.to_string();
+
+    run_tree_transfer(
+        Some((app_handle, state)),
+        "copy",
+        source_label,
+        destination_label,
+        move |sink_opt| async move {
+            let plan = plan_direct_copy(state, app_handle, &source_host_id, &target_host_id)
+                .await
+                .map_err(|DirectUnavailable(reason)| {
+                    ipc_error(
+                        "DIRECT_UNAVAILABLE",
+                        format!("server-to-server direct copy is unavailable: {reason}"),
+                    )
+                })?;
+
+            if let Some(sink) = &sink_opt {
+                state.transfer_manager.set_route(
+                    app_handle,
+                    sink.transfer_id(),
+                    TransferRoute::Direct,
+                    None,
+                );
+            }
+            let cancel = sink_opt
+                .as_ref()
+                .map(|sink| sink.cancel_token())
+                .unwrap_or_else(CancellationToken::new);
+            let seen = Arc::new(std::sync::atomic::AtomicU64::new(0));
+            let seen_for_progress = Arc::clone(&seen);
+            let sink_for_progress = sink_opt.clone();
+            let progress_label = source_path.clone();
+            let result = run_direct_copy(
+                state,
+                app_handle,
+                &source_host_id,
+                &plan,
+                &source_path,
+                &target_path,
+                true,
+                cancel,
+                move |bytes_done| {
+                    use std::sync::atomic::Ordering;
+                    let previous = seen_for_progress.swap(bytes_done, Ordering::SeqCst);
+                    let delta = bytes_done.saturating_sub(previous);
+                    if delta > 0 {
+                        if let Some(sink) = &sink_for_progress {
+                            sink.add_bytes(delta, &progress_label);
+                        }
+                    }
+                },
+            )
+            .await;
+            release_direct_plan_authorization(state, app_handle, &plan).await;
+            result
+        },
+    )
+    .await
 }
 
 /// Keep only the last few hundred bytes of a stream for error reporting —
@@ -574,24 +960,6 @@ pub(crate) enum DirectAttempt {
     Cancelled,
 }
 
-/// Below this size, relaying wins.
-///
-/// A direct copy pays a fresh `A -> B` SSH handshake per file (~100-300ms on
-/// a WAN link), while the relay reuses SFTP channels we already hold open.
-/// That trade only pays off once the transfer itself would take longer than
-/// the handshake: at a typical 1 MB/s relay ceiling, 4 MiB costs ~4s to
-/// relay versus well under 1s to copy directly. Small files in a directory
-/// tree would otherwise turn one connection into thousands.
-const MIN_DIRECT_COPY_BYTES: u64 = 4 * 1024 * 1024;
-
-/// Whether a file of this size is worth copying directly.
-///
-/// `None` means the source couldn't be stat'd — relay, and let the relay
-/// path surface the real error rather than guessing at it here.
-fn worth_copying_directly(size: Option<u64>) -> bool {
-    matches!(size, Some(size) if size >= MIN_DIRECT_COPY_BYTES)
-}
-
 /// Copy one file straight from the source host to the destination host.
 ///
 /// Mirrors the relay path's safety discipline: the tool writes to a
@@ -622,14 +990,6 @@ pub(crate) async fn try_direct_file_copy(
         Some(size) => Some(size),
         None => source_sftp.stat(source).await.ok().map(|m| m.size),
     };
-    if !worth_copying_directly(size) {
-        return DirectAttempt::Fallback(match size {
-            Some(size) => format!(
-                "file is {size} bytes, below the {MIN_DIRECT_COPY_BYTES}-byte direct-copy threshold"
-            ),
-            None => "could not size the source file".into(),
-        });
-    }
     let plan = match plan_direct_copy(state, app_handle, source_host_id, target_host_id).await {
         Ok(plan) => plan,
         Err(DirectUnavailable(reason)) => return DirectAttempt::Fallback(reason),
@@ -649,6 +1009,7 @@ pub(crate) async fn try_direct_file_copy(
         progress,
     )
     .await;
+    release_direct_plan_authorization(state, app_handle, &plan).await;
 
     if let Err(err) = result {
         cleanup_direct_temp_file(target_sftp, &temp_target).await;
@@ -666,9 +1027,13 @@ pub(crate) async fn try_direct_file_copy(
         .map(|m| m.size)
         .unwrap_or_else(|_| size.unwrap_or(0));
 
-    if let Err(err) =
-        crate::sftp::file::finalize_remote_upload_target(target_sftp, &temp_target, target, overwrite)
-            .await
+    if let Err(err) = crate::sftp::file::finalize_remote_upload_target(
+        target_sftp,
+        &temp_target,
+        target,
+        overwrite,
+    )
+    .await
     {
         cleanup_direct_temp_file(target_sftp, &temp_target).await;
         return DirectAttempt::Fallback(format!("renaming into place: {err}"));
@@ -842,7 +1207,10 @@ mod tests {
             parse_rsync_progress("  1,234,567  45%   10.50MB/s    0:00:12"),
             Some(1_234_567)
         );
-        assert_eq!(parse_rsync_progress("32,768   0%    0.00kB/s    0:00:00"), Some(32_768));
+        assert_eq!(
+            parse_rsync_progress("32,768   0%    0.00kB/s    0:00:00"),
+            Some(32_768)
+        );
         // Later redraws in one chunk win.
         assert_eq!(
             parse_rsync_progress("100  1%  1kB/s 0:00:01\r200  2%  1kB/s 0:00:02"),
@@ -855,7 +1223,10 @@ mod tests {
         assert_eq!(parse_rsync_progress("sending incremental file list"), None);
         assert_eq!(parse_rsync_progress("some/file.txt"), None);
         assert_eq!(parse_rsync_progress(""), None);
-        assert_eq!(parse_rsync_progress("total size is 1,024  speedup is 1.00"), None);
+        assert_eq!(
+            parse_rsync_progress("total size is 1,024  speedup is 1.00"),
+            None
+        );
     }
 
     #[test]
@@ -883,6 +1254,7 @@ mod tests {
             target_port: 2222,
             known_hosts_lines: vec!["files.example.com ssh-ed25519 AAAA".into()],
             identities: LentIdentities::default(),
+            ephemeral_authorization: None,
         }
     }
 
@@ -896,7 +1268,10 @@ mod tests {
             cmd.contains("-e \"ssh "),
             "rsync -e must be double-quoted so $KH expands: {cmd}"
         );
-        assert!(!cmd.contains("-e 'ssh "), "single quotes would inline $KH literally");
+        assert!(
+            !cmd.contains("-e 'ssh "),
+            "single quotes would inline $KH literally"
+        );
         assert!(cmd.contains("UserKnownHostsFile=$KH"));
     }
 
@@ -906,8 +1281,14 @@ mod tests {
             let cmd = build_copy_command(&plan(tool), "/srv/a b'; id #", "/dst/x y", false);
             // The hostile source path appears only inside single quotes.
             assert!(cmd.contains(r#"'/srv/a b'\''; id #'"#), "{cmd}");
-            assert!(cmd.contains(r#"'deploy@files.example.com:/dst/x y'"#), "{cmd}");
-            assert!(cmd.contains("-- "), "a -- guard keeps paths out of flag parsing");
+            assert!(
+                cmd.contains(r#"'deploy@files.example.com:/dst/x y'"#),
+                "{cmd}"
+            );
+            assert!(
+                cmd.contains("-- "),
+                "a -- guard keeps paths out of flag parsing"
+            );
         }
     }
 
@@ -926,24 +1307,48 @@ mod tests {
         assert!(rsync.contains("'/srv/dir/'"), "{rsync}");
         let scp = build_copy_command(&plan(CopyTool::Scp), "/srv/dir", "/dst/dir", true);
         assert!(scp.contains("scp -r "), "{scp}");
+        assert!(scp.contains("'/srv/dir/.'"), "{scp}");
         // A file must not pick up either.
         let file = build_copy_command(&plan(CopyTool::Rsync), "/srv/dir", "/dst/dir", false);
-        assert!(file.contains("'/srv/dir'") && !file.contains("'/srv/dir/'"), "{file}");
+        assert!(
+            file.contains("'/srv/dir'") && !file.contains("'/srv/dir/'"),
+            "{file}"
+        );
     }
 
     #[test]
-    fn small_files_stay_on_the_relay() {
-        // The threshold is what keeps a many-small-files tree from paying an
-        // SSH handshake per file.
-        assert!(!worth_copying_directly(Some(0)));
-        assert!(!worth_copying_directly(Some(64 * 1024)));
-        assert!(!worth_copying_directly(Some(MIN_DIRECT_COPY_BYTES - 1)));
-        assert!(worth_copying_directly(Some(MIN_DIRECT_COPY_BYTES)));
-        assert!(worth_copying_directly(Some(8 * 1024 * 1024 * 1024)));
+    fn temporary_authorization_is_restricted_and_marker_scoped() {
+        let marker = "zeroterm-transfer-test-marker";
+        let public_key = "ssh-ed25519 AAAATEST";
+        let install = build_install_authorized_key_script(marker, public_key);
+        assert!(install.contains(public_key));
+        assert!(install.contains(marker));
+        assert!(install.contains("no-port-forwarding"));
+        assert!(install.contains("no-agent-forwarding"));
+        assert!(install.contains("no-X11-forwarding"));
+        assert!(install.contains("no-pty"));
+        assert!(install.contains("[ ! -L \"$zt_auth\" ]"));
+        assert!(install.contains("chmod 700 \"$zt_ssh_dir\""));
+        assert!(install.contains("chmod 600"));
     }
 
     #[test]
-    fn an_unsizeable_source_relays_rather_than_guessing() {
-        assert!(!worth_copying_directly(None));
+    fn temporary_authorization_cleanup_only_filters_its_marker() {
+        let marker = "zeroterm-transfer-test-marker";
+        let cleanup = build_remove_authorized_key_script(marker);
+        assert!(cleanup.contains("awk -v marker="));
+        assert!(cleanup.contains("index($0, marker) == 0"));
+        assert!(cleanup.contains("mv \"$zt_tmp\" \"$zt_auth\""));
+        assert!(cleanup.contains(marker));
+    }
+
+    #[test]
+    fn temporary_authorization_has_a_remote_crash_watchdog() {
+        let marker = "zeroterm-transfer-test-marker";
+        let watchdog = build_authorization_watchdog_script(marker);
+        assert!(watchdog.contains("nohup sh -c"));
+        assert!(watchdog.contains("else exit 80"));
+        assert!(watchdog.contains(&format!("sleep {EPHEMERAL_AUTHORIZATION_TTL_SECS}")));
+        assert!(watchdog.contains(marker));
     }
 }

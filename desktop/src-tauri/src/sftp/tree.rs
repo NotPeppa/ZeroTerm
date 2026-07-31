@@ -7,7 +7,9 @@ use tauri::{AppHandle, Manager};
 use tracing::warn;
 use zeroterm_ssh::Sftp;
 
-use crate::sftp::direct::{try_direct_file_copy, DirectAttempt, TransferRoute};
+use crate::sftp::direct::{
+    copy_direct_directory, try_direct_file_copy, DirectAttempt, TransferRoute,
+};
 use crate::sftp::file::{
     download_remote_file_to_local, downgrade_uploads_if_stalled, ensure_remote_target_available,
     is_retryable_transfer_error, upload_local_path_to_remote_once, upload_reader_to_remote_atomic,
@@ -1591,7 +1593,6 @@ async fn stream_remote_file_to_remote(
                 transfer_id,
                 move |progress_cb| async move {
                     let mut progress_cb = progress_cb;
-                    let mut relay_reason: Option<String> = None;
                     if let (Some(src_id), Some(dst_id)) =
                         (source_retry_host_id, target_retry_host_id)
                     {
@@ -1624,19 +1625,18 @@ async fn stream_remote_file_to_remote(
                                 return Err(ipc_error("CANCELLED", "transfer cancelled"));
                             }
                             DirectAttempt::Fallback(reason) => {
-                                warn!(
-                                    source = %source,
-                                    destination = %target,
-                                    reason = %reason,
-                                    "server-to-server copy unavailable, relaying through this machine"
-                                );
-                                relay_reason = Some(reason);
+                                return Err(ipc_error(
+                                    "DIRECT_UNAVAILABLE",
+                                    format!(
+                                        "server-to-server direct copy is unavailable: {reason}"
+                                    ),
+                                ));
                             }
                         }
                     }
                     state
                         .transfer_manager
-                        .set_route(app, transfer_id, TransferRoute::Relay, relay_reason);
+                        .set_route(app, transfer_id, TransferRoute::Relay, None);
                     let first = pipe_remote_file_to_remote(
                         Arc::clone(&source_sftp),
                         source.clone(),
@@ -1755,18 +1755,10 @@ async fn stream_remote_file_to_remote(
                         if seen > 0 {
                             sink.rewind_bytes(seen);
                         }
-                        warn!(
-                            source = %source,
-                            destination = %target,
-                            reason = %reason,
-                            "server-to-server copy unavailable, relaying through this machine"
-                        );
-                        state.transfer_manager.set_route(
-                            &app_handle,
-                            sink.transfer_id(),
-                            TransferRoute::Relay,
-                            Some(reason),
-                        );
+                        return Err(ipc_error(
+                            "DIRECT_UNAVAILABLE",
+                            format!("server-to-server direct copy is unavailable: {reason}"),
+                        ));
                     }
                 }
             }
@@ -1880,6 +1872,13 @@ pub(crate) async fn copy_remote_tree_to_remote(
     overwrite: bool,
     progress_ctx: Option<(&AppHandle, &AppState)>,
 ) -> Result<(), String> {
+    if source_host_id.is_none() || target_host_id.is_none() || progress_ctx.is_none() {
+        return Err(ipc_error(
+            "DIRECT_UNAVAILABLE",
+            "server-to-server copies require direct-transfer host context",
+        ));
+    }
+
     match root_kind {
         CopyNodeKind::File => {
             let progress = match progress_ctx {
@@ -1901,6 +1900,22 @@ pub(crate) async fn copy_remote_tree_to_remote(
         }
         CopyNodeKind::Dir => {
             ensure_remote_dir_exists(target_sftp, target).await?;
+
+            if let (Some(source_host_id), Some(target_host_id), Some((app_handle, state))) = (
+                source_host_id.as_deref(),
+                target_host_id.as_deref(),
+                progress_ctx,
+            ) {
+                return copy_direct_directory(
+                    state,
+                    app_handle,
+                    source_host_id,
+                    target_host_id,
+                    source,
+                    target,
+                )
+                .await;
+            }
 
             let source_sftp = Arc::clone(source_sftp);
             let target_sftp = Arc::clone(target_sftp);

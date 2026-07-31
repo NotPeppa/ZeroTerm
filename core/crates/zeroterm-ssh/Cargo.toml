@@ -17,11 +17,8 @@ dirs = { workspace = true }
 base64 = { workspace = true }
 zeroize = { workspace = true }
 url = "2"
+rand_ssh = { package = "rand", version = "0.10" }
 # known_hosts hashed-hostname matching (|1|salt|hash|, HMAC-SHA1).
 # Both are already in the tree transitively via russh.
 hmac = "0.12"
 sha1 = "0.10"
-
-[dev-dependencies]
-# Match ssh-key 0.7's rand_core generation when building certificate fixtures.
-rand_ssh = { package = "rand", version = "0.10" }

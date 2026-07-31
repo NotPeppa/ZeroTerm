@@ -35,3 +35,17 @@ pub use sftp::{
     CONSERVATIVE_UPLOAD_CHUNK, DEFAULT_CHUNK, DEFAULT_DOWNLOAD_PARALLELISM, DEFAULT_UPLOAD_CHUNK,
     UPLOAD_STALL_MARKER,
 };
+
+/// Generate a task-scoped Ed25519 identity for server-to-server transfers.
+///
+/// The private key is returned only as an in-memory identity suitable for the
+/// constrained agent served by [`Session::exec_forwarding_agent_with_identities`].
+/// The public half is formatted for an OpenSSH `authorized_keys` entry.
+pub fn generate_ephemeral_ed25519_identity() -> Result<(std::sync::Arc<PrivateKey>, String), String> {
+    use russh::keys::{Algorithm, PublicKeyBase64};
+
+    let key = PrivateKey::random(&mut rand_ssh::rng(), Algorithm::Ed25519)
+        .map_err(|e| format!("generate ephemeral Ed25519 key: {e}"))?;
+    let public = format!("ssh-ed25519 {}", key.public_key().public_key_base64());
+    Ok((std::sync::Arc::new(key), public))
+}
