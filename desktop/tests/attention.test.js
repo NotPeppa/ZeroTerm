@@ -29,6 +29,8 @@ check("Enter passphrase for key '/home/alice/.ssh/id_ed25519': ", true, "SSH pas
 check("? Select a profile (Use arrow keys)", true, "arrow-key selection");
 check("Build paused — press any key to continue", true, "press any key");
 check("Waiting for user approval", true, "explicit wait state");
+check("Approval required", true, "approval-required notification");
+check("Approval required >", true, "approval-required text is not mistaken for a shell prompt");
 
 // Localized prompts.
 check("是否继续执行？\n1. 是\n2. 否", true, "Chinese confirmation");
@@ -40,6 +42,23 @@ check("按回车键继续", true, "Chinese enter prompt");
 check("$ ", false, "shell prompt");
 check("1. execution completed\n2. artifacts uploaded", false, "numbered log output");
 check("password updated successfully", false, "password status log");
+check(
+  "Would you like to run the following command?\n❯ Yes, proceed\ncommand completed\nalice@host:~$",
+  false,
+  "resolved approval above a ready shell prompt"
+);
+check(
+  "是否继续执行？\n1. 是\n2. 否\n操作已完成\nPS C:\\Users\\alice>",
+  false,
+  "resolved Chinese approval above a PowerShell prompt"
+);
+check(
+  "Are you sure?\nYes / No\nfinished\nthek@Mac ZeroTerm %",
+  false,
+  "resolved approval above a spaced zsh prompt"
+);
+check("Build completed\u0007", false, "completion bell text");
+check("notify;Build;completed successfully", false, "generic OSC notification");
 check("https://example.test/search?q=continue", false, "URL query");
 check("", false, "empty screen");
 

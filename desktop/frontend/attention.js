@@ -11,6 +11,18 @@
   const ACTION_WORDS_ZH =
     "(?:是|否|允许(?:一次|本次|始终)?|拒绝|批准|继续|取消|运行|执行|应用|覆盖|删除|重试)";
 
+  // Once a normal shell prompt is back at the bottom, an earlier confirmation
+  // in the scrollback has already been resolved. Keep these deliberately
+  // conservative: selection cursors such as "❯ Allow once" must not look like
+  // a ready shell.
+  const READY_PROMPT_PATTERNS = [
+    /^[>$#%]\s*$/,
+    /^(?:PS\s+)?[A-Za-z]:\\[^>\n]*>\s*$/i,
+    /^(?:\([^)]+\)\s*)?[\w.-]+@[\w.-]+(?:[: ][^\n]*)?[#$%>]\s*$/,
+    /^(?:\([^)]+\)\s*)?[\w.-]+(?::[^\n]*)?[#$%>]\s*$/,
+    /^\[[^\]\n]+\][#$%>]\s*$/,
+  ];
+
   const PROMPT_PATTERNS = [
     // Selection cursors used by agent CLIs and common prompt libraries. Some
     // render a numbered item, while others put the cursor directly before the
@@ -38,6 +50,7 @@
     /\buse\s+(?:the\s+)?(?:arrow keys|up and down arrows)\b/i,
     /\b(?:space|tab)\s+to\s+(?:select|toggle)\b/i,
     /\bwaiting for\s+(?:user\s+)?(?:input|approval|confirmation|authorization)\b/i,
+    /\b(?:input|approval|confirmation|authorization)\s+(?:is\s+)?required\b/i,
 
     // Credential and MFA prompts. Anchor these to the end of a line so log
     // messages such as "password updated successfully" do not alert.
@@ -59,6 +72,14 @@
       .replace(/[\u200b-\u200d\u2060\ufeff]/g, "")
       .replace(/\u00a0/g, " ");
     if (!normalized.trim()) return false;
+    const meaningfulLines = normalized
+      .split("\n")
+      .map((line) => line.trimEnd())
+      .filter((line) => line.trim());
+    const lastLine = meaningfulLines[meaningfulLines.length - 1];
+    if (lastLine && READY_PROMPT_PATTERNS.some((pattern) => pattern.test(lastLine))) {
+      return false;
+    }
     return PROMPT_PATTERNS.some((pattern) => pattern.test(normalized));
   }
 

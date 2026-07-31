@@ -5591,27 +5591,14 @@ async function runCommandInActiveTerminal(command) {
   }
 }
 
-// FE-4: executeAiCommand() throws this when the user declines the execution
-// confirmation, so callers can tell "declined" apart from a real failure.
-function makeAiCommandCanceledError() {
-  const err = new Error("AI command execution canceled by user");
-  err.aiCommandCanceled = true;
-  return err;
-}
-
-function isAiCommandCanceled(err) {
-  return Boolean(err && err.aiCommandCanceled);
-}
-
 async function requestAiCommandApproval(command) {
   const text = normalizeAiCommandBlock(command);
   if (!text) return;
   try {
     await executeAiCommand(text);
   } catch {
-    // executeAiCommand() surfaces real failures via toast, and a declined
-    // confirmation is simply a no-op. Swallow here so the inline click
-    // handler never produces an unhandled promise rejection.
+    // executeAiCommand() surfaces failures via toast. Swallow here so the
+    // inline click handler never produces an unhandled promise rejection.
   }
 }
 
@@ -5621,20 +5608,9 @@ async function executeAiCommand(command) {
     showToast("当前没有可执行命令的终端会话。", "error", 3600);
     return;
   }
-  // FE-4: never auto-run an AI-produced command. Terminal output — partly
-  // controlled by the remote host — is fed back to the model, so a malicious
-  // host could steer the AI into suggesting a harmful command. Require an
-  // explicit, per-execution confirmation that shows the exact command first.
-  // openConfirmDialog renders `message` via textContent, so the command is
-  // shown literally with no HTML-injection risk.
-  const approved = await openConfirmDialog({
-    title: "执行 AI 建议的命令？",
-    message: `将在当前终端执行以下命令：\n\n${command}`,
-    okText: "执行",
-    cancelText: "取消",
-    danger: true,
-  });
-  if (!approved) throw makeAiCommandCanceledError();
+  // Reaching this function requires an explicit click on “批准执行” (or on an
+  // inline command labelled as click-to-approve). That click is the user's
+  // per-command authorization; do not ask for the same approval twice.
   refitActiveTerminalPanes({ reason: "ai-command-before", forceBottom: true, frames: 1 });
   const buffer = pane.term?.buffer?.active;
   const cursor = buffer ? buffer.length : 0;
@@ -6162,14 +6138,6 @@ function enhanceAiCodeBlocks(root) {
           }
           run.textContent = "已执行";
         } catch (e) {
-          if (isAiCommandCanceled(e)) {
-            // FE-4: user declined the confirmation — restore the button so the
-            // command can still be approved later, and don't mark it failed.
-            block.classList.remove("approved");
-            run.disabled = Boolean(restoredResult);
-            run.textContent = restoredResult ? "已执行" : (commands.length > 1 ? `批准 ${index + 1}` : "批准执行");
-            return;
-          }
           if (commandState) updateAiMultiCommandControls(messageNode);
           run.textContent = "失败";
         }
@@ -13917,8 +13885,8 @@ document.addEventListener("click", (ev) => {
 // --- Terminal attention -----------------------------------------------------
 // Badge a tab when a CLI inside it is waiting on the user (claude / codex /
 // gemini approval menus, plain y/n confirmations). Three signals set the badge:
-//   1. BEL — agent CLIs ring the terminal bell when they need attention;
-//   2. OSC 9 / OSC 777 — desktop-notification escapes (iTerm2 / urxvt style);
+//   1. BEL — a hint to scan the current prompt after output settles;
+//   2. OSC 9 / OSC 777 — alert only when their text itself asks for input;
 //   3. prompt scan — output goes quiet while the bottom rows of the screen
 //      show a selection menu or confirmation question.
 // The badge only appears while the pane is out of the user's view (background
@@ -13997,6 +13965,10 @@ function clearPaneAttention(pane, { rerender = true } = {}) {
   if (!pane.attention) return false;
   pane.attention = null;
   if (rerender) renderTabStrip();
+  const anotherPaneNeedsAttention = termState.tabs.some((tab) =>
+    tab.panes.some((candidate) => candidate.attention)
+  );
+  if (!anotherPaneNeedsAttention) cancelWindowAttentionFlash();
   return true;
 }
 
@@ -14033,7 +14005,7 @@ function paneBufferTail(pane, rowCount) {
 }
 
 function evaluatePaneAttentionPrompt(pane) {
-  if (!pane?.term || pane.sessionId === null || pane.attention) return;
+  if (!pane?.term || pane.sessionId === null) return;
   if (isPaneOnUserScreen(pane)) return;
   // Alternate-buffer TUIs often center permission dialogs vertically, so scan
   // the complete visible screen. Inline CLIs leave prompts at the end of the
@@ -14043,9 +14015,15 @@ function evaluatePaneAttentionPrompt(pane) {
     pane,
     isAltScreen ? pane.term.buffer.active.length : TERMINAL_ATTENTION_SCAN_ROWS
   );
-  if (!tail) return;
-  if (window.ZeroTermAttention?.terminalTextNeedsAttention(tail)) {
+  const needsAttention = Boolean(
+    tail && window.ZeroTermAttention?.terminalTextNeedsAttention(tail)
+  );
+  if (needsAttention) {
     triggerPaneAttention(pane, "prompt");
+  } else if (pane.attention === "prompt") {
+    // The waiting UI disappeared (for example the CLI continued or returned
+    // to a shell prompt) while ZeroTerm remained in the background.
+    clearPaneAttention(pane);
   }
 }
 
@@ -14054,7 +14032,10 @@ function registerPaneAttentionHandlers(pane) {
   const disposes = [];
   try {
     if (typeof pane.term.onBell === "function") {
-      disposes.push(pane.term.onBell(() => triggerPaneAttention(pane, "bell")));
+      // BEL is also used for completion/error beeps, so it is not sufficient
+      // evidence by itself. The normal output listener schedules the same
+      // scan; doing it here also covers bells emitted without printable text.
+      disposes.push(pane.term.onBell(() => schedulePaneAttentionScan(pane)));
     }
   } catch (e) {
     console.warn("bell handler registration failed", e);
@@ -14067,14 +14048,26 @@ function registerPaneAttentionHandlers(pane) {
       // "9;" cwd reporting (Windows Terminal).
       disposes.push(
         parser.registerOscHandler(9, (data) => {
-          if (!/^(?:4|9);/.test(String(data || ""))) triggerPaneAttention(pane, "notify");
+          const message = String(data || "");
+          if (
+            !/^(?:4|9);/.test(message) &&
+            window.ZeroTermAttention?.terminalTextNeedsAttention(message)
+          ) {
+            triggerPaneAttention(pane, "prompt");
+          }
           return true;
         })
       );
       // OSC 777 — urxvt-style notification: "notify;title;body".
       disposes.push(
         parser.registerOscHandler(777, (data) => {
-          if (/^notify;/i.test(String(data || ""))) triggerPaneAttention(pane, "notify");
+          const message = String(data || "");
+          if (
+            /^notify;/i.test(message) &&
+            window.ZeroTermAttention?.terminalTextNeedsAttention(message)
+          ) {
+            triggerPaneAttention(pane, "prompt");
+          }
           return true;
         })
       );
