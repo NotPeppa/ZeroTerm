@@ -13430,6 +13430,7 @@ function createPane(host) {
     osc7HandlerDispose: null,
     attention: null,
     attnQuietTimer: null,
+    attnAcknowledgedScreen: null,
     attnHandlerDisposes: null,
     resizeObserver: null,
     pendingResizeTimer: null,
@@ -13899,7 +13900,6 @@ document.addEventListener("click", (ev) => {
 // on Linux the urgency hint is set. Off switch: Settings › Terminal.
 
 const TERMINAL_ATTENTION_QUIET_MS = 450;
-const TERMINAL_ATTENTION_SCAN_ROWS = 14;
 
 let termAttentionLastActiveTabId = null;
 // Whether we currently have an outstanding OS attention request. Guards against
@@ -13962,6 +13962,8 @@ function clearPaneAttention(pane, { rerender = true } = {}) {
     clearTimeout(pane.attnQuietTimer);
     pane.attnQuietTimer = null;
   }
+  const visibleScreen = paneLiveVisibleScreen(pane);
+  if (visibleScreen !== null) pane.attnAcknowledgedScreen = visibleScreen;
   if (!pane.attention) return false;
   pane.attention = null;
   if (rerender) renderTabStrip();
@@ -13992,31 +13994,37 @@ function schedulePaneAttentionScan(pane, delay = TERMINAL_ATTENTION_QUIET_MS) {
   }, delay);
 }
 
-function paneBufferTail(pane, rowCount) {
+// Return only the live terminal screen. When viewportY is behind baseY the
+// user is reading scrollback history, which must never be interpreted as a
+// current prompt.
+function paneLiveVisibleScreen(pane) {
   const buffer = pane?.term?.buffer?.active;
-  if (!buffer) return "";
-  const end = buffer.length;
-  const lines = [];
-  for (let i = Math.max(0, end - rowCount); i < end; i++) {
-    const line = buffer.getLine(i);
-    if (line) lines.push(line.translateToString(true));
-  }
-  return lines.join("\n");
+  return window.ZeroTermAttention?.terminalLiveVisibleText(
+    buffer,
+    pane?.term?.rows
+  ) ?? null;
 }
 
 function evaluatePaneAttentionPrompt(pane) {
   if (!pane?.term || pane.sessionId === null) return;
-  if (isPaneOnUserScreen(pane)) return;
-  // Alternate-buffer TUIs often center permission dialogs vertically, so scan
-  // the complete visible screen. Inline CLIs leave prompts at the end of the
-  // scrollback, where a small tail avoids matching stale questions.
-  const isAltScreen = pane.term.buffer.active.type === "alternate";
-  const tail = paneBufferTail(
-    pane,
-    isAltScreen ? pane.term.buffer.active.length : TERMINAL_ATTENTION_SCAN_ROWS
-  );
+  if (isPaneOnUserScreen(pane)) {
+    const visibleScreen = paneLiveVisibleScreen(pane);
+    if (visibleScreen !== null) pane.attnAcknowledgedScreen = visibleScreen;
+    if (pane.attention === "prompt") clearPaneAttention(pane);
+    return;
+  }
+  const screen = paneLiveVisibleScreen(pane);
+  // A scrollback viewport is historical by definition. It can contain genuine
+  // old approval dialogs, but they are not pending now.
+  if (screen === null) {
+    if (pane.attention === "prompt") clearPaneAttention(pane);
+    return;
+  }
+  // Focusing/clicking ZeroTerm acknowledges the exact screen that caused the
+  // alert. Do not flash again for it after the window loses focus.
+  if (screen === pane.attnAcknowledgedScreen) return;
   const needsAttention = Boolean(
-    tail && window.ZeroTermAttention?.terminalTextNeedsAttention(tail)
+    screen && window.ZeroTermAttention?.terminalTextNeedsAttention(screen)
   );
   if (needsAttention) {
     triggerPaneAttention(pane, "prompt");
@@ -14111,6 +14119,15 @@ function syncTerminalAttentionOnWorkspaceRender() {
 window.addEventListener("focus", () => {
   // Stop the taskbar flash whatever workspace the user lands in — they're back.
   cancelWindowAttentionFlash();
+  // The user may land in AI/files rather than the terminal workspace. Mark
+  // every current live screen as seen so the same prompt cannot immediately
+  // restart the OS alert when the window is sent to the background again.
+  for (const tab of termState.tabs) {
+    for (const pane of tab.panes) {
+      const visibleScreen = paneLiveVisibleScreen(pane);
+      if (visibleScreen !== null) pane.attnAcknowledgedScreen = visibleScreen;
+    }
+  }
   if (workspaceMode !== "terminal") return;
   clearTabAttention(getActiveTab());
 });

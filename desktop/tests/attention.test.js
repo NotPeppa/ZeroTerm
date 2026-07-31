@@ -2,13 +2,20 @@
 //
 // Run with: node desktop/tests/attention.test.js
 
-const { terminalTextNeedsAttention } = require("../frontend/attention.js");
+const {
+  terminalLiveVisibleText,
+  terminalTextNeedsAttention,
+} = require("../frontend/attention.js");
 
 let passed = 0;
 let failed = 0;
 
 function check(input, expected, label) {
   const actual = terminalTextNeedsAttention(input);
+  checkValue(actual, expected, label);
+}
+
+function checkValue(actual, expected, label) {
   if (actual === expected) {
     passed++;
   } else {
@@ -61,6 +68,41 @@ check("Build completed\u0007", false, "completion bell text");
 check("notify;Build;completed successfully", false, "generic OSC notification");
 check("https://example.test/search?q=continue", false, "URL query");
 check("", false, "empty screen");
+
+function fakeBuffer(lines, { baseY, viewportY }) {
+  return {
+    baseY,
+    viewportY,
+    length: lines.length,
+    getLine(index) {
+      return {
+        translateToString() {
+          return lines[index] || "";
+        },
+      };
+    },
+  };
+}
+
+const historyBuffer = fakeBuffer(
+  ["Would you like to run this?", "❯ Yes", "old output", "$ "],
+  { baseY: 2, viewportY: 0 }
+);
+checkValue(
+  terminalLiveVisibleText(historyBuffer, 2) === null,
+  true,
+  "scrollback history is never scanned"
+);
+
+const liveBuffer = fakeBuffer(
+  ["old history question?", "old output", "Approval required", "❯ Allow once"],
+  { baseY: 2, viewportY: 2 }
+);
+checkValue(
+  terminalLiveVisibleText(liveBuffer, 2) === "Approval required\n❯ Allow once",
+  true,
+  "only the live visible viewport is returned"
+);
 
 console.log(`\nattention.test.js: ${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

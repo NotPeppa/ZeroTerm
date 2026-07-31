@@ -83,5 +83,25 @@
     return PROMPT_PATTERNS.some((pattern) => pattern.test(normalized));
   }
 
-  return { terminalTextNeedsAttention };
+  function terminalLiveVisibleText(buffer, rowCount) {
+    if (!buffer) return null;
+    const viewportY = Number(buffer.viewportY);
+    const baseY = Number(buffer.baseY);
+    if (Number.isFinite(viewportY) && Number.isFinite(baseY) && viewportY < baseY) {
+      return null;
+    }
+    const rows = Math.max(1, Number(rowCount) || 1);
+    const start = Number.isFinite(viewportY)
+      ? viewportY
+      : Math.max(0, Number(buffer.length) - rows);
+    const end = Math.min(Number(buffer.length), start + rows);
+    const lines = [];
+    for (let i = start; i < end; i += 1) {
+      const line = buffer.getLine?.(i);
+      if (line) lines.push(line.translateToString?.(true) || "");
+    }
+    return lines.join("\n");
+  }
+
+  return { terminalTextNeedsAttention, terminalLiveVisibleText };
 });
