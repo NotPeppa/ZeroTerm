@@ -23,6 +23,16 @@
     /^\[[^\]\n]+\][#$%>]\s*$/,
   ];
 
+  // Agent TUIs keep prior conversation and command output on screen while
+  // showing a live status near the bottom. A busy status takes precedence over
+  // prompt-looking words in that transcript.
+  const BUSY_STATE_PATTERNS = [
+    /\besc(?:ape)?\s+to\s+(?:interrupt|cancel|stop)\b/i,
+    /\bctrl\s*\+?\s*c\s+to\s+(?:interrupt|cancel|stop)\b/i,
+    /^\s*[•●◉✳*]?\s*(?:working|thinking|processing|analy[sz]ing|executing)\s*(?:\(|…|\.{3}|$)/i,
+    /(?:正在|仍在)(?:工作|思考|处理|分析|执行|运行|生成|搜索)/,
+  ];
+
   const PROMPT_PATTERNS = [
     // Selection cursors used by agent CLIs and common prompt libraries. Some
     // render a numbered item, while others put the cursor directly before the
@@ -59,7 +69,7 @@
 
     // Chinese confirmation, selection, pause, credential and authorization
     // prompts commonly emitted by localized CLIs.
-    /是否(?:继续|允许|授权|执行|运行|应用|覆盖|删除|重试)|请选择|请确认|等待(?:确认|授权|输入)/,
+    /(?:^|\n)\s*(?:[?？❯›▶➤]\s*)?(?:是否(?:继续|允许|授权|执行|运行|应用|覆盖|删除|重试)|请选择(?![^\n]*=>)|请确认|等待(?:确认|授权|输入))[^\n]{0,160}\s*$/m,
     /(?:继续|确认|允许|授权|执行|运行|应用|覆盖|删除|重试)[^\n。！？]{0,80}[吗么][?？]?\s*$/m,
     /(?:请输入)?(?:密码|口令|用户名|验证码|动态码)\s*[:：]\s*$/m,
     /按(?:下)?(?:任意键|回车键?|空格键)(?:继续|确认)?/,
@@ -76,6 +86,12 @@
       .split("\n")
       .map((line) => line.trimEnd())
       .filter((line) => line.trim());
+    const recentLines = meaningfulLines.slice(-6);
+    if (recentLines.some((line) =>
+      BUSY_STATE_PATTERNS.some((pattern) => pattern.test(line))
+    )) {
+      return false;
+    }
     const lastLine = meaningfulLines[meaningfulLines.length - 1];
     if (lastLine && READY_PROMPT_PATTERNS.some((pattern) => pattern.test(lastLine))) {
       return false;

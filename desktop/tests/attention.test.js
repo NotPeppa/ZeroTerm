@@ -42,6 +42,7 @@ check("Approval required >", true, "approval-required text is not mistaken for a
 // Localized prompts.
 check("是否继续执行？\n1. 是\n2. 否", true, "Chinese confirmation");
 check("需要授权\n❯ 允许一次\n  拒绝", true, "Chinese approval cursor");
+check("请选择一个操作\n❯ 允许一次\n  拒绝", true, "Chinese selection prompt");
 check("请输入验证码：", true, "Chinese verification code");
 check("按回车键继续", true, "Chinese enter prompt");
 
@@ -49,6 +50,21 @@ check("按回车键继续", true, "Chinese enter prompt");
 check("$ ", false, "shell prompt");
 check("1. execution completed\n2. artifacts uploaded", false, "numbered log output");
 check("password updated successfully", false, "password status log");
+check(
+  '"pleaseSelectDataStatus": "请选择数据状态",\n+5 lines (ctrl+t to view transcript)\nWorking (29s • esc to interrupt)\nExplain this codebase',
+  false,
+  "Codex working screen containing prompt-like transcript text"
+);
+check(
+  '"pleaseSelectDataStatus": "请选择数据状态",',
+  false,
+  "Chinese translation value is not a selection prompt"
+);
+check(
+  '请选择多场景 => (none exact)\n请选择 => common.tips.pleaseSelect = "请选择"',
+  false,
+  "search-result mappings are not selection prompts"
+);
 check(
   "Would you like to run the following command?\n❯ Yes, proceed\ncommand completed\nalice@host:~$",
   false,

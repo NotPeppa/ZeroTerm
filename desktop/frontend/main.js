@@ -13431,6 +13431,7 @@ function createPane(host) {
     attention: null,
     attnQuietTimer: null,
     attnAcknowledgedScreen: null,
+    attnCandidateScreen: null,
     attnHandlerDisposes: null,
     resizeObserver: null,
     pendingResizeTimer: null,
@@ -13887,7 +13888,7 @@ document.addEventListener("click", (ev) => {
 // Badge a tab when a CLI inside it is waiting on the user (claude / codex /
 // gemini approval menus, plain y/n confirmations). Three signals set the badge:
 //   1. BEL — a hint to scan the current prompt after output settles;
-//   2. OSC 9 / OSC 777 — alert only when their text itself asks for input;
+//   2. OSC 9 / OSC 777 — hints to rescan the visible terminal screen;
 //   3. prompt scan — output goes quiet while the bottom rows of the screen
 //      show a selection menu or confirmation question.
 // The badge only appears while the pane is out of the user's view (background
@@ -13900,12 +13901,16 @@ document.addEventListener("click", (ev) => {
 // on Linux the urgency hint is set. Off switch: Settings › Terminal.
 
 const TERMINAL_ATTENTION_QUIET_MS = 450;
+const TERMINAL_ATTENTION_CONFIRM_MS = 350;
 
 let termAttentionLastActiveTabId = null;
 // Whether we currently have an outstanding OS attention request. Guards against
 // re-flashing on every bell while the window is already flashing, and tells us
 // whether the stop call is worth making.
 let termAttentionFlashActive = false;
+// Monotonic request generation prevents a slow `flash: true` invoke from
+// landing after a newer cancellation and restarting an already-cleared alert.
+let termAttentionFlashGeneration = 0;
 
 function isTerminalAttentionFlashEnabled() {
   return localStorage.getItem(SETTINGS_KEY_TERMINAL_ATTENTION_FLASH) !== "false";
@@ -13918,15 +13923,30 @@ function requestWindowAttentionFlash() {
   if (termAttentionFlashActive || document.hasFocus()) return;
   if (!isTerminalAttentionFlashEnabled()) return;
   termAttentionFlashActive = true;
-  invoke("request_window_attention", { flash: true }).catch((e) => {
-    termAttentionFlashActive = false;
-    console.warn("request_window_attention failed", e);
-  });
+  const generation = ++termAttentionFlashGeneration;
+  invoke("request_window_attention", { flash: true })
+    .then(() => {
+      if (
+        generation !== termAttentionFlashGeneration ||
+        !termAttentionFlashActive
+      ) {
+        // Cancellation won the race while the start request was in flight.
+        return invoke("request_window_attention", { flash: false });
+      }
+      return undefined;
+    })
+    .catch((e) => {
+      if (generation === termAttentionFlashGeneration) {
+        termAttentionFlashActive = false;
+      }
+      console.warn("request_window_attention failed", e);
+    });
 }
 
 function cancelWindowAttentionFlash() {
   if (!termAttentionFlashActive) return;
   termAttentionFlashActive = false;
+  termAttentionFlashGeneration += 1;
   invoke("request_window_attention", { flash: false }).catch((e) => {
     console.warn("cancel window attention failed", e);
   });
@@ -13962,6 +13982,7 @@ function clearPaneAttention(pane, { rerender = true } = {}) {
     clearTimeout(pane.attnQuietTimer);
     pane.attnQuietTimer = null;
   }
+  pane.attnCandidateScreen = null;
   const visibleScreen = paneLiveVisibleScreen(pane);
   if (visibleScreen !== null) pane.attnAcknowledgedScreen = visibleScreen;
   if (!pane.attention) return false;
@@ -14008,6 +14029,7 @@ function paneLiveVisibleScreen(pane) {
 function evaluatePaneAttentionPrompt(pane) {
   if (!pane?.term || pane.sessionId === null) return;
   if (isPaneOnUserScreen(pane)) {
+    pane.attnCandidateScreen = null;
     const visibleScreen = paneLiveVisibleScreen(pane);
     if (visibleScreen !== null) pane.attnAcknowledgedScreen = visibleScreen;
     if (pane.attention === "prompt") clearPaneAttention(pane);
@@ -14017,21 +14039,37 @@ function evaluatePaneAttentionPrompt(pane) {
   // A scrollback viewport is historical by definition. It can contain genuine
   // old approval dialogs, but they are not pending now.
   if (screen === null) {
+    pane.attnCandidateScreen = null;
     if (pane.attention === "prompt") clearPaneAttention(pane);
     return;
   }
   // Focusing/clicking ZeroTerm acknowledges the exact screen that caused the
   // alert. Do not flash again for it after the window loses focus.
-  if (screen === pane.attnAcknowledgedScreen) return;
+  if (screen === pane.attnAcknowledgedScreen) {
+    pane.attnCandidateScreen = null;
+    return;
+  }
   const needsAttention = Boolean(
     screen && window.ZeroTermAttention?.terminalTextNeedsAttention(screen)
   );
   if (needsAttention) {
-    triggerPaneAttention(pane, "prompt");
+    // Require the same visible prompt to survive one additional short scan.
+    // This prevents a transient command-output line such as “请选择 …” from
+    // flashing just before a TUI paints its Working status.
+    if (pane.attnCandidateScreen === screen) {
+      pane.attnCandidateScreen = null;
+      triggerPaneAttention(pane, "prompt");
+    } else {
+      pane.attnCandidateScreen = screen;
+      schedulePaneAttentionScan(pane, TERMINAL_ATTENTION_CONFIRM_MS);
+    }
   } else if (pane.attention === "prompt") {
+    pane.attnCandidateScreen = null;
     // The waiting UI disappeared (for example the CLI continued or returned
     // to a shell prompt) while ZeroTerm remained in the background.
     clearPaneAttention(pane);
+  } else {
+    pane.attnCandidateScreen = null;
   }
 }
 
@@ -14051,31 +14089,22 @@ function registerPaneAttentionHandlers(pane) {
   const parser = pane.term.parser;
   if (parser?.registerOscHandler) {
     try {
-      // OSC 9 — iTerm2/ConEmu-style desktop notification. Ignore the ConEmu
-      // control subcommands shells emit routinely: "4;" taskbar progress and
-      // "9;" cwd reporting (Windows Terminal).
+      // OSC 9 — iTerm2/ConEmu-style desktop notification. It is only a hint to
+      // inspect the visible terminal; its short payload lacks the Working /
+      // prompt context and must never trigger attention by itself. Ignore the
+      // ConEmu control subcommands shells emit routinely.
       disposes.push(
         parser.registerOscHandler(9, (data) => {
           const message = String(data || "");
-          if (
-            !/^(?:4|9);/.test(message) &&
-            window.ZeroTermAttention?.terminalTextNeedsAttention(message)
-          ) {
-            triggerPaneAttention(pane, "prompt");
-          }
+          if (!/^(?:4|9);/.test(message)) schedulePaneAttentionScan(pane);
           return true;
         })
       );
-      // OSC 777 — urxvt-style notification: "notify;title;body".
+      // OSC 777 — same rule for urxvt-style "notify;title;body".
       disposes.push(
         parser.registerOscHandler(777, (data) => {
           const message = String(data || "");
-          if (
-            /^notify;/i.test(message) &&
-            window.ZeroTermAttention?.terminalTextNeedsAttention(message)
-          ) {
-            triggerPaneAttention(pane, "prompt");
-          }
+          if (/^notify;/i.test(message)) schedulePaneAttentionScan(pane);
           return true;
         })
       );
