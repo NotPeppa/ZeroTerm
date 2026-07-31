@@ -7451,6 +7451,204 @@ body.has-app-bg[data-app-theme="light"] .terminal-sftp-body .sftp-status {
   padding: 4px 10px 6px;
 }
 
+.sftp-external-edits {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 6px;
+  max-height: 148px;
+  overflow-y: auto;
+  padding: 0 10px 8px;
+}
+
+.sftp-external-edits[hidden] {
+  display: none;
+}
+
+.sftp-external-edit {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto 28px;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 1px solid rgba(245, 158, 11, 0.24);
+  border-radius: 9px;
+  background: rgba(245, 158, 11, 0.09);
+  color: #f8fafc;
+}
+
+.sftp-external-edit.status-uploaded {
+  border-color: rgba(34, 197, 94, 0.25);
+  background: rgba(34, 197, 94, 0.09);
+}
+
+.sftp-external-edit.status-error,
+.sftp-external-edit.status-missing {
+  border-color: rgba(248, 113, 113, 0.28);
+  background: rgba(248, 113, 113, 0.09);
+}
+
+.sftp-external-edit-icon {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+}
+
+.sftp-external-edit.status-uploaded .sftp-external-edit-icon {
+  background: rgba(34, 197, 94, 0.14);
+  color: #4ade80;
+}
+
+.sftp-external-edit.status-error .sftp-external-edit-icon,
+.sftp-external-edit.status-missing .sftp-external-edit-icon {
+  background: rgba(248, 113, 113, 0.14);
+  color: #f87171;
+}
+
+.sftp-external-edit-icon .zt-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.sftp-external-edit-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.sftp-external-edit-copy strong,
+.sftp-external-edit-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sftp-external-edit-copy strong {
+  color: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sftp-external-edit-copy span {
+  color: rgba(226, 232, 240, 0.7);
+  font-size: 10.5px;
+}
+
+.sftp-external-edit-upload,
+.sftp-external-edit-dismiss {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: #f8fafc;
+  cursor: pointer;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.sftp-external-edit-upload {
+  min-width: 54px;
+  height: 30px;
+  padding: 0 10px;
+  border-color: rgba(59, 130, 246, 0.38);
+  border-radius: 7px;
+  background: rgba(37, 99, 235, 0.22);
+  color: #dbeafe;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.sftp-external-edit-dismiss {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-color: transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: rgba(226, 232, 240, 0.64);
+}
+
+.sftp-external-edit-dismiss .zt-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.sftp-external-edit-upload:hover:not(:disabled),
+.sftp-external-edit-dismiss:hover:not(:disabled) {
+  border-color: rgba(96, 165, 250, 0.55);
+  background: rgba(59, 130, 246, 0.28);
+  color: #ffffff;
+}
+
+.sftp-external-edit-upload:active,
+.sftp-external-edit-dismiss:active {
+  transform: none;
+}
+
+.sftp-external-edit-upload:focus-visible,
+.sftp-external-edit-dismiss:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 2px;
+}
+
+.sftp-external-edit-upload:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
+}
+
+.sftp-external-edit-dismiss:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+
+body[data-app-theme="light"] .sftp-external-edit {
+  border-color: rgba(217, 119, 6, 0.28);
+  background: rgba(245, 158, 11, 0.11);
+  color: #172033;
+}
+
+body[data-app-theme="light"] .sftp-external-edit.status-uploaded {
+  border-color: rgba(22, 163, 74, 0.25);
+  background: rgba(34, 197, 94, 0.1);
+}
+
+body[data-app-theme="light"] .sftp-external-edit.status-error,
+body[data-app-theme="light"] .sftp-external-edit.status-missing {
+  border-color: rgba(220, 38, 38, 0.24);
+  background: rgba(239, 68, 68, 0.09);
+}
+
+body[data-app-theme="light"] .sftp-external-edit-copy span {
+  color: #4b5563;
+}
+
+body[data-app-theme="light"] .sftp-external-edit-upload {
+  border-color: rgba(37, 99, 235, 0.3);
+  background: rgba(37, 99, 235, 0.11);
+  color: #1d4ed8;
+}
+
+body[data-app-theme="light"] .sftp-external-edit-dismiss {
+  color: #526077;
+}
+
+.terminal-sftp-body .sftp-external-edits {
+  max-height: 126px;
+  padding-right: 0;
+  padding-left: 0;
+}
+
+.terminal-sftp-body .sftp-external-edit {
+  grid-template-columns: 22px minmax(0, 1fr) auto 26px;
+  gap: 6px;
+  padding: 6px;
+}
+
 .sftp-empty-state {
   flex: 1;
   min-height: 0;

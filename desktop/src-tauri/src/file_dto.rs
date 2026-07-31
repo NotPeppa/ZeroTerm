@@ -15,6 +15,13 @@ pub struct FilePermissionModeDto {
     pub mode: Option<u32>,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalFileFingerprintDto {
+    pub size: u64,
+    pub modified_at_nanos: String,
+}
+
 pub(crate) fn kind_str(k: FileKind) -> &'static str {
     match k {
         FileKind::File => "file",

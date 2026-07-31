@@ -197,6 +197,7 @@ pub fn run() {
             commands::local_home_path,
             commands::local_list,
             commands::local_path_exists,
+            commands::local_file_fingerprint,
             commands::local_mkdir,
             commands::local_remove,
             commands::local_remove_dir,

@@ -40,7 +40,7 @@ use crate::connect::{
 use crate::editor::{
     decode_editor_text, normalize_text_edit_limit, RemoteTextFileDto, HARD_TEXT_EDIT_MAX_BYTES,
 };
-use crate::file_dto::{DirEntryDto, FilePermissionModeDto};
+use crate::file_dto::{DirEntryDto, FilePermissionModeDto, LocalFileFingerprintDto};
 use crate::host_key::TauriHostKeyPrompt;
 use crate::session::{run as run_session, ClosedEvent};
 use crate::state::{
@@ -277,6 +277,7 @@ pub struct SystemMetricsDto {
     pub host: String,
     pub os: String,
     pub arch: String,
+    pub outbound_ip_type: String,
     pub uptime_seconds: u64,
     pub cpu_cores: u32,
     pub cpu_usage: f64,
@@ -3776,6 +3777,33 @@ awk '
 /^SwapFree:/ {sf=$2*1024}
 END {printf "%d %d %d %d\n", mt, mt-ma, st, st-sf}
 ' /proc/meminfo 2>/dev/null
+v4=0
+v6=0
+v4_metric=2147483647
+v6_metric=2147483647
+if command -v ip >/dev/null 2>&1; then
+  v4_route=$(ip -4 route show default 2>/dev/null | head -n 1)
+  v6_route=$(ip -6 route show default 2>/dev/null | head -n 1)
+  if [ -n "$v4_route" ]; then
+    v4=1
+    v4_metric=$(printf '%s\n' "$v4_route" | awk '{m=0; for(i=1;i<=NF;i++) if($i=="metric" && $(i+1) ~ /^[0-9]+$/) m=$(i+1); print m}')
+  fi
+  if [ -n "$v6_route" ]; then
+    v6=1
+    v6_metric=$(printf '%s\n' "$v6_route" | awk '{m=0; for(i=1;i<=NF;i++) if($i=="metric" && $(i+1) ~ /^[0-9]+$/) m=$(i+1); print m}')
+  fi
+else
+  awk '$2 == "00000000" {found=1} END {exit !found}' /proc/net/route 2>/dev/null && v4=1
+  awk '$1 == "00000000000000000000000000000000" && $2 == "00" {found=1} END {exit !found}' /proc/net/ipv6_route 2>/dev/null && v6=1
+  [ "$v4" = 1 ] && v4_metric=0
+  [ "$v6" = 1 ] && v6_metric=0
+fi
+if [ "$v4" = 1 ] && [ "$v6" = 1 ] && [ "$v4_metric" -lt "$v6_metric" ]; then printf 'O|ipv4\n'
+elif [ "$v4" = 1 ] && [ "$v6" = 1 ] && [ "$v6_metric" -lt "$v4_metric" ]; then printf 'O|ipv6\n'
+elif [ "$v4" = 1 ] && [ "$v6" = 1 ]; then printf 'O|dual\n'
+elif [ "$v6" = 1 ]; then printf 'O|ipv6\n'
+elif [ "$v4" = 1 ]; then printf 'O|ipv4\n'
+else printf 'O|none\n'; fi
 df -P -B1 -T 2>/dev/null | awk '
 NR>1 && $3 ~ /^[0-9]+$/ {
   fstype=$2
@@ -3814,6 +3842,14 @@ vm_stat 2>/dev/null | awk -v ps="$pagesize" -v total="$mem_total" '
 END {used=(active+wired+compressed)*ps; printf "%d %d ", total, used}
 '
 sysctl vm.swapusage 2>/dev/null | awk '{total=0; used=0; for(i=1;i<=NF;i++){if($i=="total") total=$(i+2); if($i=="used") used=$(i+2)} unit=1024*1024; printf "%d %d\n", total*unit, used*unit}'
+v4=0
+v6=0
+route -n get -inet default >/dev/null 2>&1 && v4=1
+route -n get -inet6 default >/dev/null 2>&1 && v6=1
+if [ "$v4" = 1 ] && [ "$v6" = 1 ]; then printf 'O|ipv6\n'
+elif [ "$v6" = 1 ]; then printf 'O|ipv6\n'
+elif [ "$v4" = 1 ]; then printf 'O|ipv4\n'
+else printf 'O|none\n'; fi
 df -P -k 2>/dev/null | awk '
 NR>1 && $2 ~ /^[0-9]+$/ && $6 ~ /^\// {
   mount=$6
@@ -3852,6 +3888,24 @@ try {
 '0 0'
 [string]10000 + ' ' + [string]([math]::Max(0, 10000 - [int]($cpu * 100)))
 [string]($os.TotalVisibleMemorySize * 1024) + ' ' + [string](($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) * 1024) + ' ' + [string]($os.TotalVirtualMemorySize * 1024) + ' ' + [string](($os.TotalVirtualMemorySize - $os.FreeVirtualMemory) * 1024)
+$route4 = Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Sort-Object RouteMetric | Select-Object -First 1
+$route6 = Get-NetRoute -AddressFamily IPv6 -DestinationPrefix '::/0' -ErrorAction SilentlyContinue | Sort-Object RouteMetric | Select-Object -First 1
+$metric4 = [long]::MaxValue
+$metric6 = [long]::MaxValue
+if ($null -ne $route4) {
+  $iface4 = Get-NetIPInterface -AddressFamily IPv4 -InterfaceIndex $route4.InterfaceIndex -ErrorAction SilentlyContinue | Select-Object -First 1
+  $metric4 = [long]$route4.RouteMetric + $(if ($null -ne $iface4) { [long]$iface4.InterfaceMetric } else { 0 })
+}
+if ($null -ne $route6) {
+  $iface6 = Get-NetIPInterface -AddressFamily IPv6 -InterfaceIndex $route6.InterfaceIndex -ErrorAction SilentlyContinue | Select-Object -First 1
+  $metric6 = [long]$route6.RouteMetric + $(if ($null -ne $iface6) { [long]$iface6.InterfaceMetric } else { 0 })
+}
+if (($null -ne $route4) -and ($null -ne $route6) -and ($metric4 -lt $metric6)) { 'O|ipv4' }
+elseif (($null -ne $route4) -and ($null -ne $route6) -and ($metric6 -lt $metric4)) { 'O|ipv6' }
+elseif (($null -ne $route4) -and ($null -ne $route6)) { 'O|dual' }
+elseif ($null -ne $route6) { 'O|ipv6' }
+elseif ($null -ne $route4) { 'O|ipv4' }
+else { 'O|none' }
 Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | ForEach-Object {
   if ($_.Size -gt 0) { 'D|' + $_.DeviceID + '|'+ [string]$_.Size + '|' + [string]($_.Size - $_.FreeSpace) }
 }
@@ -3910,11 +3964,21 @@ fn parse_metrics_output(text: &str) -> Result<SystemMetricsDto, String> {
     let swap_total = parse_metric_u64(mem.next());
     let swap_used = parse_metric_u64(mem.next());
     let mut disks = Vec::new();
+    let mut outbound_ip_type = "none".to_string();
     let mut network_first: HashMap<String, (u64, u64)> = HashMap::new();
     let mut networks = Vec::new();
     for line in lines {
         let mut parts = line.split('|');
         match parts.next() {
+            Some("O") => {
+                outbound_ip_type = match parts.next().unwrap_or("none") {
+                    "ipv4" => "ipv4",
+                    "ipv6" => "ipv6",
+                    "dual" => "dual",
+                    _ => "none",
+                }
+                .to_string();
+            }
             Some("D") => {
                 let mount = parts.next().unwrap_or("").to_string();
                 let total = parse_metric_u64(parts.next());
@@ -3955,6 +4019,7 @@ fn parse_metrics_output(text: &str) -> Result<SystemMetricsDto, String> {
         host,
         os,
         arch,
+        outbound_ip_type,
         uptime_seconds,
         cpu_cores,
         cpu_usage,
@@ -5785,6 +5850,26 @@ pub async fn local_path_exists(path: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
+pub async fn local_file_fingerprint(path: String) -> Result<LocalFileFingerprintDto, String> {
+    let meta = fs::metadata(&path).map_err(|e| format!("stat {}: {e}", path))?;
+    if !meta.is_file() {
+        return Err(format!("{} is not a file", path));
+    }
+    let modified = meta
+        .modified()
+        .map_err(|e| format!("read modified time {}: {e}", path))?;
+    let modified_at_nanos = modified
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("invalid modified time {}: {e}", path))?
+        .as_nanos()
+        .to_string();
+    Ok(LocalFileFingerprintDto {
+        size: meta.len(),
+        modified_at_nanos,
+    })
+}
+
+#[tauri::command]
 pub async fn local_mkdir(path: String) -> Result<(), String> {
     fs::create_dir(&path).map_err(|e| format!("mkdir {}: {e}", path))
 }
@@ -6034,6 +6119,15 @@ mod tests {
                 "home dir must not be recursively removable"
             );
         }
+    }
+
+    #[test]
+    fn metrics_parser_reads_outbound_ip_type() {
+        let metrics = parse_metrics_output(
+            "ZT_METRICS_V1\nnode-1\nLinux\nx86_64\n3600\n4\n100 20\n200 30\n1024 512 0 0\nO|dual\n",
+        )
+        .unwrap();
+        assert_eq!(metrics.outbound_ip_type, "dual");
     }
 
     #[test]

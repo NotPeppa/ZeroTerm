@@ -329,6 +329,11 @@ const I18N = {
     "metrics.arch": "Arch",
     "metrics.os": "System",
     "metrics.uptime": "Uptime",
+    "metrics.outbound_ip_type": "Preferred outbound type",
+    "metrics.outbound_ip_type.ipv4": "IPv4",
+    "metrics.outbound_ip_type.ipv6": "IPv6",
+    "metrics.outbound_ip_type.dual": "Equal priority (dual stack)",
+    "metrics.outbound_ip_type.none": "Unavailable",
     "metrics.cpu": "CPU",
     "metrics.cpu.cores": "{count} cores",
     "metrics.cpu.avg": "Average usage",
@@ -659,6 +664,16 @@ const I18N = {
     "files.menu.download": "Download",
     "files.menu.open": "Open",
     "files.menu.open_with": "Open with...",
+    "files.external_edit.changed": "Changed in local app",
+    "files.external_edit.uploading": "Uploading latest changes...",
+    "files.external_edit.uploaded": "Uploaded",
+    "files.external_edit.changed_during_upload": "Changed again during upload",
+    "files.external_edit.disconnected": "Reconnect {host} to upload",
+    "files.external_edit.missing": "The local working copy is no longer available",
+    "files.external_edit.upload": "Upload",
+    "files.external_edit.upload_again": "Upload again",
+    "files.external_edit.dismiss": "Stop tracking {name}",
+    "files.external_edit.upload_failed": "Upload failed: {error}",
     "files.menu.copy_to_target": "Copy to target directory",
     "files.menu.rename": "Rename",
     "files.menu.delete": "Delete",
@@ -1273,6 +1288,11 @@ const I18N = {
     "metrics.arch": "架构",
     "metrics.os": "系统",
     "metrics.uptime": "运行时长",
+    "metrics.outbound_ip_type": "优先出站类型",
+    "metrics.outbound_ip_type.ipv4": "IPv4",
+    "metrics.outbound_ip_type.ipv6": "IPv6",
+    "metrics.outbound_ip_type.dual": "同优先级（双栈）",
+    "metrics.outbound_ip_type.none": "不可用",
     "metrics.cpu": "CPU",
     "metrics.cpu.cores": "{count} 核",
     "metrics.cpu.avg": "平均使用率",
@@ -1602,6 +1622,16 @@ const I18N = {
     "files.menu.download": "下载",
     "files.menu.open": "打开",
     "files.menu.open_with": "打开方式...",
+    "files.external_edit.changed": "本地应用已修改",
+    "files.external_edit.uploading": "正在上传最新修改...",
+    "files.external_edit.uploaded": "已上传",
+    "files.external_edit.changed_during_upload": "上传期间文件又有修改",
+    "files.external_edit.disconnected": "请重新连接 {host} 后上传",
+    "files.external_edit.missing": "本地工作副本已不可用",
+    "files.external_edit.upload": "上传",
+    "files.external_edit.upload_again": "再次上传",
+    "files.external_edit.dismiss": "停止跟踪 {name}",
+    "files.external_edit.upload_failed": "上传失败：{error}",
     "files.menu.copy_to_target": "复制到目标目录",
     "files.menu.rename": "重命名",
     "files.menu.delete": "删除",
@@ -3794,6 +3824,9 @@ function renderMetricsData(metrics) {
   const swap = metrics.swapTotal > 0 ? (metrics.swapUsed / metrics.swapTotal) * 100 : 0;
   const disks = Array.isArray(metrics.disks) ? metrics.disks.slice(0, 8) : [];
   const networks = Array.isArray(metrics.networks) ? metrics.networks.slice(0, 6) : [];
+  const outboundIpType = ["ipv4", "ipv6", "dual"].includes(metrics.outboundIpType)
+    ? metrics.outboundIpType
+    : "none";
   terminalMetricsBody?.classList.remove("metrics-loading");
   terminalMetricsBody.innerHTML = `
     <section class="metrics-card metrics-system-card">
@@ -3803,6 +3836,7 @@ function renderMetricsData(metrics) {
         <div><small>${t("metrics.arch")}</small><strong>${escapeMetricText(metrics.arch || "--")}</strong></div>
         <div><small>${t("metrics.os")}</small><strong>${escapeMetricText(metrics.os || "--")}</strong></div>
         <div><small>${t("metrics.uptime")}</small><strong>${formatMetricUptime(metrics.uptimeSeconds)}</strong></div>
+        <div><small>${t("metrics.outbound_ip_type")}</small><strong>${t(`metrics.outbound_ip_type.${outboundIpType}`)}</strong></div>
       </div>
     </section>
     <section class="metrics-card metrics-compact-card">
@@ -11732,6 +11766,7 @@ function applyI18n() {
   setText("files-menu-rename", "files.menu.rename");
   setText("files-menu-delete", "files.menu.delete");
   setText("files-menu-close", "files.menu.close");
+  renderAllExternalSftpEdits();
 
   setText("hk-reject", "host_key.reject");
   setText("hk-accept-once", "host_key.accept_once");
@@ -16525,6 +16560,7 @@ function buildSftpPane(key) {
     filterInput,
     filterWrap: filterInput ? filterInput.closest(".sftp-inline-filter") : null,
     statusEl: document.getElementById(`sftp-${key}-status`),
+    externalEditsEl: document.getElementById(`sftp-${key}-external-edits`),
     listEl: document.getElementById(`sftp-${key}-list`),
     emptyStateEl: document.getElementById(`sftp-${key}-empty`),
     emptySelectButton: document.getElementById(`sftp-${key}-empty-select`),
@@ -16563,6 +16599,7 @@ function buildTerminalSftpPane() {
     filterInput,
     filterWrap: filterInput ? filterInput.closest(".sftp-inline-filter") : null,
     statusEl: document.getElementById("sftp-terminal-status"),
+    externalEditsEl: document.getElementById("sftp-terminal-external-edits"),
     listEl: document.getElementById("sftp-terminal-list"),
     emptyStateEl: null,
     emptySelectButton: null,
@@ -16605,6 +16642,9 @@ const fileEditorState = {
   dirty: false,
   saving: false,
 };
+const externalSftpEdits = new Map();
+let externalSftpEditMonitorTimer = null;
+let externalSftpEditCheckRunning = false;
 
 function getSftpPane(key) {
   if (key === "terminal") return sftpPanes.terminal;
@@ -17593,6 +17633,7 @@ async function navigateSftpPane(pane, path, { source = "user", retryOnReconnect 
 function renderSftpPane(pane) {
   renderSftpPathBar(pane);
   updateSftpPaneFilterButton(pane);
+  renderExternalEditsForPane(pane);
   const connected = isPaneConnected(pane);
   const showRightEmpty = isRightPaneHostEmpty(pane);
   pane.upButton.disabled = !connected || samePanePath(pane, pane.path, paneParentPath(pane, pane.path));
@@ -18079,6 +18120,206 @@ async function sftpDownloadFile(pane, entry) {
   }
 }
 
+function externalSftpEditKey(pane, remotePath) {
+  return `${pane.key}\u0000${pane.hostId || ""}\u0000${remotePath}`;
+}
+
+function externalSftpFingerprintKey(fingerprint) {
+  return `${String(fingerprint?.size ?? "")}::${String(fingerprint?.modifiedAtNanos ?? "")}`;
+}
+
+function externalSftpEditStatusText(item, pane) {
+  if (item.status === "uploading") return t("files.external_edit.uploading");
+  if (item.status === "uploaded") return t("files.external_edit.uploaded");
+  if (item.status === "missing") return t("files.external_edit.missing");
+  if (item.status === "error") {
+    return t("files.external_edit.upload_failed", { error: item.error || "Unknown error" });
+  }
+  if (pane.sftpId === null || pane.hostId !== item.hostId) {
+    return t("files.external_edit.disconnected", { host: item.hostName || "SFTP" });
+  }
+  if (item.changedDuringUpload) return t("files.external_edit.changed_during_upload");
+  return t("files.external_edit.changed");
+}
+
+function renderExternalEditsForPane(pane) {
+  const container = pane?.externalEditsEl;
+  if (!container) return;
+  const visibleItems = Array.from(externalSftpEdits.values()).filter(
+    (item) => item.paneKey === pane.key && item.status !== "watching",
+  );
+  const renderSignature = JSON.stringify({
+    locale: currentLocale,
+    hostId: pane.hostId,
+    connected: pane.sftpId !== null,
+    items: visibleItems.map((item) => [
+      item.key,
+      item.status,
+      item.error,
+      item.changedDuringUpload,
+      item.successToken,
+    ]),
+  });
+  if (container.dataset.renderSignature === renderSignature) return;
+  container.dataset.renderSignature = renderSignature;
+  container.replaceChildren();
+  container.hidden = visibleItems.length === 0;
+
+  for (const item of visibleItems) {
+    const connected = pane.sftpId !== null && pane.hostId === item.hostId;
+    const card = document.createElement("div");
+    card.className = `sftp-external-edit status-${item.status}`;
+
+    const icon = document.createElement("span");
+    icon.className = "sftp-external-edit-icon";
+    icon.setAttribute("aria-hidden", "true");
+    icon.innerHTML = item.status === "uploaded"
+      ? '<svg class="zt-icon" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"></path></svg>'
+      : '<svg class="zt-icon" viewBox="0 0 24 24"><path d="M12 16V4"></path><path d="m7 9 5-5 5 5"></path><path d="M5 20h14"></path></svg>';
+
+    const copy = document.createElement("span");
+    copy.className = "sftp-external-edit-copy";
+    const name = document.createElement("strong");
+    name.textContent = item.name;
+    name.title = item.remotePath;
+    const status = document.createElement("span");
+    status.textContent = externalSftpEditStatusText(item, pane);
+    copy.append(name, status);
+
+    const upload = document.createElement("button");
+    upload.type = "button";
+    upload.className = "sftp-external-edit-upload";
+    upload.textContent = item.changedDuringUpload || item.status === "error"
+      ? t("files.external_edit.upload_again")
+      : t("files.external_edit.upload");
+    upload.hidden = item.status === "uploaded";
+    upload.disabled = item.status === "uploading" || item.status === "missing" || !connected;
+    upload.addEventListener("click", () => uploadExternalSftpEdit(item.key));
+
+    const dismiss = document.createElement("button");
+    dismiss.type = "button";
+    dismiss.className = "sftp-external-edit-dismiss";
+    dismiss.setAttribute("aria-label", t("files.external_edit.dismiss", { name: item.name }));
+    dismiss.title = t("files.external_edit.dismiss", { name: item.name });
+    dismiss.disabled = item.status === "uploading";
+    dismiss.innerHTML = '<svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12"></path><path d="m18 6-12 12"></path></svg>';
+    dismiss.addEventListener("click", () => dismissExternalSftpEdit(item.key));
+
+    card.append(icon, copy, upload, dismiss);
+    container.appendChild(card);
+  }
+}
+
+function renderAllExternalSftpEdits() {
+  for (const pane of Object.values(sftpPanes)) {
+    renderExternalEditsForPane(pane);
+  }
+}
+
+function dismissExternalSftpEdit(key) {
+  const item = externalSftpEdits.get(key);
+  if (!item || item.status === "uploading") return;
+  externalSftpEdits.delete(key);
+  renderExternalEditsForPane(getSftpPane(item.paneKey));
+  if (externalSftpEdits.size === 0 && externalSftpEditMonitorTimer) {
+    window.clearInterval(externalSftpEditMonitorTimer);
+    externalSftpEditMonitorTimer = null;
+  }
+}
+
+async function checkExternalSftpEdits() {
+  if (externalSftpEditCheckRunning || externalSftpEdits.size === 0) return;
+  externalSftpEditCheckRunning = true;
+  const changedPanes = new Set();
+  try {
+    for (const item of externalSftpEdits.values()) {
+      if (item.status === "uploading" || item.status === "missing") continue;
+      try {
+        const fingerprint = await invoke("local_file_fingerprint", { path: item.localPath });
+        const currentFingerprint = externalSftpFingerprintKey(fingerprint);
+        if (currentFingerprint !== item.observed) {
+          item.observed = currentFingerprint;
+        } else {
+          continue;
+        }
+        if (currentFingerprint !== item.baseline) {
+          item.status = "changed";
+          item.error = "";
+          item.changedDuringUpload = false;
+          item.successToken += 1;
+          changedPanes.add(item.paneKey);
+        }
+      } catch (_) {
+        item.status = "missing";
+        item.successToken += 1;
+        changedPanes.add(item.paneKey);
+      }
+    }
+  } finally {
+    externalSftpEditCheckRunning = false;
+  }
+  for (const paneKey of changedPanes) {
+    renderExternalEditsForPane(getSftpPane(paneKey));
+  }
+}
+
+function ensureExternalSftpEditMonitor() {
+  if (externalSftpEditMonitorTimer) return;
+  externalSftpEditMonitorTimer = window.setInterval(checkExternalSftpEdits, 900);
+}
+
+async function uploadExternalSftpEdit(key) {
+  const item = externalSftpEdits.get(key);
+  if (!item || item.status === "uploading" || item.status === "missing") return;
+  const pane = getSftpPane(item.paneKey);
+  if (!pane || pane.sftpId === null || pane.hostId !== item.hostId) {
+    renderExternalEditsForPane(pane);
+    return;
+  }
+
+  item.status = "uploading";
+  item.error = "";
+  item.changedDuringUpload = false;
+  item.successToken += 1;
+  renderExternalEditsForPane(pane);
+
+  try {
+    const before = await invoke("local_file_fingerprint", { path: item.localPath });
+    const uploadedFingerprint = externalSftpFingerprintKey(before);
+    await uploadLocalPathToPane(pane, item.localPath, item.remotePath, true);
+    const after = await invoke("local_file_fingerprint", { path: item.localPath });
+    const latestFingerprint = externalSftpFingerprintKey(after);
+    if (latestFingerprint !== uploadedFingerprint) {
+      item.observed = latestFingerprint;
+      item.status = "changed";
+      item.changedDuringUpload = true;
+    } else {
+      item.baseline = latestFingerprint;
+      item.observed = latestFingerprint;
+      item.status = "uploaded";
+      const successToken = ++item.successToken;
+      window.setTimeout(() => {
+        const current = externalSftpEdits.get(key);
+        if (!current || current.successToken !== successToken || current.status !== "uploaded") return;
+        current.status = "watching";
+        renderExternalEditsForPane(getSftpPane(current.paneKey));
+      }, 1800);
+    }
+    if (samePanePath(pane, pane.path, parentPath(item.remotePath))) {
+      await navigateSftpPane(pane, pane.path, { source: "system" });
+    }
+  } catch (e) {
+    const err = normalizeSftpError(e);
+    item.status = err.message.includes("stat ") ? "missing" : "error";
+    item.error = err.message;
+  }
+  renderExternalEditsForPane(pane);
+}
+
+window.addEventListener("focus", () => {
+  checkExternalSftpEdits();
+});
+
 async function openEntryWithLocalApp(pane, entry) {
   if (!pane || !entry || entry.kind !== "file") return;
   const defaultAppPath = isMacPlatform
@@ -18096,22 +18337,63 @@ async function openEntryWithLocalApp(pane, entry) {
   if (!picked) return;
 
   let localPath = "";
+  let remotePath = "";
+  let editKey = "";
+  let initialFingerprint = null;
   if (isLocalPane(pane)) {
     localPath = joinPanePath(pane, entry.name);
   } else {
-    localPath = await invoke("temp_open_path", { fileName: entry.name });
-    await invoke("sftp_download", {
-      sftpId: pane.sftpId,
-      remote: joinPanePath(pane, entry.name),
-      local: localPath,
-      overwrite: true,
-    });
+    remotePath = joinPanePath(pane, entry.name);
+    editKey = externalSftpEditKey(pane, remotePath);
+    const existing = externalSftpEdits.get(editKey);
+    if (existing) {
+      try {
+        await invoke("local_file_fingerprint", { path: existing.localPath });
+        localPath = existing.localPath;
+      } catch (_) {
+        externalSftpEdits.delete(editKey);
+        renderExternalEditsForPane(pane);
+      }
+    }
+    if (!localPath) {
+      localPath = await invoke("temp_open_path", { fileName: entry.name });
+      await invoke("sftp_download", {
+        sftpId: pane.sftpId,
+        remote: remotePath,
+        local: localPath,
+        overwrite: true,
+      });
+      initialFingerprint = await invoke("local_file_fingerprint", { path: localPath });
+    }
   }
 
   await invoke("open_with_app", {
     filePath: localPath,
     appPath: String(picked),
   });
+
+  if (!isLocalPane(pane)) {
+    if (!externalSftpEdits.has(editKey)) {
+      const fingerprint = initialFingerprint || await invoke("local_file_fingerprint", { path: localPath });
+      const baseline = externalSftpFingerprintKey(fingerprint);
+      externalSftpEdits.set(editKey, {
+        key: editKey,
+        paneKey: pane.key,
+        hostId: pane.hostId,
+        hostName: pane.host?.name || pane.hostId,
+        remotePath,
+        localPath,
+        name: entry.name,
+        baseline,
+        observed: baseline,
+        status: "watching",
+        error: "",
+        changedDuringUpload: false,
+        successToken: 0,
+      });
+    }
+    ensureExternalSftpEditMonitor();
+  }
 }
 
 async function sftpRenameEntry(pane, entry) {
@@ -18934,7 +19216,13 @@ filesMenuOpenWith.addEventListener("click", async () => {
   const entry = getFilesContextEntry(pane);
   hideFilesContextMenu();
   if (!pane || !entry || entry.kind !== "file") return;
-  await openEntryWithLocalApp(pane, entry);
+  try {
+    await openEntryWithLocalApp(pane, entry);
+  } catch (e) {
+    pane.statusEl.textContent = t("files.error.open_failed", {
+      error: normalizeSftpError(e).message,
+    });
+  }
 });
 
 filesMenuCopy.addEventListener("click", async () => {
