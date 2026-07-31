@@ -8735,6 +8735,7 @@ dependencies = [
  "base64 0.22.1",
  "dirs 5.0.1",
  "hmac 0.12.1",
+ "rand 0.10.2",
  "russh",
  "russh-sftp",
  "sha1 0.10.6",
