@@ -4023,6 +4023,453 @@ pub async fn collect_system_metrics(
     parse_metrics_output(&String::from_utf8_lossy(&stdout))
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemServiceDto {
+    pub name: String,
+    pub scope: String,
+    pub group: String,
+    pub description: String,
+    pub load_state: String,
+    pub active_state: String,
+    pub sub_state: String,
+}
+
+fn parse_system_services(output: &str, scope: &str) -> Vec<SystemServiceDto> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            let name = fields.next()?;
+            let load_state = fields.next()?;
+            let active_state = fields.next()?;
+            let sub_state = fields.next()?;
+            if !name.ends_with(".service") {
+                return None;
+            }
+            Some(SystemServiceDto {
+                name: name.to_string(),
+                scope: scope.to_string(),
+                group: "system".to_string(),
+                description: fields.collect::<Vec<_>>().join(" "),
+                load_state: load_state.to_string(),
+                active_state: active_state.to_string(),
+                sub_state: sub_state.to_string(),
+            })
+        })
+        .collect()
+}
+
+fn parse_system_service_fragment_paths(output: &str) -> HashMap<String, String> {
+    let mut paths = HashMap::new();
+    let mut unit = String::new();
+    let mut fragment = String::new();
+    for line in output.lines().chain(std::iter::once("")) {
+        if line.is_empty() {
+            if !unit.is_empty() {
+                paths.insert(std::mem::take(&mut unit), std::mem::take(&mut fragment));
+            }
+            continue;
+        }
+        if let Some(value) = line.strip_prefix("Id=") {
+            if !unit.is_empty() {
+                paths.insert(std::mem::take(&mut unit), std::mem::take(&mut fragment));
+            }
+            unit = value.to_string();
+        } else if let Some(value) = line.strip_prefix("FragmentPath=") {
+            fragment = value.to_string();
+        }
+    }
+    paths
+}
+
+fn is_custom_service_fragment(scope: &str, path: &str) -> bool {
+    if scope == "user" {
+        path.starts_with("/etc/systemd/user/")
+            || path.starts_with("/usr/local/lib/systemd/user/")
+            || path.contains("/.config/systemd/user/")
+            || path.contains("/.local/share/systemd/user/")
+            || path.contains("/systemd/user.control/")
+    } else {
+        path.starts_with("/etc/systemd/system/")
+            || path.starts_with("/usr/local/lib/systemd/system/")
+    }
+}
+
+fn assign_system_service_groups(
+    services: &mut [SystemServiceDto],
+    paths: &HashMap<String, String>,
+) {
+    for service in services {
+        let path = paths.get(&service.name).map(String::as_str).unwrap_or("");
+        service.group = if is_custom_service_fragment(&service.scope, path) {
+            "custom"
+        } else {
+            "system"
+        }
+        .to_string();
+    }
+}
+
+fn system_service_show_args(services: &[SystemServiceDto], scope: &str) -> Vec<String> {
+    let mut args = Vec::with_capacity(5 + services.len());
+    if scope == "user" {
+        args.push("--user".to_string());
+    }
+    args.extend([
+        "--no-pager".to_string(),
+        "show".to_string(),
+        "--property=Id".to_string(),
+        "--property=FragmentPath".to_string(),
+    ]);
+    args.extend(services.iter().map(|service| service.name.clone()));
+    args
+}
+
+async fn local_system_service_fragment_paths(
+    services: &[SystemServiceDto],
+    scope: &str,
+) -> HashMap<String, String> {
+    if services.is_empty() {
+        return HashMap::new();
+    }
+    let args = system_service_show_args(services, scope);
+    #[cfg(target_os = "windows")]
+    let output = tokio::process::Command::new("systemctl")
+        .creation_flags(CREATE_NO_WINDOW)
+        .args(&args)
+        .output()
+        .await;
+    #[cfg(not(target_os = "windows"))]
+    let output = Command::new("systemctl")
+        .env("LC_ALL", "C")
+        .env("SYSTEMD_COLORS", "0")
+        .args(&args)
+        .output()
+        .await;
+    match output {
+        Ok(output) => {
+            parse_system_service_fragment_paths(&String::from_utf8_lossy(&output.stdout))
+        }
+        _ => HashMap::new(),
+    }
+}
+
+async fn remote_system_service_fragment_paths(
+    session: &Session,
+    services: &[SystemServiceDto],
+    scope: &str,
+) -> HashMap<String, String> {
+    if services.is_empty() {
+        return HashMap::new();
+    }
+    let mut command = format!(
+        "LC_ALL=C SYSTEMD_COLORS=0 systemctl{} --no-pager show --property=Id --property=FragmentPath",
+        if scope == "user" { " --user" } else { "" }
+    );
+    for service in services {
+        command.push(' ');
+        command.push_str(&shell_quote(&service.name));
+    }
+    match session.exec(&command).await {
+        Ok((_code, stdout, _)) => {
+            parse_system_service_fragment_paths(&String::from_utf8_lossy(&stdout))
+        }
+        _ => HashMap::new(),
+    }
+}
+
+fn service_command_error(action: &str, code: i32, stdout: &[u8], stderr: &[u8]) -> String {
+    let detail = String::from_utf8_lossy(if stderr.is_empty() { stdout } else { stderr })
+        .trim()
+        .to_string();
+    if detail.is_empty() {
+        format!("systemctl {action} failed with exit code {code}")
+    } else {
+        detail
+    }
+}
+
+fn validate_system_service_target(unit: &str, scope: &str) -> Result<(), String> {
+    if !matches!(scope, "system" | "user") {
+        return Err(format!("service scope `{scope}` is not allowed"));
+    }
+    if unit.is_empty()
+        || unit.len() > 256
+        || unit.starts_with('-')
+        || !unit.ends_with(".service")
+        || !unit.chars().all(|ch| {
+            ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | '@' | ':' | '\\')
+        })
+    {
+        return Err("invalid systemd service unit name".to_string());
+    }
+    Ok(())
+}
+
+fn validate_system_service_action(action: &str, unit: &str, scope: &str) -> Result<(), String> {
+    if !matches!(action, "start" | "stop" | "restart") {
+        return Err(format!("service action `{action}` is not allowed"));
+    }
+    validate_system_service_target(unit, scope)
+}
+
+#[tauri::command]
+pub async fn list_system_services(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+    host_id: Option<String>,
+) -> Result<Vec<SystemServiceDto>, String> {
+    let host_id = host_id.unwrap_or_default();
+    if host_id.is_empty() || host_id.starts_with("local-") {
+        #[cfg(target_os = "windows")]
+        let output = tokio::process::Command::new("systemctl")
+            .creation_flags(CREATE_NO_WINDOW)
+            .args([
+                "list-units",
+                "--type=service",
+                "--all",
+                "--no-legend",
+                "--no-pager",
+                "--plain",
+            ])
+            .output()
+            .await
+            .map_err(|e| format!("systemctl not available: {e}"))?;
+        #[cfg(not(target_os = "windows"))]
+        let output = Command::new("systemctl")
+            .env("LC_ALL", "C")
+            .env("SYSTEMD_COLORS", "0")
+            .args([
+                "list-units",
+                "--type=service",
+                "--all",
+                "--no-legend",
+                "--no-pager",
+                "--plain",
+            ])
+            .output()
+            .await
+            .map_err(|e| format!("systemctl not available: {e}"))?;
+        if !output.status.success() {
+            return Err(service_command_error(
+                "list-units",
+                output.status.code().unwrap_or(-1),
+                &output.stdout,
+                &output.stderr,
+            ));
+        }
+        let mut services = parse_system_services(&String::from_utf8_lossy(&output.stdout), "system");
+        let system_paths = local_system_service_fragment_paths(&services, "system").await;
+        assign_system_service_groups(&mut services, &system_paths);
+        #[cfg(target_os = "windows")]
+        let user_output = tokio::process::Command::new("systemctl")
+            .creation_flags(CREATE_NO_WINDOW)
+            .args([
+                "--user",
+                "list-units",
+                "--type=service",
+                "--all",
+                "--no-legend",
+                "--no-pager",
+                "--plain",
+            ])
+            .output()
+            .await;
+        #[cfg(not(target_os = "windows"))]
+        let user_output = Command::new("systemctl")
+            .env("LC_ALL", "C")
+            .env("SYSTEMD_COLORS", "0")
+            .args([
+                "--user",
+                "list-units",
+                "--type=service",
+                "--all",
+                "--no-legend",
+                "--no-pager",
+                "--plain",
+            ])
+            .output()
+            .await;
+        if let Ok(user_output) = user_output {
+            if user_output.status.success() {
+                let mut user_services = parse_system_services(
+                    &String::from_utf8_lossy(&user_output.stdout),
+                    "user",
+                );
+                let user_paths = local_system_service_fragment_paths(&user_services, "user").await;
+                assign_system_service_groups(&mut user_services, &user_paths);
+                services.extend(
+                    user_services
+                        .into_iter()
+                        .filter(|service| service.group == "custom"),
+                );
+            }
+        }
+        return Ok(services);
+    }
+
+    let (_host, cfg, jump_cfg) = build_connect_chain_for_host(&state, &app_handle, &host_id)?;
+    let session = state
+        .sftp_pool
+        .acquire_session(host_id, cfg, jump_cfg)
+        .await?;
+    let command = "LC_ALL=C SYSTEMD_COLORS=0 systemctl list-units --type=service --all --no-legend --no-pager --plain";
+    let (code, stdout, stderr) = session.exec(command).await.map_err(|e| e.to_string())?;
+    if code != 0 {
+        return Err(service_command_error(
+            "list-units",
+            code as i32,
+            &stdout,
+            &stderr,
+        ));
+    }
+    let mut services = parse_system_services(&String::from_utf8_lossy(&stdout), "system");
+    let system_paths = remote_system_service_fragment_paths(&session, &services, "system").await;
+    assign_system_service_groups(&mut services, &system_paths);
+    let user_command = "LC_ALL=C SYSTEMD_COLORS=0 systemctl --user list-units --type=service --all --no-legend --no-pager --plain";
+    if let Ok((user_code, user_stdout, _user_stderr)) = session.exec(user_command).await {
+        if user_code == 0 {
+            let mut user_services = parse_system_services(
+                &String::from_utf8_lossy(&user_stdout),
+                "user",
+            );
+            let user_paths =
+                remote_system_service_fragment_paths(&session, &user_services, "user").await;
+            assign_system_service_groups(&mut user_services, &user_paths);
+            services.extend(
+                user_services
+                    .into_iter()
+                    .filter(|service| service.group == "custom"),
+            );
+        }
+    }
+    Ok(services)
+}
+
+#[tauri::command]
+pub async fn system_service_action(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+    host_id: Option<String>,
+    unit: String,
+    action: String,
+    scope: String,
+) -> Result<(), String> {
+    validate_system_service_action(&action, &unit, &scope)?;
+    let host_id = host_id.unwrap_or_default();
+    if host_id.is_empty() || host_id.starts_with("local-") {
+        let mut args = Vec::with_capacity(4);
+        if scope == "user" {
+            args.push("--user");
+        }
+        args.extend(["--no-ask-password", action.as_str(), unit.as_str()]);
+        #[cfg(target_os = "windows")]
+        let output = tokio::process::Command::new("systemctl")
+            .creation_flags(CREATE_NO_WINDOW)
+            .args(&args)
+            .output()
+            .await
+            .map_err(|e| format!("systemctl not available: {e}"))?;
+        #[cfg(not(target_os = "windows"))]
+        let output = Command::new("systemctl")
+            .args(&args)
+            .output()
+            .await
+            .map_err(|e| format!("systemctl not available: {e}"))?;
+        if !output.status.success() {
+            return Err(service_command_error(
+                &action,
+                output.status.code().unwrap_or(-1),
+                &output.stdout,
+                &output.stderr,
+            ));
+        }
+        return Ok(());
+    }
+
+    let (_host, cfg, jump_cfg) = build_connect_chain_for_host(&state, &app_handle, &host_id)?;
+    let session = state
+        .sftp_pool
+        .acquire_session(host_id, cfg, jump_cfg)
+        .await?;
+    let command = format!(
+        "systemctl{} --no-ask-password {} {}",
+        if scope == "user" { " --user" } else { "" },
+        action,
+        shell_quote(&unit)
+    );
+    let (code, stdout, stderr) = session.exec(&command).await.map_err(|e| e.to_string())?;
+    if code != 0 {
+        return Err(service_command_error(
+            &action,
+            code as i32,
+            &stdout,
+            &stderr,
+        ));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn system_service_file(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+    host_id: Option<String>,
+    unit: String,
+    scope: String,
+) -> Result<String, String> {
+    validate_system_service_target(&unit, &scope)?;
+    let host_id = host_id.unwrap_or_default();
+    let (code, stdout, stderr) = if host_id.is_empty() || host_id.starts_with("local-") {
+        let mut args = Vec::with_capacity(4);
+        if scope == "user" {
+            args.push("--user");
+        }
+        args.extend(["--no-pager", "cat", unit.as_str()]);
+        #[cfg(target_os = "windows")]
+        let output = tokio::process::Command::new("systemctl")
+            .creation_flags(CREATE_NO_WINDOW)
+            .args(&args)
+            .output()
+            .await
+            .map_err(|e| format!("systemctl not available: {e}"))?;
+        #[cfg(not(target_os = "windows"))]
+        let output = Command::new("systemctl")
+            .args(&args)
+            .output()
+            .await
+            .map_err(|e| format!("systemctl not available: {e}"))?;
+        (
+            output.status.code().unwrap_or(-1),
+            output.stdout,
+            output.stderr,
+        )
+    } else {
+        let (_host, cfg, jump_cfg) =
+            build_connect_chain_for_host(&state, &app_handle, &host_id)?;
+        let session = state
+            .sftp_pool
+            .acquire_session(host_id, cfg, jump_cfg)
+            .await?;
+        let command = format!(
+            "systemctl{} --no-pager cat {}",
+            if scope == "user" { " --user" } else { "" },
+            shell_quote(&unit)
+        );
+        let (code, stdout, stderr) = session.exec(&command).await.map_err(|e| e.to_string())?;
+        (code as i32, stdout, stderr)
+    };
+    if code != 0 {
+        return Err(service_command_error("cat", code, &stdout, &stderr));
+    }
+    const MAX_SERVICE_FILE_BYTES: usize = 1024 * 1024;
+    if stdout.len() > MAX_SERVICE_FILE_BYTES {
+        return Err("systemd service file output exceeds 1 MiB".to_string());
+    }
+    Ok(String::from_utf8_lossy(&stdout).to_string())
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DockerExecResult {
@@ -5600,6 +6047,76 @@ mod tests {
         assert!(validate_docker_args(&["cp".into()]).is_err());
         assert!(validate_docker_args(&["build".into()]).is_err());
         assert!(validate_docker_args(&[]).is_err());
+    }
+
+    #[test]
+    fn system_service_parser_preserves_descriptions_and_states() {
+        let rows = parse_system_services(
+            "ssh.service loaded active running OpenBSD Secure Shell server\n\
+             cron.service loaded inactive dead Regular background program processing daemon\n\
+             dev-sda.device loaded active plugged Disk\n",
+            "system",
+        );
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].name, "ssh.service");
+        assert_eq!(rows[0].scope, "system");
+        assert_eq!(rows[0].active_state, "active");
+        assert_eq!(rows[0].sub_state, "running");
+        assert_eq!(rows[0].description, "OpenBSD Secure Shell server");
+        assert_eq!(
+            rows[1].description,
+            "Regular background program processing daemon"
+        );
+    }
+
+    #[test]
+    fn system_services_are_grouped_by_fragment_origin_not_manager_scope() {
+        let mut rows = parse_system_services(
+            "custom-api.service loaded active running Custom API\n\
+             dbus.service loaded active running D-Bus System Message Bus\n",
+            "system",
+        );
+        let paths = parse_system_service_fragment_paths(
+            "Id=custom-api.service\nFragmentPath=/etc/systemd/system/custom-api.service\n\n\
+             Id=dbus.service\nFragmentPath=/usr/lib/systemd/system/dbus.service\n",
+        );
+        assign_system_service_groups(&mut rows, &paths);
+        assert_eq!(rows[0].group, "custom");
+        assert_eq!(rows[0].scope, "system");
+        assert_eq!(rows[1].group, "system");
+
+        let mut user_rows = parse_system_services(
+            "my-agent.service loaded active running My Agent\n\
+             dbus.service loaded inactive dead D-Bus User Message Bus\n",
+            "user",
+        );
+        let user_paths = parse_system_service_fragment_paths(
+            "Id=my-agent.service\nFragmentPath=/home/me/.config/systemd/user/my-agent.service\n\n\
+             Id=dbus.service\nFragmentPath=/usr/lib/systemd/user/dbus.service\n",
+        );
+        assign_system_service_groups(&mut user_rows, &user_paths);
+        assert_eq!(user_rows[0].group, "custom");
+        assert_eq!(user_rows[0].scope, "user");
+        assert_eq!(user_rows[1].group, "system");
+    }
+
+    #[test]
+    fn system_service_actions_are_narrowly_validated() {
+        assert!(validate_system_service_action("start", "nginx.service", "system").is_ok());
+        assert!(
+            validate_system_service_action("restart", "app@worker-1.service", "user").is_ok()
+        );
+        assert!(validate_system_service_action("status", "nginx.service", "system").is_err());
+        assert!(validate_system_service_action("stop", "--now.service", "system").is_err());
+        assert!(
+            validate_system_service_action("stop", "nginx.service; reboot", "system").is_err()
+        );
+        assert!(validate_system_service_action("stop", "nginx.socket", "system").is_err());
+        assert!(validate_system_service_action("stop", "nginx.service", "global").is_err());
+        assert!(validate_system_service_target("nginx.service", "system").is_ok());
+        assert!(validate_system_service_target("app@worker.service", "user").is_ok());
+        assert!(validate_system_service_target("../../etc/passwd", "system").is_err());
+        assert!(validate_system_service_target("nginx.service; cat /etc/passwd", "system").is_err());
     }
 
     #[test]

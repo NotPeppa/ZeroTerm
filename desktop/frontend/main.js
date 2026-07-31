@@ -339,6 +339,41 @@ const I18N = {
     "metrics.disk": "Disk",
     "metrics.loading": "Collecting metrics...",
     "metrics.error": "Failed to collect metrics: {error}",
+    "services.title": "Service Manager",
+    "services.subtitle": "Current terminal session",
+    "services.refresh": "Refresh services",
+    "services.search": "Search services",
+    "services.loading": "Reading system services...",
+    "services.summary": "{count} services · {running} running · {failed} failed",
+    "services.empty.title": "No services found",
+    "services.empty.desc": "This host did not report any systemd services.",
+    "services.no_match.title": "No matching services",
+    "services.no_match.desc": "Try a different service name or description.",
+    "services.unavailable.title": "Service management unavailable",
+    "services.group.system": "System services",
+    "services.group.custom": "Custom services",
+    "services.group.summary": "{running}/{total} running",
+    "services.group.empty": "No services in this group",
+    "services.state.running": "Running",
+    "services.state.stopped": "Stopped",
+    "services.state.failed": "Failed",
+    "services.state.starting": "Starting",
+    "services.state.stopping": "Stopping",
+    "services.state.unknown": "Unknown",
+    "services.action.start": "Start",
+    "services.action.stop": "Stop",
+    "services.action.restart": "Restart",
+    "services.action.details": "Details",
+    "services.file.title": "Service file",
+    "services.file.loading": "Loading service file...",
+    "services.file.empty": "The service file is empty.",
+    "services.file.copy": "Copy",
+    "services.file.copied": "Service file copied",
+    "services.file.close": "Close",
+    "services.confirm.stop.title": "Stop service",
+    "services.confirm.stop.message": "Stop {name}? Dependent applications may be interrupted.",
+    "services.toast.success": "{name}: {action} completed",
+    "services.toast.failed": "Service operation failed: {error}",
     "terminal_sftp.title": "SFTP",
     "terminal_sftp.pin": "Bookmarks",
     "terminal_sftp.pin.add_dir": "Bookmark current directory",
@@ -1248,6 +1283,41 @@ const I18N = {
     "metrics.disk": "磁盘",
     "metrics.loading": "正在采集指标...",
     "metrics.error": "指标采集失败：{error}",
+    "services.title": "服务管理",
+    "services.subtitle": "当前终端会话",
+    "services.refresh": "刷新服务",
+    "services.search": "搜索服务",
+    "services.loading": "正在读取系统服务...",
+    "services.summary": "共 {count} 项 · 运行中 {running} · 失败 {failed}",
+    "services.empty.title": "没有发现服务",
+    "services.empty.desc": "该主机没有返回任何 systemd 服务。",
+    "services.no_match.title": "没有匹配的服务",
+    "services.no_match.desc": "请尝试其他服务名或描述。",
+    "services.unavailable.title": "服务管理不可用",
+    "services.group.system": "系统服务",
+    "services.group.custom": "用户服务",
+    "services.group.summary": "运行中 {running}/{total}",
+    "services.group.empty": "该分组暂无服务",
+    "services.state.running": "运行中",
+    "services.state.stopped": "已停止",
+    "services.state.failed": "失败",
+    "services.state.starting": "启动中",
+    "services.state.stopping": "停止中",
+    "services.state.unknown": "未知",
+    "services.action.start": "启动",
+    "services.action.stop": "停止",
+    "services.action.restart": "重启",
+    "services.action.details": "详情",
+    "services.file.title": "服务文件",
+    "services.file.loading": "正在读取服务文件...",
+    "services.file.empty": "服务文件内容为空。",
+    "services.file.copy": "复制",
+    "services.file.copied": "已复制服务文件内容",
+    "services.file.close": "关闭",
+    "services.confirm.stop.title": "停止服务",
+    "services.confirm.stop.message": "确定停止 {name}？依赖它的应用可能会中断。",
+    "services.toast.success": "{name}：{action}完成",
+    "services.toast.failed": "服务操作失败：{error}",
     "terminal_sftp.title": "SFTP",
     "terminal_sftp.pin": "书签",
     "terminal_sftp.pin.add_dir": "将当前目录添加为书签",
@@ -2530,6 +2600,12 @@ const terminalMetricsPanel = document.getElementById("terminal-metrics-panel");
 const terminalSidebarMetricsToggle = document.getElementById("terminal-sidebar-metrics-toggle");
 const terminalMetricsBody = document.getElementById("terminal-metrics-body");
 const terminalMetricsRefresh = document.getElementById("terminal-metrics-refresh");
+const terminalServicesPanel = document.getElementById("terminal-services-panel");
+const terminalSidebarServicesToggle = document.getElementById("terminal-sidebar-services-toggle");
+const terminalServicesBody = document.getElementById("terminal-services-body");
+const terminalServicesRefresh = document.getElementById("terminal-services-refresh");
+const terminalServicesSearch = document.getElementById("terminal-services-search");
+const terminalServicesSummary = document.getElementById("terminal-services-summary");
 const terminalSftpPanel = document.getElementById("terminal-sftp-panel");
 const terminalSidebarSftpToggle = document.getElementById("terminal-sidebar-sftp-toggle");
 const terminalThemePanel = document.getElementById("terminal-theme-panel");
@@ -3423,6 +3499,12 @@ let terminalActiveSidePanel = null;
 const terminalSidePanelByPane = new Map();
 let metricsRefreshTimer = null;
 let metricsRefreshToken = 0;
+let servicesRefreshToken = 0;
+let servicesLastRows = [];
+let servicesSearchQuery = "";
+const servicesExpandedGroups = new Set();
+let serviceFileRequestToken = 0;
+let serviceFileLastFocus = null;
 let terminalCommandSnippets = [];
 let terminalSnippetSearchQuery = "";
 let snippetGroupMenuTarget = "";
@@ -3780,6 +3862,256 @@ function stopMetricsAutoRefresh() {
   if (metricsRefreshTimer) clearInterval(metricsRefreshTimer);
   metricsRefreshTimer = null;
   metricsRefreshToken += 1;
+}
+
+// ---------- systemd services panel ----------
+function systemServiceState(service) {
+  const active = String(service?.activeState || "").toLowerCase();
+  const sub = String(service?.subState || "").toLowerCase();
+  if (active === "failed" || sub === "failed") return { key: "failed", tone: "danger" };
+  if (active === "activating") return { key: "starting", tone: "warn" };
+  if (active === "deactivating") return { key: "stopping", tone: "warn" };
+  if (active === "active") return { key: "running", tone: "ok" };
+  if (active === "inactive") return { key: "stopped", tone: "muted" };
+  return { key: "unknown", tone: "muted" };
+}
+
+function filteredSystemServices() {
+  const query = servicesSearchQuery.trim().toLocaleLowerCase();
+  if (!query) return servicesLastRows;
+  return servicesLastRows.filter((service) => [
+    service.name,
+    service.description,
+    service.activeState,
+    service.subState,
+  ].some((value) => String(value || "").toLocaleLowerCase().includes(query)));
+}
+
+function serviceCardHtml(service) {
+  const state = systemServiceState(service);
+  const running = state.key === "running";
+  const unit = String(service.name || "");
+  const scope = service.scope === "user" ? "user" : "system";
+  const unitAttr = encodeURIComponent(unit);
+  const description = service.description || unit;
+  const subState = String(service.subState || service.activeState || "");
+  return `
+    <article class="service-card">
+      <div class="service-card-head">
+        <span class="service-state service-state-${state.tone}" aria-hidden="true"></span>
+        <div class="service-identity">
+          <strong title="${escapeMetricText(unit)}">${escapeMetricText(unit.replace(/\.service$/, ""))}</strong>
+          <span title="${escapeMetricText(description)}">${escapeMetricText(description)}</span>
+        </div>
+        <span class="service-badge service-badge-${state.tone}">${t(`services.state.${state.key}`)}</span>
+      </div>
+      <div class="service-card-foot">
+        <span class="service-sub-state">${escapeMetricText(subState)}</span>
+        <div class="service-actions">
+          <button type="button" class="service-btn" data-service-detail data-service-unit="${unitAttr}" data-service-scope="${scope}">${t("services.action.details")}</button>
+          ${running
+            ? `<button type="button" class="service-btn" data-service-action="restart" data-service-unit="${unitAttr}" data-service-scope="${scope}">${t("services.action.restart")}</button><button type="button" class="service-btn service-btn-danger" data-service-action="stop" data-service-unit="${unitAttr}" data-service-scope="${scope}">${t("services.action.stop")}</button>`
+            : `<button type="button" class="service-btn service-btn-success" data-service-action="${state.key === "failed" ? "restart" : "start"}" data-service-unit="${unitAttr}" data-service-scope="${scope}">${t(state.key === "failed" ? "services.action.restart" : "services.action.start")}</button>`}
+        </div>
+      </div>
+    </article>`;
+}
+
+function serviceGroupHtml(group, rows) {
+  const expanded = servicesExpandedGroups.has(group);
+  const running = rows.filter((row) => systemServiceState(row).key === "running").length;
+  const tone = rows.length === 0 ? "muted" : (running === rows.length ? "ok" : "warn");
+  return `
+    <section class="service-group" data-service-group-section="${group}">
+      <button type="button" class="service-group-head" data-service-group="${group}" aria-expanded="${expanded}">
+        <svg class="zt-icon service-group-caret${expanded ? " open" : ""}" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
+        <span class="service-state service-state-${tone}" aria-hidden="true"></span>
+        <span class="service-group-name">${t(`services.group.${group}`)}</span>
+        <span class="service-group-count">${t("services.group.summary", { running, total: rows.length })}</span>
+      </button>
+      <div class="service-group-body" ${expanded ? "" : "hidden"}>
+        ${rows.length ? rows.map(serviceCardHtml).join("") : `<div class="service-group-empty">${t("services.group.empty")}</div>`}
+      </div>
+    </section>`;
+}
+
+function renderSystemServiceRows() {
+  if (!terminalServicesBody) return;
+  const rows = filteredSystemServices();
+  const running = servicesLastRows.filter((row) => systemServiceState(row).key === "running").length;
+  const failed = servicesLastRows.filter((row) => systemServiceState(row).key === "failed").length;
+  if (terminalServicesSummary) {
+    terminalServicesSummary.textContent = t("services.summary", {
+      count: servicesLastRows.length,
+      running,
+      failed,
+    });
+  }
+  if (!servicesLastRows.length) {
+    terminalServicesBody.innerHTML = `<div class="terminal-side-empty"><strong>${t("services.empty.title")}</strong><p>${t("services.empty.desc")}</p></div>`;
+    return;
+  }
+  if (!rows.length) {
+    terminalServicesBody.innerHTML = `<div class="terminal-side-empty"><strong>${t("services.no_match.title")}</strong><p>${t("services.no_match.desc")}</p></div>`;
+    return;
+  }
+  const groups = servicesSearchQuery.trim()
+    ? ["custom", "system"].filter((group) => rows.some((row) => row.group === group))
+    : ["custom", "system"];
+  terminalServicesBody.innerHTML = groups
+    .map((group) => serviceGroupHtml(group, rows.filter((row) => row.group === group)))
+    .join("");
+}
+
+async function renderServicesPanel(options = {}) {
+  if (!terminalServicesBody) return;
+  const silent = Boolean(options.silent);
+  const token = ++servicesRefreshToken;
+  const pane = getActivePane();
+  if (!pane) {
+    servicesLastRows = [];
+    if (terminalServicesSummary) terminalServicesSummary.textContent = "";
+    terminalServicesBody.innerHTML = `<div class="terminal-side-empty"><strong>${t("metrics.empty.title")}</strong><p>${t("metrics.empty.desc")}</p></div>`;
+    return;
+  }
+  if (!silent || !terminalServicesBody.querySelector(".service-card")) {
+    servicesLastRows = [];
+    if (terminalServicesSummary) terminalServicesSummary.textContent = "";
+    terminalServicesBody.innerHTML = `<div class="terminal-side-empty"><strong>${t("services.loading")}</strong><p>${escapeMetricText(pane.host?.name || pane.host?.host || "Local")}</p></div>`;
+  }
+  if (terminalServicesRefresh) terminalServicesRefresh.disabled = true;
+  try {
+    const rows = await invoke("list_system_services", { hostId: pane.host?.id || null });
+    if (token !== servicesRefreshToken || terminalActiveSidePanel !== "services") return;
+    servicesLastRows = Array.isArray(rows) ? rows : [];
+    renderSystemServiceRows();
+  } catch (e) {
+    if (token !== servicesRefreshToken || terminalActiveSidePanel !== "services") return;
+    servicesLastRows = [];
+    if (terminalServicesSummary) terminalServicesSummary.textContent = "";
+    terminalServicesBody.innerHTML = `<div class="terminal-side-empty"><strong>${t("services.unavailable.title")}</strong><p>${escapeMetricText(String(e))}</p></div>`;
+  } finally {
+    if (token === servicesRefreshToken && terminalServicesRefresh) terminalServicesRefresh.disabled = false;
+  }
+}
+
+async function runSystemServiceAction(action, unit, scope, button) {
+  const pane = getActivePane();
+  const hostId = pane?.host?.id || null;
+  if (action === "stop") {
+    const confirmed = await openConfirmDialog({
+      title: t("services.confirm.stop.title"),
+      message: t("services.confirm.stop.message", { name: unit }),
+      okText: t("services.action.stop"),
+      cancelText: t("input.button.cancel"),
+      danger: true,
+    });
+    if (!confirmed) return;
+  }
+  const card = button?.closest(".service-card");
+  card?.querySelectorAll("button").forEach((item) => { item.disabled = true; });
+  try {
+    await invoke("system_service_action", {
+      hostId,
+      unit,
+      action,
+      scope,
+    });
+    showToast(t("services.toast.success", {
+      name: unit,
+      action: t(`services.action.${action}`),
+    }), "success");
+    await renderServicesPanel({ silent: true });
+  } catch (e) {
+    showToast(t("services.toast.failed", { error: String(e) }), "error", 5000);
+    card?.querySelectorAll("button").forEach((item) => { item.disabled = false; });
+  }
+}
+
+function ensureServiceFileOverlay() {
+  let overlay = document.getElementById("service-file-overlay");
+  if (overlay) return overlay;
+  overlay = document.createElement("div");
+  overlay.id = "service-file-overlay";
+  overlay.className = "overlay";
+  overlay.hidden = true;
+  overlay.innerHTML = `
+    <section class="dialog service-file-dialog" role="dialog" aria-modal="true" aria-labelledby="service-file-title">
+      <header class="service-file-head">
+        <div class="service-file-titlewrap">
+          <strong id="service-file-title" class="service-file-title"></strong>
+          <code class="service-file-command"></code>
+        </div>
+        <div class="service-file-actions">
+          <button type="button" class="service-file-copy"></button>
+          <button type="button" class="service-file-close"></button>
+        </div>
+      </header>
+      <pre class="service-file-body" tabindex="0"></pre>
+    </section>`;
+  document.body.appendChild(overlay);
+  const close = () => {
+    serviceFileRequestToken += 1;
+    overlay.hidden = true;
+    const target = serviceFileLastFocus;
+    serviceFileLastFocus = null;
+    if (target?.isConnected) target.focus();
+  };
+  overlay.addEventListener("click", (ev) => { if (ev.target === overlay) close(); });
+  overlay.querySelector(".service-file-close")?.addEventListener("click", close);
+  overlay.querySelector(".service-file-copy")?.addEventListener("click", async () => {
+    const text = String(overlay._serviceFileText || "");
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast(t("services.file.copied"), "success");
+    } catch (e) {
+      showToast(String(e), "error");
+    }
+  });
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" && !overlay.hidden) {
+      ev.stopPropagation();
+      close();
+    }
+  });
+  return overlay;
+}
+
+async function showSystemServiceFile(unit, scope) {
+  const pane = getActivePane();
+  const hostId = pane?.host?.id || null;
+  const overlay = ensureServiceFileOverlay();
+  const token = ++serviceFileRequestToken;
+  const title = overlay.querySelector(".service-file-title");
+  const command = overlay.querySelector(".service-file-command");
+  const body = overlay.querySelector(".service-file-body");
+  const copy = overlay.querySelector(".service-file-copy");
+  const close = overlay.querySelector(".service-file-close");
+  if (overlay.hidden) serviceFileLastFocus = document.activeElement;
+  title.textContent = `${t("services.file.title")} · ${unit}`;
+  command.textContent = `systemctl${scope === "user" ? " --user" : ""} cat ${unit}`;
+  body.textContent = t("services.file.loading");
+  body.setAttribute("aria-busy", "true");
+  overlay._serviceFileText = "";
+  copy.textContent = t("services.file.copy");
+  copy.disabled = true;
+  close.textContent = t("services.file.close");
+  overlay.hidden = false;
+  close.focus();
+  try {
+    const content = await invoke("system_service_file", { hostId, unit, scope });
+    if (token !== serviceFileRequestToken || overlay.hidden) return;
+    const text = String(content || "");
+    overlay._serviceFileText = text;
+    body.textContent = text || t("services.file.empty");
+    copy.disabled = !text;
+  } catch (e) {
+    if (token !== serviceFileRequestToken || overlay.hidden) return;
+    body.textContent = String(e);
+  } finally {
+    if (token === serviceFileRequestToken) body.removeAttribute("aria-busy");
+  }
 }
 
 // ---------- Docker panel ----------
@@ -4205,6 +4537,7 @@ function setTerminalSidePanel(panel, { skipSftpConnect = false } = {}) {
   if (terminalAiPanel) terminalAiPanel.hidden = terminalActiveSidePanel !== "ai";
   if (terminalSnippetsPanel) terminalSnippetsPanel.hidden = terminalActiveSidePanel !== "snippets";
   if (terminalMetricsPanel) terminalMetricsPanel.hidden = terminalActiveSidePanel !== "metrics";
+  if (terminalServicesPanel) terminalServicesPanel.hidden = terminalActiveSidePanel !== "services";
   if (terminalSftpPanel) terminalSftpPanel.hidden = terminalActiveSidePanel !== "sftp";
   if (terminalThemePanel) terminalThemePanel.hidden = terminalActiveSidePanel !== "theme";
   if (terminalDockerPanel) terminalDockerPanel.hidden = terminalActiveSidePanel !== "docker";
@@ -4216,6 +4549,7 @@ function setTerminalSidePanel(panel, { skipSftpConnect = false } = {}) {
   }
   terminalSidebarSnippetsToggle?.classList.toggle("active", terminalActiveSidePanel === "snippets");
   terminalSidebarMetricsToggle?.classList.toggle("active", terminalActiveSidePanel === "metrics");
+  terminalSidebarServicesToggle?.classList.toggle("active", terminalActiveSidePanel === "services");
   terminalSidebarSftpToggle?.classList.toggle("active", terminalActiveSidePanel === "sftp");
   terminalSidebarThemeToggle?.classList.toggle("active", terminalActiveSidePanel === "theme");
   terminalSidebarDockerToggle?.classList.toggle("active", terminalActiveSidePanel === "docker");
@@ -4226,6 +4560,7 @@ function setTerminalSidePanel(panel, { skipSftpConnect = false } = {}) {
   } else {
     stopMetricsAutoRefresh();
   }
+  if (terminalActiveSidePanel === "services") renderServicesPanel();
   if (terminalActiveSidePanel === "sftp" && !skipSftpConnect) {
     connectTerminalSftpToActivePane().catch((e) => console.warn("terminal sftp connect failed", e));
   }
@@ -11346,6 +11681,14 @@ function applyI18n() {
   setText("terminal-metrics-title", "metrics.title");
   setText("terminal-metrics-subtitle", "metrics.subtitle");
   setAttr("terminal-metrics-refresh", "title", "metrics.refresh");
+  setAttr("terminal-sidebar-services-toggle", "title", "services.title");
+  setAttr("terminal-sidebar-services-toggle", "aria-label", "services.title");
+  setText("terminal-services-title", "services.title");
+  setText("terminal-services-subtitle", "services.subtitle");
+  setAttr("terminal-services-refresh", "title", "services.refresh");
+  setAttr("terminal-services-refresh", "aria-label", "services.refresh");
+  setPlaceholder("terminal-services-search", "services.search");
+  setAttr("terminal-services-search", "aria-label", "services.search");
   setAttr("terminal-sidebar-sftp-toggle", "title", "terminal_sftp.title");
   setAttr("terminal-sidebar-sftp-toggle", "aria-label", "terminal_sftp.title");
   setText("terminal-sftp-title", "terminal_sftp.title");
@@ -12178,9 +12521,6 @@ if (settingsAiSystemPrompt) {
   });
 }
 settingsAiCancel?.addEventListener("click", () => cancelAiEditor());
-aiConfigOverlay?.addEventListener("click", (ev) => {
-  if (ev.target === aiConfigOverlay) cancelAiEditor();
-});
 document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape" && aiConfigOverlay && !aiConfigOverlay.hidden) {
     ev.stopPropagation();
@@ -13621,6 +13961,7 @@ function renderTerminalWorkspace() {
   applyTerminalSidePanelForActivePane();
   renderTerminalCommandSnippets();
   if (terminalActiveSidePanel === "metrics") renderMetricsPanel();
+  if (terminalActiveSidePanel === "services") renderServicesPanel();
   if (terminalActiveSidePanel === "docker") renderDockerPanel();
   if (terminalActiveSidePanel === "sftp") connectTerminalSftpToActivePane().catch((e) => console.warn("terminal sftp sync failed", e));
 
@@ -13715,6 +14056,56 @@ terminalSidebarMetricsToggle?.addEventListener("click", () => {
 });
 
 terminalMetricsRefresh?.addEventListener("click", renderMetricsPanel);
+
+terminalSidebarServicesToggle?.addEventListener("click", () => {
+  setTerminalSidePanel(terminalActiveSidePanel === "services" ? null : "services");
+});
+
+terminalServicesRefresh?.addEventListener("click", () => renderServicesPanel());
+
+terminalServicesSearch?.addEventListener("input", () => {
+  servicesSearchQuery = terminalServicesSearch.value || "";
+  renderSystemServiceRows();
+});
+
+terminalServicesBody?.addEventListener("click", (ev) => {
+  const groupToggle = ev.target.closest("button[data-service-group]");
+  if (groupToggle) {
+    const group = groupToggle.getAttribute("data-service-group") || "";
+    const expanded = servicesExpandedGroups.has(group);
+    if (expanded) servicesExpandedGroups.delete(group);
+    else servicesExpandedGroups.add(group);
+    groupToggle.setAttribute("aria-expanded", String(!expanded));
+    groupToggle.querySelector(".service-group-caret")?.classList.toggle("open", !expanded);
+    groupToggle.closest(".service-group")?.querySelector(".service-group-body")?.toggleAttribute("hidden", expanded);
+    return;
+  }
+  const detailButton = ev.target.closest("button[data-service-detail]");
+  if (detailButton) {
+    let unit = "";
+    try {
+      unit = decodeURIComponent(detailButton.getAttribute("data-service-unit") || "");
+    } catch {
+      return;
+    }
+    if (!unit) return;
+    const scope = detailButton.getAttribute("data-service-scope") === "user" ? "user" : "system";
+    showSystemServiceFile(unit, scope);
+    return;
+  }
+  const button = ev.target.closest("button[data-service-action]");
+  if (!button) return;
+  const action = button.getAttribute("data-service-action") || "";
+  let unit = "";
+  try {
+    unit = decodeURIComponent(button.getAttribute("data-service-unit") || "");
+  } catch {
+    return;
+  }
+  if (!unit) return;
+  const scope = button.getAttribute("data-service-scope") === "user" ? "user" : "system";
+  runSystemServiceAction(action, unit, scope, button);
+});
 
 terminalSidebarDockerToggle?.addEventListener("click", () => {
   setTerminalSidePanel(terminalActiveSidePanel === "docker" ? null : "docker");
