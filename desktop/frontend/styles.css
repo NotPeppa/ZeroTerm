@@ -3177,14 +3177,20 @@ body[data-app-theme="light"] .terminal-side-btn.active::before {
   font: 11.5px/1.4 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 }
 
-.ai-inline-command {
-  cursor: pointer;
+.ai-inline-copy {
+  cursor: copy;
   box-shadow: inset 0 -1px 0 rgba(157, 211, 255, 0.45);
 }
 
-.ai-inline-command:hover {
+.ai-inline-copy:hover,
+.ai-inline-copy:focus-visible {
   border-color: rgba(104, 168, 255, 0.55) !important;
   background: rgba(104, 168, 255, 0.18) !important;
+}
+
+.ai-inline-copy:focus-visible {
+  outline: 2px solid rgba(157, 211, 255, 0.8);
+  outline-offset: 2px;
 }
 
 .ai-message-body a {

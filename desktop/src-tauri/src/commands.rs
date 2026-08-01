@@ -3539,6 +3539,58 @@ pub async fn delete_snippet_group(
 /// material, which is a few KiB. Anything larger is a wrong pick.
 const MAX_PICKED_TEXT_FILE_BYTES: u64 = 1024 * 1024;
 
+fn picker_starting_directory(
+    default_path: Option<&str>,
+    ssh_directory: Option<PathBuf>,
+) -> Option<PathBuf> {
+    default_path
+        .map(PathBuf::from)
+        .filter(|path| path.is_dir())
+        .or_else(|| ssh_directory.filter(|path| path.is_dir()))
+}
+
+/// `tauri-plugin-dialog`/`rfd` does not currently expose AppKit's
+/// `showsHiddenFiles` option. Private keys commonly live below the hidden
+/// `~/.ssh` directory, so use the native switch for that picker on macOS.
+#[cfg(target_os = "macos")]
+fn blocking_pick_file_showing_hidden(
+    title: Option<String>,
+    starting_directory: Option<PathBuf>,
+) -> Option<PathBuf> {
+    use objc2::rc::autoreleasepool;
+    use objc2_app_kit::{NSModalResponseOK, NSOpenPanel};
+    use objc2_foundation::{NSString, NSURL};
+
+    autoreleasepool(|_| {
+        dispatch2::run_on_main(move |mtm| {
+            let panel = NSOpenPanel::openPanel(mtm);
+            panel.setCanChooseDirectories(false);
+            panel.setCanChooseFiles(true);
+            panel.setAllowsMultipleSelection(false);
+            panel.setShowsHiddenFiles(true);
+
+            if let Some(title) = title {
+                panel.setMessage(Some(&NSString::from_str(&title)));
+            }
+            if let Some(directory) = starting_directory {
+                if let Some(path) = directory.to_str() {
+                    let url = NSURL::fileURLWithPath_isDirectory(&NSString::from_str(path), true);
+                    panel.setDirectoryURL(Some(&url));
+                }
+            }
+
+            if panel.runModal() == NSModalResponseOK {
+                panel
+                    .URL()
+                    .and_then(|url| url.path())
+                    .map(|path| PathBuf::from(path.to_string()))
+            } else {
+                None
+            }
+        })
+    })
+}
+
 /// Open a native file-picker and, when the user picks something,
 /// remember the canonical path in the session's dialog-grant set.
 /// High-risk commands (`read_local_text_file`, `open_with_app`) only
@@ -3550,31 +3602,44 @@ pub async fn pick_local_file(
     app_handle: AppHandle,
     title: Option<String>,
     default_path: Option<String>,
+    show_hidden: Option<bool>,
 ) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
 
-    let picked = tauri::async_runtime::spawn_blocking(move || {
+    let show_hidden = show_hidden.unwrap_or(false);
+    let ssh_directory = show_hidden
+        .then(|| dirs::home_dir().map(|home| home.join(".ssh")))
+        .flatten();
+    let starting_directory = picker_starting_directory(default_path.as_deref(), ssh_directory);
+
+    let picked = tauri::async_runtime::spawn_blocking(move || -> Result<Option<PathBuf>, String> {
+        #[cfg(target_os = "macos")]
+        if show_hidden {
+            return Ok(blocking_pick_file_showing_hidden(title, starting_directory));
+        }
+
         let mut builder = app_handle.dialog().file();
         if let Some(t) = title {
             builder = builder.set_title(t);
         }
-        if let Some(dir) = default_path {
-            let p = PathBuf::from(dir);
-            if p.is_dir() {
-                builder = builder.set_directory(p);
-            }
+        if let Some(dir) = starting_directory {
+            builder = builder.set_directory(dir);
         }
-        builder.blocking_pick_file()
+        builder
+            .blocking_pick_file()
+            .map(|file_path| {
+                file_path
+                    .into_path()
+                    .map_err(|e| format!("unsupported dialog result: {e}"))
+            })
+            .transpose()
     })
     .await
-    .map_err(|e| format!("dialog task failed: {e}"))?;
+    .map_err(|e| format!("dialog task failed: {e}"))??;
 
-    let Some(file_path) = picked else {
+    let Some(path) = picked else {
         return Ok(None);
     };
-    let path = file_path
-        .into_path()
-        .map_err(|e| format!("unsupported dialog result: {e}"))?;
     let canonical = std::fs::canonicalize(&path)
         .map_err(|e| format!("resolving {}: {e}", path.display()))?;
     state
@@ -6092,6 +6157,26 @@ pub async fn list_system_fonts() -> Result<Vec<SystemFontDto>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn private_key_picker_prefers_explicit_directory_then_ssh_directory() {
+        let root = std::env::temp_dir().join(format!("zeroterm-picker-{}", uuid::Uuid::new_v4()));
+        let explicit = root.join("explicit");
+        let ssh = root.join(".ssh");
+        std::fs::create_dir_all(&explicit).unwrap();
+        std::fs::create_dir_all(&ssh).unwrap();
+
+        assert_eq!(
+            picker_starting_directory(explicit.to_str(), Some(ssh.clone())),
+            Some(explicit.clone())
+        );
+        assert_eq!(
+            picker_starting_directory(Some("/path/that/does/not/exist"), Some(ssh.clone())),
+            Some(ssh)
+        );
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn recursive_local_delete_rejects_relative_and_root_paths() {

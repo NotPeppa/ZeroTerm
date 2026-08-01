@@ -42,6 +42,21 @@ check(
   source.includes('run.textContent = restoredResult ? "已执行" : (commands.length > 1 ? `批准 ${index + 1}` : "批准执行")'),
   "code blocks should expose an explicit approval control",
 );
+check(
+  source.includes('code.title = "点击复制"')
+    && source.includes('code.addEventListener("click", copy)')
+    && source.includes("await navigator.clipboard.writeText(text)"),
+  "clicking inline code should copy it to the clipboard",
+);
+check(
+  !source.includes("requestAiCommandApproval"),
+  "inline code must not retain a click-to-execute path",
+);
+check(
+  source.includes('output: execution?.output || ""')
+    && source.includes('output: typeof result.output === "string" ? result.output : ""'),
+  "approved command output should be stored in the conversation",
+);
 
 console.log(`\nai-command-approval.test.js: ${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

@@ -5592,11 +5592,18 @@ function renderAiMarkdown(text) {
       if (match.startsWith("`")) {
         const code = document.createElement("code");
         code.textContent = match.slice(1, -1);
-        if (looksRunnableInlineCommand(code.textContent)) {
-          code.classList.add("ai-inline-command");
-          code.title = "点击批准执行";
-          code.addEventListener("click", () => requestAiCommandApproval(code.textContent));
-        }
+        code.classList.add("ai-inline-copy");
+        code.title = "点击复制";
+        code.tabIndex = 0;
+        code.setAttribute("role", "button");
+        code.setAttribute("aria-label", "复制行内代码");
+        const copy = () => copyAiInlineCode(code.textContent);
+        code.addEventListener("click", copy);
+        code.addEventListener("keydown", (event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          copy();
+        });
         frag.appendChild(code);
       } else if (match.startsWith("**")) {
         const strong = document.createElement("strong");
@@ -5827,16 +5834,6 @@ function ensureAiMessageParts(node) {
   return { body, thinkingBlock, contentWrap, actionsSlot };
 }
 
-function looksRunnableInlineCommand(value) {
-  const text = String(value || "").trim();
-  if (!text || text.length > 140 || text.includes("\n")) return false;
-  if (/^https?:\/\//i.test(text)) return false;
-  if (/^[\w.-]+\.[a-z]{2,}(\/.*)?$/i.test(text)) return false;
-  if (looksLikeHeredocStart(text)) return false;
-  if (/^(if|then|elif|else|fi|for|while|until|do|done|case|esac|select|function)\b/.test(text)) return false;
-  return /^(sudo\s+)?[a-z][\w.-]*(\s+|$)/i.test(text);
-}
-
 function setAiMessageContent(node, content) {
   const body = node?.querySelector?.(".ai-message-body");
   if (!body) return;
@@ -5960,14 +5957,14 @@ async function runCommandInActiveTerminal(command) {
   }
 }
 
-async function requestAiCommandApproval(command) {
-  const text = normalizeAiCommandBlock(command);
+async function copyAiInlineCode(value) {
+  const text = String(value ?? "");
   if (!text) return;
   try {
-    await executeAiCommand(text);
-  } catch {
-    // executeAiCommand() surfaces failures via toast. Swallow here so the
-    // inline click handler never produces an unhandled promise rejection.
+    await navigator.clipboard.writeText(text);
+    showToast("已复制", "success", 1600);
+  } catch (error) {
+    showToast(`复制失败：${error}`, "error", 3600);
   }
 }
 
@@ -5977,9 +5974,9 @@ async function executeAiCommand(command) {
     showToast("当前没有可执行命令的终端会话。", "error", 3600);
     return;
   }
-  // Reaching this function requires an explicit click on “批准执行” (or on an
-  // inline command labelled as click-to-approve). That click is the user's
-  // per-command authorization; do not ask for the same approval twice.
+  // Reaching this function requires an explicit click on “批准执行”. That
+  // click is the user's per-command authorization; do not ask for the same
+  // approval twice. Clicking inline code only copies it.
   refitActiveTerminalPanes({ reason: "ai-command-before", forceBottom: true, frames: 1 });
   const buffer = pane.term?.buffer?.active;
   const cursor = buffer ? buffer.length : 0;
@@ -5990,7 +5987,7 @@ async function executeAiCommand(command) {
     await waitForTerminalOutputSettle(before, { maxMs: commandWaitMaxMs(command) });
     refitActiveTerminalPanes({ reason: "ai-command-after", forceBottom: true, frames: 2 });
     keepPaneTerminalAtBottom(pane, { force: true });
-    return cursor;
+    return { cursor, output: scanTerminalFromCursor(cursor, pane) };
   } catch (e) {
     showToast(String(e), "error", 4200);
     throw e;
@@ -6096,8 +6093,8 @@ function commandWaitMaxMs(command) {
   return Math.min(90000, Math.max(15000, totalSleepMs + 8000));
 }
 
-function scanTerminalFromCursor(cursor) {
-  const buffer = getActivePane()?.term?.buffer?.active;
+function scanTerminalFromCursor(cursor, pane = getActivePane()) {
+  const buffer = pane?.term?.buffer?.active;
   if (!buffer) return "";
   const maxLines = buffer.length || 0;
   if (cursor > 0 && cursor < maxLines && buffer.getLine(cursor)) {
@@ -6115,26 +6112,9 @@ function scanTerminalFromCursor(cursor) {
   return rows.join("\n").trim();
 }
 
-function buildConversationSummary(messages) {
-  const msgs = Array.isArray(messages) ? messages : [];
-  const lastUser = [...msgs].reverse().find((m) => m.role === "user");
-  const lastAssistant = [...msgs].reverse().find((m) => m.role === "assistant");
-  const parts = [];
-  if (lastUser?.content) {
-    const text = String(lastUser.content).replace(/```[\s\S]*?```/g, "").trim().slice(0, 200);
-    if (text) parts.push(`用户的原始问题：${text}`);
-  }
-  if (lastAssistant?.content) {
-    const text = String(lastAssistant.content).replace(/```[\s\S]*?```/g, "").trim().slice(0, 150);
-    if (text) parts.push(`AI 上一步的建议摘要：${text}`);
-  }
-  return parts.join("\n");
-}
-
 async function continueAiAfterCommands(results, { totalCommands = 0 } = {}) {
   const executed = Array.isArray(results) ? results.filter((item) => item?.command) : [];
   const includeCommandOutput = aiContextMode !== "off";
-  const summary = buildConversationSummary(aiMessages);
   const commands = executed.map((item) => item.command);
   const earliestCursor = executed.reduce((min, item) => {
     const c = typeof item.cursor === "number" ? item.cursor : 0;
@@ -6165,7 +6145,6 @@ async function continueAiAfterCommands(results, { totalCommands = 0 } = {}) {
         ? `这条 AI 回复里原本给出了 ${totalCommands} 条可执行命令，但当前没有记录到通过按钮执行的命令；用户可能改为手动执行。`
         : "当前没有记录到通过按钮执行的命令；用户可能是在终端中手动执行后再回来继续分析。",
     ];
-  if (summary) systemParts.push(`\n对话摘要：\n${summary}`);
   if (!includeCommandOutput) systemParts.push("用户当前选择了不附带终端内容，不要基于终端输出做判断。");
   systemParts.push(aiExecutableCommandFormatPrompt());
   const messages = [{ role: "system", content: withGlobalAiPrompt(systemParts.join("\n")) }];
@@ -6173,6 +6152,11 @@ async function continueAiAfterCommands(results, { totalCommands = 0 } = {}) {
     const label = executed.length ? "从终端获取到的命令执行输出" : "从当前终端获取到的最新内容";
     messages.push({ role: "system", content: `${label}：\n\`\`\`terminal\n${redactSensitiveText(terminalOutput)}\n\`\`\`` });
   }
+  const history = buildAiContextMessages(
+    redactAiMessagesForRequest(aiMessages, { includeTerminalContent: includeCommandOutput }),
+    { maxTokens: 8_000, summaryTokens: 2_000 },
+  );
+  messages.push(...history.messages);
   messages.push({ role: "user", content: "继续分析" });
   await runAiTurn(messages, executed.length ? "正在分析已执行命令..." : "正在基于当前终端继续分析...");
 }
@@ -6396,7 +6380,10 @@ function storeAiCommandResultForMessage(messageNode, result) {
   if (!message || !result?.command) return;
   if (!Array.isArray(message.commandResults)) message.commandResults = [];
   message.commandResults = message.commandResults.filter((item) => item.command !== result.command);
-  message.commandResults.push({ command: result.command });
+  message.commandResults.push({
+    command: result.command,
+    output: typeof result.output === "string" ? result.output : "",
+  });
   storeAiConversationForActivePane();
 }
 
@@ -6430,6 +6417,8 @@ function getActiveTerminalSnapshot(maxLines = 160) {
 
 // 终端内容脱敏实现在 redact.js(经典脚本,先于本模块加载),便于 Node 单测复用
 const { redactSensitiveText } = globalThis.ZeroTermRedact;
+// 对话上下文按 token 预算组装；短会话完整发送，长会话压缩较早内容。
+const { buildAiContextMessages } = globalThis.ZeroTermAiContext;
 
 function buildAiTerminalContext() {
   const snapshot = getActiveTerminalSnapshot();
@@ -6461,7 +6450,12 @@ function redactAiMessagesForRequest(messages, { includeTerminalContent = true } 
   return messages.map((message) => ({
     ...message,
     content: redactSensitiveText(includeTerminalContent ? message.content : stripTerminalContentFromAiText(message.content)),
-    commandResults: includeTerminalContent ? message.commandResults : [],
+    commandResults: includeTerminalContent && Array.isArray(message.commandResults)
+      ? message.commandResults.map((result) => ({
+        command: redactSensitiveText(result?.command || ""),
+        output: redactSensitiveText(result?.output || ""),
+      }))
+      : [],
   }));
 }
 
@@ -6497,9 +6491,13 @@ function enhanceAiCodeBlocks(root) {
         run.textContent = "运行中";
         block.classList.add("approved");
         try {
-          const cursor = await executeAiCommand(singleCommand);
+          const execution = await executeAiCommand(singleCommand);
           if (commandState) {
-            const result = { command: singleCommand, cursor: cursor || 0 };
+            const result = {
+              command: singleCommand,
+              cursor: execution?.cursor || 0,
+              output: execution?.output || "",
+            };
             commandState.results.push(result);
             commandState.executedCount += 1;
             storeAiCommandResultForMessage(messageNode, result);
@@ -6857,7 +6855,10 @@ async function sendAiMessage(text) {
   const terminalContext = shouldAttachTerminalContext(text) ? buildAiTerminalContext() : "";
   const messages = [{ role: "system", content: withGlobalAiPrompt(systemWithCommandFormat) }];
   if (terminalContext) messages.push({ role: "system", content: terminalContext });
-  messages.push(...redactAiMessagesForRequest(aiMessages.slice(-10), { includeTerminalContent: aiContextMode !== "off" }));
+  const history = buildAiContextMessages(
+    redactAiMessagesForRequest(aiMessages, { includeTerminalContent: aiContextMode !== "off" }),
+  );
+  messages.push(...history.messages);
   try {
     await runAiTurn(messages);
   } catch (e) {
@@ -13917,6 +13918,7 @@ async function pickQuickConnectKeyFile() {
   // for read_local_text_file (webview-supplied paths are refused).
   const chosen = await invoke("pick_local_file", {
     title: t("host_editor.key.pick_title"),
+    showHidden: true,
   });
   if (!chosen) return;
   const path = String(chosen);
@@ -16309,6 +16311,7 @@ async function pickKeyFile() {
   // Backend picker authorizes the path for read_local_text_file.
   const chosen = await invoke("pick_local_file", {
     title: t("host_editor.key.pick_title"),
+    showHidden: true,
   });
 
   if (!chosen) return;
