@@ -27,7 +27,10 @@
   // showing a live status near the bottom. A busy status takes precedence over
   // prompt-looking words in that transcript.
   const BUSY_STATE_PATTERNS = [
-    /\besc(?:ape)?\s+to\s+(?:interrupt|cancel|stop)\b/i,
+    // "esc to cancel" is also commonly shown at the bottom of approval
+    // menus (for example alongside "Press enter to confirm"), so it is not
+    // sufficient evidence that the CLI is still busy.
+    /\besc(?:ape)?\s+to\s+(?:interrupt|stop)\b/i,
     /\bctrl\s*\+?\s*c\s+to\s+(?:interrupt|cancel|stop)\b/i,
     /^\s*[•●◉✳*]?\s*(?:working|thinking|processing|analy[sz]ing|executing)\s*(?:\(|…|\.{3}|$)/i,
     /(?:正在|仍在)(?:工作|思考|处理|分析|执行|运行|生成|搜索)/,

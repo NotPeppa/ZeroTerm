@@ -434,8 +434,34 @@
                                 autocomplete="off"
                               ></textarea>
                               <div class="ai-compose-footer">
-                                <button id="ai-context-toggle" type="button" class="ai-context-toggle" title="切换是否附带当前终端内容">智能判断终端内容</button>
-                                <span id="ai-compose-hint">Enter 发送，Shift+Enter 换行</span>
+                                <div class="ai-compose-options ai-terminal-control" role="group" aria-label="AI 终端选项">
+                                  <label class="ai-compose-option ai-compose-option-context" for="ai-context-toggle">
+                                    <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                      <rect x="3" y="4" width="18" height="14" rx="2"></rect>
+                                      <path d="m7 9 2.5 2L7 13"></path>
+                                      <path d="M12 13h5"></path>
+                                    </svg>
+                                    <span id="ai-context-label" class="ai-visually-hidden">终端内容</span>
+                                    <select id="ai-context-toggle" title="切换是否附带当前终端内容" aria-labelledby="ai-context-label">
+                                      <option value="always">附带终端</option>
+                                      <option value="off">不附带</option>
+                                    </select>
+                                  </label>
+                                  <label class="ai-compose-option ai-compose-option-permission" for="ai-terminal-control-mode">
+                                    <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                      <path d="M12 3 5 6v5c0 4.6 2.8 8.1 7 10 4.2-1.9 7-5.4 7-10V6l-7-3Z"></path>
+                                      <path d="M9.5 12 11 13.5l3.5-4"></path>
+                                    </svg>
+                                    <span id="ai-terminal-control-label" class="ai-visually-hidden">终端权限</span>
+                                    <select id="ai-terminal-control-mode" aria-labelledby="ai-terminal-control-label">
+                                      <option value="manual">每次询问</option>
+                                      <option value="read_only">自动只读</option>
+                                      <option value="supervised">会话自动</option>
+                                    </select>
+                                  </label>
+                                </div>
+                                <span id="ai-terminal-control-status" class="ai-terminal-control-status" hidden>命令执行前需要确认</span>
+                                <button id="ai-terminal-control-stop" type="button" class="ai-terminal-control-stop" title="停止接管" hidden>停止</button>
                                 <button type="submit" class="ai-send-button" aria-label="发送给 AI">
                                   <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
                                     <g transform="translate(24 0) scale(-1 1)">

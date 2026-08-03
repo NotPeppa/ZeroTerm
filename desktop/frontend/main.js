@@ -874,8 +874,18 @@ const I18N = {
     "ai.example.3": "Explain the error in the terminal just now",
     "ai.example.4": "Make a tarball backup of this directory",
     "ai.compose.placeholder": "Describe your goal, e.g. Get this project running",
-    "ai.compose.hint": "Enter to send, Shift+Enter for newline",
     "ai.compose.send": "Send to AI",
+    "ai.terminal_control.label": "Terminal access",
+    "ai.terminal_control.mode.manual": "Ask each time",
+    "ai.terminal_control.mode.read_only": "Auto read-only",
+    "ai.terminal_control.mode.supervised": "Session auto",
+    "ai.terminal_control.status.disconnected": "Connect a terminal to enable",
+    "ai.terminal_control.status.manual": "Commands require confirmation",
+    "ai.terminal_control.status.running": "AI is operating",
+    "ai.terminal_control.status.approval": "Risky command awaiting approval",
+    "ai.terminal_control.status.user_input": "Replace placeholders before continuing",
+    "ai.terminal_control.stop": "Stop",
+    "ai.terminal_control.stop_title": "Stop AI terminal control",
     "terminal.selection.copy": "Copy",
     "terminal.selection.execute": "Execute",
     "terminal.selection.ai": "AI",
@@ -891,8 +901,9 @@ const I18N = {
     "terminal.selection.ai_busy": "AI is still working. Please wait for this turn to finish.",
     "ai.context.toggle.title": "Toggle attaching current terminal output",
     "ai.context.toggle.label": "Auto-include terminal context",
-    "ai.context.mode.always": "Always include terminal",
-    "ai.context.mode.off": "No terminal context",
+    "ai.context.label": "Terminal content",
+    "ai.context.mode.always": "Attach terminal",
+    "ai.context.mode.off": "Don't include",
     "ai.session.title": "AI Sessions",
     "ai.session.desc.current": "Only showing AI sessions for {scope}.",
     "ai.session.desc.all": "Showing all AI sessions saved on this device.",
@@ -1830,8 +1841,18 @@ const I18N = {
     "ai.example.3": "解释刚才终端里的错误",
     "ai.example.4": "把这个目录打包备份一下",
     "ai.compose.placeholder": "描述你的目标，例如：帮我把这个项目运行起来",
-    "ai.compose.hint": "Enter 发送，Shift+Enter 换行",
     "ai.compose.send": "发送给 AI",
+    "ai.terminal_control.label": "终端权限",
+    "ai.terminal_control.mode.manual": "每次询问",
+    "ai.terminal_control.mode.read_only": "自动只读",
+    "ai.terminal_control.mode.supervised": "会话自动",
+    "ai.terminal_control.status.disconnected": "连接终端后可启用",
+    "ai.terminal_control.status.manual": "命令执行前需要确认",
+    "ai.terminal_control.status.running": "AI 正在操作",
+    "ai.terminal_control.status.approval": "风险命令等待批准",
+    "ai.terminal_control.status.user_input": "请先替换命令中的占位内容",
+    "ai.terminal_control.stop": "停止",
+    "ai.terminal_control.stop_title": "停止 AI 接管终端",
     "terminal.selection.copy": "拷贝",
     "terminal.selection.execute": "执行",
     "terminal.selection.ai": "AI",
@@ -1847,8 +1868,9 @@ const I18N = {
     "terminal.selection.ai_busy": "AI 正在处理中，请等当前这轮完成后再试。",
     "ai.context.toggle.title": "切换是否附带当前终端内容",
     "ai.context.toggle.label": "智能判断终端内容",
-    "ai.context.mode.always": "总是附带终端内容",
-    "ai.context.mode.off": "不附带终端内容",
+    "ai.context.label": "终端内容",
+    "ai.context.mode.always": "附带终端",
+    "ai.context.mode.off": "不附带",
     "ai.session.title": "AI 会话",
     "ai.session.desc.current": "当前只显示 {scope} 的 AI 会话。",
     "ai.session.desc.all": "当前显示本机保存的全部 AI 会话。",
@@ -2687,6 +2709,10 @@ const aiSessionScopeLabel = document.getElementById("ai-session-scope-label");
 const aiSessionCurrentFilter = document.getElementById("ai-session-current-filter");
 const aiSessionAllFilter = document.getElementById("ai-session-all-filter");
 const aiContextToggle = document.getElementById("ai-context-toggle");
+const aiTerminalControl = document.querySelector(".ai-terminal-control");
+const aiTerminalControlMode = document.getElementById("ai-terminal-control-mode");
+const aiTerminalControlStatus = document.getElementById("ai-terminal-control-status");
+const aiTerminalControlStop = document.getElementById("ai-terminal-control-stop");
 const aiAssistantBody = document.querySelector(".ai-assistant-body");
 const aiModelPill = document.getElementById("ai-model-pill");
 const aiModelMenu = document.getElementById("ai-model-menu");
@@ -3516,6 +3542,7 @@ let aiStreamUnlistenPromise = null;
 let aiConfigLoaded = false;
 let aiConfigLoadPromise = null;
 const aiConversationByPane = new Map();
+const aiTerminalControlByPane = new Map();
 const aiSessionIdentityByPane = new Map();
 let aiCurrentSessionId = "";
 let aiCurrentSessionCreatedAt = 0;
@@ -3568,7 +3595,7 @@ function getAiRequestState(paneKey = getAiPaneKey()) {
   const key = paneKey || "no-terminal";
   let state = aiRequestStateByPane.get(key);
   if (!state) {
-    state = { sending: false, activeRequestId: "", canceling: false };
+    state = { sending: false, activeRequestId: "", canceling: false, autoRetryToken: "", autoRetryNode: null };
     aiRequestStateByPane.set(key, state);
   }
   return state;
@@ -4844,12 +4871,144 @@ function renderTerminalCommandSnippets() {
 
 function syncAiContextToggle() {
   if (!aiContextToggle) return;
-  const labels = {
-    always: t("ai.context.mode.always"),
-    off: t("ai.context.mode.off"),
-  };
-  aiContextToggle.textContent = labels[aiContextMode];
+  aiContextToggle.value = aiContextMode;
   aiContextToggle.dataset.mode = aiContextMode;
+}
+
+function getAiTerminalControlState(paneKey = getAiPaneKey(), { create = true } = {}) {
+  if (!String(paneKey).startsWith("session:")) return null;
+  let state = aiTerminalControlByPane.get(paneKey);
+  if (!state && create) {
+    state = {
+      mode: "manual",
+      running: false,
+      stopRequested: false,
+      waitingApproval: false,
+      waitingUserInput: false,
+    };
+    aiTerminalControlByPane.set(paneKey, state);
+  }
+  return state || null;
+}
+
+function syncAiTerminalControlUi() {
+  if (!aiTerminalControlMode) return;
+  const pane = getActivePane();
+  const connected = pane?.sessionId != null;
+  const state = connected ? getAiTerminalControlState() : null;
+  const mode = state?.mode || "manual";
+  aiTerminalControlMode.value = mode;
+  aiTerminalControlMode.disabled = !connected;
+  if (aiTerminalControl) {
+    aiTerminalControl.dataset.mode = mode;
+    aiTerminalControl.dataset.running = state?.running ? "true" : "false";
+  }
+  if (aiComposeForm) aiComposeForm.dataset.aiTerminalRunning = state?.running ? "true" : "false";
+  if (aiTerminalControlStop) aiTerminalControlStop.hidden = mode === "manual";
+  if (!aiTerminalControlStatus) return;
+  if (!connected) {
+    aiTerminalControlStatus.textContent = t("ai.terminal_control.status.disconnected");
+  } else if (state?.waitingUserInput) {
+    aiTerminalControlStatus.textContent = t("ai.terminal_control.status.user_input");
+  } else if (state?.waitingApproval) {
+    aiTerminalControlStatus.textContent = t("ai.terminal_control.status.approval");
+  } else if (state?.running) {
+    aiTerminalControlStatus.textContent = t("ai.terminal_control.status.running");
+  } else {
+    aiTerminalControlStatus.textContent = t("ai.terminal_control.status.manual");
+  }
+  const showStatus = !connected || Boolean(state?.waitingUserInput || state?.waitingApproval || state?.running);
+  aiTerminalControlStatus.hidden = !showStatus;
+  aiTerminalControlStatus.title = aiTerminalControlStatus.textContent;
+}
+
+async function setAiTerminalControlMode(mode) {
+  const pane = getActivePane();
+  if (pane?.sessionId == null || !["manual", "read_only", "supervised"].includes(mode)) {
+    syncAiTerminalControlUi();
+    if (mode !== "manual") showToast("请先连接一个终端会话。", "error", 2800);
+    return;
+  }
+  const paneKey = `session:${pane.sessionId}`;
+  const state = getAiTerminalControlState(paneKey);
+  if (mode === "supervised" && state.mode !== "supervised") {
+    const confirmed = await openConfirmDialog({
+      title: "允许 AI 接管当前终端？",
+      message: "只在当前终端会话内有效。删除、提权、重启、管道和重定向等风险命令仍会停下来等待你批准；断开连接后权限自动失效。",
+      okText: "允许本会话自动",
+      cancelText: "取消",
+      danger: false,
+    });
+    if (!confirmed || getAiPaneKey() !== paneKey) {
+      syncAiTerminalControlUi();
+      return;
+    }
+  }
+  state.mode = mode;
+  const shouldInterrupt = mode === "manual" && state.running;
+  state.running = false;
+  state.stopRequested = mode === "manual";
+  state.waitingApproval = false;
+  state.waitingUserInput = false;
+  syncAiTerminalControlUi();
+  if (shouldInterrupt) {
+    try {
+      await invoke("send_input", { sessionId: pane.sessionId, data: [3] });
+    } catch (e) {
+      console.warn("failed to interrupt AI terminal command", e);
+    }
+  }
+  if (mode === "read_only") showToast("AI 可在当前会话自动执行只读检查。", "success", 2200);
+  if (mode === "supervised") showToast("AI 已接管当前终端会话；风险命令仍需批准。", "success", 2800);
+  if (mode !== "manual") processLatestAiMessageForTerminalControl(paneKey);
+}
+
+async function stopAiTerminalAgent() {
+  const pane = getActivePane();
+  const paneKey = getAiPaneKey();
+  const state = getAiTerminalControlState(paneKey, { create: false });
+  if (!state) return;
+  const wasRunning = state.running;
+  state.mode = "manual";
+  state.stopRequested = true;
+  state.running = false;
+  state.waitingApproval = false;
+  state.waitingUserInput = false;
+  syncAiTerminalControlUi();
+  if (wasRunning && pane?.sessionId != null) {
+    try {
+      await invoke("send_input", { sessionId: pane.sessionId, data: [3] });
+    } catch (e) {
+      console.warn("failed to interrupt AI terminal command", e);
+    }
+  }
+  if (getAiRequestState(paneKey).sending) await cancelAiStreaming();
+  showToast("已停止 AI 接管，恢复为每次询问。", "success", 2200);
+}
+
+function aiTerminalControlPrompt() {
+  const state = getAiTerminalControlState(getAiPaneKey(), { create: false });
+  if (state?.mode === "read_only") {
+    return "当前已启用自动只读模式。需要检查时一次只给一条只读命令；修改系统或文件的命令会等待用户批准。";
+  }
+  if (state?.mode === "supervised") {
+    return "当前已启用本会话自动操作。一次只给一条最有用的命令，并根据执行结果继续；删除、提权、重启、远程下载执行等高风险操作会等待用户批准。目标完成后不要继续给命令。";
+  }
+  return "当前为每次询问模式，不要假装命令已经执行。";
+}
+
+function processLatestAiMessageForTerminalControl(paneKey = getAiPaneKey()) {
+  const state = getAiTerminalControlState(paneKey, { create: false });
+  if (!state || state.mode === "manual" || state.stopRequested || getAiRequestState(paneKey).sending) return;
+  const messages = Array.from(aiChatLog?.querySelectorAll?.(".ai-message-assistant") || []);
+  const latest = messages[messages.length - 1];
+  if (!latest) return;
+  window.setTimeout(() => {
+    if (paneKey !== getAiPaneKey() || getAiRequestState(paneKey).sending) return;
+    maybeRunAiTerminalAgent(latest, paneKey).catch((error) => {
+      console.warn("AI terminal control could not process the latest reply", error);
+    });
+  }, 0);
 }
 
 function updateAiSendButton() {
@@ -5218,9 +5377,9 @@ function setAiModelOptions(models, selected) {
   syncCustomSelect("settings-ai-model");
 }
 
-function cycleAiContextMode() {
-  const idx = AI_CONTEXT_MODES.indexOf(aiContextMode);
-  aiContextMode = AI_CONTEXT_MODES[(idx + 1) % AI_CONTEXT_MODES.length];
+function setAiContextMode(mode) {
+  if (!AI_CONTEXT_MODES.includes(mode)) return;
+  aiContextMode = mode;
   localStorage.setItem("zt.ai.contextMode", aiContextMode);
   syncAiContextToggle();
 }
@@ -5266,6 +5425,7 @@ function forgetAiPaneState(paneKey) {
   aiRequestStateByPane.delete(paneKey);
   aiConversationByPane.delete(paneKey);
   terminalSidePanelByPane.delete(paneKey);
+  aiTerminalControlByPane.delete(paneKey);
   // aiSessionIdentityByPane is keyed by `${scopeType}:${scopeId}:${paneKey}`,
   // so evict every scope whose entry belongs to this pane/session.
   const suffix = `:${paneKey}`;
@@ -5512,11 +5672,15 @@ function renderAiConversation() {
   for (const message of messages) {
     appendAiMessage(message.role, message.content, { skipStore: true, message });
   }
+  processLatestAiMessageForTerminalControl();
 }
 
 function syncAiConversationToActivePane() {
   const key = getAiPaneKey();
-  if (key === aiActivePaneKey) return;
+  if (key === aiActivePaneKey) {
+    syncAiTerminalControlUi();
+    return;
+  }
   aiActivePaneKey = key;
   aiMessages = aiConversationByPane.get(key) || [];
   const identity = aiSessionIdentityByPane.get(aiSessionIdentityKey()) || {};
@@ -5525,6 +5689,7 @@ function syncAiConversationToActivePane() {
   aiCurrentSessionTemporary = identity.temporary === true;
   renderAiConversation();
   updateAiSendButton();
+  syncAiTerminalControlUi();
 }
 
 function syncAiSessionModeUi() {
@@ -5690,7 +5855,9 @@ function renderAiMarkdown(text) {
     if (codeLang) {
       const label = document.createElement("div");
       label.className = "ai-code-label";
-      label.textContent = codeLang;
+      label.textContent = /-user$/i.test(codeLang)
+        ? `${codeLang.replace(/-user$/i, "")} · 需要用户介入`
+        : codeLang;
       block.appendChild(label);
     }
     const pre = document.createElement("pre");
@@ -5970,13 +6137,14 @@ async function copyAiInlineCode(value) {
 
 async function executeAiCommand(command) {
   const pane = getActivePane();
-  if (!pane?.sessionId) {
+  if (pane?.sessionId == null) {
     showToast("当前没有可执行命令的终端会话。", "error", 3600);
-    return;
+    throw new Error("no terminal session");
   }
-  // Reaching this function requires an explicit click on “批准执行”. That
-  // click is the user's per-command authorization; do not ask for the same
-  // approval twice. Clicking inline code only copies it.
+  // Manual runs arrive through an explicit “批准执行” click. Automatic runs
+  // are separately authorized by the backend policy immediately beforehand,
+  // so neither path opens a duplicate confirmation dialog here. Clicking
+  // inline code only copies it.
   refitActiveTerminalPanes({ reason: "ai-command-before", forceBottom: true, frames: 1 });
   const buffer = pane.term?.buffer?.active;
   const cursor = buffer ? buffer.length : 0;
@@ -6147,6 +6315,7 @@ async function continueAiAfterCommands(results, { totalCommands = 0 } = {}) {
     ];
   if (!includeCommandOutput) systemParts.push("用户当前选择了不附带终端内容，不要基于终端输出做判断。");
   systemParts.push(aiExecutableCommandFormatPrompt());
+  systemParts.push(aiTerminalControlPrompt());
   const messages = [{ role: "system", content: withGlobalAiPrompt(systemParts.join("\n")) }];
   if (terminalOutput) {
     const label = executed.length ? "从终端获取到的命令执行输出" : "从当前终端获取到的最新内容";
@@ -6165,14 +6334,17 @@ async function continueAiAfterCommands(results, { totalCommands = 0 } = {}) {
 /// so the compose button reflects in-flight/cancelable status and concurrent
 /// turns are prevented uniformly. Returns once the request hands off to the
 /// stream listener or fails.
-async function runAiTurn(messages, pendingText = "正在思考...") {
+async function runAiTurn(messages, pendingText = "正在思考...", { autoRetryCount = 0 } = {}) {
   const paneKey = getAiPaneKey();
   const requestState = getAiRequestState(paneKey);
   if (requestState.sending) return;
+  if (requestState.autoRetryNode?.isConnected) requestState.autoRetryNode.remove();
+  requestState.autoRetryNode = null;
+  requestState.autoRetryToken = "";
   requestState.sending = true;
   updateAiSendButton();
   try {
-    await streamAiMessages(messages, pendingText, paneKey);
+    await streamAiMessages(messages, pendingText, paneKey, { autoRetryCount });
   } finally {
     requestState.sending = false;
     requestState.activeRequestId = "";
@@ -6181,7 +6353,7 @@ async function runAiTurn(messages, pendingText = "正在思考...") {
   }
 }
 
-async function streamAiMessages(messages, pendingText = "正在思考...", paneKey = getAiPaneKey()) {
+async function streamAiMessages(messages, pendingText = "正在思考...", paneKey = getAiPaneKey(), { autoRetryCount = 0 } = {}) {
   await ensureAiStreamListener();
   if (!window.__ztAiStreams) window.__ztAiStreams = new Map();
   const pendingNode = appendAiMessage("assistant", pendingText, { pending: true });
@@ -6196,12 +6368,14 @@ async function streamAiMessages(messages, pendingText = "正在思考...", paneK
     messages,
     pendingText,
     paneKey,
+    autoRetryCount,
     conversationMessages: aiConversationByPane.get(paneKey) || aiMessages,
   });
   const timeoutId = window.setTimeout(() => {
     const state = window.__ztAiStreams?.get?.(requestId);
     if (!state) return;
-    showAiTurnError(state.node, "AI 响应超时，请重试。", state.messages, state.pendingText);
+    if (scheduleAiAutoRetry(state, requestId, "AI 响应超时")) return;
+    showAiTurnError(state.node, "AI 响应超时，自动重试仍未成功。", state.messages, state.pendingText);
     const req = getAiRequestState(state.paneKey);
     if (req.activeRequestId === requestId) req.activeRequestId = "";
     req.sending = false;
@@ -6222,6 +6396,7 @@ async function streamAiMessages(messages, pendingText = "正在思考...", paneK
     const state = window.__ztAiStreams?.get?.(requestId);
     if (!state) return;
     if (state.timeoutId) window.clearTimeout(state.timeoutId);
+    let retryScheduled = false;
     try {
       const fallback = await invoke("ai_chat", { messages, profileId: aiStore.activeProfileId || null });
       const content = fallback?.content || "";
@@ -6239,11 +6414,19 @@ async function streamAiMessages(messages, pendingText = "正在思考...", paneK
         aiMessageByNode.set(state.node, assistantMessage);
         setAiPaneMessages(state.paneKey, state.conversationMessages);
         if (state.paneKey === getAiPaneKey()) storeAiConversationForActivePane();
+        window.setTimeout(() => {
+          maybeRunAiTerminalAgent(state.node, state.paneKey).catch((error) => console.warn("AI terminal agent failed", error));
+        }, 0);
       } else {
-        showAiTurnError(state.node, "AI 流式响应失败，且非流式重试没有返回内容。", messages, pendingText);
+        retryScheduled = scheduleAiAutoRetry(state, requestId, "AI 没有返回内容");
+        if (!retryScheduled) {
+          showAiTurnError(state.node, "AI 流式响应失败，自动重试仍未返回内容。", messages, pendingText);
+        }
       }
     } catch (fallbackError) {
-      showAiTurnError(state.node, `AI 响应失败：${String(fallbackError || e)}`, messages, pendingText);
+      const failure = String(fallbackError || e);
+      retryScheduled = scheduleAiAutoRetry(state, requestId, failure);
+      if (!retryScheduled) showAiTurnError(state.node, `AI 响应失败：${failure}`, messages, pendingText);
     } finally {
       const req = getAiRequestState(state.paneKey);
       if (req.activeRequestId === requestId) req.activeRequestId = "";
@@ -6470,44 +6653,67 @@ function enhanceAiCodeBlocks(root) {
     if (!isExecutableCodeBlock(block, command)) return;
     const commands = splitAiCommandBlockForApproval(command);
     if (!commands.length) return;
-    executable.push({ block, commands });
+    executable.push({ block, commands, requiresUserInput: aiCodeBlockRequiresUserInput(block) });
   });
   if (!executable.length) return;
   const messageNode = root.closest?.(".ai-message-assistant");
   const totalCommands = executable.reduce((sum, item) => sum + item.commands.length, 0);
   const commandState = ensureAiMultiCommandControls(messageNode, totalCommands);
-  executable.forEach(({ block, commands }) => {
+  executable.forEach(({ block, commands, requiresUserInput }) => {
     const tools = document.createElement("div");
     tools.className = "ai-code-tools";
     commands.slice(0, 4).forEach((singleCommand, index) => {
       const restoredResult = commandState?.results?.find?.((item) => item.command === singleCommand);
       const run = document.createElement("button");
       run.type = "button";
-      run.textContent = restoredResult ? "已执行" : (commands.length > 1 ? `批准 ${index + 1}` : "批准执行");
-      run.disabled = Boolean(restoredResult);
-      run.title = singleCommand;
-      run.addEventListener("click", async () => {
+      run.textContent = restoredResult
+        ? "已执行"
+        : (requiresUserInput ? "需要用户介入" : (commands.length > 1 ? `批准 ${index + 1}` : "批准执行"));
+      run.disabled = Boolean(restoredResult || requiresUserInput);
+      run.title = requiresUserInput
+        ? "AI 标记此命令需要你先提供或替换参数，请按回复说明处理后手动执行。"
+        : singleCommand;
+      run.dataset.userInputRequired = requiresUserInput ? "true" : "false";
+      run.__ztCommand = singleCommand;
+      run.__ztExecute = async ({ automatic = false } = {}) => {
+        if (run.disabled) return null;
         run.disabled = true;
-        run.textContent = "运行中";
+        run.textContent = automatic ? "AI 运行中" : "运行中";
         block.classList.add("approved");
         try {
           const execution = await executeAiCommand(singleCommand);
+          const result = {
+            command: singleCommand,
+            cursor: execution?.cursor || 0,
+            output: execution?.output || "",
+          };
           if (commandState) {
-            const result = {
-              command: singleCommand,
-              cursor: execution?.cursor || 0,
-              output: execution?.output || "",
-            };
+            commandState.results = commandState.results.filter((item) => item.command !== singleCommand);
             commandState.results.push(result);
-            commandState.executedCount += 1;
+            commandState.executedCount = commandState.results.length;
             storeAiCommandResultForMessage(messageNode, result);
             updateAiMultiCommandControls(messageNode);
           }
           run.textContent = "已执行";
+          messageNode?.classList.remove("ai-risk-approval-required");
+          messageNode?.removeAttribute("data-risk-approval");
+          return result;
         } catch (e) {
           if (commandState) updateAiMultiCommandControls(messageNode);
           run.textContent = "失败";
+          run.disabled = false;
+          throw e;
         }
+      };
+      run.addEventListener("click", () => {
+        run.__ztExecute().then((result) => {
+          const agentState = getAiTerminalControlState(getAiPaneKey(), { create: false });
+          if (!result || !agentState?.waitingApproval || agentState.mode === "manual") return;
+          agentState.waitingApproval = false;
+          syncAiTerminalControlUi();
+          continueAiAfterCommands([result], { totalCommands: 1 })
+            .catch((error) => console.warn("AI terminal agent continuation failed", error));
+        }).catch(() => {});
       });
       tools.appendChild(run);
     });
@@ -6515,14 +6721,106 @@ function enhanceAiCodeBlocks(root) {
   });
 }
 
+async function maybeRunAiTerminalAgent(messageNode, paneKey) {
+  if (!messageNode || paneKey !== getAiPaneKey() || !String(paneKey).startsWith("session:")) return;
+  const pane = getActivePane();
+  const state = getAiTerminalControlState(paneKey);
+  if (!state || state.running || pane?.sessionId == null) return;
+  const automaticControlEnabled = state.mode !== "manual" && !state.stopRequested;
+  const commandButtons = Array.from(messageNode.querySelectorAll?.(".ai-code-tools button") || []);
+  const userInputButton = commandButtons.find((button) => button.dataset.userInputRequired === "true");
+  if (userInputButton) {
+    messageNode.classList.add("ai-risk-approval-required");
+    messageNode.dataset.riskApproval = "user-input";
+    state.waitingApproval = false;
+    state.waitingUserInput = automaticControlEnabled;
+    syncAiTerminalControlUi();
+    if (automaticControlEnabled) showToast("AI 说明此步骤需要你的输入，已停止自动执行。", "error", 3600);
+    return;
+  }
+  const runButton = commandButtons
+    .find((button) => !button.disabled && typeof button.__ztExecute === "function" && button.__ztCommand);
+  if (!runButton) return;
+  let policy;
+  try {
+    policy = await invoke("authorize_ai_terminal_command", {
+      sessionId: pane.sessionId,
+      mode: state.mode,
+      command: runButton.__ztCommand,
+    });
+  } catch (e) {
+    state.mode = "manual";
+    state.stopRequested = true;
+    syncAiTerminalControlUi();
+    showToast(`AI 终端权限校验失败：${e}`, "error", 4200);
+    return;
+  }
+  if (paneKey !== getAiPaneKey()) return;
+  state.waitingUserInput = false;
+  const requiresUserInput = policy?.classification === "user_input_required";
+  const requiresRiskApproval = policy?.classification === "approval_required";
+  messageNode.classList.toggle("ai-risk-approval-required", requiresRiskApproval || requiresUserInput);
+  if (requiresUserInput) messageNode.dataset.riskApproval = "user-input";
+  else if (requiresRiskApproval) messageNode.dataset.riskApproval = "required";
+  else messageNode.removeAttribute("data-risk-approval");
+  if (requiresUserInput) {
+    runButton.disabled = true;
+    runButton.textContent = "请先替换占位内容";
+    runButton.title = "命令包含未替换的密钥、令牌或其他参数，请填写真实值后手动执行。";
+    state.waitingApproval = false;
+    state.waitingUserInput = automaticControlEnabled;
+    syncAiTerminalControlUi();
+    if (automaticControlEnabled) showToast("命令包含未替换的占位内容，AI 已停止自动执行。", "error", 3600);
+    return;
+  }
+  if (requiresRiskApproval) {
+    state.waitingUserInput = false;
+    runButton.textContent = "风险命令 · 请批准";
+    state.waitingApproval = automaticControlEnabled;
+    syncAiTerminalControlUi();
+    if (automaticControlEnabled) showToast("AI 已停在需要你批准的命令。", "error", 3200);
+    return;
+  }
+  if (!automaticControlEnabled) return;
+  if (!policy?.autoAllowed) {
+    state.waitingApproval = true;
+    runButton.textContent = "超出只读权限 · 请批准";
+    syncAiTerminalControlUi();
+    showToast("AI 已停在需要你批准的命令。", "error", 3200);
+    return;
+  }
+
+  state.waitingApproval = false;
+  state.waitingUserInput = false;
+  messageNode.classList.remove("ai-risk-approval-required");
+  messageNode.removeAttribute("data-risk-approval");
+  state.running = true;
+  syncAiTerminalControlUi();
+  let result = null;
+  try {
+    result = await runButton.__ztExecute({ automatic: true });
+  } catch (e) {
+    showToast(`AI 自动执行失败：${e}`, "error", 4200);
+  } finally {
+    state.running = false;
+    syncAiTerminalControlUi();
+  }
+  if (!result || state.stopRequested || state.mode === "manual" || paneKey !== getAiPaneKey()) return;
+  await continueAiAfterCommands([result], { totalCommands: 1 });
+}
+
 function isExecutableCodeBlock(block, command) {
-  const lang = (block?.dataset?.lang || "").toLowerCase();
+  const lang = (block?.dataset?.lang || "").toLowerCase().replace(/-user$/, "");
   const lines = String(command || "").split("\n").map((line) => line.trim()).filter(Boolean);
   if (!lines.length) return false;
   if (lines.some((line) => looksLikeTerminalOutput(line))) return false;
   if (["output", "terminal", "text", "log", "txt"].includes(lang)) return false;
   if (["bash", "sh", "shell", "zsh", "powershell", "pwsh", "ps1", "cmd", "bat", "batch"].includes(lang)) return true;
   return false;
+}
+
+function aiCodeBlockRequiresUserInput(block) {
+  return /-user$/i.test(block?.dataset?.lang || "");
 }
 
 function looksLikeTerminalOutput(line) {
@@ -6574,6 +6872,54 @@ function setAiPendingMessage(node, content, kind = "assistant") {
   setAiMessageContent(node, content);
 }
 
+const AI_AUTO_RETRY_LIMIT = 2;
+const AI_AUTO_RETRY_DELAYS_MS = [900, 1800];
+
+function isRetryableAiFailure(error) {
+  const text = String(error || "");
+  if (!text || text === "canceled") return false;
+  return !/(?:invalid api key|unauthorized|forbidden|authentication|model not found|bad request|\b40[0134]\b)/i.test(text);
+}
+
+function scheduleAiAutoRetry(state, requestId, reason) {
+  if (!state || !isRetryableAiFailure(reason)) return false;
+  const retryCount = Number(state.autoRetryCount || 0);
+  if (retryCount >= AI_AUTO_RETRY_LIMIT) return false;
+  const req = getAiRequestState(state.paneKey);
+  if (req.activeRequestId && req.activeRequestId !== requestId) return false;
+  if (state.timeoutId) window.clearTimeout(state.timeoutId);
+  const nextRetry = retryCount + 1;
+  const retryToken = `ai-retry-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  req.activeRequestId = "";
+  req.sending = false;
+  req.canceling = false;
+  req.autoRetryToken = retryToken;
+  req.autoRetryNode = state.node;
+  window.__ztAiStreams?.delete?.(requestId);
+  invoke("cancel_ai_chat_stream", { requestId }).catch(() => {});
+  state.node.querySelector(".ai-message-retry")?.remove();
+  state.node.className = "ai-message ai-message-assistant pending";
+  setAiMessageContent(
+    state.node,
+    `${reason}，正在自动重试（${nextRetry}/${AI_AUTO_RETRY_LIMIT}）...`,
+  );
+  updateAiSendButton();
+  const delay = AI_AUTO_RETRY_DELAYS_MS[nextRetry - 1]
+    || AI_AUTO_RETRY_DELAYS_MS[AI_AUTO_RETRY_DELAYS_MS.length - 1];
+  window.setTimeout(() => {
+    const current = getAiRequestState(state.paneKey);
+    if (current.autoRetryToken !== retryToken || current.sending) return;
+    current.autoRetryToken = "";
+    current.autoRetryNode = null;
+    if (state.paneKey !== getAiPaneKey()) return;
+    state.node.remove();
+    runAiTurn(state.messages, `正在自动重试（${nextRetry}/${AI_AUTO_RETRY_LIMIT}）...`, {
+      autoRetryCount: nextRetry,
+    }).catch((error) => console.warn("AI automatic retry failed", error));
+  }, delay);
+  return true;
+}
+
 /// Mark an AI turn's message node as failed and attach a Retry button that
 /// re-runs the exact same request. All AI failure paths funnel through here so
 /// a network/timeout/empty failure is always recoverable with one click.
@@ -6617,6 +6963,8 @@ async function ensureAiStreamListener() {
       if (state.timeoutId) window.clearTimeout(state.timeoutId);
       if (payload.error === "canceled") {
         state.node.remove();
+      } else if (scheduleAiAutoRetry(state, payload.requestId, payload.error)) {
+        return;
       } else {
         showAiTurnError(state.node, payload.error, state.messages, state.pendingText);
       }
@@ -6646,7 +6994,8 @@ async function ensureAiStreamListener() {
       state.timeoutId = window.setTimeout(() => {
         const s = window.__ztAiStreams?.get?.(payload.requestId);
         if (!s) return;
-        showAiTurnError(s.node, "AI 响应超时，请重试。", s.messages, s.pendingText);
+        if (scheduleAiAutoRetry(s, payload.requestId, "AI 响应超时")) return;
+        showAiTurnError(s.node, "AI 响应超时，自动重试仍未成功。", s.messages, s.pendingText);
         const req = getAiRequestState(s.paneKey);
         if (req.activeRequestId === payload.requestId) req.activeRequestId = "";
         req.sending = false;
@@ -6681,6 +7030,9 @@ async function ensureAiStreamListener() {
       setAiPaneMessages(state.paneKey, state.conversationMessages);
       if (state.paneKey === getAiPaneKey()) storeAiConversationForActivePane();
       window.__ztAiStreams.delete(payload.requestId);
+      window.setTimeout(() => {
+        maybeRunAiTerminalAgent(state.node, state.paneKey).catch((error) => console.warn("AI terminal agent failed", error));
+      }, 0);
     }
   });
 }
@@ -6714,11 +7066,15 @@ async function tryFallbackAiChat(state, requestId) {
       req.canceling = false;
       updateAiSendButton();
       window.__ztAiStreams.delete(requestId);
+      window.setTimeout(() => {
+        maybeRunAiTerminalAgent(state.node, state.paneKey).catch((error) => console.warn("AI terminal agent failed", error));
+      }, 0);
       return;
     }
   } catch (_) {}
   const req = getAiRequestState(state.paneKey);
   if (req.activeRequestId !== requestId) return;
+  if (scheduleAiAutoRetry(state, requestId, "AI 没有返回内容")) return;
   showAiTurnError(state.node, "AI 没有返回内容，请重试。", state.messages, state.pendingText);
   req.activeRequestId = "";
   req.sending = false;
@@ -6750,6 +7106,9 @@ function aiExecutableCommandFormatPrompt() {
     "- Do not put runnable commands in terminal, text, log, output, or txt fenced blocks; ZeroTerm treats those as non-executable output.",
     "- Do not mix terminal prompts, command output, explanations, or error logs inside runnable command blocks.",
     "- Prefer one command per runnable fenced block. Use a multi-line command block only when it must run as one script, such as heredoc, control flow, continuation, or grouped commands.",
+    "- Before every runnable command, decide whether it can run exactly as written without any missing secret, credential, account, host, path, value, confirmation, choice, or interactive input from the user.",
+    "- If user intervention is required, explicitly explain what the user must provide, then append -user to the fenced language (for example: bash-user, powershell-user, or cmd-user). ZeroTerm will stop automatic execution for these blocks.",
+    "- Never put placeholders such as YOUR_API_KEY, <your-host>, 请替换, or 你的密钥 in a normal executable fence. Such commands must use a -user fence.",
     "- Use ```terminal fenced blocks only for observed terminal output, logs, or errors.",
     "- Do not merely say in prose that the user should run a command. When execution is needed, include the command in one of the executable formats above.",
   ].join("\n");
@@ -6851,7 +7210,7 @@ async function sendAiMessage(text) {
   storeAiConversationForActivePane();
   appendAiMessage("user", text);
   const system = "你是 ZeroTerm 的 AI 助手。用户是普通用户，不一定懂命令。请先用人话解释和规划，不要假装已经执行命令。需要用户执行命令时，一次只建议下一条最有用的命令；每个 bash/shell fenced code block 只能包含一条命令。引用终端输出、报错或日志时必须使用 ```terminal 代码块，不要使用 bash。";
-  const systemWithCommandFormat = [system, aiExecutableCommandFormatPrompt()].join("\n");
+  const systemWithCommandFormat = [system, aiExecutableCommandFormatPrompt(), aiTerminalControlPrompt()].join("\n");
   const terminalContext = shouldAttachTerminalContext(text) ? buildAiTerminalContext() : "";
   const messages = [{ role: "system", content: withGlobalAiPrompt(systemWithCommandFormat) }];
   if (terminalContext) messages.push({ role: "system", content: terminalContext });
@@ -11931,7 +12290,16 @@ function applyI18n() {
   setText("ai-example-2", "ai.example.2");
   setText("ai-example-3", "ai.example.3");
   setText("ai-example-4", "ai.example.4");
-  setText("ai-compose-hint", "ai.compose.hint");
+  setText("ai-context-label", "ai.context.label");
+  setOptionText("ai-context-toggle", "always", "ai.context.mode.always");
+  setOptionText("ai-context-toggle", "off", "ai.context.mode.off");
+  setText("ai-terminal-control-label", "ai.terminal_control.label");
+  setOptionText("ai-terminal-control-mode", "manual", "ai.terminal_control.mode.manual");
+  setOptionText("ai-terminal-control-mode", "read_only", "ai.terminal_control.mode.read_only");
+  setOptionText("ai-terminal-control-mode", "supervised", "ai.terminal_control.mode.supervised");
+  setText("ai-terminal-control-stop", "ai.terminal_control.stop");
+  setAttr("ai-terminal-control-stop", "title", "ai.terminal_control.stop_title");
+  syncAiTerminalControlUi();
   setPlaceholder("ai-compose-input", "ai.compose.placeholder");
   setAttr("terminal-selection-menu-url", "aria-label", "terminal.selection.open_url");
   setAttr("terminal-selection-menu-url", "title", "terminal.selection.open_url");
@@ -13809,6 +14177,8 @@ function createPane(host) {
     attnAcknowledgedScreen: null,
     attnCandidateScreen: null,
     attnHandlerDisposes: null,
+    followOutput: true,
+    bufferChangeDispose: null,
     resizeObserver: null,
     pendingResizeTimer: null,
     pendingFitRaf: null,
@@ -14916,14 +15286,15 @@ function ensurePaneTerminal(pane) {
       showTerminalSelectionMenu(pane, selected, ev.clientX, ev.clientY);
     });
     pane.bodyEl.addEventListener("wheel", (ev) => {
-      if (!pane.term) return;
       if (!terminalSelectionMenu?.hidden) hideTerminalSelectionMenu();
-      const cellHeight = pane.term?._core?._renderService?.dimensions?.css?.cell?.height || 18;
-      const lines = Math.max(1, Math.round(Math.abs(ev.deltaY) / Math.max(1, cellHeight)));
-      pane.term.scrollLines(ev.deltaY > 0 ? lines : -lines);
-      syncPaneViewportScroll(pane);
-      ev.preventDefault();
-    }, { passive: false });
+      if (ev.deltaY < 0) {
+        pane.followOutput = false;
+      } else if (ev.deltaY > 0) {
+        requestAnimationFrame(() => {
+          if (isPaneTerminalNearBottom(pane)) pane.followOutput = true;
+        });
+      }
+    }, { passive: true });
     applyTerminalThemeToAllPanes();
     requestPaneFit(pane, { immediate: true });
     pane.term.focus();
@@ -14934,6 +15305,7 @@ function ensurePaneTerminal(pane) {
   pane.term.onData((d) => {
     if (pane.attention) clearPaneAttention(pane);
     if (pane.sessionId === null) return;
+    pane.followOutput = true;
     sendTextToPane(pane, d).catch((e) => {
       console.warn("send_input failed", e);
     });
@@ -14941,8 +15313,20 @@ function ensurePaneTerminal(pane) {
 
   pane.term.onScroll(() => {
     hideTerminalSelectionMenu();
-    syncPaneViewportScroll(pane);
   });
+
+  if (typeof pane.term.buffer?.onBufferChange === "function") {
+    pane.bufferChangeDispose = pane.term.buffer.onBufferChange(() => {
+      if (!pane.followOutput) return;
+      // Alternate-screen TUIs restore the normal buffer's saved viewport.
+      // Wait until xterm finishes that restore, then keep a following pane at
+      // the latest output instead of the pre-TUI scroll position.
+      requestAnimationFrame(() => {
+        if (!pane.term || !pane.followOutput) return;
+        pane.term.scrollToBottom();
+      });
+    });
+  }
 
   pane.term.onSelectionChange(() => {
     if (terminalSelectionMenuPaneId !== pane.id) return;
@@ -15249,7 +15633,6 @@ function fitPane(pane) {
   } catch {
     return;
   }
-  syncPaneViewportScroll(pane);
   if (pane.sessionId !== null) {
     const { cols, rows } = pane.term;
     if (cols === pane.lastSentCols && rows === pane.lastSentRows) return;
@@ -15272,38 +15655,27 @@ function clampPaneBodyHeight(pane) {
   if (availableHeight > 0) body.style.height = `${availableHeight}px`;
 }
 
-function syncPaneViewportScroll(pane) {
-  const viewport = pane?.bodyEl?.querySelector?.(".xterm-viewport");
-  const buffer = pane?.term?.buffer?.active;
-  const term = pane?.term;
-  if (!viewport || !buffer || !term) return;
-  const bottomY = Math.max(0, buffer.baseY + buffer.cursorY);
-  const bufferAtBottom = Math.abs(buffer.viewportY + term.rows - 1 - bottomY) <= 1;
-  if (bufferAtBottom) {
-    const maxTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
-    if (Math.abs(viewport.scrollTop - maxTop) > 1) viewport.scrollTop = maxTop;
-    return;
-  }
-  const lineHeight = pane.term?._core?._renderService?.dimensions?.css?.cell?.height || 0;
-  if (lineHeight <= 0) return;
-  const expectedTop = Math.max(0, buffer.viewportY * lineHeight);
-  if (Math.abs(viewport.scrollTop - expectedTop) > 1) viewport.scrollTop = expectedTop;
+function isTerminalBufferAtBottom(buffer) {
+  if (!buffer) return true;
+  // baseY is the viewport origin at the end of xterm's scrollback, while
+  // viewportY is the origin currently shown to the user. The cursor position is not part
+  // of this decision: full-screen/TUI programs move the cursor upward while
+  // repainting, which must not be mistaken for the user scrolling up.
+  return Math.abs((Number(buffer.viewportY) || 0) - (Number(buffer.baseY) || 0)) <= 1;
 }
 
 function isPaneTerminalNearBottom(pane) {
   const buffer = pane?.term?.buffer?.active;
-  if (!buffer || !pane?.term) return true;
-  const bottomY = Math.max(0, buffer.baseY + buffer.cursorY);
-  return Math.abs(buffer.viewportY + pane.term.rows - 1 - bottomY) <= 1;
+  return isTerminalBufferAtBottom(buffer);
 }
 
 function keepPaneTerminalAtBottom(pane, { force = false } = {}) {
   if (!pane?.term) return;
+  if (force) pane.followOutput = true;
   if (!force && !isPaneTerminalNearBottom(pane)) return;
   requestAnimationFrame(() => {
     if (!pane.term) return;
     pane.term.scrollToBottom();
-    syncPaneViewportScroll(pane);
   });
 }
 
@@ -15321,8 +15693,6 @@ function writePaneTerminalData(pane, data, { stickToBottom = false, onParsed = n
   pane.term.write(data, () => {
     if (!pane.term) return;
     if (stickToBottom) pane.term.scrollToBottom();
-    syncPaneViewportScroll(pane);
-    refreshPaneTerminal(pane);
     if (typeof onParsed === "function") onParsed();
   });
 }
@@ -15560,6 +15930,7 @@ async function connectPaneSession(pane) {
 }
 
 async function wirePaneSessionEvents(pane, sessionId) {
+  if (pane === getActivePane()) syncAiTerminalControlUi();
   if (pane.dataUnlisten) {
     pane.dataUnlisten();
     pane.dataUnlisten = null;
@@ -15614,7 +15985,7 @@ async function wirePaneSessionEvents(pane, sessionId) {
     if (ev.payload.sessionId !== sessionId) return;
     markPaneAlive();
     if (!pane.term) return;
-    const stickToBottom = isPaneTerminalNearBottom(pane);
+    const stickToBottom = pane.followOutput !== false;
     writePaneTerminalData(pane, new Uint8Array(ev.payload.data), {
       stickToBottom,
       // xterm parses writes asynchronously. Start the quiet-period timer only
@@ -15654,6 +16025,7 @@ async function wirePaneSessionEvents(pane, sessionId) {
         ? `\r\n\x1b[2m${t("terminal.closed.remote_exited", { code: ev.payload.exitCode })}\x1b[0m\r\n`
         : `\r\n\x1b[2m${t("terminal.closed.disconnected")}\x1b[0m\r\n`;
 
+    forgetAiPaneState(`session:${sessionId}`);
     pane.sessionId = null;
     stopPaneAliveWatchdog(pane);
     clearPaneAttention(pane);
@@ -15661,6 +16033,7 @@ async function wirePaneSessionEvents(pane, sessionId) {
     if (pane.latencyEl) pane.latencyEl.hidden = true;
     if (pane.reconnectBtn) pane.reconnectBtn.hidden = false;
     if (pane.term) writePaneTerminalData(pane, tail, { stickToBottom: true });
+    syncAiTerminalControlUi();
   });
 
 }
@@ -15693,6 +16066,7 @@ async function disconnectPaneSession(pane, { dispose }) {
     // per-session AI/side-panel Map entries so they don't accumulate.
     forgetAiPaneState(`session:${sid}`);
   }
+  if (pane === getActivePane()) syncAiTerminalControlUi();
 
   if (pane.dataUnlisten) {
     pane.dataUnlisten();
@@ -15735,6 +16109,13 @@ async function disconnectPaneSession(pane, { dispose }) {
     }
 
     disposePaneAttentionHandlers(pane);
+
+    if (pane.bufferChangeDispose) {
+      try {
+        pane.bufferChangeDispose.dispose?.();
+      } catch {}
+      pane.bufferChangeDispose = null;
+    }
 
     if (pane.term) pane.term.dispose();
     pane.term = null;
@@ -19529,7 +19910,18 @@ aiComposeInput?.addEventListener("keydown", (ev) => {
   aiComposeForm?.requestSubmit();
 });
 
-aiContextToggle?.addEventListener("click", cycleAiContextMode);
+aiContextToggle?.addEventListener("change", () => setAiContextMode(aiContextToggle.value));
+
+aiTerminalControlMode?.addEventListener("change", () => {
+  setAiTerminalControlMode(aiTerminalControlMode.value).catch((e) => {
+    syncAiTerminalControlUi();
+    showToast(String(e), "error", 3200);
+  });
+});
+
+aiTerminalControlStop?.addEventListener("click", () => {
+  stopAiTerminalAgent().catch((e) => showToast(String(e), "error", 3200));
+});
 
 aiNewChatButton?.addEventListener("click", () => {
   if (aiMessages.length && !confirm(t(aiCurrentSessionTemporary ? "ai.session.confirm.new_temp" : "ai.session.confirm.new"))) return;
@@ -19619,6 +20011,7 @@ aiComposeForm?.addEventListener("submit", (ev) => {
 });
 
 updateAiSendButton();
+syncAiTerminalControlUi();
 
 fileEditorCancelButton.addEventListener("click", () => closeRemoteEditor());
 fileEditorSaveButton.addEventListener("click", () => saveRemoteEditor());

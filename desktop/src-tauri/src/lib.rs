@@ -185,6 +185,7 @@ pub fn run() {
             commands::open_local_terminal,
             commands::create_local_terminal_session,
             commands::send_input,
+            commands::authorize_ai_terminal_command,
             commands::resize_session,
             commands::disconnect_session,
             commands::session_info,

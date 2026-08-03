@@ -26,6 +26,11 @@ function checkValue(actual, expected, label) {
 
 // Agent CLI permission and selection prompts.
 check("Would you like to run the following command?\n❯ 1. Yes, proceed\n  2. No", true, "Codex approval");
+check(
+  "Would you like to run the following command?\nEnvironment: local\nReason: Need to inspect the running container.\n$ nsenter -t 31529 -m -p -- ps -ef\n› 1. Yes, proceed (y)\n  2. Yes, and don't ask again (p)\n  3. No, and tell Codex what to do differently (esc)\nPress enter to confirm or esc to cancel",
+  true,
+  "Codex multi-line approval with esc-to-cancel footer"
+);
 check("Permission required\n❯ Allow once\n  Deny", true, "unnumbered approval cursor");
 check("Choose an action\n1. Allow once\n2. Always allow\n3. No", true, "numbered permission menu");
 check("Delete these files?", true, "action question");

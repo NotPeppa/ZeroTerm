@@ -395,6 +395,7 @@ impl Handler for ZeroTermHandler {
 }
 
 /// An authenticated SSH session.
+#[derive(Clone)]
 pub struct Session {
     // Global requests and channel opens share one connection handle. An async mutex
     // gives both paths safe shared access and removes the old `Arc::get_mut`

@@ -44,6 +44,12 @@ pub struct LatencyStoppedEvent {
     pub session_id: u64,
 }
 
+enum LatencyProbeResult {
+    Success(u32),
+    Failed(String),
+    TimedOut,
+}
+
 pub async fn run(
     session_id: u64,
     session: Session,
@@ -57,21 +63,21 @@ pub async fn run(
     let mut error_msg: Option<String> = None;
 
     let mut latency_enabled = false;
+    let mut latency_permanently_disabled = false;
+    let mut latency_probe_in_flight = false;
     let mut latency_tick = time::interval(Duration::from_secs(3));
     latency_tick.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+    let (latency_result_tx, mut latency_result_rx) = mpsc::channel::<LatencyProbeResult>(1);
     // Some SSH servers refuse a second concurrent session channel (e.g.
     // `MaxSessions 1`). We give up the RTT probe after a few consecutive
     // failures so the log doesn't keep filling with `ConnectFailed`.
     let mut latency_failures: u32 = 0;
     const LATENCY_FAILURE_LIMIT: u32 = 3;
-    // A probe that *times out* is a different beast from one the server
-    // rejects: rejection proves the transport is alive, a timeout means the
-    // channel layer has stopped responding while SSH keepalives may still be
-    // answered (half-alive server). Without this the probe await hangs
-    // forever inside the select arm, freezing the whole session loop while
-    // the UI keeps saying "connected". Two consecutive timeouts → declare
-    // the link dead and tear down, so the frontend gets a real
-    // `session:closed` instead of a zombie.
+    // Extra-channel probes are diagnostic only. Some busy or restricted
+    // servers leave channel-open requests unanswered even while the primary
+    // PTY is healthy. Run probes outside the session loop so they can never
+    // block terminal I/O, and disable only the probe after repeated timeouts.
+    // SSH transport keepalives remain responsible for detecting a dead link.
     let mut probe_timeouts: u32 = 0;
     const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
     const PROBE_TIMEOUT_LIMIT: u32 = 2;
@@ -84,7 +90,9 @@ pub async fn run(
         tokio::select! {
             ev = channel.recv() => match ev {
                 ChannelEvent::Data(bytes) | ChannelEvent::Stderr(bytes) => {
-                    latency_enabled = true;
+                    if !latency_permanently_disabled {
+                        latency_enabled = true;
+                    }
                     let _ = app_handle.emit(
                         "session:data",
                         DataEvent { session_id, data: bytes },
@@ -128,10 +136,24 @@ pub async fn run(
                     break;
                 }
             },
-            probe_tick = latency_tick.tick(), if latency_enabled => {
+            probe_tick = latency_tick.tick(), if latency_enabled && !latency_probe_in_flight => {
                 let _ = probe_tick;
-                match time::timeout(PROBE_TIMEOUT, session.probe_rtt_ms()).await {
-                    Ok(Ok(rtt_ms)) => {
+                latency_probe_in_flight = true;
+                let probe_session = session.clone();
+                let result_tx = latency_result_tx.clone();
+                tokio::spawn(async move {
+                    let result = match time::timeout(PROBE_TIMEOUT, probe_session.probe_rtt_ms()).await {
+                        Ok(Ok(rtt_ms)) => LatencyProbeResult::Success(rtt_ms),
+                        Ok(Err(e)) => LatencyProbeResult::Failed(e.to_string()),
+                        Err(_) => LatencyProbeResult::TimedOut,
+                    };
+                    let _ = result_tx.send(result).await;
+                });
+            },
+            probe_result = latency_result_rx.recv(), if latency_probe_in_flight => {
+                latency_probe_in_flight = false;
+                match probe_result {
+                    Some(LatencyProbeResult::Success(rtt_ms)) => {
                         latency_failures = 0;
                         probe_timeouts = 0;
                         let _ = app_handle.emit(
@@ -139,7 +161,7 @@ pub async fn run(
                             LatencyEvent { session_id, rtt_ms },
                         );
                     }
-                    Ok(Err(e)) => {
+                    Some(LatencyProbeResult::Failed(e)) => {
                         // The server answered, just not with a channel —
                         // transport is alive, so this only counts against
                         // the probe itself.
@@ -153,13 +175,14 @@ pub async fn run(
                                 latency_failures
                             );
                             latency_enabled = false;
+                            latency_permanently_disabled = true;
                             let _ = app_handle.emit(
                                 "session:latency-stopped",
                                 LatencyStoppedEvent { session_id },
                             );
                         }
                     }
-                    Err(_) => {
+                    Some(LatencyProbeResult::TimedOut) => {
                         probe_timeouts += 1;
                         warn!(
                             session_id,
@@ -167,11 +190,21 @@ pub async fn run(
                             "latency probe timed out after {PROBE_TIMEOUT:?}"
                         );
                         if probe_timeouts >= PROBE_TIMEOUT_LIMIT {
-                            error_msg = Some(
-                                "connection unresponsive: server stopped answering channel requests".into(),
+                            latency_enabled = false;
+                            latency_permanently_disabled = true;
+                            warn!(
+                                session_id,
+                                "disabling latency probe after repeated timeouts; primary terminal remains connected"
                             );
-                            break;
+                            let _ = app_handle.emit(
+                                "session:latency-stopped",
+                                LatencyStoppedEvent { session_id },
+                            );
                         }
+                    }
+                    None => {
+                        latency_enabled = false;
+                        latency_permanently_disabled = true;
                     }
                 }
             },

@@ -107,6 +107,10 @@ pub async fn sftp_open(
         .sftp_pool
         .open_panel_channel(host_id.clone(), cfg, jump_cfg)
         .await?;
+    let os_probe = host
+        .os_type
+        .is_none()
+        .then(|| (host_id.clone(), Arc::clone(&channel.sftp), app_handle.clone()));
 
     let sftp_id = state.next_sftp_id.fetch_add(1, Ordering::SeqCst);
     state.sftp_handles.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(
@@ -118,6 +122,19 @@ pub async fn sftp_open(
     );
 
     info!(sftp_id, "sftp ready");
+    // Return the usable panel immediately. OS detection runs on the already
+    // opened SFTP channel and reports its result through host:os_type_updated,
+    // so slow or unsupported probes never delay or fail the panel open.
+    if let Some((probe_host_id, probe_sftp, probe_app)) = os_probe {
+        tauri::async_runtime::spawn(async move {
+            crate::commands::detect_and_persist_host_os_type_from_sftp(
+                probe_app,
+                probe_host_id,
+                probe_sftp,
+            )
+            .await;
+        });
+    }
     Ok(sftp_id)
 }
 
