@@ -81,8 +81,9 @@ check(
   "xterm core should include the alternate-buffer scrollbar teleport fixes",
 );
 check(
-  styles.includes("overflow-y: scroll !important"),
-  "terminal viewport should retain xterm's stable scroll geometry",
+  styles.includes("overflow-y: auto !important")
+    && !styles.includes("overflow-y: scroll !important"),
+  "terminal viewport should not force a permanent outside scrollbar gutter",
 );
 check(
   source.includes('pane.term.buffer.onBufferChange(() => {')
