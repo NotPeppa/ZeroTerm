@@ -43,7 +43,6 @@
           rows: 24,
           scrollback: 2000,
           scrollOnUserInput: true,
-          overviewRuler: { width: 8 },
         });
         term.open(document.getElementById("terminal"));
         const initialScrollbar = inspectCustomScrollbar();
@@ -51,6 +50,7 @@
           && initialScrollbar.contained
           && initialScrollbar.thumb !== "rgba(0, 0, 0, 0)"
           && initialScrollbar.thumbRadius === "999px"
+          && !document.querySelector(".xterm-decoration-overview-ruler")
           ? "passed"
           : "failed";
 
@@ -100,7 +100,8 @@
           && customScrollbar.width === 8
           && customScrollbar.contained
           && customScrollbar.thumb !== "rgba(0, 0, 0, 0)"
-          && customScrollbar.thumbRadius === "999px";
+          && customScrollbar.thumbRadius === "999px"
+          && !document.querySelector(".xterm-decoration-overview-ruler");
         const result = { passed, customScrollbar, cycles };
         document.getElementById("result").textContent = JSON.stringify(result, null, 2);
         document.body.dataset.testStatus = passed ? "passed" : "failed";

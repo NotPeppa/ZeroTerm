@@ -1735,7 +1735,7 @@ body.has-app-bg[data-app-theme="light"] .port-forward-head p {
   align-items: center;
   gap: 12px;
   padding: 14px 6px;
-  border-left: 1px solid rgba(255, 255, 255, 0.04);
+  border-left: none;
   background: rgba(10, 14, 23, 0.45);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -1784,13 +1784,11 @@ body.has-app-bg[data-app-theme="light"] .port-forward-head p {
 /* Glassmorphism overrides for rail */
 body.has-app-bg .terminal-sidebar-rail {
   background: rgba(8, 11, 20, 0.20) !important;
-  border-left-color: rgba(255, 255, 255, 0.06) !important;
   backdrop-filter: blur(14px) !important;
   -webkit-backdrop-filter: blur(14px) !important;
 }
 body.has-app-bg[data-app-theme="light"] .terminal-sidebar-rail {
   background: rgba(255, 255, 255, 0.20) !important;
-  border-left-color: rgba(0, 0, 0, 0.06) !important;
 }
 
 body.has-app-bg .terminal-side-btn {
