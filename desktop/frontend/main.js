@@ -6571,7 +6571,11 @@ function storeAiCommandResultForMessage(messageNode, result) {
 }
 
 function looksLikeHeredocStart(line) {
-  return /<<-?\s*(?:['"][^'"\s]+['"]|[^\s<]+)$/.test(String(line || "").trim());
+  // A heredoc delimiter does not have to be the final token. Shell commonly
+  // places an output redirection or pipe after it, for example:
+  //   cat <<'EOF' > /etc/network/interfaces
+  // Do not confuse a here-string (<<<) with a heredoc.
+  return /(^|[^<])<<-?\s*(?:['"][^'"\s]+['"]|[A-Za-z_][\w]*)/.test(String(line || "").trim());
 }
 
 function shouldApproveAiCommandBlockAsScript(lines) {

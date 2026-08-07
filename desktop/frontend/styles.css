@@ -3222,7 +3222,7 @@ body[data-app-theme="light"] .terminal-side-btn.active::before {
 }
 
 .ai-code-label {
-  padding: 6px 62px 6px 10px;
+  padding: 6px 10px;
   border-bottom: 1px solid rgba(104, 168, 255, 0.12);
   color: rgba(157, 211, 255, 0.84);
   font-size: 10px;
@@ -3241,14 +3241,18 @@ body[data-app-theme="light"] .terminal-side-btn.active::before {
 }
 
 .ai-code-tools {
-  position: absolute;
-  right: 8px;
-  top: 5px;
   display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 6px;
+  padding: 6px 10px;
+  border-top: 1px solid rgba(104, 168, 255, 0.12);
+  background: rgba(5, 10, 22, 0.2);
 }
 
 .ai-code-tools button {
+  flex: 0 1 auto;
+  max-width: 100%;
   min-height: 18px;
   padding: 1px 7px;
   border-radius: 6px;
@@ -3981,6 +3985,11 @@ body[data-app-theme="light"] .ai-code-tools button {
   border-color: rgba(37, 99, 235, 0.22);
   background: rgba(37, 99, 235, 0.08);
   color: #1d4ed8;
+}
+
+body[data-app-theme="light"] .ai-code-tools {
+  border-top-color: rgba(37, 99, 235, 0.12);
+  background: rgba(37, 99, 235, 0.035);
 }
 
 body[data-app-theme="light"] .ai-message-actions {

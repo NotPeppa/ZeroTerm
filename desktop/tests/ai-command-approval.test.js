@@ -5,6 +5,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const vm = require("node:vm");
 
 const source = fs.readFileSync(
   path.join(__dirname, "../frontend/main.js"),
@@ -142,6 +143,46 @@ check(
     && !agentSource.includes("state.steps")
     && !source.includes('const progressMax = "∞"'),
   "automatic modes should neither impose nor display a step count",
+);
+
+const heredocStart = source.indexOf("function looksLikeHeredocStart(line)");
+const heredocEnd = source.indexOf("\nfunction shouldApproveAiCommandBlockAsScript", heredocStart);
+const heredocHelper = heredocStart >= 0 && heredocEnd > heredocStart
+  ? source.slice(heredocStart, heredocEnd)
+  : "";
+const looksLikeHeredocStart = vm.runInNewContext(`${heredocHelper}; looksLikeHeredocStart`);
+check(
+  looksLikeHeredocStart("cat <<'EOF' > /etc/network/interfaces")
+    && looksLikeHeredocStart("cat <<-EOF | tee /tmp/output")
+    && !looksLikeHeredocStart("value=<<<text"),
+  "heredocs followed by redirection or a pipe should remain one command",
+);
+const splitStart = source.indexOf("function normalizeAiCommandBlock(command)");
+const splitEnd = source.indexOf("\nfunction getAiContinuedCommandCount", splitStart);
+const approvalEnd = source.indexOf("\nfunction getActiveTerminalSnapshot", heredocStart);
+const splitHelpers = splitStart >= 0 && splitEnd > splitStart && approvalEnd > heredocStart
+  ? `${source.slice(splitStart, splitEnd)}\n${source.slice(heredocStart, approvalEnd)}`
+  : "";
+const splitAiCommandBlockForApproval = vm.runInNewContext(
+  `${splitHelpers}\nfunction looksLikeRunnableCommandLine() { return true; }; splitAiCommandBlockForApproval`,
+);
+const redirectedHeredoc = [
+  "cat <<'EOF' > /etc/network/interfaces",
+  "auto he-ipv6",
+  "iface he-ipv6 inet6 v4tunnel",
+  "  address YOUR_IPV6",
+  "EOF",
+].join("\n");
+check(
+  splitAiCommandBlockForApproval(redirectedHeredoc).length === 1,
+  "a redirected heredoc should render exactly one approval control",
+);
+check(
+  css.includes(".ai-code-tools {")
+    && css.includes("flex-wrap: wrap")
+    && css.includes("border-top: 1px solid")
+    && !css.slice(css.indexOf(".ai-code-tools {"), css.indexOf(".ai-code-tools button")).includes("position: absolute"),
+  "command controls should use a wrapping footer instead of overlaying code",
 );
 
 console.log(`\nai-command-approval.test.js: ${passed} passed, ${failed} failed`);
