@@ -5698,6 +5698,50 @@ body.has-app-bg .pane-body .xterm .xterm-viewport {
   background: transparent;
 }
 
+/* xterm 6 owns scrolling through an overlay scrollbar. The viewport rules
+   above remain as a fallback for xterm 5, while these rules preserve the same
+   ZeroTerm scrollbar instead of exposing xterm 6's 14px default control. */
+.pane-body .xterm {
+  --terminal-scrollbar-thumb: rgba(176, 196, 226, 0.54);
+  --terminal-scrollbar-thumb-hover: rgba(226, 232, 240, 0.82);
+}
+
+body.has-app-bg .pane-body .xterm {
+  --terminal-scrollbar-thumb: rgba(235, 244, 255, 0.58);
+  --terminal-scrollbar-thumb-hover: rgba(255, 255, 255, 0.84);
+}
+
+body[data-app-theme="light"] .pane-body .xterm {
+  --terminal-scrollbar-thumb: rgba(71, 85, 105, 0.34);
+  --terminal-scrollbar-thumb-hover: rgba(51, 65, 85, 0.52);
+}
+
+body.has-app-bg[data-app-theme="light"] .pane-body .xterm {
+  --terminal-scrollbar-thumb: rgba(15, 23, 42, 0.28);
+  --terminal-scrollbar-thumb-hover: rgba(15, 23, 42, 0.44);
+}
+
+.pane-body .xterm .xterm-scrollable-element > .scrollbar.vertical {
+  width: 8px !important;
+  right: 0 !important;
+  background: var(--scrollbar-track) !important;
+}
+
+.pane-body .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider {
+  left: 0 !important;
+  width: 8px !important;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--terminal-scrollbar-thumb) !important;
+  background-clip: padding-box !important;
+}
+
+.pane-body .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider:hover,
+.pane-body .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider.active {
+  background: var(--terminal-scrollbar-thumb-hover) !important;
+  background-clip: padding-box !important;
+}
+
 body.has-app-bg .pane-body .xterm .xterm-viewport {
   scrollbar-color: rgba(235, 244, 255, 0.66) transparent;
 }

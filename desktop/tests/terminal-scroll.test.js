@@ -86,6 +86,12 @@ check(
   "terminal viewport should not force a permanent outside scrollbar gutter",
 );
 check(
+  source.includes("overviewRuler: { width: 8 }")
+    && styles.includes(".xterm-scrollable-element > .scrollbar.vertical")
+    && styles.includes(".scrollbar.vertical > .slider"),
+  "xterm 6 overlay scrollbar should retain ZeroTerm's custom 8px styling",
+);
+check(
   source.includes('pane.term.buffer.onBufferChange(() => {')
     && source.includes("if (!pane.term || !pane.followOutput) return")
     && source.includes("pane.term.scrollToBottom()"),

@@ -4,19 +4,38 @@
     <meta charset="utf-8" />
     <title>ZeroTerm terminal scroll regression</title>
     <link rel="stylesheet" href="../frontend/assets/xterm.min.css" />
+    <link rel="stylesheet" href="../frontend/styles.css" />
     <style>
       html, body { margin: 0; background: #08111f; color: #dbeafe; font: 14px sans-serif; }
+      .pane-body { width: 900px; height: 420px; }
       #terminal { width: 900px; height: 420px; }
       #result { white-space: pre-wrap; padding: 12px; }
     </style>
   </head>
   <body>
-    <div id="terminal"></div>
+    <div class="pane-body"><div id="terminal"></div></div>
     <pre id="result">running</pre>
     <script src="../frontend/assets/xterm.min.js"></script>
     <script>
       const nextFrame = () => new Promise((resolve) => requestAnimationFrame(resolve));
       const write = (term, data) => new Promise((resolve) => term.write(data, resolve));
+      const inspectCustomScrollbar = () => {
+        const terminalRect = document.getElementById("terminal").getBoundingClientRect();
+        const verticalScrollbar = document.querySelector(".xterm-scrollable-element > .scrollbar.vertical");
+        const verticalSlider = verticalScrollbar?.querySelector(".slider");
+        const scrollbarRect = verticalScrollbar?.getBoundingClientRect();
+        const scrollbarStyle = verticalScrollbar ? getComputedStyle(verticalScrollbar) : null;
+        const sliderStyle = verticalSlider ? getComputedStyle(verticalSlider) : null;
+        return {
+          width: scrollbarRect?.width ?? null,
+          contained: Boolean(scrollbarRect
+            && scrollbarRect.left >= terminalRect.left
+            && scrollbarRect.right <= terminalRect.right + 0.5),
+          track: scrollbarStyle?.backgroundColor ?? null,
+          thumb: sliderStyle?.backgroundColor ?? null,
+          thumbRadius: sliderStyle?.borderRadius ?? null,
+        };
+      };
 
       window.testPromise = (async () => {
         const term = new Terminal({
@@ -24,20 +43,30 @@
           rows: 24,
           scrollback: 2000,
           scrollOnUserInput: true,
+          overviewRuler: { width: 8 },
         });
         term.open(document.getElementById("terminal"));
+        const initialScrollbar = inspectCustomScrollbar();
+        document.body.dataset.scrollbarStyle = initialScrollbar.width === 8
+          && initialScrollbar.contained
+          && initialScrollbar.thumb !== "rgba(0, 0, 0, 0)"
+          && initialScrollbar.thumbRadius === "999px"
+          ? "passed"
+          : "failed";
 
-        for (let i = 0; i < 500; i += 1) {
-          await write(term, `normal-buffer-${String(i).padStart(4, "0")}\r\n`);
-        }
+        await write(term, Array.from(
+          { length: 500 },
+          (_, i) => `normal-buffer-${String(i).padStart(4, "0")}\r\n`,
+        ).join(""));
         term.scrollToBottom();
 
         const cycles = [];
         for (let cycle = 0; cycle < 12; cycle += 1) {
           await write(term, "\x1b[?1049h");
-          for (let line = 0; line < 40; line += 1) {
-            await write(term, `alternate-${cycle}-${line}\r\n`);
-          }
+          await write(term, Array.from(
+            { length: 40 },
+            (_, line) => `alternate-${cycle}-${line}\r\n`,
+          ).join(""));
           term.scrollLines(-18);
           term.scrollLines(9);
           term.scrollLines(-6);
@@ -61,12 +90,18 @@
           });
         }
 
+        const customScrollbar = inspectCustomScrollbar();
+
         const passed = cycles.every((entry) =>
           entry.type === "normal"
           && entry.bufferAtBottom
           && entry.domDistanceFromBottom <= 2
-        );
-        const result = { passed, cycles };
+        )
+          && customScrollbar.width === 8
+          && customScrollbar.contained
+          && customScrollbar.thumb !== "rgba(0, 0, 0, 0)"
+          && customScrollbar.thumbRadius === "999px";
+        const result = { passed, customScrollbar, cycles };
         document.getElementById("result").textContent = JSON.stringify(result, null, 2);
         document.body.dataset.testStatus = passed ? "passed" : "failed";
         return result;

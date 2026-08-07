@@ -15200,6 +15200,10 @@ function ensurePaneTerminal(pane) {
     customGlyphs: true,
     rescaleOverlappingGlyphs: false,
     scrollback: TERMINAL_SCROLLBACK,
+    // xterm 6 renders its own overlay scrollbar instead of the native
+    // .xterm-viewport scrollbar used by xterm 5. Keep the overlay at the same
+    // width as ZeroTerm's established custom scrollbar.
+    overviewRuler: { width: 8 },
     // Keep xterm's standard behavior explicit: keyboard input is an intentional
     // request to leave scrollback and return to the live screen.
     scrollOnUserInput: true,
