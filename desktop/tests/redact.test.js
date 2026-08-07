@@ -67,6 +67,23 @@ redactsAllOf("client_secret = \"a b c d\"", ["a b c", "b c d"]);
   assert(out.includes("without-password"), `sshd_config value preserved: ${out}`);
 }
 
+// --- IP addresses remain usable in AI context ----------------------
+
+{
+  const addresses = [
+    "45.77.12.34",
+    "https://45.77.12.34:8443/api",
+    "2604:a880:400:d1::1234:5678",
+    "fe80::1%en0",
+  ];
+  const out = redactSensitiveText(addresses.join("\n"));
+  for (const address of addresses) {
+    assert(out.includes(address), `IP address should be preserved: ${address} => ${out}`);
+  }
+  assert(!out.includes("[REDACTED_PUBLIC_IP]"), `IPv4 placeholder should not be emitted: ${out}`);
+  assert(!out.includes("[REDACTED_PUBLIC_IPV6]"), `IPv6 placeholder should not be emitted: ${out}`);
+}
+
 // --- FE-7: ANSI escapes must not defeat redaction -------------------
 
 {

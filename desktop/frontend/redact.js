@@ -5,7 +5,7 @@
 //    A. 已知格式凭据(厂商 token 前缀、JWT、PEM 私钥块)—— 格式即证据,无条件替换
 //    B. 协议/语法位置(URL 内嵌密码、Authorization/Cookie 头)—— 位置即语义
 //    C. 键名驱动(password=xxx、token: xxx 等)—— 键名说明值是敏感的
-//    D. 网络/设备标识(公网 IP、MAC、UUID、主机提示符)—— 隐私而非凭据
+//    D. 设备/主机标识(MAC、UUID、主机提示符)—— 隐私而非凭据
 //    E. 高熵兜底(长混合随机串)—— 低置信,规则从严,宁漏勿误
 // 2. 幂等:同一文本重复脱敏输出不变。消息历史在每次请求前都会整体再过一遍
 //    (redactAiMessagesForRequest),不幂等会破坏已有占位符。
@@ -44,77 +44,6 @@
   function isSshPublicKeyBlob(value) {
     return /^AAAA(?:B3NzaC1|C3NzaC1|E2VjZHNh)/.test(value);
   }
-
-  // ---------- 网络标识判定 ----------
-
-  // 返回 "invalid" | "reserved" | "public"。invalid(如版本号 126.0.6478.126)
-  // 和 reserved(私网/回环/链路本地/CGNAT/组播/文档段)都不脱敏。
-  function classifyIpv4(ip) {
-    const parts = ip.split(".").map((v) => Number(v));
-    if (parts.length !== 4 || parts.some((v) => !Number.isInteger(v) || v < 0 || v > 255)) {
-      return "invalid";
-    }
-    const [a, b, c] = parts;
-    const reserved =
-      a === 0
-      || a === 10
-      || a === 127
-      || (a === 100 && b >= 64 && b <= 127)
-      || (a === 169 && b === 254)
-      || (a === 172 && b >= 16 && b <= 31)
-      || (a === 192 && b === 168)
-      || (a === 192 && b === 0 && c === 2)
-      || (a === 198 && (b === 18 || b === 19))
-      || (a === 198 && b === 51 && c === 100)
-      || (a === 203 && b === 0 && c === 113)
-      || a >= 224;
-    return reserved ? "reserved" : "public";
-  }
-
-  // 众所周知的公共 DNS 等 anycast 地址:不指向用户,而且 ping 8.8.8.8 是
-  // 最常见的网络排障动作,脱敏它们只会让 AI 失去关键上下文
-  const WELL_KNOWN_IPS = new Set([
-    "8.8.8.8", "8.8.4.4",
-    "1.1.1.1", "1.0.0.1",
-    "9.9.9.9", "149.112.112.112",
-    "208.67.222.222", "208.67.220.220",
-    "114.114.114.114", "223.5.5.5", "223.6.6.6", "119.29.29.29",
-  ]);
-
-  function isNonPublicIpv6(ip) {
-    const normalized = String(ip || "").toLowerCase();
-    return normalized === "::1"
-      || normalized === "::"
-      || normalized.startsWith("fe8")
-      || normalized.startsWith("fe9")
-      || normalized.startsWith("fea")
-      || normalized.startsWith("feb")
-      || normalized.startsWith("fc")
-      || normalized.startsWith("fd")
-      || normalized.startsWith("2001:db8"); // 文档示例段
-  }
-
-  // 严格校验候选串是否为合法 IPv6(:: 压缩至多一处,分组数量正确)。
-  // 时钟 13:42:58(3 组无压缩)、MAC、日志里的 hex:hex 都过不了这一关。
-  function isValidIpv6(value) {
-    if (!/^[0-9a-f:]+$/i.test(value)) return false;
-    const compressed = value.split("::");
-    if (compressed.length > 2) return false;
-    const head = compressed[0] ? compressed[0].split(":") : [];
-    const tail = compressed.length === 2 && compressed[1] ? compressed[1].split(":") : [];
-    if (head.some((g) => !g) || tail.some((g) => !g)) return false;
-    if (compressed.length === 1) {
-      if (head.length !== 8) return false;
-    } else if (head.length + tail.length > 7) {
-      return false;
-    }
-    return head.concat(tail).every((g) => /^[0-9a-f]{1,4}$/i.test(g));
-  }
-
-  const WELL_KNOWN_IPV6 = new Set([
-    "2001:4860:4860::8888", "2001:4860:4860::8844",
-    "2606:4700:4700::1111", "2606:4700:4700::1001",
-  ]);
 
   // ---------- E 类兜底判定 ----------
 
@@ -244,20 +173,9 @@
     out = out.replace(/\b(sshpass\s+-p\s*)(["']?)([^\s"']+)/gi, (m, key, quote, value) =>
       PLACEHOLDER_RE.test(value) ? m : `${key}${quote}[REDACTED_SECRET]`);
 
-    // D. 网络/设备标识(MAC 必须先于 IPv6,否则 aa:bb:cc:dd:ee:ff 会被当 IPv6)
+    // D. 设备/主机标识。IP 地址保留原文,让 AI 能直接生成可执行的网络命令。
     out = out.replace(/\b(?:[0-9a-f]{2}:){5}[0-9a-f]{2}\b/gi, "[REDACTED_MAC]");
     out = out.replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "[REDACTED_UUID]");
-    out = out.replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, (ip) =>
-      classifyIpv4(ip) === "public" && !WELL_KNOWN_IPS.has(ip) ? "[REDACTED_PUBLIC_IP]" : ip);
-    // IPv6:宽松候选({0,4} 允许空组,兼容 :: 在任意位置)+ isValidIpv6 严格校验。
-    // 只抹冒号 >= 3 的公网地址:cc::dd 这种两组短串多半是代码里的作用域符号,
-    // 保留;真实主机地址极少压缩到只剩两组。
-    out = out.replace(/(?<![\w:.])(?:[0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}(?:%[\w.-]+)?(?!\w|:|\.\d)/gi, (ip) => {
-      const plain = ip.replace(/%.*$/, "");
-      if (!isValidIpv6(plain)) return ip;
-      if (isNonPublicIpv6(plain) || WELL_KNOWN_IPV6.has(plain.toLowerCase())) return ip;
-      return (plain.match(/:/g) || []).length >= 3 ? "[REDACTED_PUBLIC_IPV6]" : ip;
-    });
     // 主机提示符 user@host:~$ / user@host# —— 要求 : 后是路径/空白/行尾,
     // 避免误伤 image@sha256:... 摘要和 git@github.com:owner/repo 地址;
     // git log 的 <user@example.com> 不在此形态,保留
@@ -277,9 +195,6 @@
 
   const api = {
     redactSensitiveText,
-    classifyIpv4,
-    isNonPublicIpv6,
-    isValidIpv6,
     isLikelyRandomToken,
   };
 
