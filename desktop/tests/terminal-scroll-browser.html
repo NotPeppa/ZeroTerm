@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>ZeroTerm terminal scroll regression</title>
+    <link rel="stylesheet" href="../frontend/assets/xterm.min.css" />
+    <style>
+      html, body { margin: 0; background: #08111f; color: #dbeafe; font: 14px sans-serif; }
+      #terminal { width: 900px; height: 420px; }
+      #result { white-space: pre-wrap; padding: 12px; }
+    </style>
+  </head>
+  <body>
+    <div id="terminal"></div>
+    <pre id="result">running</pre>
+    <script src="../frontend/assets/xterm.min.js"></script>
+    <script>
+      const nextFrame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+      const write = (term, data) => new Promise((resolve) => term.write(data, resolve));
+
+      window.testPromise = (async () => {
+        const term = new Terminal({
+          cols: 100,
+          rows: 24,
+          scrollback: 2000,
+          scrollOnUserInput: true,
+        });
+        term.open(document.getElementById("terminal"));
+
+        for (let i = 0; i < 500; i += 1) {
+          await write(term, `normal-buffer-${String(i).padStart(4, "0")}\r\n`);
+        }
+        term.scrollToBottom();
+
+        const cycles = [];
+        for (let cycle = 0; cycle < 12; cycle += 1) {
+          await write(term, "\x1b[?1049h");
+          for (let line = 0; line < 40; line += 1) {
+            await write(term, `alternate-${cycle}-${line}\r\n`);
+          }
+          term.scrollLines(-18);
+          term.scrollLines(9);
+          term.scrollLines(-6);
+          await write(term, "\x1b[?1049l");
+          await nextFrame();
+          await nextFrame();
+
+          const buffer = term.buffer.active;
+          const viewport = document.querySelector(".xterm-viewport");
+          const bufferAtBottom = buffer.viewportY === buffer.baseY;
+          const domDistanceFromBottom = viewport
+            ? Math.abs(viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop)
+            : Number.POSITIVE_INFINITY;
+          cycles.push({
+            cycle,
+            type: buffer.type,
+            baseY: buffer.baseY,
+            viewportY: buffer.viewportY,
+            bufferAtBottom,
+            domDistanceFromBottom,
+          });
+        }
+
+        const passed = cycles.every((entry) =>
+          entry.type === "normal"
+          && entry.bufferAtBottom
+          && entry.domDistanceFromBottom <= 2
+        );
+        const result = { passed, cycles };
+        document.getElementById("result").textContent = JSON.stringify(result, null, 2);
+        document.body.dataset.testStatus = passed ? "passed" : "failed";
+        return result;
+      })().catch((error) => {
+        const result = { passed: false, error: String(error?.stack || error) };
+        document.getElementById("result").textContent = JSON.stringify(result, null, 2);
+        document.body.dataset.testStatus = "failed";
+        return result;
+      });
+    </script>
+  </body>
+</html>

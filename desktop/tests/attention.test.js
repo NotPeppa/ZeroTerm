@@ -3,6 +3,8 @@
 // Run with: node desktop/tests/attention.test.js
 
 const {
+  cancelTerminalAttentionScan,
+  scheduleTerminalAttentionScan,
   terminalLiveVisibleText,
   terminalTextNeedsAttention,
 } = require("../frontend/attention.js");
@@ -89,6 +91,79 @@ check("Build completed\u0007", false, "completion bell text");
 check("notify;Build;completed successfully", false, "generic OSC notification");
 check("https://example.test/search?q=continue", false, "URL query");
 check("", false, "empty screen");
+
+// A quiet-period debounce alone can be postponed forever by steady output.
+// Once attention is active, the max-delay timer must survive those resets and
+// force a scan that can clear the stale badge.
+function fakeTimers() {
+  let nextId = 1;
+  let now = 0;
+  const timers = new Map();
+  return {
+    setTimer(callback, delay) {
+      const id = nextId++;
+      timers.set(id, { callback, at: now + delay });
+      return id;
+    },
+    clearTimer(id) {
+      timers.delete(id);
+    },
+    advance(ms) {
+      const end = now + ms;
+      while (true) {
+        const due = [...timers.entries()]
+          .filter(([, timer]) => timer.at <= end)
+          .sort((a, b) => a[1].at - b[1].at || a[0] - b[0])[0];
+        if (!due) break;
+        const [id, timer] = due;
+        timers.delete(id);
+        now = timer.at;
+        timer.callback();
+      }
+      now = end;
+    },
+  };
+}
+
+const clock = fakeTimers();
+const scanState = { attnQuietTimer: null, attnMaxTimer: null };
+let scanCount = 0;
+const scheduleSteadyOutputScan = () => scheduleTerminalAttentionScan(
+  scanState,
+  () => { scanCount += 1; },
+  {
+    quietDelay: 450,
+    maxDelay: 1000,
+    setTimer: clock.setTimer,
+    clearTimer: clock.clearTimer,
+  }
+);
+scheduleSteadyOutputScan();
+for (let elapsed = 0; elapsed < 900; elapsed += 100) {
+  clock.advance(100);
+  scheduleSteadyOutputScan();
+}
+clock.advance(100);
+checkValue(scanCount, 1, "continuous output cannot postpone stale-attention scan");
+cancelTerminalAttentionScan(scanState, { clearTimer: clock.clearTimer });
+
+const quietClock = fakeTimers();
+const quietState = { attnQuietTimer: null, attnMaxTimer: null };
+let quietScanCount = 0;
+scheduleTerminalAttentionScan(
+  quietState,
+  () => { quietScanCount += 1; },
+  {
+    quietDelay: 450,
+    maxDelay: null,
+    setTimer: quietClock.setTimer,
+    clearTimer: quietClock.clearTimer,
+  }
+);
+quietClock.advance(449);
+checkValue(quietScanCount, 0, "new attention scan still waits for quiet period");
+quietClock.advance(1);
+checkValue(quietScanCount, 1, "new attention scan runs after quiet period");
 
 function fakeBuffer(lines, { baseY, viewportY }) {
   return {

@@ -5642,7 +5642,10 @@ body[data-app-theme="light"] .pane-ai-toggle.active {
 }
 
 .pane-body .xterm .xterm-viewport {
-  overflow-y: auto !important;
+  /* xterm keeps its DOM scroll position in sync with the active buffer.
+     Always reserving the scroll container matches xterm's required base CSS
+     and avoids changing scroll geometry while buffers are switched. */
+  overflow-y: scroll !important;
   /* Background is driven by the xterm theme (term.options.theme.background)
      so a theme's own background colour actually shows. In glass mode (a
      background image is set) the viewport is forced transparent by the rule

@@ -122,5 +122,65 @@
     return lines.join("\n");
   }
 
-  return { terminalTextNeedsAttention, terminalLiveVisibleText };
+  // Debounce prompt detection until output settles, but optionally cap how
+  // long a pending scan may be postponed. The cap is used while an attention
+  // badge is already active: otherwise a steady stream of output can keep
+  // resetting the quiet timer forever and leave a stale badge behind.
+  function scheduleTerminalAttentionScan(
+    state,
+    callback,
+    {
+      quietDelay,
+      maxDelay = null,
+      setTimer = setTimeout,
+      clearTimer = clearTimeout,
+    }
+  ) {
+    if (!state || typeof callback !== "function") return;
+
+    const cancelTimer = (key) => {
+      if (state[key] === null || state[key] === undefined) return;
+      clearTimer(state[key]);
+      state[key] = null;
+    };
+    const run = () => {
+      cancelTimer("attnQuietTimer");
+      cancelTimer("attnMaxTimer");
+      callback();
+    };
+
+    cancelTimer("attnQuietTimer");
+    state.attnQuietTimer = setTimer(run, Math.max(0, Number(quietDelay) || 0));
+
+    const hasMaxDelay = maxDelay !== null && maxDelay !== undefined;
+    const boundedMaxDelay = Number(maxDelay);
+    if (
+      hasMaxDelay &&
+      Number.isFinite(boundedMaxDelay) &&
+      boundedMaxDelay >= 0 &&
+      (state.attnMaxTimer === null || state.attnMaxTimer === undefined)
+    ) {
+      state.attnMaxTimer = setTimer(run, boundedMaxDelay);
+    }
+  }
+
+  function cancelTerminalAttentionScan(
+    state,
+    { clearTimer = clearTimeout } = {}
+  ) {
+    if (!state) return;
+    for (const key of ["attnQuietTimer", "attnMaxTimer"]) {
+      if (state[key] !== null && state[key] !== undefined) {
+        clearTimer(state[key]);
+        state[key] = null;
+      }
+    }
+  }
+
+  return {
+    terminalTextNeedsAttention,
+    terminalLiveVisibleText,
+    scheduleTerminalAttentionScan,
+    cancelTerminalAttentionScan,
+  };
 });

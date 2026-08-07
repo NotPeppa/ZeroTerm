@@ -6,6 +6,11 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const source = fs.readFileSync(path.join(__dirname, "../frontend/main.js"), "utf8");
+const styles = fs.readFileSync(path.join(__dirname, "../frontend/styles.css"), "utf8");
+const xtermVersions = JSON.parse(
+  fs.readFileSync(path.join(__dirname, "../frontend/assets/xterm-versions.json"), "utf8"),
+);
+const { Terminal } = require(path.join(__dirname, "../frontend/assets/xterm.min.js"));
 let passed = 0;
 let failed = 0;
 
@@ -59,8 +64,25 @@ check(
 );
 check(
   source.includes("followOutput: true")
-    && source.includes("const stickToBottom = pane.followOutput !== false"),
+    && source.includes("stickToBottom: () => pane.followOutput !== false"),
   "output following should survive terminal buffer switches as pane state",
+);
+check(
+  writeSource.includes('typeof stickToBottom === "function"')
+    && writeSource.includes("stickToBottom()"),
+  "queued writes should recheck follow state after asynchronous parsing",
+);
+check(
+  source.includes("scrollOnUserInput: true"),
+  "keyboard input should explicitly restore the live terminal viewport",
+);
+check(
+  Number.parseInt(xtermVersions["@xterm/xterm"], 10) >= 6,
+  "xterm core should include the alternate-buffer scrollbar teleport fixes",
+);
+check(
+  styles.includes("overflow-y: scroll !important"),
+  "terminal viewport should retain xterm's stable scroll geometry",
 );
 check(
   source.includes('pane.term.buffer.onBufferChange(() => {')
@@ -75,5 +97,37 @@ check(
   "explicit user scrolling should control whether output follows",
 );
 
-console.log(`\nterminal-scroll.test.js: ${passed} passed, ${failed} failed`);
-process.exit(failed === 0 ? 0 : 1);
+async function runXtermBufferSwitchRegression() {
+  const term = new Terminal({ cols: 80, rows: 24, scrollback: 1000 });
+  const write = (data) => new Promise((resolve) => term.write(data, resolve));
+  try {
+    await write(Array.from({ length: 500 }, (_, i) => `normal-${i}\r\n`).join(""));
+    term.scrollToBottom();
+    let stayedAtBottom = true;
+    for (let cycle = 0; cycle < 12; cycle += 1) {
+      await write("\x1b[?1049h");
+      await write(Array.from({ length: 40 }, (_, i) => `alternate-${cycle}-${i}\r\n`).join(""));
+      term.scrollLines(-18);
+      term.scrollLines(9);
+      term.scrollLines(-6);
+      await write("\x1b[?1049l");
+      const buffer = term.buffer.active;
+      stayedAtBottom = stayedAtBottom
+        && buffer.type === "normal"
+        && buffer.viewportY === buffer.baseY;
+    }
+    check(stayedAtBottom, "real xterm buffer switches should preserve the live viewport");
+  } finally {
+    term.dispose();
+  }
+}
+
+runXtermBufferSwitchRegression()
+  .catch((error) => {
+    failed += 1;
+    console.error("  FAIL: real xterm buffer regression threw", error);
+  })
+  .finally(() => {
+    console.log(`\nterminal-scroll.test.js: ${passed} passed, ${failed} failed`);
+    process.exit(failed === 0 ? 0 : 1);
+  });

@@ -14174,6 +14174,7 @@ function createPane(host) {
     osc7HandlerDispose: null,
     attention: null,
     attnQuietTimer: null,
+    attnMaxTimer: null,
     attnAcknowledgedScreen: null,
     attnCandidateScreen: null,
     attnHandlerDisposes: null,
@@ -14700,6 +14701,7 @@ document.addEventListener("click", (ev) => {
 
 const TERMINAL_ATTENTION_QUIET_MS = 450;
 const TERMINAL_ATTENTION_CONFIRM_MS = 350;
+const TERMINAL_ATTENTION_MAX_STALE_MS = 1000;
 
 let termAttentionLastActiveTabId = null;
 // Whether we currently have an outstanding OS attention request. Guards against
@@ -14776,10 +14778,7 @@ function triggerPaneAttention(pane, kind) {
 
 function clearPaneAttention(pane, { rerender = true } = {}) {
   if (!pane) return false;
-  if (pane.attnQuietTimer !== null && pane.attnQuietTimer !== undefined) {
-    clearTimeout(pane.attnQuietTimer);
-    pane.attnQuietTimer = null;
-  }
+  window.ZeroTermAttention?.cancelTerminalAttentionScan(pane);
   pane.attnCandidateScreen = null;
   const visibleScreen = paneLiveVisibleScreen(pane);
   if (visibleScreen !== null) pane.attnAcknowledgedScreen = visibleScreen;
@@ -14804,13 +14803,17 @@ function clearTabAttention(tab, { rerender = true } = {}) {
 
 function schedulePaneAttentionScan(pane, delay = TERMINAL_ATTENTION_QUIET_MS) {
   if (!pane || pane.sessionId === null) return;
-  if (pane.attnQuietTimer !== null && pane.attnQuietTimer !== undefined) {
-    clearTimeout(pane.attnQuietTimer);
-  }
-  pane.attnQuietTimer = setTimeout(() => {
-    pane.attnQuietTimer = null;
-    evaluatePaneAttentionPrompt(pane);
-  }, delay);
+  window.ZeroTermAttention?.scheduleTerminalAttentionScan(
+    pane,
+    () => evaluatePaneAttentionPrompt(pane),
+    {
+      quietDelay: delay,
+      // New prompts still require a quiet screen, but an existing alert must
+      // be rechecked periodically so continuous output can clear stale state.
+      maxDelay:
+        pane.attention === "prompt" ? TERMINAL_ATTENTION_MAX_STALE_MS : null,
+    }
+  );
 }
 
 // Return only the live terminal screen. When viewportY is behind baseY the
@@ -15202,6 +15205,9 @@ function ensurePaneTerminal(pane) {
     customGlyphs: true,
     rescaleOverlappingGlyphs: false,
     scrollback: TERMINAL_SCROLLBACK,
+    // Keep xterm's standard behavior explicit: keyboard input is an intentional
+    // request to leave scrollback and return to the live screen.
+    scrollOnUserInput: true,
     convertEol: false,
     reflowCursorLine: false,
   });
@@ -15692,7 +15698,12 @@ function writePaneTerminalData(pane, data, { stickToBottom = false, onParsed = n
   if (!pane?.term) return;
   pane.term.write(data, () => {
     if (!pane.term) return;
-    if (stickToBottom) pane.term.scrollToBottom();
+    // Parsing is asynchronous. A user may scroll up after this write was
+    // queued, so callers can defer the decision until the callback runs.
+    const shouldStickToBottom = typeof stickToBottom === "function"
+      ? stickToBottom()
+      : stickToBottom;
+    if (shouldStickToBottom) pane.term.scrollToBottom();
     if (typeof onParsed === "function") onParsed();
   });
 }
@@ -15985,9 +15996,10 @@ async function wirePaneSessionEvents(pane, sessionId) {
     if (ev.payload.sessionId !== sessionId) return;
     markPaneAlive();
     if (!pane.term) return;
-    const stickToBottom = pane.followOutput !== false;
     writePaneTerminalData(pane, new Uint8Array(ev.payload.data), {
-      stickToBottom,
+      // Do not capture followOutput here. xterm parses writes asynchronously;
+      // a queued callback must respect a wheel scroll that happened meanwhile.
+      stickToBottom: () => pane.followOutput !== false,
       // xterm parses writes asynchronously. Start the quiet-period timer only
       // after this chunk is reflected in its buffer; otherwise a short final
       // prompt can be scanned before it exists on screen.
