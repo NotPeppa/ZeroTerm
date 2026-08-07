@@ -5856,7 +5856,7 @@ function renderAiMarkdown(text) {
       const label = document.createElement("div");
       label.className = "ai-code-label";
       label.textContent = /-user$/i.test(codeLang)
-        ? `${codeLang.replace(/-user$/i, "")} · 需要用户介入`
+        ? `${codeLang.replace(/-user$/i, "")} · 需要批准`
         : codeLang;
       block.appendChild(label);
     }
@@ -6657,13 +6657,13 @@ function enhanceAiCodeBlocks(root) {
     if (!isExecutableCodeBlock(block, command)) return;
     const commands = splitAiCommandBlockForApproval(command);
     if (!commands.length) return;
-    executable.push({ block, commands, requiresUserInput: aiCodeBlockRequiresUserInput(block) });
+    executable.push({ block, commands, requiresManualApproval: aiCodeBlockRequiresManualApproval(block) });
   });
   if (!executable.length) return;
   const messageNode = root.closest?.(".ai-message-assistant");
   const totalCommands = executable.reduce((sum, item) => sum + item.commands.length, 0);
   const commandState = ensureAiMultiCommandControls(messageNode, totalCommands);
-  executable.forEach(({ block, commands, requiresUserInput }) => {
+  executable.forEach(({ block, commands, requiresManualApproval }) => {
     const tools = document.createElement("div");
     tools.className = "ai-code-tools";
     commands.slice(0, 4).forEach((singleCommand, index) => {
@@ -6672,12 +6672,12 @@ function enhanceAiCodeBlocks(root) {
       run.type = "button";
       run.textContent = restoredResult
         ? "已执行"
-        : (requiresUserInput ? "需要用户介入" : (commands.length > 1 ? `批准 ${index + 1}` : "批准执行"));
-      run.disabled = Boolean(restoredResult || requiresUserInput);
-      run.title = requiresUserInput
-        ? "AI 标记此命令需要你先提供或替换参数，请按回复说明处理后手动执行。"
+        : (commands.length > 1 ? `批准 ${index + 1}` : "批准执行");
+      run.disabled = Boolean(restoredResult);
+      run.title = requiresManualApproval
+        ? "AI 已停止自动执行；检查命令后点击批准执行。"
         : singleCommand;
-      run.dataset.userInputRequired = requiresUserInput ? "true" : "false";
+      run.dataset.manualApprovalRequired = requiresManualApproval ? "true" : "false";
       run.__ztCommand = singleCommand;
       run.__ztExecute = async ({ automatic = false } = {}) => {
         if (run.disabled) return null;
@@ -6732,19 +6732,10 @@ async function maybeRunAiTerminalAgent(messageNode, paneKey) {
   if (!state || state.running || pane?.sessionId == null) return;
   const automaticControlEnabled = state.mode !== "manual" && !state.stopRequested;
   const commandButtons = Array.from(messageNode.querySelectorAll?.(".ai-code-tools button") || []);
-  const userInputButton = commandButtons.find((button) => button.dataset.userInputRequired === "true");
-  if (userInputButton) {
-    messageNode.classList.add("ai-risk-approval-required");
-    messageNode.dataset.riskApproval = "user-input";
-    state.waitingApproval = false;
-    state.waitingUserInput = automaticControlEnabled;
-    syncAiTerminalControlUi();
-    if (automaticControlEnabled) showToast("AI 说明此步骤需要你的输入，已停止自动执行。", "error", 3600);
-    return;
-  }
   const runButton = commandButtons
     .find((button) => !button.disabled && typeof button.__ztExecute === "function" && button.__ztCommand);
   if (!runButton) return;
+  const requiresManualApproval = runButton.dataset.manualApprovalRequired === "true";
   let policy;
   try {
     policy = await invoke("authorize_ai_terminal_command", {
@@ -6763,9 +6754,9 @@ async function maybeRunAiTerminalAgent(messageNode, paneKey) {
   state.waitingUserInput = false;
   const requiresUserInput = policy?.classification === "user_input_required";
   const requiresRiskApproval = policy?.classification === "approval_required";
-  messageNode.classList.toggle("ai-risk-approval-required", requiresRiskApproval || requiresUserInput);
+  messageNode.classList.toggle("ai-risk-approval-required", requiresManualApproval || requiresRiskApproval || requiresUserInput);
   if (requiresUserInput) messageNode.dataset.riskApproval = "user-input";
-  else if (requiresRiskApproval) messageNode.dataset.riskApproval = "required";
+  else if (requiresManualApproval || requiresRiskApproval) messageNode.dataset.riskApproval = "required";
   else messageNode.removeAttribute("data-risk-approval");
   if (requiresUserInput) {
     runButton.disabled = true;
@@ -6777,9 +6768,9 @@ async function maybeRunAiTerminalAgent(messageNode, paneKey) {
     if (automaticControlEnabled) showToast("命令包含未替换的占位内容，AI 已停止自动执行。", "error", 3600);
     return;
   }
-  if (requiresRiskApproval) {
+  if (requiresManualApproval || requiresRiskApproval) {
     state.waitingUserInput = false;
-    runButton.textContent = "风险命令 · 请批准";
+    runButton.textContent = requiresRiskApproval ? "风险命令 · 请批准" : "批准执行";
     state.waitingApproval = automaticControlEnabled;
     syncAiTerminalControlUi();
     if (automaticControlEnabled) showToast("AI 已停在需要你批准的命令。", "error", 3200);
@@ -6823,7 +6814,7 @@ function isExecutableCodeBlock(block, command) {
   return false;
 }
 
-function aiCodeBlockRequiresUserInput(block) {
+function aiCodeBlockRequiresManualApproval(block) {
   return /-user$/i.test(block?.dataset?.lang || "");
 }
 
@@ -7111,7 +7102,7 @@ function aiExecutableCommandFormatPrompt() {
     "- Do not mix terminal prompts, command output, explanations, or error logs inside runnable command blocks.",
     "- Prefer one command per runnable fenced block. Use a multi-line command block only when it must run as one script, such as heredoc, control flow, continuation, or grouped commands.",
     "- Before every runnable command, decide whether it can run exactly as written without any missing secret, credential, account, host, path, value, confirmation, choice, or interactive input from the user.",
-    "- If user intervention is required, explicitly explain what the user must provide, then append -user to the fenced language (for example: bash-user, powershell-user, or cmd-user). ZeroTerm will stop automatic execution for these blocks.",
+    "- If a command must wait for explicit user approval instead of running automatically, explain why and append -user to the fenced language (for example: bash-user, powershell-user, or cmd-user). ZeroTerm will show an approval button and stop automatic execution for these blocks.",
     "- Never put placeholders such as YOUR_API_KEY, <your-host>, 请替换, or 你的密钥 in a normal executable fence. Such commands must use a -user fence.",
     "- Use ```terminal fenced blocks only for observed terminal output, logs, or errors.",
     "- Do not merely say in prose that the user should run a command. When execution is needed, include the command in one of the executable formats above.",

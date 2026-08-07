@@ -74,16 +74,17 @@ check(
   "automatic terminal control must pass through the backend command policy",
 );
 check(
-  source.includes('button.dataset.userInputRequired === "true"')
+  source.includes('runButton.dataset.manualApprovalRequired === "true"')
     && source.includes('run.textContent = restoredResult')
-    && source.includes('? "需要用户介入"')
-    && source.includes('function aiCodeBlockRequiresUserInput(block)'),
-  "AI -user command fences should stop before backend authorization or execution",
+    && source.includes('run.disabled = Boolean(restoredResult)')
+    && source.includes('function aiCodeBlockRequiresManualApproval(block)')
+    && source.includes("requiresManualApproval || requiresRiskApproval"),
+  "AI -user command fences should wait for a clickable manual approval",
 );
 check(
   source.includes("bash-user, powershell-user, or cmd-user")
-    && source.includes("explicitly explain what the user must provide"),
-  "the AI command protocol should require an explicit user-intervention declaration and reason",
+    && source.includes("show an approval button"),
+  "the AI command protocol should describe explicit manual approval",
 );
 check(
   source.includes('String(paneKey).startsWith("session:")'),
@@ -109,9 +110,9 @@ check(
   "terminal permission should not remain as a separate bar above the compose box",
 );
 check(
-  source.includes('messageNode.classList.toggle("ai-risk-approval-required", requiresRiskApproval || requiresUserInput)')
+  source.includes('messageNode.classList.toggle("ai-risk-approval-required", requiresManualApproval || requiresRiskApproval || requiresUserInput)')
     && css.includes(".ai-message-assistant.ai-risk-approval-required .ai-message-body"),
-  "risky commands and unresolved placeholders should mark the whole AI reply with a risk border",
+  "manual approvals, risky commands, and unresolved placeholders should mark the whole AI reply with a risk border",
 );
 check(
   source.includes('messageNode?.classList.remove("ai-risk-approval-required")'),

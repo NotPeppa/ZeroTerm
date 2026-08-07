@@ -3253,8 +3253,8 @@ body[data-app-theme="light"] .terminal-side-btn.active::before {
 .ai-code-tools button {
   flex: 0 1 auto;
   max-width: 100%;
-  min-height: 18px;
-  padding: 1px 7px;
+  min-height: 30px;
+  padding: 5px 10px;
   border-radius: 6px;
   border-color: rgba(104, 168, 255, 0.34);
   background: rgba(104, 168, 255, 0.14);
@@ -3262,6 +3262,12 @@ body[data-app-theme="light"] .terminal-side-btn.active::before {
   font-size: 9.5px;
   line-height: 1.2;
   font-weight: 750;
+  cursor: pointer;
+}
+
+.ai-code-tools button:disabled {
+  cursor: default;
+  opacity: 0.68;
 }
 
 .ai-code-tools button:hover {
