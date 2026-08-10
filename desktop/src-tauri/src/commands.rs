@@ -4626,17 +4626,79 @@ fn shell_quote(arg: &str) -> String {
 
 /// Subcommands the Docker panel actually issues. `docker_exec` runs
 /// with app privileges (locally) or on the remote host, so the surface
-/// is pinned to container lifecycle/inspection verbs — notably NOT
-/// `run`/`exec`/`create`/`cp`/`build`, any of which would let an
-/// injected script mount the host filesystem or execute arbitrary code.
+/// is pinned to container lifecycle/inspection verbs plus the two explicit
+/// Compose project operations validated below — notably NOT generic
+/// `run`/`exec`/`create`/`cp`/`build` access.
 const DOCKER_ALLOWED_SUBCOMMANDS: &[&str] = &[
     "ps", "inspect", "logs", "stats", "start", "stop", "restart", "rm", "pause", "unpause",
 ];
+
+fn validate_docker_compose_args(args: &[String]) -> Result<(), String> {
+    let mut index = 1;
+    let mut has_project = false;
+    let mut file_count = 0usize;
+
+    while index < args.len() {
+        match args[index].as_str() {
+            "--project-name" if !has_project => {
+                let project = args.get(index + 1).ok_or("docker compose: missing project name")?;
+                if project.is_empty()
+                    || project.len() > 255
+                    || !project
+                        .chars()
+                        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+                {
+                    return Err("docker compose: invalid project name".to_string());
+                }
+                has_project = true;
+                index += 2;
+            }
+            "--project-directory" => {
+                let dir = args
+                    .get(index + 1)
+                    .ok_or("docker compose: missing project directory")?;
+                if dir.is_empty() || dir.len() > 4096 || dir.chars().any(char::is_control) {
+                    return Err("docker compose: invalid project directory".to_string());
+                }
+                index += 2;
+            }
+            "--file" => {
+                let file = args.get(index + 1).ok_or("docker compose: missing file path")?;
+                if file.is_empty() || file.len() > 4096 || file.chars().any(char::is_control) {
+                    return Err("docker compose: invalid file path".to_string());
+                }
+                file_count += 1;
+                if file_count > 16 {
+                    return Err("docker compose: too many config files".to_string());
+                }
+                index += 2;
+            }
+            "pull" if has_project && file_count > 0 && index + 1 == args.len() => return Ok(()),
+            "up"
+                if has_project
+                    && file_count > 0
+                    && args.get(index + 1).map(String::as_str) == Some("-d")
+                    && index + 2 == args.len() =>
+            {
+                return Ok(())
+            }
+            other => {
+                return Err(format!(
+                    "docker compose argument `{other}` is not allowed from the UI"
+                ))
+            }
+        }
+    }
+    Err("docker compose: missing pull or up -d operation".to_string())
+}
 
 fn validate_docker_args(args: &[String]) -> Result<(), String> {
     let Some(sub) = args.first() else {
         return Err("docker: no subcommand given".to_string());
     };
+    if sub == "compose" {
+        return validate_docker_compose_args(args);
+    }
     if !DOCKER_ALLOWED_SUBCOMMANDS.contains(&sub.as_str()) {
         return Err(format!(
             "docker subcommand `{sub}` is not allowed from the UI"
@@ -6548,6 +6610,41 @@ mod tests {
         assert!(validate_docker_args(&["cp".into()]).is_err());
         assert!(validate_docker_args(&["build".into()]).is_err());
         assert!(validate_docker_args(&[]).is_err());
+    }
+
+    #[test]
+    fn docker_args_only_allow_scoped_compose_pull_and_detached_up() {
+        let base = vec![
+            "compose".into(),
+            "--project-name".into(),
+            "demo".into(),
+            "--project-directory".into(),
+            "/srv/demo".into(),
+            "--file".into(),
+            "/srv/demo/compose.yml".into(),
+        ];
+        let mut pull = base.clone();
+        pull.push("pull".into());
+        assert!(validate_docker_args(&pull).is_ok());
+        let mut up = base.clone();
+        up.extend(["up".into(), "-d".into()]);
+        assert!(validate_docker_args(&up).is_ok());
+
+        let mut foreground_up = base.clone();
+        foreground_up.push("up".into());
+        assert!(validate_docker_args(&foreground_up).is_err());
+        assert!(
+            validate_docker_args(&["compose".into(), "exec".into(), "sh".into()]).is_err()
+        );
+        assert!(validate_docker_args(&[
+            "compose".into(),
+            "--project-name".into(),
+            "demo".into(),
+            "--file".into(),
+            "/tmp/compose.yml\n--evil".into(),
+            "pull".into(),
+        ])
+        .is_err());
     }
 
     #[test]

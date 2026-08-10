@@ -4181,6 +4181,7 @@ const dockerExpanded = new Set();
 // Groups the user has explicitly expanded. Empty by default → every group
 // starts collapsed.
 const dockerExpandedGroups = new Set();
+const dockerBusyProjects = new Set();
 let dockerLastRows = [];
 // Sentinel group key for containers without a compose project. Contains a ":"
 // which is not a valid compose project name char, so it never collides.
@@ -4195,10 +4196,18 @@ async function dockerExec(args) {
 // "k=v,k=v" string. Split into a map so we can read the compose labels.
 function parseDockerLabels(str) {
   const map = {};
+  let currentKey = "";
   String(str || "").split(",").forEach((pair) => {
     const eq = pair.indexOf("=");
-    if (eq <= 0) return;
-    map[pair.slice(0, eq).trim()] = pair.slice(eq + 1);
+    if (eq > 0) {
+      currentKey = pair.slice(0, eq).trim();
+      map[currentKey] = pair.slice(eq + 1);
+    } else if (currentKey) {
+      // Compose stores multiple config files as a comma-separated label value.
+      // Docker's `.Labels` formatter uses the same delimiter between labels, so
+      // continuation segments need to be joined back to the preceding value.
+      map[currentKey] += `,${pair}`;
+    }
   });
   return map;
 }
@@ -4221,6 +4230,7 @@ function parseDockerPsLines(stdout) {
         project: labels["com.docker.compose.project"] || "",
         service: labels["com.docker.compose.service"] || "",
         configFiles: labels["com.docker.compose.project.config_files"] || "",
+        workingDir: labels["com.docker.compose.project.working_dir"] || "",
       });
     } catch (e) {}
   });
@@ -4330,11 +4340,12 @@ function dockerGroupHtml(key, items) {
   const label = ungrouped ? "未分组" : key;
   const configFiles = ungrouped ? "" : (items.find((c) => c.configFiles)?.configFiles || "");
   const hidden = collapsed ? "hidden" : "";
-  const menuBtn = ungrouped ? "" : `<button type="button" class="docker-group-menu-btn" data-act="group-menu" data-project="${keyAttr}" title="批量操作" aria-label="批量操作">
+  const busy = dockerBusyProjects.has(key);
+  const menuBtn = ungrouped ? "" : `<button type="button" class="docker-group-menu-btn" data-act="group-menu" data-project="${keyAttr}" title="批量操作" aria-label="批量操作"${busy ? " disabled" : ""}>
           <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>
         </button>`;
   return `
-    <section class="docker-group${ungrouped ? " docker-group-ungrouped" : ""}" data-project="${keyAttr}">
+    <section class="docker-group${ungrouped ? " docker-group-ungrouped" : ""}" data-project="${keyAttr}"${busy ? ' aria-busy="true"' : ""}>
       <header class="docker-group-head" data-act="group-toggle" data-project="${keyAttr}"${configFiles ? ` title="${escapeMetricText(configFiles)}"` : ""}>
         <span class="docker-group-caret${collapsed ? "" : " open"}">›</span>
         <span class="docker-state docker-state-${tone}"></span>
@@ -4374,6 +4385,52 @@ async function dockerGroupAction(project, op, btn) {
   }
 }
 
+function dockerComposeArgs(project, op) {
+  const rows = dockerLastRows.filter((r) => r.project === project);
+  const configFiles = rows.find((r) => r.configFiles)?.configFiles || "";
+  const files = configFiles.split(",").map((file) => file.trim()).filter(Boolean);
+  if (!files.length) return null;
+
+  const args = ["compose", "--project-name", project];
+  const workingDir = rows.find((r) => r.workingDir)?.workingDir || "";
+  if (workingDir) args.push("--project-directory", workingDir);
+  files.forEach((file) => args.push("--file", file));
+  if (op === "pull") args.push("pull");
+  else if (op === "up") args.push("up", "-d");
+  else return null;
+  return args;
+}
+
+async function dockerComposeAction(project, op) {
+  if (dockerBusyProjects.has(project)) return;
+  const args = dockerComposeArgs(project, op);
+  if (!args) {
+    showToast("该项目缺少 Compose 文件信息，请在终端中手动执行。", "error", 4200);
+    return;
+  }
+
+  const section = [...(terminalDockerBody?.querySelectorAll(".docker-group") || [])]
+    .find((el) => el.getAttribute("data-project") === project);
+  const actionLabel = op === "pull" ? "拉取镜像" : "后台启动";
+  dockerBusyProjects.add(project);
+  section?.setAttribute("aria-busy", "true");
+  const menuButton = section?.querySelector(".docker-group-menu-btn");
+  if (menuButton) menuButton.disabled = true;
+  try {
+    const res = await dockerExec(args);
+    if (res.code !== 0) {
+      showToast(String(res.stderr || res.stdout || `${actionLabel}失败。`).trim(), "error", 5000);
+      return;
+    }
+    showToast(`${actionLabel}完成`, "success", 2200);
+  } catch (e) {
+    showToast(String(e), "error", 5000);
+  } finally {
+    dockerBusyProjects.delete(project);
+    renderDockerPanel({ silent: true });
+  }
+}
+
 let dockerGroupMenuProject = "";
 
 function ensureDockerGroupMenu() {
@@ -4384,6 +4441,15 @@ function ensureDockerGroupMenu() {
   menu.className = "hosts-context-menu docker-group-menu";
   menu.hidden = true;
   menu.innerHTML = `
+    <button type="button" data-compose-op="pull">
+      <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><path d="M5 20h14"/></svg>
+      <span>拉取镜像（pull）</span>
+    </button>
+    <button type="button" class="success" data-compose-op="up">
+      <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4 20 12 6 20Z"/></svg>
+      <span>后台启动（up -d）</span>
+    </button>
+    <div class="menu-separator" aria-hidden="true"></div>
     <button type="button" class="success" data-op="start">
       <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4 20 12 6 20Z"/></svg>
       <span>全部启动</span>
@@ -4398,12 +4464,15 @@ function ensureDockerGroupMenu() {
     </button>`;
   document.body.appendChild(menu);
   menu.addEventListener("click", (ev) => {
-    const b = ev.target.closest("button[data-op]");
+    const b = ev.target.closest("button[data-op], button[data-compose-op]");
     if (!b) return;
     const op = b.getAttribute("data-op");
+    const composeOp = b.getAttribute("data-compose-op");
     const project = dockerGroupMenuProject;
     hideDockerGroupMenu();
-    if (project) dockerGroupAction(project, op);
+    if (!project) return;
+    if (composeOp) dockerComposeAction(project, composeOp);
+    else dockerGroupAction(project, op);
   });
   document.addEventListener("click", (ev) => {
     if (!menu.hidden && !menu.contains(ev.target)) hideDockerGroupMenu();

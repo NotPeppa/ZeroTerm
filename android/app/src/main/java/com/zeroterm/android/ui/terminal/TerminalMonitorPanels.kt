@@ -195,6 +195,7 @@ private data class DockerContainer(
     val project: String,
     val service: String = "",
     val configFiles: String = "",
+    val workingDir: String = "",
 )
 
 private data class DockerInspectDetail(
@@ -224,6 +225,7 @@ internal fun DockerPanel(
     var expandedGroups by remember { mutableStateOf(setOf<String>()) }
     var expandedIds by remember { mutableStateOf(setOf<String>()) }
     var details by remember { mutableStateOf<Map<String, DockerInspectDetail>>(emptyMap()) }
+    val composeConfigMissing = stringResource(R.string.docker_compose_config_missing)
 
     fun shellQuote(value: String): String = "'" + value.replace("'", "'\"'\"'") + "'"
 
@@ -317,6 +319,32 @@ internal fun DockerPanel(
         val ids = containers.filter { it.project == project && it.id.isNotBlank() }.map { it.id }
         if (ids.isEmpty()) return
         execute(listOf(op) + ids, silent = true) { reload(silent = true) }
+    }
+
+    fun composeAction(project: String, op: String) {
+        val rows = containers.filter { it.project == project }
+        val files = rows.firstOrNull { it.configFiles.isNotBlank() }
+            ?.configFiles
+            .orEmpty()
+            .split(',')
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+        if (files.isEmpty()) {
+            error = composeConfigMissing
+            return
+        }
+
+        val args = mutableListOf("compose", "--project-name", project)
+        rows.firstOrNull { it.workingDir.isNotBlank() }?.workingDir?.let {
+            args += listOf("--project-directory", it)
+        }
+        files.forEach { args += listOf("--file", it) }
+        when (op) {
+            "pull" -> args += "pull"
+            "up" -> args += listOf("up", "-d")
+            else -> return
+        }
+        execute(args, silent = true) { reload(silent = true) }
     }
 
     LaunchedEffect(Unit) { reload() }
@@ -430,7 +458,10 @@ internal fun DockerPanel(
                                 expanded = expandedGroups.contains(key),
                                 expandedIds = expandedIds,
                                 details = details,
+                                busy = busy,
                                 onToggleGroup = { toggleGroup(key) },
+                                onComposePull = { composeAction(key, "pull") },
+                                onComposeUp = { composeAction(key, "up") },
                                 onGroupStart = { groupAction(key, "start") },
                                 onGroupRestart = { groupAction(key, "restart") },
                                 onGroupStop = { groupAction(key, "stop") },
@@ -469,7 +500,10 @@ private fun DockerGroupSection(
     expanded: Boolean,
     expandedIds: Set<String>,
     details: Map<String, DockerInspectDetail>,
+    busy: Boolean,
     onToggleGroup: () -> Unit,
+    onComposePull: () -> Unit,
+    onComposeUp: () -> Unit,
     onGroupStart: () -> Unit,
     onGroupRestart: () -> Unit,
     onGroupStop: () -> Unit,
@@ -546,7 +580,11 @@ private fun DockerGroupSection(
             )
             if (!ungrouped) {
                 Box {
-                    IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(32.dp)) {
+                    IconButton(
+                        onClick = { menuOpen = true },
+                        enabled = !busy,
+                        modifier = Modifier.size(48.dp),
+                    ) {
                         Icon(
                             Icons.Default.MoreVert,
                             contentDescription = stringResource(R.string.docker_group_menu),
@@ -554,15 +592,28 @@ private fun DockerGroupSection(
                     }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         DropdownMenuItem(
+                            text = { Text(stringResource(R.string.docker_compose_pull)) },
+                            enabled = !busy,
+                            onClick = { menuOpen = false; onComposePull() },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.docker_compose_up)) },
+                            enabled = !busy,
+                            onClick = { menuOpen = false; onComposeUp() },
+                        )
+                        DropdownMenuItem(
                             text = { Text(stringResource(R.string.docker_group_start_all)) },
+                            enabled = !busy,
                             onClick = { menuOpen = false; onGroupStart() },
                         )
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.docker_group_restart_all)) },
+                            enabled = !busy,
                             onClick = { menuOpen = false; onGroupRestart() },
                         )
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.docker_group_stop_all)) },
+                            enabled = !busy,
                             onClick = { menuOpen = false; onGroupStop() },
                         )
                     }
@@ -973,13 +1024,25 @@ private fun parseMetrics(text: String): HostMetrics {
     return HostMetrics(host, os, arch, uptime, cores, cpuUsage, mem.getOrElse(0) { 0 }, mem.getOrElse(1) { 0 }, mem.getOrElse(2) { 0 }, mem.getOrElse(3) { 0 }, disks, networks)
 }
 
+private fun parseDockerLabels(text: String): Map<String, String> {
+    val labels = linkedMapOf<String, String>()
+    var currentKey: String? = null
+    text.split(',').forEach { part ->
+        val at = part.indexOf('=')
+        if (at > 0) {
+            currentKey = part.substring(0, at).trim()
+            labels[currentKey!!] = part.substring(at + 1)
+        } else {
+            currentKey?.let { labels[it] = labels.getValue(it) + "," + part }
+        }
+    }
+    return labels
+}
+
 private fun parseDockerRows(text: String): List<DockerContainer> = text.lineSequence().mapNotNull { line ->
     runCatching {
         val o = JSONObject(line.trim())
-        val labels = o.optString("Labels").split(',').mapNotNull { pair ->
-            val at = pair.indexOf('=')
-            if (at > 0) pair.substring(0, at).trim() to pair.substring(at + 1) else null
-        }.toMap()
+        val labels = parseDockerLabels(o.optString("Labels"))
         DockerContainer(
             id = o.optString("ID", o.optString("Id")),
             name = o.optString("Names", o.optString("Name")),
@@ -990,6 +1053,7 @@ private fun parseDockerRows(text: String): List<DockerContainer> = text.lineSequ
             project = labels["com.docker.compose.project"].orEmpty(),
             service = labels["com.docker.compose.service"].orEmpty(),
             configFiles = labels["com.docker.compose.project.config_files"].orEmpty(),
+            workingDir = labels["com.docker.compose.project.working_dir"].orEmpty(),
         )
     }.getOrNull()
 }.toList()

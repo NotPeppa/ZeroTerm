@@ -144,6 +144,9 @@
     <string name="docker_delete_title">删除容器？</string>
     <string name="docker_delete_message">将强制删除“%1$s”，此操作不可恢复。</string>
     <string name="docker_group_count">%1$d/%2$d</string>
+    <string name="docker_compose_pull">拉取镜像（pull）</string>
+    <string name="docker_compose_up">后台启动（up -d）</string>
+    <string name="docker_compose_config_missing">该项目缺少 Compose 文件信息，请在终端中手动执行。</string>
     <string name="docker_group_start_all">全部启动</string>
     <string name="docker_group_restart_all">全部重启</string>
     <string name="docker_group_stop_all">全部停止</string>

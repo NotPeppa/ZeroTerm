@@ -6372,6 +6372,15 @@ body.has-app-bg .pane-body .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover
   border-color: var(--accent);
 }
 
+.docker-group[aria-busy="true"] .docker-group-head {
+  border-color: var(--accent);
+}
+
+.docker-group[aria-busy="true"] .docker-group-count::after {
+  content: " · 执行中…";
+  color: var(--accent);
+}
+
 .docker-group-caret {
   color: var(--muted);
   transition: transform 0.15s ease;
@@ -6421,6 +6430,11 @@ body.has-app-bg .pane-body .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover
   color: var(--text);
 }
 
+.docker-group-menu-btn:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
 .docker-group-menu-btn .zt-icon {
   fill: currentColor;
   stroke: none;
@@ -6439,6 +6453,12 @@ body.has-app-bg .pane-body .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover
   width: 15px;
   height: 15px;
   flex: 0 0 auto;
+}
+
+.docker-group-menu .menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--stroke);
 }
 
 .docker-group-body {

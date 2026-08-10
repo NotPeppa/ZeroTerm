@@ -144,6 +144,9 @@
     <string name="docker_delete_title">Delete container?</string>
     <string name="docker_delete_message">“%1$s” will be force-removed. This cannot be undone.</string>
     <string name="docker_group_count">%1$d/%2$d</string>
+    <string name="docker_compose_pull">Pull images (pull)</string>
+    <string name="docker_compose_up">Start in background (up -d)</string>
+    <string name="docker_compose_config_missing">Compose file information is unavailable. Run the command manually in the terminal.</string>
     <string name="docker_group_start_all">Start all</string>
     <string name="docker_group_restart_all">Restart all</string>
     <string name="docker_group_stop_all">Stop all</string>
