@@ -14252,6 +14252,8 @@ function createPane(host) {
     resizeObserver: null,
     pendingResizeTimer: null,
     pendingFitRaf: null,
+    pendingTerminalWrites: 0,
+    fitAfterTerminalWrites: false,
     lastSentCols: 0,
     lastSentRows: 0,
   };
@@ -15702,12 +15704,22 @@ function requestPaneFit(pane, { immediate = false } = {}) {
 
 function fitPane(pane) {
   if (!pane.term || !pane.fitAddon) return;
+  // xterm parses write() calls asynchronously. Resizing while chunks are still
+  // queued can expose partially-updated buffer state, particularly in xterm
+  // 6.0.0 when a fit grows the terminal while scrollback is present. Coalesce
+  // all fits requested during parsing and run one after the final callback.
+  if ((pane.pendingTerminalWrites || 0) > 0) {
+    pane.fitAfterTerminalWrites = true;
+    return;
+  }
+  pane.fitAfterTerminalWrites = false;
   clampPaneBodyHeight(pane);
   try {
     pane.fitAddon.fit();
   } catch {
     return;
   }
+  repairXtermResizeBuffers(pane.term);
   if (pane.sessionId !== null) {
     const { cols, rows } = pane.term;
     if (cols === pane.lastSentCols && rows === pane.lastSentRows) return;
@@ -15719,6 +15731,46 @@ function fitPane(pane) {
       rows,
     }).catch(() => {});
   }
+}
+
+// xterm 6.0.0 can finish a row-growing resize with fewer live BufferLine
+// objects than the visible viewport requires (xtermjs/xterm.js#6063). The
+// next line feed or erase then throws inside the parser and leaves stale rows
+// painted below a cursor that no longer advances. Keep this compatibility
+// shim narrow: only fill demonstrably missing viewport rows, using xterm's own
+// blank-line factory, and do nothing when private internals are unavailable.
+function repairXtermResizeBuffers(term) {
+  const core = term?._core;
+  const buffers = core?._bufferService?.buffers;
+  const candidates = new Set([
+    buffers?.normal,
+    buffers?.active,
+    core?.buffer,
+  ].filter(Boolean));
+  let repaired = false;
+
+  for (const buffer of candidates) {
+    const lines = buffer?.lines;
+    if (!lines || typeof lines.push !== "function" || typeof buffer.getBlankLine !== "function") {
+      continue;
+    }
+    const ybase = Math.max(0, Number(buffer.ybase) || 0);
+    const rows = Math.max(0, Number(term?.rows) || 0);
+    const requiredLength = ybase + rows;
+    while (lines.length < requiredLength) {
+      const before = lines.length;
+      lines.push(buffer.getBlankLine());
+      if (lines.length <= before) break;
+      repaired = true;
+    }
+  }
+
+  if (repaired) {
+    try {
+      term.refresh(0, Math.max(0, term.rows - 1));
+    } catch {}
+  }
+  return repaired;
 }
 
 function clampPaneBodyHeight(pane) {
@@ -15765,15 +15817,21 @@ function refreshPaneTerminal(pane) {
 
 function writePaneTerminalData(pane, data, { stickToBottom = false, onParsed = null } = {}) {
   if (!pane?.term) return;
-  pane.term.write(data, () => {
-    if (!pane.term) return;
+  const term = pane.term;
+  pane.pendingTerminalWrites = (pane.pendingTerminalWrites || 0) + 1;
+  term.write(data, () => {
+    pane.pendingTerminalWrites = Math.max(0, (pane.pendingTerminalWrites || 1) - 1);
+    if (pane.term !== term) return;
     // Parsing is asynchronous. A user may scroll up after this write was
     // queued, so callers can defer the decision until the callback runs.
     const shouldStickToBottom = typeof stickToBottom === "function"
       ? stickToBottom()
       : stickToBottom;
-    if (shouldStickToBottom) pane.term.scrollToBottom();
+    if (shouldStickToBottom) term.scrollToBottom();
     if (typeof onParsed === "function") onParsed();
+    if (pane.pendingTerminalWrites === 0 && pane.fitAfterTerminalWrites) {
+      requestPaneFit(pane, { immediate: true });
+    }
   });
 }
 
@@ -16176,6 +16234,8 @@ async function disconnectPaneSession(pane, { dispose }) {
       cancelAnimationFrame(pane.pendingFitRaf);
     }
     pane.pendingFitRaf = null;
+    pane.pendingTerminalWrites = 0;
+    pane.fitAfterTerminalWrites = false;
 
     if (pane.resizeObserver && pane.bodyEl) {
       pane.resizeObserver.disconnect();

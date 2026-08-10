@@ -104,6 +104,108 @@ check(
   "explicit user scrolling should control whether output follows",
 );
 
+const repairStart = source.indexOf("function repairXtermResizeBuffers");
+const repairEnd = source.indexOf("\nfunction clampPaneBodyHeight", repairStart);
+const repairSource = repairStart >= 0 && repairEnd > repairStart
+  ? source.slice(repairStart, repairEnd)
+  : "";
+check(Boolean(repairSource), "xterm resize buffer repair helper should exist");
+const repairXtermResizeBuffers = vm.runInNewContext(
+  `${repairSource}; repairXtermResizeBuffers`,
+);
+
+check(
+  source.includes("pendingTerminalWrites: 0")
+    && source.includes("fitAfterTerminalWrites: false")
+    && source.includes("if ((pane.pendingTerminalWrites || 0) > 0)")
+    && source.includes("pane.pendingTerminalWrites === 0 && pane.fitAfterTerminalWrites"),
+  "fit should be deferred until all asynchronous xterm writes are parsed",
+);
+
+const terminalIoStart = source.indexOf("function requestPaneFit");
+const terminalIoEnd = source.indexOf("\nfunction parseOsc7Path", terminalIoStart);
+const terminalIoSource = terminalIoStart >= 0 && terminalIoEnd > terminalIoStart
+  ? source.slice(terminalIoStart, terminalIoEnd)
+  : "";
+const terminalIo = vm.runInNewContext(
+  `${terminalIoSource}; ({ fitPane, writePaneTerminalData })`,
+  {
+    TERMINAL_RESIZE_DEBOUNCE_MS: 0,
+    setTimeout,
+    clearTimeout,
+    requestAnimationFrame: (callback) => callback(),
+    cancelAnimationFrame: () => {},
+    invoke: () => Promise.resolve(),
+    console,
+  },
+);
+
+function runWriteFitSerializationRegression() {
+  let writeCallback = null;
+  let fitCount = 0;
+  const term = {
+    rows: 24,
+    write(_data, callback) {
+      writeCallback = callback;
+    },
+    scrollToBottom() {},
+    refresh() {},
+  };
+  const pane = {
+    term,
+    fitAddon: { fit: () => { fitCount += 1; } },
+    bodyEl: null,
+    rootEl: null,
+    sessionId: null,
+    pendingResizeTimer: null,
+    pendingFitRaf: null,
+    pendingTerminalWrites: 0,
+    fitAfterTerminalWrites: false,
+  };
+
+  terminalIo.writePaneTerminalData(pane, "pending-output");
+  terminalIo.fitPane(pane);
+  check(fitCount === 0, "fit should not run while an xterm write is pending");
+  check(pane.fitAfterTerminalWrites, "a blocked fit should be remembered");
+  writeCallback();
+  check(pane.pendingTerminalWrites === 0, "parsed write callback should drain the write count");
+  check(fitCount === 1, "the deferred fit should run once after parsing finishes");
+}
+
+runWriteFitSerializationRegression();
+
+async function runXtermResizeRepairRegression() {
+  const term = new Terminal({ cols: 39, rows: 18, scrollback: 100, convertEol: false });
+  const write = (data) => new Promise((resolve) => term.write(data, resolve));
+  try {
+    await write(Array.from({ length: 22 }, (_, i) => `line-${i}\r\n`).join("") + "\x1b[4A");
+    const core = term._core;
+    // Reproduce the xterm 6.0.0 resize invariant reported upstream: growing
+    // rows consumes ybase without allocating the newly visible BufferLines.
+    core.buffer.lines.length = 18;
+    term.resize(37, 23);
+    check(
+      core.buffer.lines.length < core.buffer.ybase + term.rows,
+      "regression fixture should begin with missing visible buffer rows",
+    );
+    check(repairXtermResizeBuffers(term), "resize guard should repair missing buffer rows");
+    check(
+      core.buffer.lines.length >= core.buffer.ybase + term.rows,
+      "resize guard should restore the visible BufferLine invariant",
+    );
+    check(
+      core._bufferService.buffers.alt.lines.length === 0,
+      "resize guard should leave an inactive empty alternate buffer untouched",
+    );
+    for (let row = 18; row <= 22; row += 1) {
+      await write(`\x1b[${row + 1};1H\x1b[2Kbottom-${row}`);
+      check(Boolean(term.buffer.active.getLine(row)), `repaired row ${row} should remain writable`);
+    }
+  } finally {
+    term.dispose();
+  }
+}
+
 async function runXtermBufferSwitchRegression() {
   const term = new Terminal({ cols: 80, rows: 24, scrollback: 1000 });
   const write = (data) => new Promise((resolve) => term.write(data, resolve));
@@ -129,7 +231,10 @@ async function runXtermBufferSwitchRegression() {
   }
 }
 
-runXtermBufferSwitchRegression()
+Promise.all([
+  runXtermBufferSwitchRegression(),
+  runXtermResizeRepairRegression(),
+])
   .catch((error) => {
     failed += 1;
     console.error("  FAIL: real xterm buffer regression threw", error);
