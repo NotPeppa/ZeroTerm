@@ -178,6 +178,28 @@ check(
   splitAiCommandBlockForApproval(redirectedHeredoc).length === 1,
   "a redirected heredoc should render exactly one approval control",
 );
+const executableStart = source.indexOf("function isExecutableCodeBlock");
+const executableEnd = source.indexOf("\nfunction aiCodeBlockRequiresManualApproval", executableStart);
+const outputStart = source.indexOf("function looksLikeTerminalOutput");
+const outputEnd = source.indexOf("\nfunction looksLikeRunnableCommandLine", outputStart);
+const executableHelpers = executableStart >= 0 && executableEnd > executableStart
+  && outputStart >= 0 && outputEnd > outputStart
+  ? `${source.slice(executableStart, executableEnd)}\n${source.slice(outputStart, outputEnd)}`
+  : "";
+const isExecutableCodeBlock = vm.runInNewContext(
+  `${executableHelpers}; isExecutableCodeBlock`,
+);
+const dantedHeredoc = [
+  "cat > /etc/danted.conf <<'EOF'",
+  "internal: eth0 port = 1080",
+  "external: eth0",
+  "EOF",
+  "systemctl restart danted",
+].join("\n");
+check(
+  isExecutableCodeBlock({ dataset: { lang: "bash-user" } }, dantedHeredoc),
+  "an explicit bash-user heredoc should keep its approval control when config lines contain colons",
+);
 check(
   css.includes(".ai-code-tools {")
     && css.includes("flex-wrap: wrap")

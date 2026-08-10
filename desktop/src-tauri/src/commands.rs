@@ -3840,7 +3840,9 @@ awk '
 /^MemAvailable:/ {ma=$2*1024}
 /^SwapTotal:/ {st=$2*1024}
 /^SwapFree:/ {sf=$2*1024}
-END {printf "%d %d %d %d\n", mt, mt-ma, st, st-sf}
+# Some awk implementations clamp %d to INT_MAX. Memory byte counts routinely
+# exceed that, while awk's numeric representation can still preserve them.
+END {printf "%.0f %.0f %.0f %.0f\n", mt, mt-ma, st, st-sf}
 ' /proc/meminfo 2>/dev/null
 v4=0
 v6=0
@@ -3904,9 +3906,9 @@ vm_stat 2>/dev/null | awk -v ps="$pagesize" -v total="$mem_total" '
 /Pages active/ {gsub("\\.", "", $3); active=$3}
 /Pages wired down/ {gsub("\\.", "", $4); wired=$4}
 /Pages occupied by compressor/ {gsub("\\.", "", $5); compressed=$5}
-END {used=(active+wired+compressed)*ps; printf "%d %d ", total, used}
+END {used=(active+wired+compressed)*ps; printf "%.0f %.0f ", total, used}
 '
-sysctl vm.swapusage 2>/dev/null | awk '{total=0; used=0; for(i=1;i<=NF;i++){if($i=="total") total=$(i+2); if($i=="used") used=$(i+2)} unit=1024*1024; printf "%d %d\n", total*unit, used*unit}'
+sysctl vm.swapusage 2>/dev/null | awk '{total=0; used=0; for(i=1;i<=NF;i++){if($i=="total") total=$(i+2); if($i=="used") used=$(i+2)} unit=1024*1024; printf "%.0f %.0f\n", total*unit, used*unit}'
 v4=0
 v6=0
 route -n get -inet default >/dev/null 2>&1 && v4=1
@@ -6527,6 +6529,12 @@ mod tests {
         )
         .unwrap();
         assert_eq!(metrics.outbound_ip_type, "dual");
+    }
+
+    #[test]
+    fn linux_metrics_script_uses_wide_memory_byte_format() {
+        assert!(METRICS_SCRIPT.contains("printf \"%.0f %.0f %.0f %.0f\\n\", mt, mt-ma, st, st-sf"));
+        assert!(!METRICS_SCRIPT.contains("printf \"%d %d %d %d\\n\", mt, mt-ma, st, st-sf"));
     }
 
     #[test]

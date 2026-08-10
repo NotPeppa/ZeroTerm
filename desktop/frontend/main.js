@@ -6805,13 +6805,18 @@ async function maybeRunAiTerminalAgent(messageNode, paneKey) {
 }
 
 function isExecutableCodeBlock(block, command) {
-  const lang = (block?.dataset?.lang || "").toLowerCase().replace(/-user$/, "");
+  const rawLang = (block?.dataset?.lang || "").toLowerCase();
+  const lang = rawLang.replace(/-user$/, "");
   const lines = String(command || "").split("\n").map((line) => line.trim()).filter(Boolean);
   if (!lines.length) return false;
-  if (lines.some((line) => looksLikeTerminalOutput(line))) return false;
   if (["output", "terminal", "text", "log", "txt"].includes(lang)) return false;
-  if (["bash", "sh", "shell", "zsh", "powershell", "pwsh", "ps1", "cmd", "bat", "batch"].includes(lang)) return true;
-  return false;
+  if (!["bash", "sh", "shell", "zsh", "powershell", "pwsh", "ps1", "cmd", "bat", "batch"].includes(lang)) return false;
+  // A *-user fence is an explicit contract from the model: render an approval
+  // control and let the backend policy make the final authorization decision.
+  // Heredoc payloads often contain config lines such as `internal: eth0`, which
+  // resemble terminal output and must not make the approval button disappear.
+  if (/-user$/.test(rawLang)) return true;
+  return !lines.some((line) => looksLikeTerminalOutput(line));
 }
 
 function aiCodeBlockRequiresManualApproval(block) {

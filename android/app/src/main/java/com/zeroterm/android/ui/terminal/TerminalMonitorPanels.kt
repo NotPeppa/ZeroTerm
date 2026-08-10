@@ -1079,7 +1079,7 @@ nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || printf '1\n'
 awk 'NR==1{total=${DOLLAR}2+${DOLLAR}3+${DOLLAR}4+${DOLLAR}5+${DOLLAR}6+${DOLLAR}7+${DOLLAR}8; idle=${DOLLAR}5+${DOLLAR}6; print total, idle}' /proc/stat 2>/dev/null
 sleep 0.25
 awk 'NR==1{total=${DOLLAR}2+${DOLLAR}3+${DOLLAR}4+${DOLLAR}5+${DOLLAR}6+${DOLLAR}7+${DOLLAR}8; idle=${DOLLAR}5+${DOLLAR}6; print total, idle}' /proc/stat 2>/dev/null
-awk '/^MemTotal:/ {mt=${DOLLAR}2*1024} /^MemAvailable:/ {ma=${DOLLAR}2*1024} /^SwapTotal:/ {st=${DOLLAR}2*1024} /^SwapFree:/ {sf=${DOLLAR}2*1024} END {printf "%d %d %d %d\n", mt, mt-ma, st, st-sf}' /proc/meminfo 2>/dev/null
+awk '/^MemTotal:/ {mt=${DOLLAR}2*1024} /^MemAvailable:/ {ma=${DOLLAR}2*1024} /^SwapTotal:/ {st=${DOLLAR}2*1024} /^SwapFree:/ {sf=${DOLLAR}2*1024} END {printf "%.0f %.0f %.0f %.0f\n", mt, mt-ma, st, st-sf}' /proc/meminfo 2>/dev/null
 df -P -B1 -T 2>/dev/null | awk 'NR>1 && ${DOLLAR}3 ~ /^[0-9]+${DOLLAR}/ {fstype=${DOLLAR}2; mount=${DOLLAR}7; if (fstype ~ /^(tmpfs|devtmpfs|squashfs|overlay|proc|sysfs|cgroup2?)${DOLLAR}/) next; print "D|" mount "|" ${DOLLAR}3 "|" ${DOLLAR}4}' | head -n 8
 awk 'NR>2 {gsub(":", "", ${DOLLAR}1); print "A|" ${DOLLAR}1 "|" ${DOLLAR}2 "|" ${DOLLAR}10}' /proc/net/dev 2>/dev/null
 sleep 1
