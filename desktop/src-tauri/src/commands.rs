@@ -5639,6 +5639,11 @@ pub async fn create_local_terminal_session(
         .slave
         .spawn_command(cmd)
         .map_err(|e| format!("spawn local shell failed: {e}"))?;
+    // `child.wait()` runs on a blocking worker below. Keep an independent
+    // signal handle so an explicit tab close can terminate that child instead
+    // of merely abandoning the wait task (which leaves the shell alive on
+    // Unix/macOS).
+    let mut child_killer = child.clone_killer();
 
     let mut reader = pair
         .master
@@ -5722,33 +5727,71 @@ pub async fn create_local_terminal_session(
         }
     });
 
+    state
+        .local_sessions
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .insert(
+            session_id,
+            LocalSessionHandle {
+                writer_tx,
+                resize_tx,
+                shutdown_tx,
+            },
+        );
+
     let app_for_close = app_handle.clone();
     tokio::spawn(async move {
-        tokio::select! {
-            _ = shutdown_rx.recv() => {}
-            _ = tokio::task::spawn_blocking(move || {
-                let mut child = child;
-                let _ = child.wait();
-            }) => {}
-        }
+        let mut child_wait = tokio::task::spawn_blocking(move || {
+            let mut child = child;
+            child.wait()
+        });
+
+        let (shutdown_requested, exit_status) = tokio::select! {
+            result = &mut child_wait => {
+                (false, result.ok().and_then(|wait_result| wait_result.ok()))
+            }
+            _ = shutdown_rx.recv() => {
+                match tokio::task::spawn_blocking(move || child_killer.kill()).await {
+                    Ok(Ok(())) => {}
+                    Ok(Err(error)) => {
+                        warn!(session_id, error = %error, "failed to stop local terminal child");
+                    }
+                    Err(error) => {
+                        warn!(session_id, error = %error, "local terminal stop task failed");
+                    }
+                }
+                let status = child_wait
+                    .await
+                    .ok()
+                    .and_then(|wait_result| wait_result.ok());
+                (true, status)
+            }
+        };
+
+        // Natural process exits previously left an unreachable handle in the
+        // map. Removing it here is harmless when disconnect_session already
+        // removed the same entry.
+        app_for_close
+            .state::<AppState>()
+            .local_sessions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&session_id);
+
         let _ = app_for_close.emit(
             "session:closed",
             ClosedEvent {
                 session_id,
-                exit_code: None,
+                exit_code: if shutdown_requested {
+                    None
+                } else {
+                    exit_status.map(|status| status.exit_code())
+                },
                 message: None,
             },
         );
     });
-
-    state.local_sessions.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(
-        session_id,
-        LocalSessionHandle {
-            writer_tx,
-            resize_tx,
-            shutdown_tx,
-        },
-    );
 
     Ok(session_id)
 }

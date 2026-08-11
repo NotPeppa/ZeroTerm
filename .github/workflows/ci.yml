@@ -93,6 +93,8 @@ jobs:
           node --check desktop/frontend/redact.js
       - name: Redaction tests
         run: node desktop/tests/redact.test.js
+      - name: Terminal close tests
+        run: node desktop/tests/terminal-close.test.js
 
   desktop-backend:
     name: Desktop backend (test + clippy)

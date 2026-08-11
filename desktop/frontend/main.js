@@ -16195,15 +16195,15 @@ async function disconnectPaneSession(pane, { dispose }) {
   clearPaneAttention(pane, { rerender: false });
 
   if (sid !== null) {
+    // The frontend considers this session dead immediately. Evict its
+    // per-session state before crossing IPC so a slow backend teardown cannot
+    // retain AI/side-panel state or delay the visible close operation.
+    forgetAiPaneState(`session:${sid}`);
     try {
       await invoke("disconnect_session", { sessionId: sid });
     } catch (e) {
       console.warn("disconnect_session failed", e);
     }
-    // FE-3: the session key is dead the moment its session is torn down —
-    // including the reconnect path, which mints a fresh session id. Drop its
-    // per-session AI/side-panel Map entries so they don't accumulate.
-    forgetAiPaneState(`session:${sid}`);
   }
   if (pane === getActivePane()) syncAiTerminalControlUi();
 
@@ -16258,10 +16258,31 @@ async function disconnectPaneSession(pane, { dispose }) {
       pane.bufferChangeDispose = null;
     }
 
-    if (pane.term) pane.term.dispose();
-    pane.term = null;
-    pane.fitAddon = null;
+    // macOS uses the optional Canvas renderer. A renderer/addon disposal
+    // failure must not abort the rest of pane cleanup and leave a blank
+    // terminal shell behind. Clear the references first so late xterm write
+    // callbacks cannot act on a terminal that is being torn down.
+    const rendererAddon = pane.rendererAddon;
     pane.rendererAddon = null;
+    if (rendererAddon) {
+      try {
+        rendererAddon.dispose?.();
+      } catch (e) {
+        console.warn("terminal renderer dispose failed", e);
+      }
+    }
+
+    const term = pane.term;
+    pane.term = null;
+    if (term) {
+      try {
+        term.dispose();
+      } catch (e) {
+        console.warn("terminal dispose failed", e);
+      }
+    }
+    pane.fitAddon = null;
+    pane.searchAddon = null;
     if (pane.dprMediaQuery) {
       // Listener was added with { once: true } / addListener; drop our
       // reference so a pending (not-yet-fired) listener can't rebuild an atlas
@@ -16290,13 +16311,9 @@ async function closeTab(tabId) {
   if (idx < 0) return;
   const tab = termState.tabs[idx];
 
-  await Promise.all(tab.panes.map((pane) => disconnectPaneSession(pane, { dispose: true })));
-
-  // FE-3: the panes are disposed for good, so also drop the Map entries keyed
-  // by their disconnected-state `pane:${id}` key. (Their `session:${sid}`
-  // entries were already evicted inside disconnectPaneSession.)
-  for (const pane of tab.panes) forgetAiPaneState(`pane:${pane.id}`);
-
+  // Remove the tab from visible state before waiting for backend teardown.
+  // This keeps close a single, immediate action even if a local PTY or a
+  // platform-specific renderer takes time to dispose.
   termState.tabs.splice(idx, 1);
 
   if (termState.tabs.length === 0) {
@@ -16312,6 +16329,14 @@ async function closeTab(tabId) {
   } else {
     renderTerminalWorkspace();
   }
+
+  // FE-3: these panes are gone for good, so drop their disconnected-state
+  // entries without waiting for IPC cleanup.
+  for (const pane of tab.panes) forgetAiPaneState(`pane:${pane.id}`);
+
+  await Promise.allSettled(
+    tab.panes.map((pane) => disconnectPaneSession(pane, { dispose: true })),
+  );
 }
 
 async function splitActiveTab(orientation) {
