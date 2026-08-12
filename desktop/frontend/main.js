@@ -14248,6 +14248,11 @@ function createPane(host) {
     attnCandidateScreen: null,
     attnHandlerDisposes: null,
     followOutput: true,
+    userInputDispose: null,
+    hasCoreUserInputHandler: false,
+    wheelInputActive: false,
+    wheelInputGeneration: 0,
+    wheelScrollOnUserInput: null,
     bufferChangeDispose: null,
     resizeObserver: null,
     pendingResizeTimer: null,
@@ -15364,6 +15369,7 @@ function ensurePaneTerminal(pane) {
     });
     pane.bodyEl.addEventListener("wheel", (ev) => {
       if (!terminalSelectionMenu?.hidden) hideTerminalSelectionMenu();
+      beginPaneTerminalWheelInput(pane);
       if (ev.deltaY < 0) {
         pane.followOutput = false;
       } else if (ev.deltaY > 0) {
@@ -15371,7 +15377,7 @@ function ensurePaneTerminal(pane) {
           if (isPaneTerminalNearBottom(pane)) pane.followOutput = true;
         });
       }
-    }, { passive: true });
+    }, { passive: true, capture: true });
     applyTerminalThemeToAllPanes();
     requestPaneFit(pane, { immediate: true });
     pane.term.focus();
@@ -15379,10 +15385,30 @@ function ensurePaneTerminal(pane) {
     console.warn("terminal open/fit failed", e);
   }
 
+  const coreUserInput = pane.term?._core?.coreService?.onUserInput;
+  if (typeof coreUserInput === "function") {
+    try {
+      pane.userInputDispose = coreUserInput(() => {
+        // xterm can translate a wheel gesture into cursor-key data when the
+        // active buffer has no scrollback. That is still a scroll gesture, not
+        // an instruction to abandon history and resume output following.
+        if (!pane.wheelInputActive) pane.followOutput = true;
+      });
+      pane.hasCoreUserInputHandler = true;
+    } catch {
+      pane.userInputDispose = null;
+      pane.hasCoreUserInputHandler = false;
+    }
+  }
+
   pane.term.onData((d) => {
     if (pane.attention) clearPaneAttention(pane);
     if (pane.sessionId === null) return;
-    pane.followOutput = true;
+    // Older xterm builds without the internal user-input event fall back to
+    // onData. Keep wheel-generated cursor keys detached from output following.
+    if (!pane.hasCoreUserInputHandler && !pane.wheelInputActive) {
+      pane.followOutput = true;
+    }
     sendTextToPane(pane, d).catch((e) => {
       console.warn("send_input failed", e);
     });
@@ -15390,6 +15416,9 @@ function ensurePaneTerminal(pane) {
 
   pane.term.onScroll(() => {
     hideTerminalSelectionMenu();
+    // The viewport is the source of truth. This covers scrollbar dragging,
+    // PageUp/PageDown and xterm-driven scrolling in addition to wheel events.
+    pane.followOutput = isPaneTerminalNearBottom(pane);
   });
 
   if (typeof pane.term.buffer?.onBufferChange === "function") {
@@ -15794,6 +15823,38 @@ function isTerminalBufferAtBottom(buffer) {
 function isPaneTerminalNearBottom(pane) {
   const buffer = pane?.term?.buffer?.active;
   return isTerminalBufferAtBottom(buffer);
+}
+
+function beginPaneTerminalWheelInput(pane, scheduleRestore = null) {
+  const term = pane?.term;
+  if (!term) return;
+
+  // xterm 6 converts wheel gestures to cursor keys in a buffer without
+  // scrollback. With scrollOnUserInput enabled, that conversion scrolls the
+  // normal buffer to the bottom before ZeroTerm sees onData. Disable only for
+  // the duration of this DOM event, then restore the configured behavior so
+  // genuine keyboard input still returns to the live prompt.
+  if (!pane.wheelInputActive) {
+    pane.wheelInputActive = true;
+    pane.wheelScrollOnUserInput = term.options?.scrollOnUserInput;
+  }
+  const generation = (pane.wheelInputGeneration || 0) + 1;
+  pane.wheelInputGeneration = generation;
+  try {
+    term.options.scrollOnUserInput = false;
+  } catch {}
+
+  const enqueue = scheduleRestore || ((callback) => Promise.resolve().then(callback));
+  enqueue(() => {
+    if (pane.wheelInputGeneration !== generation) return;
+    const previous = pane.wheelScrollOnUserInput;
+    pane.wheelInputActive = false;
+    pane.wheelScrollOnUserInput = null;
+    if (pane.term !== term || previous == null) return;
+    try {
+      term.options.scrollOnUserInput = previous;
+    } catch {}
+  });
 }
 
 function keepPaneTerminalAtBottom(pane, { force = false } = {}) {
@@ -16250,6 +16311,16 @@ async function disconnectPaneSession(pane, { dispose }) {
     }
 
     disposePaneAttentionHandlers(pane);
+
+    if (pane.userInputDispose) {
+      try {
+        pane.userInputDispose.dispose?.();
+      } catch {}
+      pane.userInputDispose = null;
+    }
+    pane.hasCoreUserInputHandler = false;
+    pane.wheelInputActive = false;
+    pane.wheelScrollOnUserInput = null;
 
     if (pane.bufferChangeDispose) {
       try {

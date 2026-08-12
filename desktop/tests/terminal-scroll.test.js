@@ -98,11 +98,59 @@ check(
   "returning from a TUI alternate buffer should restore a following pane to the bottom",
 );
 check(
-  source.includes("if (ev.deltaY < 0)")
+  source.includes("beginPaneTerminalWheelInput(pane)")
+    && source.includes("capture: true")
+    && source.includes("if (ev.deltaY < 0)")
     && source.includes("pane.followOutput = false")
     && source.includes("if (isPaneTerminalNearBottom(pane)) pane.followOutput = true"),
   "explicit user scrolling should control whether output follows",
 );
+check(
+  source.includes("pane.term.onScroll(() => {")
+    && source.includes("pane.followOutput = isPaneTerminalNearBottom(pane)"),
+  "all xterm scroll paths should synchronize output following from the viewport",
+);
+check(
+  source.includes("coreService?.onUserInput")
+    && source.includes("if (!pane.wheelInputActive) pane.followOutput = true"),
+  "only genuine user input should restore output following",
+);
+
+const wheelStart = source.indexOf("function beginPaneTerminalWheelInput");
+const wheelEnd = source.indexOf("\nfunction keepPaneTerminalAtBottom", wheelStart);
+const wheelSource = wheelStart >= 0 && wheelEnd > wheelStart
+  ? source.slice(wheelStart, wheelEnd)
+  : "";
+check(Boolean(wheelSource), "wheel input guard should exist");
+const beginPaneTerminalWheelInput = vm.runInNewContext(
+  `${wheelSource}; beginPaneTerminalWheelInput`,
+  { Promise },
+);
+
+function runWheelInputGuardRegression() {
+  const restoreCallbacks = [];
+  const term = { options: { scrollOnUserInput: true } };
+  const pane = {
+    term,
+    wheelInputActive: false,
+    wheelInputGeneration: 0,
+    wheelScrollOnUserInput: null,
+  };
+  beginPaneTerminalWheelInput(pane, (callback) => restoreCallbacks.push(callback));
+  check(pane.wheelInputActive, "wheel input should be marked while xterm handles the event");
+  check(
+    term.options.scrollOnUserInput === false,
+    "wheel-generated cursor keys must not force the viewport to the bottom",
+  );
+  restoreCallbacks.shift()();
+  check(!pane.wheelInputActive, "wheel input guard should clear after the event");
+  check(
+    term.options.scrollOnUserInput === true,
+    "keyboard input should regain normal scroll-to-live behavior after a wheel event",
+  );
+}
+
+runWheelInputGuardRegression();
 
 const repairStart = source.indexOf("function repairXtermResizeBuffers");
 const repairEnd = source.indexOf("\nfunction clampPaneBodyHeight", repairStart);
@@ -143,12 +191,13 @@ const terminalIo = vm.runInNewContext(
 function runWriteFitSerializationRegression() {
   let writeCallback = null;
   let fitCount = 0;
+  let scrollToBottomCount = 0;
   const term = {
     rows: 24,
     write(_data, callback) {
       writeCallback = callback;
     },
-    scrollToBottom() {},
+    scrollToBottom() { scrollToBottomCount += 1; },
     refresh() {},
   };
   const pane = {
@@ -163,12 +212,19 @@ function runWriteFitSerializationRegression() {
     fitAfterTerminalWrites: false,
   };
 
-  terminalIo.writePaneTerminalData(pane, "pending-output");
+  pane.followOutput = false;
+  terminalIo.writePaneTerminalData(pane, "pending-output", {
+    stickToBottom: () => pane.followOutput !== false,
+  });
   terminalIo.fitPane(pane);
   check(fitCount === 0, "fit should not run while an xterm write is pending");
   check(pane.fitAfterTerminalWrites, "a blocked fit should be remembered");
   writeCallback();
   check(pane.pendingTerminalWrites === 0, "parsed write callback should drain the write count");
+  check(
+    scrollToBottomCount === 0,
+    "a delayed parsed write must not pull a user-scrolled viewport back to the bottom",
+  );
   check(fitCount === 1, "the deferred fit should run once after parsing finishes");
 }
 
