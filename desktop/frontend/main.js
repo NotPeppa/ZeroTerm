@@ -743,6 +743,7 @@ const I18N = {
     "files.confirm.overwrite.title": "Replace existing file?",
     "files.transfer.queued": "Queued",
     "files.transfer.running": "Running",
+    "files.transfer.cancelling": "Cancelling…",
     "files.transfer.finalizing": "Finalizing…",
     "files.transfer.success": "Done",
     "files.transfer.error": "Failed",
@@ -1711,6 +1712,7 @@ const I18N = {
     "files.confirm.overwrite.title": "覆盖已有文件？",
     "files.transfer.queued": "排队中",
     "files.transfer.running": "传输中",
+    "files.transfer.cancelling": "正在取消…",
     "files.transfer.finalizing": "正在完成…",
     "files.transfer.success": "已完成",
     "files.transfer.error": "失败",
@@ -2926,8 +2928,12 @@ function sftpTransferMetaText(item) {
   return bits.join(" · ");
 }
 
+function isSftpTransferTerminalStatus(status) {
+  return status === "success" || status === "error" || status === "cancelled";
+}
+
 function isSftpTransferTerminal(item) {
-  return item?.status === "success" || item?.status === "error" || item?.status === "cancelled";
+  return isSftpTransferTerminalStatus(item?.status);
 }
 
 function clearSftpTransferDismissTimer(transferId) {
@@ -3021,6 +3027,8 @@ function labelSftpTransferStatus(status) {
       return t("files.transfer.queued");
     case "running":
       return t("files.transfer.running");
+    case "cancelling":
+      return t("files.transfer.cancelling");
     case "finalizing":
       return t("files.transfer.finalizing");
     case "success":
@@ -3036,6 +3044,52 @@ function labelSftpTransferStatus(status) {
 
 function canRetrySftpTransfer(item) {
   return item?.status === "error" && Boolean(item.retryPlan);
+}
+
+async function cancelSftpTransfer(item) {
+  const current = sftpTransferItems.get(item?.transferId);
+  if (!current || isSftpTransferTerminal(current) || current.status === "cancelling") return;
+
+  const previousStatus = current.status;
+  sftpTransferItems.set(current.transferId, {
+    ...current,
+    status: "cancelling",
+    cancelRequested: true,
+    bytesPerSec: null,
+    etaSeconds: null,
+    updatedAt: Date.now(),
+  });
+  renderSftpTransferDock();
+
+  try {
+    const accepted = await invoke("sftp_cancel_transfer", { transferId: current.transferId });
+    if (accepted === false) {
+      const pending = sftpTransferItems.get(current.transferId);
+      if (pending?.status === "cancelling") {
+        const cancelled = {
+          ...pending,
+          status: "cancelled",
+          cancelRequested: false,
+          updatedAt: Date.now(),
+        };
+        sftpTransferItems.set(current.transferId, cancelled);
+        scheduleSftpTransferDismiss(cancelled);
+        renderSftpTransferDock();
+      }
+    }
+  } catch (e) {
+    const pending = sftpTransferItems.get(current.transferId);
+    if (pending?.status === "cancelling") {
+      sftpTransferItems.set(current.transferId, {
+        ...pending,
+        status: previousStatus,
+        cancelRequested: false,
+        updatedAt: Date.now(),
+      });
+      renderSftpTransferDock();
+    }
+    showToast(String(e), "error", 3200);
+  }
 }
 
 function transferKindForPaneCopy(sourcePane, targetPane) {
@@ -3263,6 +3317,7 @@ async function retrySftpTransfer(item) {
 function sftpTransferOrderWeight(item) {
   switch (item?.status) {
     case "running":
+    case "cancelling":
       return 0;
     case "queued":
       return 1;
@@ -3385,13 +3440,14 @@ function buildSftpTransferRow(item) {
   } else {
     button.setAttribute("aria-label", t("files.button.cancel"));
     button.title = t("files.button.cancel");
-    button.addEventListener("click", async () => {
-      try {
-        await invoke("sftp_cancel_transfer", { transferId: item.transferId });
-      } catch (e) {
-        showToast(String(e), "error", 3200);
-      }
-    });
+    if (item.status === "cancelling") {
+      button.disabled = true;
+      button.setAttribute("aria-busy", "true");
+      button.setAttribute("aria-label", t("files.transfer.cancelling"));
+      button.title = t("files.transfer.cancelling");
+    } else {
+      button.addEventListener("click", () => cancelSftpTransfer(item));
+    }
   }
   actions.appendChild(button);
 
@@ -3485,6 +3541,12 @@ listen("sftp:transfer", (ev) => {
   const payload = ev?.payload || {};
   const transferId = Number(payload.transferId ?? payload.transfer_id);
   if (!Number.isFinite(transferId)) return;
+  const previous = sftpTransferItems.get(transferId);
+  const incomingStatus = String(payload.status || "running");
+  const preserveTerminal = isSftpTransferTerminal(previous)
+    && !isSftpTransferTerminalStatus(incomingStatus);
+  const cancellationPending = previous?.cancelRequested === true
+    && !isSftpTransferTerminalStatus(incomingStatus);
 
   const bytesPerSecRaw = payload.bytesPerSec ?? payload.bytes_per_sec;
   const etaSecondsRaw = payload.etaSeconds ?? payload.eta_seconds;
@@ -3500,7 +3562,12 @@ listen("sftp:transfer", (ev) => {
   const item = {
     transferId,
     kind: normalizeSftpTransferKind(payload.kind),
-    status: String(payload.status || "running"),
+    status: preserveTerminal
+      ? previous.status
+      : cancellationPending
+        ? "cancelling"
+        : incomingStatus,
+    cancelRequested: cancellationPending,
     source: String(payload.source || ""),
     destination: String(payload.destination || ""),
     bytesDone,
@@ -3512,10 +3579,10 @@ listen("sftp:transfer", (ev) => {
     filesTotal,
     // Sticky: once a remote→remote copy has picked a route, keep showing it
     // even if a later event omits the field.
-    route: payload.route ?? sftpTransferItems.get(transferId)?.route ?? null,
+    route: payload.route ?? previous?.route ?? null,
     routeReason: payload.routeReason
       ?? payload.route_reason
-      ?? sftpTransferItems.get(transferId)?.routeReason
+      ?? previous?.routeReason
       ?? null,
     error: payload.error
       ? {
@@ -3523,7 +3590,7 @@ listen("sftp:transfer", (ev) => {
           message: String(payload.error.message || ""),
         }
       : null,
-    retryPlan: sftpTransferItems.get(transferId)?.retryPlan
+    retryPlan: previous?.retryPlan
       || claimPendingSftpRetryPlan(
         normalizeSftpTransferKind(payload.kind),
         String(payload.source || ""),

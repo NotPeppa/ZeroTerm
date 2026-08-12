@@ -3841,7 +3841,7 @@ awk '
 /^SwapTotal:/ {st=$2*1024}
 /^SwapFree:/ {sf=$2*1024}
 # Some awk implementations clamp %d to INT_MAX. Memory byte counts routinely
-# exceed that, while awk's numeric representation can still preserve them.
+# exceed that, while the numeric representation can still preserve them.
 END {printf "%.0f %.0f %.0f %.0f\n", mt, mt-ma, st, st-sf}
 ' /proc/meminfo 2>/dev/null
 v4=0
@@ -5858,12 +5858,42 @@ fn ai_terminal_command_class(command: &str) -> (AiTerminalCommandClass, &'static
         );
     }
 
-    // Shell composition can hide a destructive second operation. Keep the
-    // automatic path deliberately conservative and leave composed commands to
-    // the existing per-command approval button.
-    const SHELL_META: [&str; 9] = ["&&", "||", "$(", "`", ";", "|", ">", "<", "&"];
-    if SHELL_META.iter().any(|token| trimmed.contains(token)) {
-        return (AiTerminalCommandClass::ApprovalRequired, "shell composition or redirection");
+    // Shell composition can hide a destructive second operation. A simple
+    // conditional chain is safe to auto-run only when every command in it is
+    // independently recognized as read-only. Other composition and
+    // redirection still require explicit approval.
+    const UNSAFE_SHELL_META: [&str; 5] = ["$(", "`", ";", ">", "<"];
+    if UNSAFE_SHELL_META
+        .iter()
+        .any(|token| trimmed.contains(token))
+    {
+        return (
+            AiTerminalCommandClass::ApprovalRequired,
+            "shell composition or redirection",
+        );
+    }
+    match ai_terminal_conditional_chain(trimmed) {
+        Ok(Some(commands)) => {
+            if commands.iter().all(|command| {
+                ai_terminal_command_class(command).0 == AiTerminalCommandClass::ReadOnly
+            }) {
+                return (
+                    AiTerminalCommandClass::ReadOnly,
+                    "recognized read-only conditional command chain",
+                );
+            }
+            return (
+                AiTerminalCommandClass::ApprovalRequired,
+                "shell composition or redirection",
+            );
+        }
+        Ok(None) => {}
+        Err(()) => {
+            return (
+                AiTerminalCommandClass::ApprovalRequired,
+                "shell composition or redirection",
+            );
+        }
     }
 
     let words: Vec<&str> = trimmed.split_whitespace().collect();
@@ -5921,6 +5951,15 @@ fn ai_terminal_command_class(command: &str) -> (AiTerminalCommandClass, &'static
     if program == "dmesg" && words.iter().skip(1).any(|word| matches!(*word, "-C" | "--clear")) {
         return (AiTerminalCommandClass::ApprovalRequired, "command clears the kernel message buffer");
     }
+    if ["node", "node.exe", "npm", "npm.cmd", "npm.exe"].contains(&program.as_str())
+        && words.len() == 2
+        && matches!(words[1].to_ascii_lowercase().as_str(), "-v" | "--version")
+    {
+        return (
+            AiTerminalCommandClass::ReadOnly,
+            "recognized read-only version query",
+        );
+    }
 
     const READ_ONLY: &[&str] = &[
         "pwd", "ls", "dir", "cat", "head", "tail", "grep", "rg", "find", "fd", "stat",
@@ -5955,6 +5994,83 @@ fn ai_terminal_command_class(command: &str) -> (AiTerminalCommandClass, &'static
     }
 
     (AiTerminalCommandClass::Mutating, "command may change terminal or filesystem state")
+}
+
+fn ai_terminal_conditional_chain(command: &str) -> Result<Option<Vec<&str>>, ()> {
+    let bytes = command.as_bytes();
+    let mut commands = Vec::new();
+    let mut start = 0;
+    let mut index = 0;
+    let mut quote = None;
+    let mut escaped = false;
+
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if escaped {
+            escaped = false;
+            index += 1;
+            continue;
+        }
+
+        match quote {
+            Some(b'\'') => {
+                if byte == b'\'' {
+                    quote = None;
+                } else if matches!(byte, b'&' | b'|') {
+                    return Err(());
+                }
+                index += 1;
+            }
+            Some(b'"') => {
+                if byte == b'\\' {
+                    escaped = true;
+                } else if byte == b'"' {
+                    quote = None;
+                } else if matches!(byte, b'&' | b'|') {
+                    return Err(());
+                }
+                index += 1;
+            }
+            Some(_) => unreachable!(),
+            None => match byte {
+                b'\\' => {
+                    escaped = true;
+                    index += 1;
+                }
+                b'\'' | b'"' => {
+                    quote = Some(byte);
+                    index += 1;
+                }
+                b'&' | b'|' => {
+                    if bytes.get(index + 1) != Some(&byte) {
+                        return Err(());
+                    }
+                    let part = command[start..index].trim();
+                    if part.is_empty() {
+                        return Err(());
+                    }
+                    commands.push(part);
+                    index += 2;
+                    start = index;
+                }
+                _ => index += 1,
+            },
+        }
+    }
+
+    if quote.is_some() || escaped {
+        return Err(());
+    }
+    if commands.is_empty() {
+        return Ok(None);
+    }
+
+    let part = command[start..].trim();
+    if part.is_empty() {
+        return Err(());
+    }
+    commands.push(part);
+    Ok(Some(commands))
 }
 
 fn ai_terminal_command_contains_placeholder(command: &str) -> bool {
@@ -6525,6 +6641,16 @@ mod tests {
         assert_eq!(ai_terminal_command_class("ls -la").0, AiTerminalCommandClass::ReadOnly);
         assert_eq!(ai_terminal_command_class("git status --short").0, AiTerminalCommandClass::ReadOnly);
         assert_eq!(ai_terminal_command_class("rg error ./logs").0, AiTerminalCommandClass::ReadOnly);
+        assert_eq!(ai_terminal_command_class("node -v").0, AiTerminalCommandClass::ReadOnly);
+        assert_eq!(ai_terminal_command_class("npm --version").0, AiTerminalCommandClass::ReadOnly);
+        assert_eq!(
+            ai_terminal_command_class("node -v && npm -v").0,
+            AiTerminalCommandClass::ReadOnly
+        );
+        assert_eq!(
+            ai_terminal_command_class("node --version || npm --version").0,
+            AiTerminalCommandClass::ReadOnly
+        );
     }
 
     #[test]
@@ -6537,6 +6663,10 @@ mod tests {
             "git reset --hard HEAD~1",
             "bash -c 'touch /tmp/a'",
             "ls && rm file",
+            "node -v && rm file",
+            "npm test && node -v",
+            "node -v | cat",
+            "node -v &&",
             "find . -exec rm {} +",
             "dmesg --clear",
             "Remove-Item -Recurse C:\\temp",
@@ -6640,6 +6770,16 @@ mod tests {
     fn linux_metrics_script_uses_wide_memory_byte_format() {
         assert!(METRICS_SCRIPT.contains("printf \"%.0f %.0f %.0f %.0f\\n\", mt, mt-ma, st, st-sf"));
         assert!(!METRICS_SCRIPT.contains("printf \"%d %d %d %d\\n\", mt, mt-ma, st, st-sf"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn linux_metrics_script_has_valid_shell_syntax() {
+        let status = std::process::Command::new("sh")
+            .args(["-n", "-c", METRICS_SCRIPT])
+            .status()
+            .expect("run shell syntax check");
+        assert!(status.success());
     }
 
     #[test]

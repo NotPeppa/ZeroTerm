@@ -108,6 +108,9 @@ impl TransferManager {
             let Some(record) = transfers.get_mut(&transfer_id) else {
                 return;
             };
+            if !transfer_accepts_progress(record) {
+                return;
+            }
             record.event.status = "running";
             record.event.clone()
         };
@@ -130,6 +133,9 @@ impl TransferManager {
             let Some(record) = transfers.get_mut(&transfer_id) else {
                 return;
             };
+            if !transfer_accepts_progress(record) {
+                return;
+            }
             record.event.route = Some(route.as_str());
             record.event.route_reason = reason;
             record.event.clone()
@@ -155,6 +161,12 @@ impl TransferManager {
             let Some(record) = transfers.get_mut(&transfer_id) else {
                 return;
             };
+            // Cancellation and other terminal states are monotonic. In-flight
+            // workers may still deliver a final progress callback while they
+            // unwind, but that must never resurrect the transfer as running.
+            if !transfer_accepts_progress(record) {
+                return;
+            }
             // A full byte count means the client has queued the last SFTP
             // write, not that the remote file is committed. Uploads still
             // need to drain acknowledgements, close the temporary file, and
@@ -209,6 +221,9 @@ impl TransferManager {
             let Some(record) = transfers.get_mut(&transfer_id) else {
                 return;
             };
+            if is_terminal_transfer_status(record.event.status) {
+                return;
+            }
             record.token.cancel();
             record.event.status = "cancelled";
             record.event.bytes_per_sec = None;
@@ -230,6 +245,14 @@ impl TransferManager {
             .map(|record| record.token.clone())
     }
 
+    pub(crate) fn is_cancelled(&self, transfer_id: u64) -> bool {
+        self.transfers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&transfer_id)
+            .is_some_and(|record| record.event.status == "cancelled")
+    }
+
     pub(crate) fn remove(&self, transfer_id: u64) {
         self.transfers.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(&transfer_id);
     }
@@ -248,13 +271,28 @@ impl TransferManager {
             let Some(record) = transfers.get_mut(&transfer_id) else {
                 return;
             };
-            record.event.status = status;
+            if is_terminal_transfer_status(record.event.status) {
+                return;
+            }
+
+            // A user cancellation can race the worker's successful return.
+            // Once the token is cancelled, success must resolve as cancelled;
+            // explicit errors (notably the stall watchdog) keep their error.
+            let cancelled = status == "success" && record.token.is_cancelled();
+            record.event.status = if cancelled { "cancelled" } else { status };
             record.event.bytes_done = bytes_done;
             record.event.total = total;
             record.event.bytes_per_sec = None;
             record.event.eta_seconds = None;
             record.event.current_file = None;
-            record.event.error = error;
+            record.event.error = if cancelled {
+                Some(TransferErrorDto {
+                    code: "CANCELLED".to_string(),
+                    message: "transfer cancelled".to_string(),
+                })
+            } else {
+                error
+            };
             record.event.clone()
         };
         let _ = app_handle.emit("sftp:transfer", event);
@@ -279,9 +317,24 @@ fn is_watchdog_timeout_message(message: &str) -> bool {
     message.to_ascii_lowercase().contains("transfer stalled")
 }
 
+fn is_cancelled_message(message: &str) -> bool {
+    match parse_ipc_error(message) {
+        Some(error) => error.code == "CANCELLED",
+        None => classify_error_message(message) == "CANCELLED",
+    }
+}
+
 struct TransferRecord {
     token: CancellationToken,
     event: TransferEvent,
+}
+
+fn is_terminal_transfer_status(status: &str) -> bool {
+    matches!(status, "success" | "error" | "cancelled")
+}
+
+fn transfer_accepts_progress(record: &TransferRecord) -> bool {
+    !record.token.is_cancelled() && !is_terminal_transfer_status(record.event.status)
 }
 
 pub(crate) fn register_transfer(
@@ -563,7 +616,9 @@ impl TransferSink {
                 if total > 0 { Some(total) } else { None },
             ),
             Err(message) => {
-                if self.cancel.is_cancelled() && !is_watchdog_timeout_message(&message) {
+                if (manager.is_cancelled(self.transfer_id) || is_cancelled_message(&message))
+                    && !is_watchdog_timeout_message(&message)
+                {
                     manager.cancel(&self.app_handle, self.transfer_id);
                 } else {
                     manager.finish_error(
@@ -596,6 +651,21 @@ where
         };
         tokio::select! {
             biased;
+            _ = sink.cancel.cancelled() => {
+                let manager = &sink.app_handle.state::<AppState>().transfer_manager;
+                if !manager.is_cancelled(sink.transfer_id) {
+                    // Workers also cancel the shared token when they encounter
+                    // a fatal transport error. Preserve that real error rather
+                    // than misreporting it as a user cancellation.
+                    break body_fut.await;
+                }
+                // Give per-file upload/download futures enough time to close
+                // handles and remove their atomic temporary files. If cleanup
+                // itself is stuck, dropping the body still stops the tree.
+                const CANCEL_CLEANUP_TIMEOUT: Duration = Duration::from_secs(6);
+                let _ = tokio::time::timeout(CANCEL_CLEANUP_TIMEOUT, &mut body_fut).await;
+                break Err(ipc_error("CANCELLED", "transfer cancelled"));
+            }
             r = &mut body_fut => {
                 break r;
             }
@@ -800,9 +870,7 @@ where
     match &outcome {
         Ok(_) => transfer_manager.finish_success(app_handle, transfer_id, final_bytes, final_total),
         Err(message) => {
-            if transfer_manager
-                .token(transfer_id)
-                .is_some_and(|token| token.is_cancelled())
+            if (transfer_manager.is_cancelled(transfer_id) || is_cancelled_message(message))
                 && !is_watchdog_timeout_message(message)
             {
                 transfer_manager.cancel(app_handle, transfer_id);
@@ -852,5 +920,42 @@ mod tests {
         let error = transfer_error_from_message(message.to_string());
         assert_eq!(error.code, "TIMEOUT");
         assert!(is_watchdog_timeout_message(message));
+        assert!(!is_cancelled_message(message));
+        assert!(is_cancelled_message(&ipc_error("CANCELLED", "transfer cancelled")));
+    }
+
+    #[test]
+    fn cancelled_and_terminal_transfers_reject_late_progress() {
+        let token = CancellationToken::new();
+        let mut record = TransferRecord {
+            token: token.clone(),
+            event: TransferEvent {
+                transfer_id: 1,
+                kind: "upload",
+                status: "running",
+                source: "source".to_string(),
+                destination: "destination".to_string(),
+                bytes_done: 0,
+                total: Some(1),
+                bytes_per_sec: None,
+                eta_seconds: None,
+                current_file: None,
+                files_done: None,
+                files_total: None,
+                route: None,
+                route_reason: None,
+                error: None,
+            },
+        };
+
+        assert!(transfer_accepts_progress(&record));
+        token.cancel();
+        assert!(!transfer_accepts_progress(&record));
+
+        record.token = CancellationToken::new();
+        for status in ["success", "error", "cancelled"] {
+            record.event.status = status;
+            assert!(!transfer_accepts_progress(&record), "{status} must be terminal");
+        }
     }
 }

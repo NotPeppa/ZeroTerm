@@ -141,7 +141,7 @@ Commands (frontend → backend):
 | `sftp_remove_dir` | `{ sftpId, path }` | — |
 | `sftp_rename` | `{ sftpId, from, to }` | — |
 | `sftp_mkdir` | `{ sftpId, path }` | — |
-| `sftp_cancel_transfer` | `{ transferId }` | — (no-op if the transfer already finished) |
+| `sftp_cancel_transfer` | `{ transferId }` | `boolean` (`false` if the transfer already finished) |
 
 Manual validation:
 

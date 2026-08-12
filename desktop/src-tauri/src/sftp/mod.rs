@@ -634,14 +634,15 @@ pub async fn sftp_cancel_transfer(
     state: State<'_, AppState>,
     app_handle: AppHandle,
     transfer_id: u64,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let token = state.transfer_manager.token(transfer_id);
     if let Some(t) = token {
         t.cancel();
         state.transfer_manager.cancel(&app_handle, transfer_id);
         debug!(transfer_id, "transfer cancellation requested");
+        return Ok(true);
     }
-    Ok(())
+    Ok(false)
 }
 
 #[tauri::command]

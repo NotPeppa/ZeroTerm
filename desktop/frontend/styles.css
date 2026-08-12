@@ -10039,6 +10039,12 @@ body[data-app-theme="light"] .settings-sync-method-row .zt-select-trigger:hover 
   background: rgba(248, 113, 113, 0.1);
 }
 
+.sftp-transfer-cancel:disabled {
+  cursor: wait;
+  color: rgba(248, 113, 113, 0.72);
+  background: rgba(248, 113, 113, 0.08);
+}
+
 .sftp-transfer-progress {
   position: relative;
   overflow: hidden;
