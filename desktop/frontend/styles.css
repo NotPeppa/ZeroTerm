@@ -6908,6 +6908,39 @@ body[data-app-theme="light"] .docker-group-head {
   background: rgba(72, 220, 165, 0.12);
 }
 
+.port-card .service-card-foot {
+  padding-left: 0;
+}
+
+.port-proto {
+  flex: 0 0 auto;
+  min-width: 34px;
+  margin-top: 2px;
+  padding: 2px 0;
+  border-radius: 6px;
+  font-size: 9px;
+  font-weight: 720;
+  letter-spacing: 0.4px;
+  text-align: center;
+  background: rgba(156, 170, 208, 0.12);
+  color: var(--muted);
+}
+
+.port-proto-tcp {
+  background: rgba(104, 168, 255, 0.14);
+  color: var(--accent);
+}
+
+.port-proto-udp {
+  background: rgba(196, 140, 255, 0.14);
+  color: #c48cff;
+}
+
+.port-number {
+  font-family: var(--mono);
+  color: var(--accent);
+}
+
 .dialog.service-file-dialog {
   width: min(980px, calc(100vw - 48px));
   height: min(680px, calc(100vh - 64px));

@@ -4602,6 +4602,452 @@ pub async fn system_service_file(
     Ok(String::from_utf8_lossy(&stdout).to_string())
 }
 
+// --------------------------------------------------------------------------
+// listening ports
+// --------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PortProcessDto {
+    pub name: String,
+    pub pid: u32,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ListeningPortDto {
+    pub protocol: String,
+    pub local_address: String,
+    pub port: u16,
+    pub processes: Vec<PortProcessDto>,
+}
+
+/// `ss` first (iproute2, present on every modern distro); `netstat` as the
+/// fallback for older or minimal images. Both are line-parsed by
+/// `parse_listening_ports`, which auto-detects the two column layouts.
+const LINUX_PORTS_SCRIPT: &str =
+    "LC_ALL=C ss -tulnp 2>/dev/null || LC_ALL=C netstat -tulnp 2>/dev/null";
+
+#[cfg(target_os = "windows")]
+const WINDOWS_PORTS_SCRIPT: &str = r#"
+$ErrorActionPreference = 'SilentlyContinue'
+$names = @{}
+Get-Process | ForEach-Object { $names[[int]$_.Id] = $_.ProcessName }
+Get-NetTCPConnection -State Listen | ForEach-Object { $procId = [int]$_.OwningProcess; 'tcp|' + $_.LocalAddress + '|' + $_.LocalPort + '|' + $procId + '|' + $names[$procId] }
+Get-NetUDPEndpoint | ForEach-Object { $procId = [int]$_.OwningProcess; 'udp|' + $_.LocalAddress + '|' + $_.LocalPort + '|' + $procId + '|' + $names[$procId] }
+"#;
+
+#[cfg(target_os = "macos")]
+const MACOS_PORTS_SCRIPT: &str = "LC_ALL=C lsof -nP -iTCP -sTCP:LISTEN -FpcPn 2>/dev/null; LC_ALL=C lsof -nP -iUDP -FpcPn 2>/dev/null; true";
+
+/// Splits `0.0.0.0:22`, `[::]:22`, `*:80`, `127.0.0.53%lo:53`, `:::22` into
+/// (address, port). Returns None for non-numeric ports (`*:*` peer columns).
+fn split_local_address(raw: &str) -> Option<(String, u16)> {
+    let (host, port) = raw.rsplit_once(':')?;
+    let port: u16 = port.parse().ok()?;
+    let mut host = host.trim();
+    if host.starts_with('[') && host.ends_with(']') && host.len() >= 2 {
+        host = &host[1..host.len() - 1];
+    }
+    let host = host.split('%').next().unwrap_or("");
+    let host = if host.is_empty() { "*" } else { host };
+    Some((host.to_string(), port))
+}
+
+/// Parses the ss `users:(("nginx",pid=100,fd=6),("nginx",pid=101,fd=6))`
+/// column into de-duplicated (name, pid) pairs.
+fn parse_ss_process_list(raw: &str) -> Vec<PortProcessDto> {
+    let mut out: Vec<PortProcessDto> = Vec::new();
+    let mut rest = raw;
+    while let Some(start) = rest.find("(\"") {
+        rest = &rest[start + 2..];
+        let Some(name_end) = rest.find('"') else { break };
+        let name = rest[..name_end].to_string();
+        rest = &rest[name_end..];
+        let Some(pid_pos) = rest.find("pid=") else { break };
+        rest = &rest[pid_pos + 4..];
+        let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+        if let Ok(pid) = digits.parse::<u32>() {
+            if !out.iter().any(|p| p.pid == pid) {
+                out.push(PortProcessDto { name, pid });
+            }
+        }
+    }
+    out
+}
+
+/// Parses the netstat `PID/Program name` column (`1234/sshd`, `-`).
+fn parse_netstat_process(raw: &str) -> Vec<PortProcessDto> {
+    let raw = raw.trim();
+    let Some((pid, name)) = raw.split_once('/') else {
+        return Vec::new();
+    };
+    match pid.parse::<u32>() {
+        Ok(pid) => vec![PortProcessDto {
+            name: name.trim().to_string(),
+            pid,
+        }],
+        Err(_) => Vec::new(),
+    }
+}
+
+/// Parses one line of `ss -tulnp` or `netstat -tulnp` output. The layouts are
+/// told apart by the second column: netstat has numeric Recv-Q there, ss has
+/// the socket state. Header lines fail the protocol check and yield None.
+fn parse_listening_port_line(line: &str) -> Option<ListeningPortDto> {
+    let tokens: Vec<&str> = line.split_whitespace().collect();
+    if tokens.len() < 5 {
+        return None;
+    }
+    let proto = tokens[0].to_ascii_lowercase();
+    let protocol = if proto.starts_with("tcp") {
+        "tcp"
+    } else if proto.starts_with("udp") {
+        "udp"
+    } else {
+        return None;
+    };
+    let is_numeric = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    if is_numeric(tokens[1]) && is_numeric(tokens[2]) {
+        // netstat: Proto Recv-Q Send-Q Local Foreign [State] [PID/Program]
+        let pid_index = if protocol == "tcp" {
+            if tokens.get(5).copied() != Some("LISTEN") {
+                return None;
+            }
+            6
+        } else {
+            5
+        };
+        let (local_address, port) = split_local_address(tokens[3])?;
+        let processes = if tokens.len() > pid_index {
+            parse_netstat_process(&tokens[pid_index..].join(" "))
+        } else {
+            Vec::new()
+        };
+        Some(ListeningPortDto {
+            protocol: protocol.to_string(),
+            local_address,
+            port,
+            processes,
+        })
+    } else {
+        // ss: Netid State Recv-Q Send-Q Local Peer [Process]
+        if tokens.len() < 6 {
+            return None;
+        }
+        let state = tokens[1].to_ascii_uppercase();
+        if state != "LISTEN" && state != "UNCONN" {
+            return None;
+        }
+        let (local_address, port) = split_local_address(tokens[4])?;
+        let processes = if tokens.len() > 6 {
+            parse_ss_process_list(&tokens[6..].join(" "))
+        } else {
+            Vec::new()
+        };
+        Some(ListeningPortDto {
+            protocol: protocol.to_string(),
+            local_address,
+            port,
+            processes,
+        })
+    }
+}
+
+/// Collapses duplicate (protocol, address, port) rows — e.g. SO_REUSEPORT
+/// sockets show once per socket in ss — and sorts by port.
+fn merge_listening_ports(rows: Vec<ListeningPortDto>) -> Vec<ListeningPortDto> {
+    let mut merged: Vec<ListeningPortDto> = Vec::new();
+    for row in rows {
+        if let Some(existing) = merged.iter_mut().find(|e| {
+            e.protocol == row.protocol && e.local_address == row.local_address && e.port == row.port
+        }) {
+            for process in row.processes {
+                if !existing.processes.iter().any(|p| p.pid == process.pid) {
+                    existing.processes.push(process);
+                }
+            }
+        } else {
+            merged.push(row);
+        }
+    }
+    merged.sort_by(|a, b| {
+        a.port
+            .cmp(&b.port)
+            .then_with(|| a.protocol.cmp(&b.protocol))
+            .then_with(|| a.local_address.cmp(&b.local_address))
+    });
+    merged
+}
+
+fn parse_listening_ports(output: &str) -> Vec<ListeningPortDto> {
+    merge_listening_ports(output.lines().filter_map(parse_listening_port_line).collect())
+}
+
+/// Parses the `proto|address|port|pid|name` lines emitted by
+/// WINDOWS_PORTS_SCRIPT. Pid 0 (System Idle) carries no killable process.
+#[cfg(target_os = "windows")]
+fn parse_pipe_ports(output: &str) -> Vec<ListeningPortDto> {
+    let rows = output
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.trim().splitn(5, '|');
+            let protocol = fields.next()?;
+            if protocol != "tcp" && protocol != "udp" {
+                return None;
+            }
+            let address = fields.next()?.split('%').next().unwrap_or("").trim();
+            let port: u16 = fields.next()?.trim().parse().ok()?;
+            let pid: u32 = fields.next()?.trim().parse().ok()?;
+            let name = fields.next().unwrap_or("").trim().to_string();
+            let processes = if pid == 0 {
+                Vec::new()
+            } else {
+                vec![PortProcessDto { name, pid }]
+            };
+            Some(ListeningPortDto {
+                protocol: protocol.to_string(),
+                local_address: if address.is_empty() {
+                    "*".to_string()
+                } else {
+                    address.to_string()
+                },
+                port,
+                processes,
+            })
+        })
+        .collect();
+    merge_listening_ports(rows)
+}
+
+/// Parses `lsof -FpcPn` machine output (`p<pid>` / `c<command>` /
+/// `P<protocol>` / `n<address>` lines). Connected sockets (`->` in the
+/// address) are skipped.
+#[cfg(target_os = "macos")]
+fn parse_lsof_ports(output: &str) -> Vec<ListeningPortDto> {
+    let mut rows = Vec::new();
+    let mut pid: Option<u32> = None;
+    let mut command = String::new();
+    let mut protocol = String::new();
+    for line in output.lines() {
+        if let Some(rest) = line.strip_prefix('p') {
+            pid = rest.trim().parse().ok();
+        } else if let Some(rest) = line.strip_prefix('c') {
+            command = rest.trim().to_string();
+        } else if let Some(rest) = line.strip_prefix('P') {
+            protocol = rest.trim().to_ascii_lowercase();
+        } else if let Some(rest) = line.strip_prefix('n') {
+            if rest.contains("->") || (protocol != "tcp" && protocol != "udp") {
+                continue;
+            }
+            let Some((local_address, port)) = split_local_address(rest.trim()) else {
+                continue;
+            };
+            let processes = match pid {
+                Some(pid) => vec![PortProcessDto {
+                    name: command.clone(),
+                    pid,
+                }],
+                None => Vec::new(),
+            };
+            rows.push(ListeningPortDto {
+                protocol: protocol.clone(),
+                local_address,
+                port,
+                processes,
+            });
+        }
+    }
+    merge_listening_ports(rows)
+}
+
+fn listening_ports_error(stderr: &[u8]) -> String {
+    let detail = String::from_utf8_lossy(stderr).trim().to_string();
+    if detail.is_empty() {
+        "unable to list listening ports: neither ss nor netstat is available".to_string()
+    } else {
+        detail
+    }
+}
+
+#[tauri::command]
+pub async fn list_listening_ports(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+    host_id: Option<String>,
+) -> Result<Vec<ListeningPortDto>, String> {
+    let host_id = host_id.unwrap_or_default();
+    if host_id.is_empty() || host_id.starts_with("local-") {
+        #[cfg(target_os = "windows")]
+        {
+            let output = tokio::process::Command::new("powershell")
+                .creation_flags(CREATE_NO_WINDOW)
+                .args([
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-Command",
+                    WINDOWS_PORTS_SCRIPT,
+                ])
+                .output()
+                .await
+                .map_err(|e| format!("listing local ports failed: {e}"))?;
+            let rows = parse_pipe_ports(&String::from_utf8_lossy(&output.stdout));
+            if rows.is_empty() {
+                return Err(listening_ports_error(&output.stderr));
+            }
+            return Ok(rows);
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let output = Command::new("sh")
+                .arg("-lc")
+                .arg(MACOS_PORTS_SCRIPT)
+                .output()
+                .await
+                .map_err(|e| format!("listing local ports failed: {e}"))?;
+            return Ok(parse_lsof_ports(&String::from_utf8_lossy(&output.stdout)));
+        }
+        #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+        {
+            let output = Command::new("sh")
+                .arg("-lc")
+                .arg(LINUX_PORTS_SCRIPT)
+                .output()
+                .await
+                .map_err(|e| format!("listing local ports failed: {e}"))?;
+            let text = String::from_utf8_lossy(&output.stdout);
+            let rows = parse_listening_ports(&text);
+            if rows.is_empty() && text.trim().is_empty() {
+                return Err(listening_ports_error(&output.stderr));
+            }
+            return Ok(rows);
+        }
+    }
+
+    let (_host, cfg, jump_cfg) = build_connect_chain_for_host(&state, &app_handle, &host_id)?;
+    let session = state
+        .sftp_pool
+        .acquire_session(host_id, cfg, jump_cfg)
+        .await?;
+    let (_code, stdout, stderr) = session
+        .exec(LINUX_PORTS_SCRIPT)
+        .await
+        .map_err(|e| e.to_string())?;
+    let text = String::from_utf8_lossy(&stdout);
+    let rows = parse_listening_ports(&text);
+    if rows.is_empty() && text.trim().is_empty() {
+        return Err(listening_ports_error(&stderr));
+    }
+    Ok(rows)
+}
+
+/// Kill targets come from the ports panel, so the surface is pinned to a
+/// bounded list of plain pids. Pid 0 (caller's process group) and pid 1
+/// (init/systemd) are never valid targets.
+fn validate_kill_port_pids(pids: &[u32]) -> Result<(), String> {
+    if pids.is_empty() {
+        return Err("no process id given".to_string());
+    }
+    if pids.len() > 32 {
+        return Err("too many process ids in one request".to_string());
+    }
+    if pids.iter().any(|&pid| pid < 2) {
+        return Err("refusing to signal a system-critical pid".to_string());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn kill_port_process(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+    host_id: Option<String>,
+    pids: Vec<u32>,
+    force: bool,
+) -> Result<(), String> {
+    validate_kill_port_pids(&pids)?;
+    let host_id = host_id.unwrap_or_default();
+    if host_id.is_empty() || host_id.starts_with("local-") {
+        #[cfg(target_os = "windows")]
+        {
+            let mut args: Vec<String> = Vec::with_capacity(pids.len() * 2 + 1);
+            for pid in &pids {
+                args.push("/PID".to_string());
+                args.push(pid.to_string());
+            }
+            if force {
+                args.push("/F".to_string());
+            }
+            let output = tokio::process::Command::new("taskkill")
+                .creation_flags(CREATE_NO_WINDOW)
+                .args(&args)
+                .output()
+                .await
+                .map_err(|e| format!("taskkill not available: {e}"))?;
+            if !output.status.success() {
+                return Err(kill_command_error(
+                    output.status.code().unwrap_or(-1),
+                    &output.stdout,
+                    &output.stderr,
+                ));
+            }
+            return Ok(());
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let mut args: Vec<String> = Vec::with_capacity(pids.len() + 1);
+            args.push(if force { "-KILL" } else { "-TERM" }.to_string());
+            args.extend(pids.iter().map(u32::to_string));
+            let output = Command::new("kill")
+                .args(&args)
+                .output()
+                .await
+                .map_err(|e| format!("kill not available: {e}"))?;
+            if !output.status.success() {
+                return Err(kill_command_error(
+                    output.status.code().unwrap_or(-1),
+                    &output.stdout,
+                    &output.stderr,
+                ));
+            }
+            return Ok(());
+        }
+    }
+
+    let (_host, cfg, jump_cfg) = build_connect_chain_for_host(&state, &app_handle, &host_id)?;
+    let session = state
+        .sftp_pool
+        .acquire_session(host_id, cfg, jump_cfg)
+        .await?;
+    let pid_list = pids
+        .iter()
+        .map(u32::to_string)
+        .collect::<Vec<_>>()
+        .join(" ");
+    let command = format!(
+        "kill -{} {}",
+        if force { "KILL" } else { "TERM" },
+        pid_list
+    );
+    let (code, stdout, stderr) = session.exec(&command).await.map_err(|e| e.to_string())?;
+    if code != 0 {
+        return Err(kill_command_error(code as i32, &stdout, &stderr));
+    }
+    Ok(())
+}
+
+fn kill_command_error(code: i32, stdout: &[u8], stderr: &[u8]) -> String {
+    let detail = String::from_utf8_lossy(if stderr.is_empty() { stdout } else { stderr })
+        .trim()
+        .to_string();
+    if detail.is_empty() {
+        format!("kill failed with exit code {code}")
+    } else {
+        detail
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DockerExecResult {
@@ -6898,6 +7344,115 @@ mod tests {
         assert!(validate_system_service_target("app@worker.service", "user").is_ok());
         assert!(validate_system_service_target("../../etc/passwd", "system").is_err());
         assert!(validate_system_service_target("nginx.service; cat /etc/passwd", "system").is_err());
+    }
+
+    #[test]
+    fn listening_ports_parse_ss_output() {
+        let rows = parse_listening_ports(
+            "Netid State Recv-Q Send-Q Local Address:Port Peer Address:Port Process\n\
+             udp UNCONN 0 0 127.0.0.53%lo:53 0.0.0.0:* users:((\"systemd-resolve\",pid=520,fd=13))\n\
+             tcp LISTEN 0 128 0.0.0.0:22 0.0.0.0:* users:((\"sshd\",pid=1210,fd=3))\n\
+             tcp LISTEN 0 511 *:80 *:* users:((\"nginx\",pid=100,fd=6),(\"nginx\",pid=101,fd=6))\n\
+             tcp LISTEN 0 128 [::]:22 [::]:* users:((\"sshd\",pid=1210,fd=4))\n\
+             tcp LISTEN 0 4096 127.0.0.1:6379 0.0.0.0:*\n",
+        );
+        assert_eq!(rows.len(), 5);
+        assert_eq!(rows[0].port, 22);
+        assert_eq!(rows[0].local_address, "0.0.0.0");
+        assert_eq!(rows[0].processes, vec![PortProcessDto { name: "sshd".into(), pid: 1210 }]);
+        assert_eq!(rows[1].local_address, "::");
+        assert_eq!(rows[2].port, 53);
+        assert_eq!(rows[2].protocol, "udp");
+        assert_eq!(rows[2].local_address, "127.0.0.53");
+        assert_eq!(rows[2].processes[0].name, "systemd-resolve");
+        assert_eq!(rows[3].port, 80);
+        assert_eq!(rows[3].local_address, "*");
+        assert_eq!(rows[3].processes.len(), 2);
+        assert_eq!(rows[3].processes[1].pid, 101);
+        assert_eq!(rows[4].port, 6379);
+        assert!(rows[4].processes.is_empty());
+    }
+
+    #[test]
+    fn listening_ports_parse_netstat_output() {
+        let rows = parse_listening_ports(
+            "Active Internet connections (only servers)\n\
+             Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name\n\
+             tcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN      1210/sshd\n\
+             tcp        0      0 10.0.0.5:3306           0.0.0.0:*               ESTABLISHED 99/mysqld\n\
+             tcp6       0      0 :::80                   :::*                    LISTEN      -\n\
+             udp        0      0 0.0.0.0:68              0.0.0.0:*                           520/dhclient\n",
+        );
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].port, 22);
+        assert_eq!(rows[0].processes[0].pid, 1210);
+        assert_eq!(rows[1].port, 68);
+        assert_eq!(rows[1].protocol, "udp");
+        assert_eq!(rows[1].processes[0].name, "dhclient");
+        assert_eq!(rows[2].port, 80);
+        assert_eq!(rows[2].local_address, "::");
+        assert!(rows[2].processes.is_empty());
+    }
+
+    #[test]
+    fn listening_ports_merge_reuseport_sockets() {
+        let rows = parse_listening_ports(
+            "tcp LISTEN 0 4096 0.0.0.0:443 0.0.0.0:* users:((\"caddy\",pid=7,fd=3))\n\
+             tcp LISTEN 0 4096 0.0.0.0:443 0.0.0.0:* users:((\"caddy\",pid=8,fd=3))\n",
+        );
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].processes.len(), 2);
+    }
+
+    #[test]
+    fn listening_ports_split_address_edge_cases() {
+        assert_eq!(
+            split_local_address("[::ffff:127.0.0.1]:8080"),
+            Some(("::ffff:127.0.0.1".to_string(), 8080))
+        );
+        assert_eq!(split_local_address(":::22"), Some(("::".to_string(), 22)));
+        assert_eq!(split_local_address("*:*"), None);
+        assert_eq!(split_local_address("no-port"), None);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn listening_ports_parse_windows_output() {
+        let rows = parse_pipe_ports(
+            "tcp|0.0.0.0|135|1080|svchost\n\
+             tcp|::|135|1080|svchost\n\
+             udp|fe80::1%5|5353|2000|mDNS\n\
+             tcp|127.0.0.1|49670|0|\n",
+        );
+        assert_eq!(rows.len(), 4);
+        assert_eq!(rows[0].port, 135);
+        assert_eq!(rows[0].processes[0].name, "svchost");
+        assert_eq!(rows[2].local_address, "fe80::1");
+        assert!(rows[3].processes.is_empty());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn listening_ports_parse_lsof_output() {
+        let rows = parse_lsof_ports(
+            "p329\ncsshd\nf8\nPTCP\nn*:22\nf9\nPTCP\nn127.0.0.1:8021\n\
+             p410\ncrapportd\nf5\nPUDP\nn*:49158\nf6\nPTCP\nn10.0.0.2:52133->1.2.3.4:443\n",
+        );
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].port, 22);
+        assert_eq!(rows[0].processes[0].name, "sshd");
+        assert_eq!(rows[2].protocol, "udp");
+    }
+
+    #[test]
+    fn kill_port_pids_are_narrowly_validated() {
+        assert!(validate_kill_port_pids(&[]).is_err());
+        assert!(validate_kill_port_pids(&[0]).is_err());
+        assert!(validate_kill_port_pids(&[1]).is_err());
+        assert!(validate_kill_port_pids(&[4242, 1]).is_err());
+        assert!(validate_kill_port_pids(&[2]).is_ok());
+        assert!(validate_kill_port_pids(&[4242, 4243]).is_ok());
+        assert!(validate_kill_port_pids(&vec![100u32; 33]).is_err());
     }
 
     #[test]

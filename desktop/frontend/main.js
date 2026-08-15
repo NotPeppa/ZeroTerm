@@ -379,6 +379,32 @@ const I18N = {
     "services.confirm.stop.message": "Stop {name}? Dependent applications may be interrupted.",
     "services.toast.success": "{name}: {action} completed",
     "services.toast.failed": "Service operation failed: {error}",
+    "ports.title": "Port Manager",
+    "ports.subtitle": "Current terminal session",
+    "ports.refresh": "Refresh ports",
+    "ports.search": "Search port, process, or address",
+    "ports.loading": "Reading listening ports...",
+    "ports.summary": "{count} listening · TCP {tcp} · UDP {udp}",
+    "ports.empty.title": "No listening ports",
+    "ports.empty.desc": "This host did not report any listening sockets.",
+    "ports.no_match.title": "No matching ports",
+    "ports.no_match.desc": "Try a port number, process name, or address.",
+    "ports.unavailable.title": "Port information unavailable",
+    "ports.group.tcp": "TCP",
+    "ports.group.udp": "UDP",
+    "ports.group.summary": "{count} listening",
+    "ports.group.empty": "No listening sockets in this group",
+    "ports.exposure.public": "Exposed",
+    "ports.exposure.local": "Local only",
+    "ports.process.unknown": "Unknown process (needs higher privileges)",
+    "ports.pid.label": "PID {pids}",
+    "ports.action.kill": "Kill",
+    "ports.action.force": "Force kill",
+    "ports.confirm.kill.title": "Kill process",
+    "ports.confirm.kill.message": "Send a termination signal to {name} (PID {pids}) to free port {port}?",
+    "ports.confirm.force.message": "Force kill {name} (PID {pids})? Unsaved data in the process will be lost.",
+    "ports.toast.success": "Signal sent to {name}",
+    "ports.toast.failed": "Port operation failed: {error}",
     "terminal_sftp.title": "SFTP",
     "terminal_sftp.pin": "Bookmarks",
     "terminal_sftp.pin.add_dir": "Bookmark current directory",
@@ -1350,6 +1376,32 @@ const I18N = {
     "services.confirm.stop.message": "确定停止 {name}？依赖它的应用可能会中断。",
     "services.toast.success": "{name}：{action}完成",
     "services.toast.failed": "服务操作失败：{error}",
+    "ports.title": "端口管理",
+    "ports.subtitle": "当前终端会话",
+    "ports.refresh": "刷新端口",
+    "ports.search": "搜索端口、进程或地址",
+    "ports.loading": "正在读取监听端口...",
+    "ports.summary": "共 {count} 个监听 · TCP {tcp} · UDP {udp}",
+    "ports.empty.title": "没有监听端口",
+    "ports.empty.desc": "该主机没有返回任何监听中的端口。",
+    "ports.no_match.title": "没有匹配的端口",
+    "ports.no_match.desc": "试试端口号、进程名或监听地址。",
+    "ports.unavailable.title": "端口信息不可用",
+    "ports.group.tcp": "TCP",
+    "ports.group.udp": "UDP",
+    "ports.group.summary": "{count} 个监听",
+    "ports.group.empty": "该分组暂无监听端口",
+    "ports.exposure.public": "对外开放",
+    "ports.exposure.local": "仅本机",
+    "ports.process.unknown": "进程未知（需要更高权限）",
+    "ports.pid.label": "PID {pids}",
+    "ports.action.kill": "结束进程",
+    "ports.action.force": "强制结束",
+    "ports.confirm.kill.title": "结束进程",
+    "ports.confirm.kill.message": "向 {name}（PID {pids}）发送终止信号以释放端口 {port}？",
+    "ports.confirm.force.message": "强制结束 {name}（PID {pids}）？进程中未保存的数据将丢失。",
+    "ports.toast.success": "已向 {name} 发送信号",
+    "ports.toast.failed": "端口操作失败：{error}",
     "terminal_sftp.title": "SFTP",
     "terminal_sftp.pin": "书签",
     "terminal_sftp.pin.add_dir": "将当前目录添加为书签",
@@ -2660,6 +2712,12 @@ const terminalServicesBody = document.getElementById("terminal-services-body");
 const terminalServicesRefresh = document.getElementById("terminal-services-refresh");
 const terminalServicesSearch = document.getElementById("terminal-services-search");
 const terminalServicesSummary = document.getElementById("terminal-services-summary");
+const terminalPortsPanel = document.getElementById("terminal-ports-panel");
+const terminalSidebarPortsToggle = document.getElementById("terminal-sidebar-ports-toggle");
+const terminalPortsBody = document.getElementById("terminal-ports-body");
+const terminalPortsRefresh = document.getElementById("terminal-ports-refresh");
+const terminalPortsSearch = document.getElementById("terminal-ports-search");
+const terminalPortsSummary = document.getElementById("terminal-ports-summary");
 const terminalSftpPanel = document.getElementById("terminal-sftp-panel");
 const terminalSidebarSftpToggle = document.getElementById("terminal-sidebar-sftp-toggle");
 const terminalThemePanel = document.getElementById("terminal-theme-panel");
@@ -3627,6 +3685,11 @@ let servicesRefreshToken = 0;
 let servicesLastRows = [];
 let servicesSearchQuery = "";
 const servicesExpandedGroups = new Set();
+let portsRefreshToken = 0;
+let portsLastRows = [];
+let portsMergedRows = [];
+let portsSearchQuery = "";
+const portsExpandedGroups = new Set(["tcp", "udp"]);
 let serviceFileRequestToken = 0;
 let serviceFileLastFocus = null;
 let terminalCommandSnippets = [];
@@ -4242,6 +4305,207 @@ async function showSystemServiceFile(unit, scope) {
   }
 }
 
+// ---------- listening ports panel ----------
+function portRowExposure(addresses) {
+  const isLoopback = (addr) => addr === "::1" || addr.startsWith("127.") || addr.startsWith("::ffff:127.");
+  return addresses.length && addresses.every(isLoopback) ? "local" : "public";
+}
+
+function formatPortAddress(addr) {
+  if (!addr || addr === "*") return "*";
+  return addr.includes(":") ? `[${addr}]` : addr;
+}
+
+// One backend row per socket means v4/v6 dual binds (0.0.0.0:22 + [::]:22)
+// show up twice. Merge rows owned by the same process set into one card;
+// rows without process info never merge so unrelated daemons sharing a port
+// number (e.g. two resolvers on :53) stay separate.
+function mergedListeningPortRows(rows) {
+  const merged = [];
+  const byKey = new Map();
+  rows.forEach((row) => {
+    const processes = Array.isArray(row.processes) ? row.processes : [];
+    const pids = [...new Set(processes.map((p) => p.pid))].sort((a, b) => a - b);
+    const key = pids.length
+      ? `${row.protocol}:${row.port}:${pids.join(",")}`
+      : `${row.protocol}:${row.port}:@${row.localAddress}`;
+    let entry = byKey.get(key);
+    if (!entry) {
+      entry = { protocol: row.protocol, port: row.port, addresses: [], processes: [] };
+      byKey.set(key, entry);
+      merged.push(entry);
+    }
+    if (!entry.addresses.includes(row.localAddress)) entry.addresses.push(row.localAddress);
+    processes.forEach((p) => {
+      if (!entry.processes.some((existing) => existing.pid === p.pid)) entry.processes.push(p);
+    });
+  });
+  merged.sort((a, b) => (a.port - b.port) || a.protocol.localeCompare(b.protocol));
+  return merged;
+}
+
+function filteredPortRows() {
+  const query = portsSearchQuery.trim().toLocaleLowerCase();
+  if (!query) return portsMergedRows;
+  return portsMergedRows.filter((row) => [
+    String(row.port),
+    row.protocol,
+    ...row.addresses,
+    ...row.processes.map((p) => p.name),
+    ...row.processes.map((p) => String(p.pid)),
+  ].some((value) => String(value || "").toLocaleLowerCase().includes(query)));
+}
+
+function portProcessLabel(row) {
+  const names = [...new Set(row.processes.map((p) => String(p.name || "").trim()).filter(Boolean))];
+  if (names.length) return names.join(", ");
+  if (row.processes.length) return `PID ${row.processes[0].pid}`;
+  return "";
+}
+
+function portCardHtml(row) {
+  const index = portsMergedRows.indexOf(row);
+  const exposure = portRowExposure(row.addresses);
+  const pids = row.processes.map((p) => p.pid);
+  const name = portProcessLabel(row);
+  const addressText = row.addresses.map(formatPortAddress).join(" · ");
+  const detail = pids.length
+    ? `${t("ports.pid.label", { pids: pids.join(", ") })} · ${addressText}`
+    : t("ports.process.unknown");
+  const primaryAddress = `${formatPortAddress(row.addresses[0] || "*")}:${row.port}`;
+  return `
+    <article class="service-card port-card">
+      <div class="service-card-head">
+        <span class="port-proto port-proto-${row.protocol}" aria-hidden="true">${row.protocol.toUpperCase()}</span>
+        <div class="service-identity">
+          <strong title="${escapeMetricText(name || String(row.port))}"><span class="port-number">:${row.port}</span>${name ? ` ${escapeMetricText(name)}` : ""}</strong>
+          <span title="${escapeMetricText(detail)}">${escapeMetricText(detail)}</span>
+        </div>
+        <span class="service-badge${exposure === "public" ? " service-badge-warn" : ""}">${t(`ports.exposure.${exposure}`)}</span>
+      </div>
+      <div class="service-card-foot">
+        <span class="service-sub-state">${escapeMetricText(`${row.protocol} · ${primaryAddress}`)}</span>
+        <div class="service-actions">
+          ${pids.length
+            ? `<button type="button" class="service-btn service-btn-danger" data-port-kill="term" data-port-index="${index}">${t("ports.action.kill")}</button><button type="button" class="service-btn" data-port-kill="force" data-port-index="${index}">${t("ports.action.force")}</button>`
+            : ""}
+        </div>
+      </div>
+    </article>`;
+}
+
+function portGroupHtml(group, rows) {
+  const expanded = portsExpandedGroups.has(group);
+  const tone = rows.length ? "ok" : "muted";
+  return `
+    <section class="service-group" data-port-group-section="${group}">
+      <button type="button" class="service-group-head" data-port-group="${group}" aria-expanded="${expanded}">
+        <svg class="zt-icon service-group-caret${expanded ? " open" : ""}" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
+        <span class="service-state service-state-${tone}" aria-hidden="true"></span>
+        <span class="service-group-name">${t(`ports.group.${group}`)}</span>
+        <span class="service-group-count">${t("ports.group.summary", { count: rows.length })}</span>
+      </button>
+      <div class="service-group-body" ${expanded ? "" : "hidden"}>
+        ${rows.length ? rows.map(portCardHtml).join("") : `<div class="service-group-empty">${t("ports.group.empty")}</div>`}
+      </div>
+    </section>`;
+}
+
+function renderListeningPortRows() {
+  if (!terminalPortsBody) return;
+  const rows = filteredPortRows();
+  const tcp = portsMergedRows.filter((row) => row.protocol === "tcp").length;
+  const udp = portsMergedRows.filter((row) => row.protocol === "udp").length;
+  if (terminalPortsSummary) {
+    terminalPortsSummary.textContent = t("ports.summary", {
+      count: portsMergedRows.length,
+      tcp,
+      udp,
+    });
+  }
+  if (!portsMergedRows.length) {
+    terminalPortsBody.innerHTML = `<div class="terminal-side-empty"><strong>${t("ports.empty.title")}</strong><p>${t("ports.empty.desc")}</p></div>`;
+    return;
+  }
+  if (!rows.length) {
+    terminalPortsBody.innerHTML = `<div class="terminal-side-empty"><strong>${t("ports.no_match.title")}</strong><p>${t("ports.no_match.desc")}</p></div>`;
+    return;
+  }
+  const groups = ["tcp", "udp"].filter((group) => rows.some((row) => row.protocol === group));
+  terminalPortsBody.innerHTML = groups
+    .map((group) => portGroupHtml(group, rows.filter((row) => row.protocol === group)))
+    .join("");
+}
+
+async function renderPortsPanel(options = {}) {
+  if (!terminalPortsBody) return;
+  const silent = Boolean(options.silent);
+  const token = ++portsRefreshToken;
+  const pane = getActivePane();
+  if (!pane) {
+    portsLastRows = [];
+    portsMergedRows = [];
+    if (terminalPortsSummary) terminalPortsSummary.textContent = "";
+    terminalPortsBody.innerHTML = `<div class="terminal-side-empty"><strong>${t("metrics.empty.title")}</strong><p>${t("metrics.empty.desc")}</p></div>`;
+    return;
+  }
+  if (!silent || !terminalPortsBody.querySelector(".port-card")) {
+    portsLastRows = [];
+    portsMergedRows = [];
+    if (terminalPortsSummary) terminalPortsSummary.textContent = "";
+    terminalPortsBody.innerHTML = `<div class="terminal-side-empty"><strong>${t("ports.loading")}</strong><p>${escapeMetricText(pane.host?.name || pane.host?.host || "Local")}</p></div>`;
+  }
+  if (terminalPortsRefresh) terminalPortsRefresh.disabled = true;
+  try {
+    const rows = await invoke("list_listening_ports", { hostId: pane.host?.id || null });
+    if (token !== portsRefreshToken || terminalActiveSidePanel !== "ports") return;
+    portsLastRows = Array.isArray(rows) ? rows : [];
+    portsMergedRows = mergedListeningPortRows(portsLastRows);
+    renderListeningPortRows();
+  } catch (e) {
+    if (token !== portsRefreshToken || terminalActiveSidePanel !== "ports") return;
+    portsLastRows = [];
+    portsMergedRows = [];
+    if (terminalPortsSummary) terminalPortsSummary.textContent = "";
+    terminalPortsBody.innerHTML = `<div class="terminal-side-empty"><strong>${t("ports.unavailable.title")}</strong><p>${escapeMetricText(String(e))}</p></div>`;
+  } finally {
+    if (token === portsRefreshToken && terminalPortsRefresh) terminalPortsRefresh.disabled = false;
+  }
+}
+
+async function runKillPortProcess(row, force, button) {
+  const pane = getActivePane();
+  const hostId = pane?.host?.id || null;
+  const pids = [...new Set(row.processes.map((p) => p.pid))];
+  if (!pids.length) return;
+  const name = portProcessLabel(row);
+  const confirmed = await openConfirmDialog({
+    title: t("ports.confirm.kill.title"),
+    message: t(force ? "ports.confirm.force.message" : "ports.confirm.kill.message", {
+      name,
+      pids: pids.join(", "),
+      port: row.port,
+    }),
+    okText: t(force ? "ports.action.force" : "ports.action.kill"),
+    cancelText: t("input.button.cancel"),
+    danger: true,
+  });
+  if (!confirmed) return;
+  const card = button?.closest(".port-card");
+  card?.querySelectorAll("button").forEach((item) => { item.disabled = true; });
+  try {
+    await invoke("kill_port_process", { hostId, pids, force });
+    showToast(t("ports.toast.success", { name }), "success");
+    // TERM needs a moment to take effect before the socket disappears.
+    setTimeout(() => {
+      if (terminalActiveSidePanel === "ports") renderPortsPanel({ silent: true });
+    }, 800);
+  } catch (e) {
+    showToast(t("ports.toast.failed", { error: String(e) }), "error", 5000);
+    card?.querySelectorAll("button").forEach((item) => { item.disabled = false; });
+  }
+}
+
 // ---------- Docker panel ----------
 let dockerRefreshToken = 0;
 const dockerExpanded = new Set();
@@ -4735,6 +4999,7 @@ function setTerminalSidePanel(panel, { skipSftpConnect = false } = {}) {
   if (terminalSnippetsPanel) terminalSnippetsPanel.hidden = terminalActiveSidePanel !== "snippets";
   if (terminalMetricsPanel) terminalMetricsPanel.hidden = terminalActiveSidePanel !== "metrics";
   if (terminalServicesPanel) terminalServicesPanel.hidden = terminalActiveSidePanel !== "services";
+  if (terminalPortsPanel) terminalPortsPanel.hidden = terminalActiveSidePanel !== "ports";
   if (terminalSftpPanel) terminalSftpPanel.hidden = terminalActiveSidePanel !== "sftp";
   if (terminalThemePanel) terminalThemePanel.hidden = terminalActiveSidePanel !== "theme";
   if (terminalDockerPanel) terminalDockerPanel.hidden = terminalActiveSidePanel !== "docker";
@@ -4747,6 +5012,7 @@ function setTerminalSidePanel(panel, { skipSftpConnect = false } = {}) {
   terminalSidebarSnippetsToggle?.classList.toggle("active", terminalActiveSidePanel === "snippets");
   terminalSidebarMetricsToggle?.classList.toggle("active", terminalActiveSidePanel === "metrics");
   terminalSidebarServicesToggle?.classList.toggle("active", terminalActiveSidePanel === "services");
+  terminalSidebarPortsToggle?.classList.toggle("active", terminalActiveSidePanel === "ports");
   terminalSidebarSftpToggle?.classList.toggle("active", terminalActiveSidePanel === "sftp");
   terminalSidebarThemeToggle?.classList.toggle("active", terminalActiveSidePanel === "theme");
   terminalSidebarDockerToggle?.classList.toggle("active", terminalActiveSidePanel === "docker");
@@ -4758,6 +5024,7 @@ function setTerminalSidePanel(panel, { skipSftpConnect = false } = {}) {
     stopMetricsAutoRefresh();
   }
   if (terminalActiveSidePanel === "services") renderServicesPanel();
+  if (terminalActiveSidePanel === "ports") renderPortsPanel();
   if (terminalActiveSidePanel === "sftp" && !skipSftpConnect) {
     connectTerminalSftpToActivePane().catch((e) => console.warn("terminal sftp connect failed", e));
   }
@@ -12219,6 +12486,14 @@ function applyI18n() {
   setAttr("terminal-services-refresh", "aria-label", "services.refresh");
   setPlaceholder("terminal-services-search", "services.search");
   setAttr("terminal-services-search", "aria-label", "services.search");
+  setAttr("terminal-sidebar-ports-toggle", "title", "ports.title");
+  setAttr("terminal-sidebar-ports-toggle", "aria-label", "ports.title");
+  setText("terminal-ports-title", "ports.title");
+  setText("terminal-ports-subtitle", "ports.subtitle");
+  setAttr("terminal-ports-refresh", "title", "ports.refresh");
+  setAttr("terminal-ports-refresh", "aria-label", "ports.refresh");
+  setPlaceholder("terminal-ports-search", "ports.search");
+  setAttr("terminal-ports-search", "aria-label", "ports.search");
   setAttr("terminal-sidebar-sftp-toggle", "title", "terminal_sftp.title");
   setAttr("terminal-sidebar-sftp-toggle", "aria-label", "terminal_sftp.title");
   setText("terminal-sftp-title", "terminal_sftp.title");
@@ -14513,6 +14788,7 @@ function renderTerminalWorkspace() {
   renderTerminalCommandSnippets();
   if (terminalActiveSidePanel === "metrics") renderMetricsPanel();
   if (terminalActiveSidePanel === "services") renderServicesPanel();
+  if (terminalActiveSidePanel === "ports") renderPortsPanel();
   if (terminalActiveSidePanel === "docker") renderDockerPanel();
   if (terminalActiveSidePanel === "sftp") connectTerminalSftpToActivePane().catch((e) => console.warn("terminal sftp sync failed", e));
 
@@ -14656,6 +14932,36 @@ terminalServicesBody?.addEventListener("click", (ev) => {
   if (!unit) return;
   const scope = button.getAttribute("data-service-scope") === "user" ? "user" : "system";
   runSystemServiceAction(action, unit, scope, button);
+});
+
+terminalSidebarPortsToggle?.addEventListener("click", () => {
+  setTerminalSidePanel(terminalActiveSidePanel === "ports" ? null : "ports");
+});
+
+terminalPortsRefresh?.addEventListener("click", () => renderPortsPanel());
+
+terminalPortsSearch?.addEventListener("input", () => {
+  portsSearchQuery = terminalPortsSearch.value || "";
+  renderListeningPortRows();
+});
+
+terminalPortsBody?.addEventListener("click", (ev) => {
+  const groupToggle = ev.target.closest("button[data-port-group]");
+  if (groupToggle) {
+    const group = groupToggle.getAttribute("data-port-group") || "";
+    const expanded = portsExpandedGroups.has(group);
+    if (expanded) portsExpandedGroups.delete(group);
+    else portsExpandedGroups.add(group);
+    groupToggle.setAttribute("aria-expanded", String(!expanded));
+    groupToggle.querySelector(".service-group-caret")?.classList.toggle("open", !expanded);
+    groupToggle.closest(".service-group")?.querySelector(".service-group-body")?.toggleAttribute("hidden", expanded);
+    return;
+  }
+  const button = ev.target.closest("button[data-port-kill]");
+  if (!button) return;
+  const row = portsMergedRows[Number(button.getAttribute("data-port-index"))];
+  if (!row) return;
+  runKillPortProcess(row, button.getAttribute("data-port-kill") === "force", button);
 });
 
 terminalSidebarDockerToggle?.addEventListener("click", () => {
