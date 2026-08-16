@@ -4640,11 +4640,16 @@ function dockerCardHtml(c) {
   const idAttr = escapeMetricText(c.id);
   return `
     <section class="docker-card" data-id="${idAttr}">
-      <button type="button" class="docker-card-toggle" data-act="detail" data-id="${idAttr}">
-        <span class="docker-state docker-state-${tone}"></span>
-        <span class="docker-name">${escapeMetricText(c.name || c.id.slice(0, 12))}</span>
-        <span class="docker-caret ${expanded ? "open" : ""}">›</span>
-      </button>
+      <div class="docker-card-head">
+        <button type="button" class="docker-card-toggle" data-act="detail" data-id="${idAttr}">
+          <span class="docker-state docker-state-${tone}"></span>
+          <span class="docker-name">${escapeMetricText(c.name || c.id.slice(0, 12))}</span>
+          <span class="docker-caret ${expanded ? "open" : ""}">›</span>
+        </button>
+        <button type="button" class="docker-copy-name" data-act="copy-name" data-id="${idAttr}" data-name="${escapeMetricText(c.name || c.id.slice(0, 12))}" title="复制容器名称" aria-label="复制容器名称">
+          <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+        </button>
+      </div>
       <div class="docker-meta">
         <span class="docker-image" title="${escapeMetricText(c.image)}">${escapeMetricText(c.image)}</span>
         <span class="docker-status">${escapeMetricText(c.status)}</span>
@@ -14980,6 +14985,13 @@ terminalDockerBody?.addEventListener("click", (ev) => {
   const id = btn.getAttribute("data-id");
   if (!id) return;
   if (act === "detail") return toggleDockerDetail(id);
+  if (act === "copy-name") {
+    const name = btn.getAttribute("data-name") || id;
+    navigator.clipboard.writeText(name)
+      .then(() => showToast(`已复制：${name}`, "success", 1800))
+      .catch((e) => showToast(String(e), "error", 3000));
+    return;
+  }
   if (act === "start") return dockerAction(["start", id], btn);
   if (act === "stop") return dockerAction(["stop", id], btn);
   if (act === "restart") return dockerAction(["restart", id], btn);

@@ -6489,6 +6489,50 @@ body[data-app-theme="light"] .docker-group-head {
   gap: 8px;
 }
 
+.docker-card-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.docker-card-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.docker-copy-name {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+
+.docker-card:hover .docker-copy-name,
+.docker-copy-name:focus-visible {
+  opacity: 1;
+}
+
+.docker-copy-name:hover {
+  color: var(--text);
+  background: var(--panel);
+}
+
+.docker-copy-name .zt-icon {
+  width: 13px;
+  height: 13px;
+}
+
 .docker-card-toggle {
   display: flex;
   align-items: center;
@@ -6549,6 +6593,38 @@ body[data-app-theme="light"] .docker-group-head {
 
 .docker-caret.open {
   transform: rotate(90deg);
+}
+
+.docker-copy-name {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+
+.docker-copy-name .zt-icon {
+  width: 13px;
+  height: 13px;
+}
+
+.docker-card:hover .docker-copy-name,
+.docker-copy-name:focus-visible {
+  opacity: 1;
+}
+
+.docker-copy-name:hover {
+  color: var(--text);
+  background: rgba(156, 170, 208, 0.14);
 }
 
 .docker-meta {
