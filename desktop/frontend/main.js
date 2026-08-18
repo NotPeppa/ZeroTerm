@@ -4357,7 +4357,12 @@ function filteredPortRows() {
 }
 
 function portProcessLabel(row) {
-  const names = [...new Set(row.processes.map((p) => String(p.name || "").trim()).filter(Boolean))];
+  const names = [...new Set(row.processes.map((p) => {
+    const name = String(p.name || "").trim();
+    if (!name) return "";
+    const services = (Array.isArray(p.services) ? p.services : []).filter(Boolean);
+    return services.length ? `${name} (${services.join(", ")})` : name;
+  }).filter(Boolean))];
   if (names.length) return names.join(", ");
   if (row.processes.length) return `PID ${row.processes[0].pid}`;
   return "";
@@ -5403,6 +5408,15 @@ function aiTerminalControlPrompt() {
     return "当前已启用本会话自动操作。一次只给一条最有用的命令，并根据执行结果继续；删除、提权、重启、远程下载执行等高风险操作会等待用户批准。目标完成后不要继续给命令。";
   }
   return "当前为每次询问模式，不要假装命令已经执行。";
+}
+
+// The live DOM node of the newest assistant reply. Stream/fallback handlers
+// must target this instead of their captured `state.node`: pushing the reply
+// into the pane messages re-renders the conversation, detaching the captured
+// node and leaving duplicate (enabled) command buttons on the stale copy.
+function latestAiAssistantMessageNode() {
+  const messages = aiChatLog?.querySelectorAll?.(".ai-message-assistant");
+  return messages?.length ? messages[messages.length - 1] : null;
 }
 
 function processLatestAiMessageForTerminalControl(paneKey = getAiPaneKey()) {
@@ -6823,7 +6837,7 @@ async function streamAiMessages(messages, pendingText = "正在思考...", paneK
         setAiPaneMessages(state.paneKey, state.conversationMessages);
         if (state.paneKey === getAiPaneKey()) storeAiConversationForActivePane();
         window.setTimeout(() => {
-          maybeRunAiTerminalAgent(state.node, state.paneKey).catch((error) => console.warn("AI terminal agent failed", error));
+          maybeRunAiTerminalAgent(latestAiAssistantMessageNode(), state.paneKey).catch((error) => console.warn("AI terminal agent failed", error));
         }, 0);
       } else {
         retryScheduled = scheduleAiAutoRetry(state, requestId, "AI 没有返回内容");
@@ -7134,7 +7148,9 @@ function enhanceAiCodeBlocks(root) {
 }
 
 async function maybeRunAiTerminalAgent(messageNode, paneKey) {
-  if (!messageNode || paneKey !== getAiPaneKey() || !String(paneKey).startsWith("session:")) return;
+  // A detached node is a stale copy from before a conversation re-render; its
+  // buttons are duplicates of the live ones and must never be auto-executed.
+  if (!messageNode || !messageNode.isConnected || paneKey !== getAiPaneKey() || !String(paneKey).startsWith("session:")) return;
   const pane = getActivePane();
   const state = getAiTerminalControlState(paneKey);
   if (!state || state.running || pane?.sessionId == null) return;
@@ -7159,6 +7175,11 @@ async function maybeRunAiTerminalAgent(messageNode, paneKey) {
     return;
   }
   if (paneKey !== getAiPaneKey()) return;
+  // Re-entrancy: two triggers (e.g. stream-done and a conversation re-render)
+  // can both pass the entry checks before either marks the state as running,
+  // because the authorize call above awaits an IPC round-trip. Only the first
+  // one back may execute, and only on a still-live, still-enabled button.
+  if (state.running || runButton.disabled || !runButton.isConnected) return;
   state.waitingUserInput = false;
   const requiresUserInput = policy?.classification === "user_input_required";
   const requiresRiskApproval = policy?.classification === "approval_required";
@@ -7439,7 +7460,7 @@ async function ensureAiStreamListener() {
       if (state.paneKey === getAiPaneKey()) storeAiConversationForActivePane();
       window.__ztAiStreams.delete(payload.requestId);
       window.setTimeout(() => {
-        maybeRunAiTerminalAgent(state.node, state.paneKey).catch((error) => console.warn("AI terminal agent failed", error));
+        maybeRunAiTerminalAgent(latestAiAssistantMessageNode(), state.paneKey).catch((error) => console.warn("AI terminal agent failed", error));
       }, 0);
     }
   });
@@ -7475,7 +7496,7 @@ async function tryFallbackAiChat(state, requestId) {
       updateAiSendButton();
       window.__ztAiStreams.delete(requestId);
       window.setTimeout(() => {
-        maybeRunAiTerminalAgent(state.node, state.paneKey).catch((error) => console.warn("AI terminal agent failed", error));
+        maybeRunAiTerminalAgent(latestAiAssistantMessageNode(), state.paneKey).catch((error) => console.warn("AI terminal agent failed", error));
       }, 0);
       return;
     }

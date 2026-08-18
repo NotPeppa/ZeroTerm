@@ -4611,6 +4611,10 @@ pub async fn system_service_file(
 pub struct PortProcessDto {
     pub name: String,
     pub pid: u32,
+    /// Windows services hosted by this pid (empty elsewhere). Service
+    /// processes cannot be killed with taskkill; they must be stopped
+    /// through the service control manager.
+    pub services: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -4633,8 +4637,10 @@ const WINDOWS_PORTS_SCRIPT: &str = r#"
 $ErrorActionPreference = 'SilentlyContinue'
 $names = @{}
 Get-Process | ForEach-Object { $names[[int]$_.Id] = $_.ProcessName }
-Get-NetTCPConnection -State Listen | ForEach-Object { $procId = [int]$_.OwningProcess; 'tcp|' + $_.LocalAddress + '|' + $_.LocalPort + '|' + $procId + '|' + $names[$procId] }
-Get-NetUDPEndpoint | ForEach-Object { $procId = [int]$_.OwningProcess; 'udp|' + $_.LocalAddress + '|' + $_.LocalPort + '|' + $procId + '|' + $names[$procId] }
+$svcs = @{}
+Get-CimInstance Win32_Service -Filter 'ProcessId > 0' | ForEach-Object { $p = [int]$_.ProcessId; if ($svcs.ContainsKey($p)) { $svcs[$p] = $svcs[$p] + ',' + $_.Name } else { $svcs[$p] = $_.Name } }
+Get-NetTCPConnection -State Listen | ForEach-Object { $procId = [int]$_.OwningProcess; 'tcp|' + $_.LocalAddress + '|' + $_.LocalPort + '|' + $procId + '|' + $names[$procId] + '|' + $svcs[$procId] }
+Get-NetUDPEndpoint | ForEach-Object { $procId = [int]$_.OwningProcess; 'udp|' + $_.LocalAddress + '|' + $_.LocalPort + '|' + $procId + '|' + $names[$procId] + '|' + $svcs[$procId] }
 "#;
 
 #[cfg(target_os = "macos")]
@@ -4669,7 +4675,7 @@ fn parse_ss_process_list(raw: &str) -> Vec<PortProcessDto> {
         let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
         if let Ok(pid) = digits.parse::<u32>() {
             if !out.iter().any(|p| p.pid == pid) {
-                out.push(PortProcessDto { name, pid });
+                out.push(PortProcessDto { name, pid, services: Vec::new() });
             }
         }
     }
@@ -4686,6 +4692,7 @@ fn parse_netstat_process(raw: &str) -> Vec<PortProcessDto> {
         Ok(pid) => vec![PortProcessDto {
             name: name.trim().to_string(),
             pid,
+            services: Vec::new(),
         }],
         Err(_) => Vec::new(),
     }
@@ -4784,14 +4791,16 @@ fn parse_listening_ports(output: &str) -> Vec<ListeningPortDto> {
     merge_listening_ports(output.lines().filter_map(parse_listening_port_line).collect())
 }
 
-/// Parses the `proto|address|port|pid|name` lines emitted by
+/// Parses the `proto|address|port|pid|name|services` lines emitted by
 /// WINDOWS_PORTS_SCRIPT. Pid 0 (System Idle) carries no killable process.
+/// The trailing services field (comma-joined Win32_Service names hosted by
+/// the pid) is optional so pre-service five-field lines still parse.
 #[cfg(target_os = "windows")]
 fn parse_pipe_ports(output: &str) -> Vec<ListeningPortDto> {
     let rows = output
         .lines()
         .filter_map(|line| {
-            let mut fields = line.trim().splitn(5, '|');
+            let mut fields = line.trim().splitn(6, '|');
             let protocol = fields.next()?;
             if protocol != "tcp" && protocol != "udp" {
                 return None;
@@ -4800,10 +4809,18 @@ fn parse_pipe_ports(output: &str) -> Vec<ListeningPortDto> {
             let port: u16 = fields.next()?.trim().parse().ok()?;
             let pid: u32 = fields.next()?.trim().parse().ok()?;
             let name = fields.next().unwrap_or("").trim().to_string();
+            let services: Vec<String> = fields
+                .next()
+                .unwrap_or("")
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .collect();
             let processes = if pid == 0 {
                 Vec::new()
             } else {
-                vec![PortProcessDto { name, pid }]
+                vec![PortProcessDto { name, pid, services }]
             };
             Some(ListeningPortDto {
                 protocol: protocol.to_string(),
@@ -4847,6 +4864,7 @@ fn parse_lsof_ports(output: &str) -> Vec<ListeningPortDto> {
                 Some(pid) => vec![PortProcessDto {
                     name: command.clone(),
                     pid,
+                    services: Vec::new(),
                 }],
                 None => Vec::new(),
             };
@@ -4958,6 +4976,37 @@ fn validate_kill_port_pids(pids: &[u32]) -> Result<(), String> {
     Ok(())
 }
 
+/// Windows service processes reject taskkill ("This process can only be
+/// terminated forcefully" / access denied), so pids hosting Win32 services
+/// are stopped through the service control manager instead. Only validated
+/// numeric pids are interpolated, so the script carries no untrusted input.
+#[cfg(target_os = "windows")]
+fn windows_kill_script(pids: &[u32], force: bool) -> String {
+    let pid_list = pids
+        .iter()
+        .map(u32::to_string)
+        .collect::<Vec<_>>()
+        .join(",");
+    let stop_service_force = if force { "$true" } else { "$false" };
+    let taskkill = if force {
+        "taskkill /PID $procId /F"
+    } else {
+        "taskkill /PID $procId"
+    };
+    format!(
+        "$ErrorActionPreference = 'Stop'\n\
+         foreach ($procId in @({pid_list})) {{\n\
+           $svcs = @(Get-CimInstance Win32_Service -Filter ('ProcessId=' + $procId))\n\
+           if ($svcs.Count -gt 0) {{\n\
+             foreach ($svc in $svcs) {{ Stop-Service -Name $svc.Name -Force:{stop_service_force} }}\n\
+           }} else {{\n\
+             $out = {taskkill} 2>&1\n\
+             if ($LASTEXITCODE -ne 0) {{ throw [string]$out }}\n\
+           }}\n\
+         }}"
+    )
+}
+
 #[tauri::command]
 pub async fn kill_port_process(
     state: State<'_, AppState>,
@@ -4971,20 +5020,19 @@ pub async fn kill_port_process(
     if host_id.is_empty() || host_id.starts_with("local-") {
         #[cfg(target_os = "windows")]
         {
-            let mut args: Vec<String> = Vec::with_capacity(pids.len() * 2 + 1);
-            for pid in &pids {
-                args.push("/PID".to_string());
-                args.push(pid.to_string());
-            }
-            if force {
-                args.push("/F".to_string());
-            }
-            let output = tokio::process::Command::new("taskkill")
+            let script = windows_kill_script(&pids, force);
+            let output = tokio::process::Command::new("powershell")
                 .creation_flags(CREATE_NO_WINDOW)
-                .args(&args)
+                .args([
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-Command",
+                    &script,
+                ])
                 .output()
                 .await
-                .map_err(|e| format!("taskkill not available: {e}"))?;
+                .map_err(|e| format!("powershell not available: {e}"))?;
             if !output.status.success() {
                 return Err(kill_command_error(
                     output.status.code().unwrap_or(-1),
@@ -7359,7 +7407,10 @@ mod tests {
         assert_eq!(rows.len(), 5);
         assert_eq!(rows[0].port, 22);
         assert_eq!(rows[0].local_address, "0.0.0.0");
-        assert_eq!(rows[0].processes, vec![PortProcessDto { name: "sshd".into(), pid: 1210 }]);
+        assert_eq!(
+            rows[0].processes,
+            vec![PortProcessDto { name: "sshd".into(), pid: 1210, services: Vec::new() }]
+        );
         assert_eq!(rows[1].local_address, "::");
         assert_eq!(rows[2].port, 53);
         assert_eq!(rows[2].protocol, "udp");
@@ -7419,16 +7470,32 @@ mod tests {
     #[test]
     fn listening_ports_parse_windows_output() {
         let rows = parse_pipe_ports(
-            "tcp|0.0.0.0|135|1080|svchost\n\
-             tcp|::|135|1080|svchost\n\
+            "tcp|0.0.0.0|135|1080|svchost|RpcSs,RpcEptMapper\n\
+             tcp|::|135|1080|svchost|RpcSs,RpcEptMapper\n\
              udp|fe80::1%5|5353|2000|mDNS\n\
              tcp|127.0.0.1|49670|0|\n",
         );
         assert_eq!(rows.len(), 4);
         assert_eq!(rows[0].port, 135);
         assert_eq!(rows[0].processes[0].name, "svchost");
+        assert_eq!(rows[0].processes[0].services, vec!["RpcSs", "RpcEptMapper"]);
         assert_eq!(rows[2].local_address, "fe80::1");
+        assert!(rows[2].processes[0].services.is_empty());
         assert!(rows[3].processes.is_empty());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_kill_script_routes_service_pids_to_stop_service() {
+        let script = windows_kill_script(&[4242, 4243], true);
+        assert!(script.contains("@(4242,4243)"));
+        assert!(script.contains("Stop-Service -Name $svc.Name -Force:$true"));
+        assert!(script.contains("taskkill /PID $procId /F"));
+
+        let gentle = windows_kill_script(&[99], false);
+        assert!(gentle.contains("-Force:$false"));
+        assert!(gentle.contains("taskkill /PID $procId 2>&1"));
+        assert!(!gentle.contains("/F 2>&1"));
     }
 
     #[cfg(target_os = "macos")]
