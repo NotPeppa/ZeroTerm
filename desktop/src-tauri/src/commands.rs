@@ -918,12 +918,29 @@ fn optional_app(state: &State<'_, AppState>) -> Option<Arc<zeroterm_app::App>> {
         .clone()
 }
 
-fn read_ai_sessions_from_disk(app: Option<&zeroterm_app::App>) -> Result<Vec<AiSessionItem>, String> {
-    let path = ai_session_path()?;
+#[derive(Debug)]
+enum AiSessionReadError {
+    Storage(String),
+    Unreadable(String),
+}
+
+impl AiSessionReadError {
+    fn into_message(self) -> String {
+        match self {
+            Self::Storage(message) | Self::Unreadable(message) => message,
+        }
+    }
+}
+
+fn read_ai_sessions_from_path(
+    path: &Path,
+    app: Option<&zeroterm_app::App>,
+) -> Result<Vec<AiSessionItem>, AiSessionReadError> {
     if !path.exists() {
         return Ok(Vec::new());
     }
-    let bytes = fs::read(&path).map_err(|e| format!("reading {}: {e}", path.display()))?;
+    let bytes = fs::read(path)
+        .map_err(|e| AiSessionReadError::Storage(format!("reading {}: {e}", path.display())))?;
 
     // Decrypt if the file is in the encrypted format; otherwise treat it
     // as legacy cleartext JSON (and it'll be re-encrypted on the next
@@ -935,14 +952,17 @@ fn read_ai_sessions_from_disk(app: Option<&zeroterm_app::App>) -> Result<Vec<AiS
         let Some(app) = app else {
             return Ok(Vec::new());
         };
-        app.decrypt_local_blob(AI_SESSION_BLOB_CONTEXT, &bytes[AI_SESSION_ENC_MAGIC.len()..])
-            .map_err(|e| format!("decrypting AI history: {e}"))?
+        app.decrypt_local_blob(
+            AI_SESSION_BLOB_CONTEXT,
+            &bytes[AI_SESSION_ENC_MAGIC.len()..],
+        )
+        .map_err(|e| AiSessionReadError::Unreadable(format!("decrypting AI history: {e}")))?
     } else {
         bytes
     };
 
-    let raw: Vec<AiSessionItem> =
-        serde_json::from_slice(&json).map_err(|e| format!("parsing {}: {e}", path.display()))?;
+    let raw: Vec<AiSessionItem> = serde_json::from_slice(&json)
+        .map_err(|e| AiSessionReadError::Unreadable(format!("parsing {}: {e}", path.display())))?;
     let mut items: Vec<_> = raw
         .into_iter()
         .filter_map(normalize_ai_session_item)
@@ -952,26 +972,102 @@ fn read_ai_sessions_from_disk(app: Option<&zeroterm_app::App>) -> Result<Vec<AiS
     Ok(items)
 }
 
-/// Write `contents` to `path`, truncating any existing file, and restrict the
-/// result to owner read/write (`0600`) on Unix. On other platforms this is a
-/// plain create+truncate write. Used for cleartext-but-sensitive config files.
+fn read_ai_sessions_from_disk(
+    app: Option<&zeroterm_app::App>,
+) -> Result<Vec<AiSessionItem>, String> {
+    let path = ai_session_path()?;
+    read_ai_sessions_from_path(&path, app).map_err(AiSessionReadError::into_message)
+}
+
+/// Move an AI-history file that cannot be decoded out of the active path.
+/// Keeping the original bytes gives users a chance to restore the matching
+/// vault/key later, while allowing a fresh history file to be written now.
+fn quarantine_unreadable_ai_sessions(path: &Path) -> Result<PathBuf, String> {
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| format!("invalid AI history path: {}", path.display()))?;
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0);
+    let backup = path.with_file_name(format!(
+        "{file_name}.unreadable-{timestamp}-{}",
+        uuid::Uuid::new_v4()
+    ));
+
+    // A legacy plaintext file may have been created by an older version.
+    // Restrict it before preserving it under the quarantine name.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+            .map_err(|e| format!("securing {} before recovery: {e}", path.display()))?;
+    }
+
+    fs::rename(path, &backup).map_err(|e| {
+        format!(
+            "preserving unreadable AI history {} as {}: {e}",
+            path.display(),
+            backup.display()
+        )
+    })?;
+    Ok(backup)
+}
+
+fn read_ai_sessions_for_update_from_path(
+    path: &Path,
+    app: Option<&zeroterm_app::App>,
+) -> Result<Vec<AiSessionItem>, String> {
+    match read_ai_sessions_from_path(path, app) {
+        Ok(items) => Ok(items),
+        Err(AiSessionReadError::Storage(message)) => Err(message),
+        Err(AiSessionReadError::Unreadable(message)) => {
+            let backup = quarantine_unreadable_ai_sessions(path)?;
+            warn!(
+                error = %message,
+                backup = %backup.display(),
+                "quarantined unreadable AI history before starting a fresh history"
+            );
+            Ok(Vec::new())
+        }
+    }
+}
+
+fn read_ai_sessions_for_update(
+    app: Option<&zeroterm_app::App>,
+) -> Result<Vec<AiSessionItem>, String> {
+    let path = ai_session_path()?;
+    read_ai_sessions_for_update_from_path(&path, app)
+}
+
+/// Atomically replace `path` with `contents` and restrict the result to owner
+/// read/write (`0600`) on Unix. The same-directory temporary file prevents a
+/// crash during writing from leaving a truncated history file behind.
 fn write_private_file(path: &Path, contents: &[u8]) -> std::io::Result<()> {
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("private-file");
+    let temporary = path.with_file_name(format!(".{file_name}.tmp-{}", uuid::Uuid::new_v4()));
     let mut opts = fs::OpenOptions::new();
-    opts.write(true).create(true).truncate(true);
+    opts.write(true).create_new(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
         opts.mode(0o600);
     }
-    let mut file = opts.open(path)?;
-    // `mode()` only applies when the file is newly created; normalise an
-    // existing file's permissions too.
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        file.set_permissions(fs::Permissions::from_mode(0o600))?;
+    let result = (|| {
+        let mut file = opts.open(&temporary)?;
+        file.write_all(contents)?;
+        file.sync_all()?;
+        drop(file);
+        fs::rename(&temporary, path)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
     }
-    file.write_all(contents)
+    result
 }
 
 /// Persist AI sessions to `ai-sessions.json`.
@@ -989,6 +1085,14 @@ fn write_ai_sessions_to_disk(
     app: Option<&zeroterm_app::App>,
 ) -> Result<(), String> {
     let path = ai_session_path()?;
+    write_ai_sessions_to_path(&path, items, app)
+}
+
+fn write_ai_sessions_to_path(
+    path: &Path,
+    items: &[AiSessionItem],
+    app: Option<&zeroterm_app::App>,
+) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("creating {}: {e}", parent.display()))?;
     }
@@ -1002,8 +1106,7 @@ fn write_ai_sessions_to_disk(
             let mut out = Vec::with_capacity(AI_SESSION_ENC_MAGIC.len() + blob.len());
             out.extend_from_slice(AI_SESSION_ENC_MAGIC);
             out.extend_from_slice(&blob);
-            write_private_file(&path, &out)
-                .map_err(|e| format!("writing {}: {e}", path.display()))
+            write_private_file(path, &out).map_err(|e| format!("writing {}: {e}", path.display()))
         }
         None => Err("vault is locked; refusing to persist AI history as plaintext".to_string()),
     }
@@ -1485,7 +1588,7 @@ pub async fn save_ai_session(
     .ok_or_else(|| "AI session is empty".to_string())?;
 
     let app = optional_app(&state);
-    let mut items = read_ai_sessions_from_disk(app.as_deref())?;
+    let mut items = read_ai_sessions_for_update(app.as_deref())?;
     items.retain(|existing| existing.id != item.id);
     items.insert(0, item.clone());
     items.sort_by_key(|item| std::cmp::Reverse(item.updated_at));
@@ -1501,7 +1604,7 @@ pub async fn delete_ai_session(state: State<'_, AppState>, id: String) -> Result
         return Ok(());
     }
     let app = optional_app(&state);
-    let mut items = read_ai_sessions_from_disk(app.as_deref())?;
+    let mut items = read_ai_sessions_for_update(app.as_deref())?;
     let before = items.len();
     items.retain(|item| item.id != id);
     if items.len() != before {
@@ -1526,7 +1629,7 @@ pub async fn clear_ai_sessions_for_scope(
         return Ok(());
     }
     let app = optional_app(&state);
-    let mut items = read_ai_sessions_from_disk(app.as_deref())?;
+    let mut items = read_ai_sessions_for_update(app.as_deref())?;
     let before = items.len();
     items.retain(|item| item.scope_type != scope_type || item.scope_id != scope_id);
     if items.len() != before {
@@ -7065,6 +7168,72 @@ pub async fn list_system_fonts() -> Result<Vec<SystemFontDto>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unreadable_encrypted_ai_history_is_preserved_and_save_recovers() {
+        let root = std::env::temp_dir().join(format!(
+            "zeroterm-ai-history-recovery-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let vault_path = root.join("vault.sqlite");
+        let history_path = root.join(AI_SESSION_FILE);
+        let app = zeroterm_app::App::create(&vault_path, "test-password").unwrap();
+
+        let mut blob = app
+            .encrypt_local_blob(AI_SESSION_BLOB_CONTEXT, b"[]")
+            .unwrap();
+        *blob.last_mut().unwrap() ^= 0x01;
+        let mut damaged = AI_SESSION_ENC_MAGIC.to_vec();
+        damaged.extend_from_slice(&blob);
+        write_private_file(&history_path, &damaged).unwrap();
+
+        assert!(matches!(
+            read_ai_sessions_from_path(&history_path, Some(&app)),
+            Err(AiSessionReadError::Unreadable(_))
+        ));
+        let existing =
+            read_ai_sessions_for_update_from_path(&history_path, Some(&app)).unwrap();
+        assert!(existing.is_empty());
+        assert!(!history_path.exists());
+
+        let item = AiSessionItem {
+            id: "session-1".into(),
+            title: "Recovered chat".into(),
+            created_at: 1,
+            updated_at: 2,
+            pane_key: None,
+            scope_type: "host".into(),
+            scope_id: "host-1".into(),
+            scope_label: "Test host".into(),
+            messages: vec![AiChatMessage {
+                role: "user".into(),
+                content: "hello".into(),
+                reasoning_content: String::new(),
+                command_results: Vec::new(),
+            }],
+        };
+        write_ai_sessions_to_path(&history_path, std::slice::from_ref(&item), Some(&app)).unwrap();
+
+        let loaded = read_ai_sessions_from_path(&history_path, Some(&app)).unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].id, item.id);
+        let backups: Vec<_> = fs::read_dir(&root)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("ai-sessions.json.unreadable-")
+            })
+            .collect();
+        assert_eq!(backups.len(), 1);
+        assert_eq!(fs::read(backups[0].path()).unwrap(), damaged);
+
+        drop(app);
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn os_release_detection_prefers_id_and_falls_back_to_id_like() {

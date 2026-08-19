@@ -7065,15 +7065,27 @@ function enhanceAiCodeBlocks(root) {
     if (!isExecutableCodeBlock(block, command)) return;
     const commands = splitAiCommandBlockForApproval(command);
     if (!commands.length) return;
-    executable.push({ block, commands, requiresManualApproval: aiCodeBlockRequiresManualApproval(block) });
+    executable.push({
+      block,
+      command,
+      commands,
+      requiresManualApproval: aiCodeBlockRequiresManualApproval(block),
+    });
   });
   if (!executable.length) return;
   const messageNode = root.closest?.(".ai-message-assistant");
   const totalCommands = executable.reduce((sum, item) => sum + item.commands.length, 0);
   const commandState = ensureAiMultiCommandControls(messageNode, totalCommands);
-  executable.forEach(({ block, commands, requiresManualApproval }) => {
+  executable.forEach(({ block, command, commands, requiresManualApproval }) => {
     const tools = document.createElement("div");
     tools.className = "ai-code-tools";
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "ai-copy-command";
+    copy.textContent = "复制";
+    copy.title = "复制命令";
+    copy.addEventListener("click", () => copyAiInlineCode(command));
+    tools.appendChild(copy);
     commands.slice(0, 4).forEach((singleCommand, index) => {
       const restoredResult = commandState?.results?.find?.((item) => item.command === singleCommand);
       const run = document.createElement("button");

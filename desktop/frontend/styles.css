@@ -3273,6 +3273,10 @@ body[data-app-theme="light"] .terminal-side-btn.active::before {
   background: rgba(104, 168, 255, 0.24);
 }
 
+.ai-code-tools .ai-copy-command {
+  margin-right: auto;
+}
+
 .ai-message-actions {
   display: flex;
   align-items: center;
@@ -3326,7 +3330,7 @@ body[data-app-theme="light"] .terminal-side-btn.active::before {
   box-shadow: 0 0 0 1px rgba(255, 72, 96, 0.2), 0 12px 28px rgba(88, 10, 28, 0.2) !important;
 }
 
-.ai-message-assistant.ai-risk-approval-required .ai-code-tools button {
+.ai-message-assistant.ai-risk-approval-required .ai-code-tools button:not(.ai-copy-command) {
   border-color: rgba(255, 92, 112, 0.48);
   background: rgba(255, 72, 96, 0.14);
   color: #ffd5dc;

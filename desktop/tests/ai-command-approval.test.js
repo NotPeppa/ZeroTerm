@@ -60,6 +60,12 @@ check(
   "clicking inline code should copy it to the clipboard",
 );
 check(
+  source.includes('copy.className = "ai-copy-command"')
+    && source.includes('copy.textContent = "复制"')
+    && source.includes('copy.addEventListener("click", () => copyAiInlineCode(command))'),
+  "executable code blocks should expose a copy command button",
+);
+check(
   !source.includes("requestAiCommandApproval"),
   "inline code must not retain a click-to-execute path",
 );
