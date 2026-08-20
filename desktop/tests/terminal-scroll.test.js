@@ -49,6 +49,10 @@ check(
   "a genuinely scrolled-up viewport should remain detached from the bottom",
 );
 check(
+  !isAtBottom({ baseY: 120, viewportY: 119, cursorY: 20 }),
+  "scrolling up by one row should immediately detach output following",
+);
+check(
   !source.includes("function syncPaneViewportScroll")
     && !source.includes("pane.term.scrollLines(ev.deltaY"),
   "xterm should be the sole owner of viewport and wheel scrolling",

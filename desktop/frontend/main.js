@@ -16242,7 +16242,11 @@ function isTerminalBufferAtBottom(buffer) {
   // viewportY is the origin currently shown to the user. The cursor position is not part
   // of this decision: full-screen/TUI programs move the cursor upward while
   // repainting, which must not be mistaken for the user scrolling up.
-  return Math.abs((Number(buffer.viewportY) || 0) - (Number(buffer.baseY) || 0)) <= 1;
+  // This must be an exact comparison. A single wheel/trackpad step commonly
+  // moves the viewport by just one row; treating that row as "near enough"
+  // leaves output following enabled and the next streamed chunk immediately
+  // pulls the user back to the bottom.
+  return (Number(buffer.viewportY) || 0) === (Number(buffer.baseY) || 0);
 }
 
 function isPaneTerminalNearBottom(pane) {
