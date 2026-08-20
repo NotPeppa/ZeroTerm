@@ -3718,6 +3718,11 @@ let aiEditingProfileId = null;
 let pendingAiCommandCounter = 0;
 const aiMultiCommandState = new WeakMap();
 const aiMessageByNode = new WeakMap();
+// Stream completion and conversation re-rendering can schedule terminal
+// control for the same live command button at the same time. Lock the button
+// across the asynchronous policy check so approval UI and execution are each
+// entered only once.
+const aiTerminalAuthorizationInFlight = new WeakSet();
 let snippetEditResolver = null;
 const TERMINAL_SCROLLBACK = 3000;
 
@@ -7171,6 +7176,8 @@ async function maybeRunAiTerminalAgent(messageNode, paneKey) {
   const runButton = commandButtons
     .find((button) => !button.disabled && typeof button.__ztExecute === "function" && button.__ztCommand);
   if (!runButton) return;
+  if (aiTerminalAuthorizationInFlight.has(runButton)) return;
+  aiTerminalAuthorizationInFlight.add(runButton);
   const requiresManualApproval = runButton.dataset.manualApprovalRequired === "true";
   let policy;
   try {
@@ -7185,12 +7192,12 @@ async function maybeRunAiTerminalAgent(messageNode, paneKey) {
     syncAiTerminalControlUi();
     showToast(`AI 终端权限校验失败：${e}`, "error", 4200);
     return;
+  } finally {
+    aiTerminalAuthorizationInFlight.delete(runButton);
   }
   if (paneKey !== getAiPaneKey()) return;
-  // Re-entrancy: two triggers (e.g. stream-done and a conversation re-render)
-  // can both pass the entry checks before either marks the state as running,
-  // because the authorize call above awaits an IPC round-trip. Only the first
-  // one back may execute, and only on a still-live, still-enabled button.
+  // The button lock above serializes concurrent triggers. Re-check the live
+  // state as well because the conversation may have changed during the IPC.
   if (state.running || runButton.disabled || !runButton.isConnected) return;
   state.waitingUserInput = false;
   const requiresUserInput = policy?.classification === "user_input_required";
