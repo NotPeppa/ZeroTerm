@@ -5,6 +5,7 @@
 const {
   cancelTerminalAttentionScan,
   scheduleTerminalAttentionScan,
+  terminalAttentionFingerprint,
   terminalLiveVisibleText,
   terminalTextNeedsAttention,
 } = require("../frontend/attention.js");
@@ -87,10 +88,43 @@ check(
   false,
   "resolved approval above a spaced zsh prompt"
 );
+check(
+  "目标 C:\\Users\\lfl\\.dsh\\skills\\browser 已存在，覆盖重建联接？(y/N):\nPS D:\\code> npm install -g @deepseek-ai/dsh@latest\n",
+  false,
+  "resolved y/n prompt above a running PowerShell command"
+);
+check(
+  "PS D:\\code> dsh web\n目标 C:\\Users\\lfl\\.dsh\\skills\\browser 已存在，覆盖重建联接？(y/N):",
+  true,
+  "new y/n prompt below a PowerShell command"
+);
+check(
+  "Continue deployment? (y/N):\nthek@Mac ZeroTerm % npm install\ninstalling dependencies",
+  false,
+  "resolved y/n prompt above a running zsh command"
+);
 check("Build completed\u0007", false, "completion bell text");
 check("notify;Build;completed successfully", false, "generic OSC notification");
 check("https://example.test/search?q=continue", false, "URL query");
 check("", false, "empty screen");
+
+const acknowledgedPrompt = terminalAttentionFingerprint(
+  "Continue deployment? (y/N):\nDownloading 10%"
+);
+const changedScreenPrompt = terminalAttentionFingerprint(
+  "Continue deployment? (y/N):\nDownloading 80%"
+);
+checkValue(
+  changedScreenPrompt === acknowledgedPrompt,
+  true,
+  "prompt fingerprint survives unrelated progress output changes"
+);
+checkValue(
+  terminalAttentionFingerprint("Delete files? (y/N):") !==
+    terminalAttentionFingerprint("Overwrite configuration? (y/N):"),
+  true,
+  "different questions with the same y/n choice have distinct fingerprints"
+);
 
 // A quiet-period debounce alone can be postponed forever by steady output.
 // Once attention is active, the max-delay timer must survive those resets and

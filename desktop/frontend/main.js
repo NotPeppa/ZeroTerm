@@ -14631,8 +14631,8 @@ function createPane(host) {
     attention: null,
     attnQuietTimer: null,
     attnMaxTimer: null,
-    attnAcknowledgedScreen: null,
-    attnCandidateScreen: null,
+    attnAcknowledgedPrompt: null,
+    attnCandidatePrompt: null,
     attnHandlerDisposes: null,
     followOutput: true,
     userInputDispose: null,
@@ -15280,9 +15280,12 @@ function triggerPaneAttention(pane, kind) {
 function clearPaneAttention(pane, { rerender = true } = {}) {
   if (!pane) return false;
   window.ZeroTermAttention?.cancelTerminalAttentionScan(pane);
-  pane.attnCandidateScreen = null;
+  pane.attnCandidatePrompt = null;
   const visibleScreen = paneLiveVisibleScreen(pane);
-  if (visibleScreen !== null) pane.attnAcknowledgedScreen = visibleScreen;
+  if (visibleScreen !== null) {
+    pane.attnAcknowledgedPrompt =
+      window.ZeroTermAttention?.terminalAttentionFingerprint(visibleScreen) ?? null;
+  }
   if (!pane.attention) return false;
   pane.attention = null;
   if (rerender) renderTabStrip();
@@ -15331,9 +15334,12 @@ function paneLiveVisibleScreen(pane) {
 function evaluatePaneAttentionPrompt(pane) {
   if (!pane?.term || pane.sessionId === null) return;
   if (isPaneOnUserScreen(pane)) {
-    pane.attnCandidateScreen = null;
+    pane.attnCandidatePrompt = null;
     const visibleScreen = paneLiveVisibleScreen(pane);
-    if (visibleScreen !== null) pane.attnAcknowledgedScreen = visibleScreen;
+    if (visibleScreen !== null) {
+      pane.attnAcknowledgedPrompt =
+        window.ZeroTermAttention?.terminalAttentionFingerprint(visibleScreen) ?? null;
+    }
     if (pane.attention === "prompt") clearPaneAttention(pane);
     return;
   }
@@ -15341,37 +15347,41 @@ function evaluatePaneAttentionPrompt(pane) {
   // A scrollback viewport is historical by definition. It can contain genuine
   // old approval dialogs, but they are not pending now.
   if (screen === null) {
-    pane.attnCandidateScreen = null;
+    pane.attnCandidatePrompt = null;
     if (pane.attention === "prompt") clearPaneAttention(pane);
     return;
   }
-  // Focusing/clicking ZeroTerm acknowledges the exact screen that caused the
-  // alert. Do not flash again for it after the window loses focus.
-  if (screen === pane.attnAcknowledgedScreen) {
-    pane.attnCandidateScreen = null;
+  const promptFingerprint =
+    window.ZeroTermAttention?.terminalAttentionFingerprint(screen) ?? null;
+  // Focusing/clicking ZeroTerm acknowledges the prompt itself, not the entire
+  // screen. Progress animations and ordinary output must not resurrect it.
+  if (promptFingerprint && promptFingerprint === pane.attnAcknowledgedPrompt) {
+    pane.attnCandidatePrompt = null;
     return;
   }
-  const needsAttention = Boolean(
-    screen && window.ZeroTermAttention?.terminalTextNeedsAttention(screen)
-  );
-  if (needsAttention) {
-    // Require the same visible prompt to survive one additional short scan.
+  if (promptFingerprint) {
+    // Require the same prompt to survive one additional short scan. Comparing
+    // fingerprints instead of whole screens lets spinners keep animating.
     // This prevents a transient command-output line such as “请选择 …” from
     // flashing just before a TUI paints its Working status.
-    if (pane.attnCandidateScreen === screen) {
-      pane.attnCandidateScreen = null;
+    if (pane.attnCandidatePrompt === promptFingerprint) {
+      pane.attnCandidatePrompt = null;
       triggerPaneAttention(pane, "prompt");
     } else {
-      pane.attnCandidateScreen = screen;
+      pane.attnCandidatePrompt = promptFingerprint;
       schedulePaneAttentionScan(pane, TERMINAL_ATTENTION_CONFIRM_MS);
     }
   } else if (pane.attention === "prompt") {
-    pane.attnCandidateScreen = null;
+    pane.attnCandidatePrompt = null;
+    pane.attnAcknowledgedPrompt = null;
     // The waiting UI disappeared (for example the CLI continued or returned
     // to a shell prompt) while ZeroTerm remained in the background.
     clearPaneAttention(pane);
   } else {
-    pane.attnCandidateScreen = null;
+    pane.attnCandidatePrompt = null;
+    // Once the acknowledged prompt has disappeared, an identical prompt shown
+    // by a later command is new and should be allowed to notify again.
+    pane.attnAcknowledgedPrompt = null;
   }
 }
 
@@ -15456,7 +15466,10 @@ window.addEventListener("focus", () => {
   for (const tab of termState.tabs) {
     for (const pane of tab.panes) {
       const visibleScreen = paneLiveVisibleScreen(pane);
-      if (visibleScreen !== null) pane.attnAcknowledgedScreen = visibleScreen;
+      if (visibleScreen !== null) {
+        pane.attnAcknowledgedPrompt =
+          window.ZeroTermAttention?.terminalAttentionFingerprint(visibleScreen) ?? null;
+      }
     }
   }
   if (workspaceMode !== "terminal") return;

@@ -23,6 +23,18 @@
     /^\[[^\]\n]+\][#$%>]\s*$/,
   ];
 
+  // A new shell command proves that any confirmation rendered above it has
+  // already been answered or abandoned. Keep the command line itself out of
+  // prompt matching as well: arguments can legitimately contain strings such
+  // as "(y/N)" without the process waiting for input.
+  const SHELL_COMMAND_PROMPT_PATTERNS = [
+    /^(?:PS\s+)?[A-Za-z]:\\[^>\n]*>\s*\S/i,
+    /^(?:\([^)]+\)\s*)?[\w.-]+@[\w.-]+(?:[: ][^\n]*)?[#$%>]\s*\S/i,
+    /^(?:\([^)]+\)\s*)?[\w.-]+(?::[^\n]*)?[#$%>]\s*\S/i,
+    /^\[[^\]\n]+\][#$%>]\s*\S/i,
+    /^[>$#%]\s*\S/,
+  ];
+
   // Agent TUIs keep prior conversation and command output on screen while
   // showing a live status near the bottom. A busy status takes precedence over
   // prompt-looking words in that transcript.
@@ -78,13 +90,31 @@
     /按(?:下)?(?:任意键|回车键?|空格键)(?:继续|确认)?/,
   ];
 
-  function terminalTextNeedsAttention(text) {
-    if (text == null) return false;
-    const normalized = String(text)
+  function normalizeTerminalText(text) {
+    return String(text)
       .replace(/\r/g, "")
       .replace(/[\u200b-\u200d\u2060\ufeff]/g, "")
       .replace(/\u00a0/g, " ");
-    if (!normalized.trim()) return false;
+  }
+
+  function textAfterLastShellCommand(text) {
+    const lines = text.split("\n");
+    let lastCommandLine = -1;
+    for (let i = 0; i < lines.length; i += 1) {
+      if (SHELL_COMMAND_PROMPT_PATTERNS.some((pattern) => pattern.test(lines[i]))) {
+        lastCommandLine = i;
+      }
+    }
+    return lastCommandLine >= 0 ? lines.slice(lastCommandLine + 1).join("\n") : text;
+  }
+
+  // Return a stable description of the actual prompt fragments on screen.
+  // Callers use this to acknowledge a prompt independently from unrelated
+  // cursor, spinner, progress, or transcript changes elsewhere in the viewport.
+  function terminalAttentionFingerprint(text) {
+    if (text == null) return null;
+    const normalized = textAfterLastShellCommand(normalizeTerminalText(text));
+    if (!normalized.trim()) return null;
     const meaningfulLines = normalized
       .split("\n")
       .map((line) => line.trimEnd())
@@ -93,13 +123,44 @@
     if (recentLines.some((line) =>
       BUSY_STATE_PATTERNS.some((pattern) => pattern.test(line))
     )) {
-      return false;
+      return null;
     }
     const lastLine = meaningfulLines[meaningfulLines.length - 1];
     if (lastLine && READY_PROMPT_PATTERNS.some((pattern) => pattern.test(lastLine))) {
-      return false;
+      return null;
     }
-    return PROMPT_PATTERNS.some((pattern) => pattern.test(normalized));
+    const fragments = [];
+    for (let i = 0; i < PROMPT_PATTERNS.length; i += 1) {
+      const pattern = PROMPT_PATTERNS[i];
+      const flags = pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`;
+      const matcher = new RegExp(pattern.source, flags);
+      for (const match of normalized.matchAll(matcher)) {
+        const fragment = String(match[0] || "")
+          .replace(/\s+/g, " ")
+          .trim()
+          .toLowerCase();
+        if (!fragment) continue;
+        // Short choices such as "(y/N)" are shared by many unrelated prompts.
+        // Include their containing line so a later, different question is not
+        // mistaken for the one the user already acknowledged.
+        const matchStart = Number(match.index) || 0;
+        const matchEnd = matchStart + String(match[0] || "").length;
+        const lineStart = normalized.lastIndexOf("\n", Math.max(0, matchStart - 1)) + 1;
+        const nextNewline = normalized.indexOf("\n", matchEnd);
+        const lineEnd = nextNewline >= 0 ? nextNewline : normalized.length;
+        const lineContext = normalized
+          .slice(lineStart, lineEnd)
+          .replace(/\s+/g, " ")
+          .trim()
+          .toLowerCase();
+        fragments.push(`${i}:${lineContext || fragment}`);
+      }
+    }
+    return fragments.length ? fragments.join("\n") : null;
+  }
+
+  function terminalTextNeedsAttention(text) {
+    return terminalAttentionFingerprint(text) !== null;
   }
 
   function terminalLiveVisibleText(buffer, rowCount) {
@@ -178,6 +239,7 @@
   }
 
   return {
+    terminalAttentionFingerprint,
     terminalTextNeedsAttention,
     terminalLiveVisibleText,
     scheduleTerminalAttentionScan,
