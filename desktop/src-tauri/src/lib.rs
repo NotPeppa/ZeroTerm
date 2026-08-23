@@ -112,6 +112,8 @@ pub fn run() {
             commands::cancel_ai_chat_stream,
             commands::set_background_image,
             commands::get_background_image,
+            commands::get_background_settings,
+            commands::save_background_settings,
             commands::clear_background_image,
             commands::get_network_proxy_config,
             commands::save_network_proxy_config,

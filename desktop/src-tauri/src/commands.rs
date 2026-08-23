@@ -1123,14 +1123,42 @@ fn write_ai_sessions_to_path(
 // can always render a `data:` URL the app itself produced.
 
 const BACKGROUND_IMAGE_STEM: &str = "background";
+const BACKGROUND_SETTINGS_FILE: &str = "background-settings.json";
 /// Reject absurdly large images so we don't blow up the webview with a
 /// giant base64 string. 16 MiB is plenty for a desktop backdrop.
 const BACKGROUND_IMAGE_MAX_BYTES: u64 = 16 * 1024 * 1024;
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackgroundSettings {
+    pub opacity: u8,
+    pub blur: u8,
+}
+
 fn background_dir() -> Result<PathBuf, String> {
-    dirs::config_dir()
-        .ok_or_else(|| "no config directory on this OS".to_string())
-        .map(|d| d.join("ZeroTerm"))
+    zeroterm_config_dir()
+}
+
+fn background_settings_path() -> Result<PathBuf, String> {
+    Ok(background_dir()?.join(BACKGROUND_SETTINGS_FILE))
+}
+
+fn normalize_background_settings(settings: BackgroundSettings) -> BackgroundSettings {
+    BackgroundSettings {
+        opacity: settings.opacity.clamp(5, 100),
+        blur: settings.blur.min(30),
+    }
+}
+
+fn read_background_settings() -> Result<Option<BackgroundSettings>, String> {
+    let path = background_settings_path()?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = fs::read_to_string(&path).map_err(|e| format!("reading {}: {e}", path.display()))?;
+    let settings: BackgroundSettings =
+        serde_json::from_str(&text).map_err(|e| format!("parsing {}: {e}", path.display()))?;
+    Ok(Some(normalize_background_settings(settings)))
 }
 
 /// Locate an existing background image regardless of which extension it
@@ -1222,11 +1250,33 @@ pub async fn get_background_image() -> Result<Option<String>, String> {
     Ok(Some(encode_data_url(&bytes, &ext)))
 }
 
+#[tauri::command]
+pub fn get_background_settings() -> Result<Option<BackgroundSettings>, String> {
+    read_background_settings()
+}
+
+#[tauri::command]
+pub fn save_background_settings(input: BackgroundSettings) -> Result<BackgroundSettings, String> {
+    let settings = normalize_background_settings(input);
+    let path = background_settings_path()?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("creating {}: {e}", parent.display()))?;
+    }
+    let text = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
+    fs::write(&path, text).map_err(|e| format!("writing {}: {e}", path.display()))?;
+    Ok(settings)
+}
+
 /// Remove any saved background image.
 #[tauri::command]
 pub async fn clear_background_image() -> Result<(), String> {
     if let Some(path) = find_background_image()? {
         fs::remove_file(&path).map_err(|e| format!("removing {}: {e}", path.display()))?;
+    }
+    let settings_path = background_settings_path()?;
+    if settings_path.exists() {
+        fs::remove_file(&settings_path)
+            .map_err(|e| format!("removing {}: {e}", settings_path.display()))?;
     }
     Ok(())
 }
@@ -7216,6 +7266,23 @@ pub async fn list_system_fonts() -> Result<Vec<SystemFontDto>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn background_settings_are_clamped_to_supported_ranges() {
+        let normalized = normalize_background_settings(BackgroundSettings {
+            opacity: 0,
+            blur: u8::MAX,
+        });
+        assert_eq!(normalized.opacity, 5);
+        assert_eq!(normalized.blur, 30);
+
+        let unchanged = normalize_background_settings(BackgroundSettings {
+            opacity: 65,
+            blur: 12,
+        });
+        assert_eq!(unchanged.opacity, 65);
+        assert_eq!(unchanged.blur, 12);
+    }
 
     #[test]
     fn unreadable_encrypted_ai_history_is_preserved_and_save_recovers() {

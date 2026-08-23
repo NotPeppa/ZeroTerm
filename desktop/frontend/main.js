@@ -8278,6 +8278,41 @@ function appBgEnabled() {
   return localStorage.getItem(SETTINGS_KEY_APP_BG_ENABLED) === "true";
 }
 
+function applyPersistedAppBackgroundSettings(settings) {
+  const opacity = Number(settings?.opacity);
+  const blur = Number(settings?.blur);
+  if (Number.isFinite(opacity) && opacity >= 5 && opacity <= 100) {
+    localStorage.setItem(SETTINGS_KEY_APP_BG_OPACITY, String(opacity));
+  }
+  if (Number.isFinite(blur) && blur >= 0 && blur <= 30) {
+    localStorage.setItem(SETTINGS_KEY_APP_BG_BLUR, String(blur));
+  }
+}
+
+async function persistAppBackgroundSettings() {
+  if (!appBackgroundDataUrl) return;
+  await invoke("save_background_settings", {
+    input: {
+      opacity: getAppBgOpacity(),
+      blur: getAppBgBlur(),
+    },
+  });
+}
+
+let appBackgroundSettingsSaveTimer = null;
+
+function scheduleAppBackgroundSettingsSave() {
+  if (appBackgroundSettingsSaveTimer !== null) {
+    clearTimeout(appBackgroundSettingsSaveTimer);
+  }
+  appBackgroundSettingsSaveTimer = setTimeout(() => {
+    appBackgroundSettingsSaveTimer = null;
+    persistAppBackgroundSettings().catch((e) => {
+      console.warn("save background settings failed", e);
+    });
+  }, 180);
+}
+
 /// Push the current background image + opacity/blur to the DOM layer.
 function applyAppBackground() {
   const layer = document.getElementById("app-bg-layer");
@@ -8303,9 +8338,22 @@ async function initAppBackground() {
   try {
     const dataUrl = await invoke("get_background_image");
     appBackgroundDataUrl = dataUrl || null;
+    // Older/upgraded WebView profiles can lose localStorage while the image
+    // file in the app config directory survives. Recover that split state,
+    // but preserve an explicit disabled value.
+    if (appBackgroundDataUrl && localStorage.getItem(SETTINGS_KEY_APP_BG_ENABLED) === null) {
+      localStorage.setItem(SETTINGS_KEY_APP_BG_ENABLED, "true");
+    }
+    if (appBackgroundDataUrl) {
+      const savedSettings = await invoke("get_background_settings");
+      if (savedSettings) {
+        applyPersistedAppBackgroundSettings(savedSettings);
+      } else {
+        await persistAppBackgroundSettings();
+      }
+    }
   } catch (e) {
     console.warn("load background image failed", e);
-    appBackgroundDataUrl = null;
   }
   applyAppBackground();
 }
@@ -8351,6 +8399,11 @@ async function chooseBackgroundImage() {
     localStorage.setItem(SETTINGS_KEY_APP_BG_ENABLED, "true");
     applyAppBackground();
     syncBackgroundSettingsUI();
+    try {
+      await persistAppBackgroundSettings();
+    } catch (e) {
+      console.warn("save background settings failed", e);
+    }
     if (settingsBgStatus) settingsBgStatus.textContent = t("settings.bg.status.applied");
   } catch (e) {
     if (settingsBgStatus) {
@@ -13504,10 +13557,12 @@ settingsBgClear?.addEventListener("click", () => {
 settingsBgOpacity?.addEventListener("input", () => {
   localStorage.setItem(SETTINGS_KEY_APP_BG_OPACITY, String(settingsBgOpacity.value));
   applyAppBackground();
+  scheduleAppBackgroundSettingsSave();
 });
 settingsBgBlur?.addEventListener("input", () => {
   localStorage.setItem(SETTINGS_KEY_APP_BG_BLUR, String(settingsBgBlur.value));
   applyAppBackground();
+  scheduleAppBackgroundSettingsSave();
 });
 settingsWinsizeSave?.addEventListener("click", () => {
   recordWindowLayout().catch((e) => console.warn("save window layout failed", e));
