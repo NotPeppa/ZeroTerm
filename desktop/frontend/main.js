@@ -381,7 +381,7 @@ const I18N = {
     "services.toast.failed": "Service operation failed: {error}",
     "ports.title": "Port Manager",
     "ports.subtitle": "Current terminal session",
-    "ports.refresh": "Refresh ports",
+    "ports.refresh": "Refresh ports and firewall",
     "ports.search": "Search port, process, or address",
     "ports.loading": "Reading listening ports...",
     "ports.summary": "{count} listening · TCP {tcp} · UDP {udp}",
@@ -394,8 +394,29 @@ const I18N = {
     "ports.group.udp": "UDP",
     "ports.group.summary": "{count} listening",
     "ports.group.empty": "No listening sockets in this group",
-    "ports.exposure.public": "Exposed",
+    "ports.exposure.public": "Network bind",
     "ports.exposure.local": "Local only",
+    "ports.firewall.title": "Host firewall",
+    "ports.firewall.status.active": "Active",
+    "ports.firewall.status.inactive": "Inactive",
+    "ports.firewall.status.unknown": "Unknown",
+    "ports.firewall.status.unavailable": "Not detected",
+    "ports.firewall.backend.none": "No supported firewall manager",
+    "ports.firewall.policy.block": "blocked by default",
+    "ports.firewall.policy.allow": "allowed by default",
+    "ports.firewall.active_policy": "Inbound traffic is {policy}. Individual rules still determine whether a port is reachable.",
+    "ports.firewall.active_unknown": "The firewall is active. Individual rules determine whether a port is reachable.",
+    "ports.firewall.inactive": "No active host firewall was detected. Ports bound to a network interface may be reachable.",
+    "ports.firewall.unknown": "The firewall state could not be confirmed. Higher privileges may be required.",
+    "ports.firewall.unavailable": "No supported host firewall manager was detected.",
+    "ports.firewall.profiles": "Enabled profiles: {profiles}",
+    "ports.firewall.rules.title": "Enabled rules",
+    "ports.firewall.rules.count": "{count} rules",
+    "ports.firewall.rules.empty": "No readable enabled rules were returned. Viewing rules may require higher privileges.",
+    "ports.firewall.rules.truncated": "Showing the first {count} rules. Additional rules were omitted.",
+    "ports.firewall.rules.action.allow": "Allow",
+    "ports.firewall.rules.action.block": "Block",
+    "ports.firewall.rules.action.other": "Rule",
     "ports.process.unknown": "Unknown process (needs higher privileges)",
     "ports.pid.label": "PID {pids}",
     "ports.action.kill": "Kill",
@@ -1378,7 +1399,7 @@ const I18N = {
     "services.toast.failed": "服务操作失败：{error}",
     "ports.title": "端口管理",
     "ports.subtitle": "当前终端会话",
-    "ports.refresh": "刷新端口",
+    "ports.refresh": "刷新端口与防火墙",
     "ports.search": "搜索端口、进程或地址",
     "ports.loading": "正在读取监听端口...",
     "ports.summary": "共 {count} 个监听 · TCP {tcp} · UDP {udp}",
@@ -1391,8 +1412,29 @@ const I18N = {
     "ports.group.udp": "UDP",
     "ports.group.summary": "{count} 个监听",
     "ports.group.empty": "该分组暂无监听端口",
-    "ports.exposure.public": "对外开放",
+    "ports.exposure.public": "网络监听",
     "ports.exposure.local": "仅本机",
+    "ports.firewall.title": "主机防火墙",
+    "ports.firewall.status.active": "已启用",
+    "ports.firewall.status.inactive": "未启用",
+    "ports.firewall.status.unknown": "状态未知",
+    "ports.firewall.status.unavailable": "未检测到",
+    "ports.firewall.backend.none": "没有受支持的防火墙管理器",
+    "ports.firewall.policy.block": "默认拦截",
+    "ports.firewall.policy.allow": "默认放行",
+    "ports.firewall.active_policy": "入站流量为{policy}，端口是否可达仍取决于具体规则。",
+    "ports.firewall.active_unknown": "防火墙已启用，端口是否可达取决于具体规则。",
+    "ports.firewall.inactive": "未检测到已启用的主机防火墙，监听网络接口的端口可能被访问。",
+    "ports.firewall.unknown": "无法确认防火墙状态，检测可能需要更高权限。",
+    "ports.firewall.unavailable": "未检测到受支持的主机防火墙管理器。",
+    "ports.firewall.profiles": "已启用配置：{profiles}",
+    "ports.firewall.rules.title": "已启用规则",
+    "ports.firewall.rules.count": "{count} 条规则",
+    "ports.firewall.rules.empty": "未返回可读取的启用规则；查看规则可能需要更高权限。",
+    "ports.firewall.rules.truncated": "仅显示前 {count} 条规则，其余规则已省略。",
+    "ports.firewall.rules.action.allow": "允许",
+    "ports.firewall.rules.action.block": "拦截",
+    "ports.firewall.rules.action.other": "规则",
     "ports.process.unknown": "进程未知（需要更高权限）",
     "ports.pid.label": "PID {pids}",
     "ports.action.kill": "结束进程",
@@ -3688,7 +3730,10 @@ const servicesExpandedGroups = new Set();
 let portsRefreshToken = 0;
 let portsLastRows = [];
 let portsMergedRows = [];
+let portsFirewallStatus = null;
+let portsLoadError = "";
 let portsSearchQuery = "";
+let portsFirewallRulesExpanded = false;
 const portsExpandedGroups = new Set(["tcp", "udp"]);
 let serviceFileRequestToken = 0;
 let serviceFileLastFocus = null;
@@ -4421,6 +4466,81 @@ function portGroupHtml(group, rows) {
     </section>`;
 }
 
+function firewallStatusHtml() {
+  const firewall = portsFirewallStatus || {
+    status: "unknown",
+    backend: "",
+    inboundPolicy: "unknown",
+    detail: "",
+    rules: [],
+    rulesTruncated: false,
+  };
+  const supportedStatuses = new Set(["active", "inactive", "unknown", "unavailable"]);
+  const status = supportedStatuses.has(firewall.status) ? firewall.status : "unknown";
+  const backend = String(firewall.backend || "").trim();
+  const policy = firewall.inboundPolicy === "block" || firewall.inboundPolicy === "allow"
+    ? firewall.inboundPolicy
+    : "unknown";
+  let descriptionKey = `ports.firewall.${status}`;
+  let descriptionVars = {};
+  if (status === "active") {
+    if (policy === "unknown") {
+      descriptionKey = "ports.firewall.active_unknown";
+    } else {
+      descriptionKey = "ports.firewall.active_policy";
+      descriptionVars = { policy: t(`ports.firewall.policy.${policy}`) };
+    }
+  }
+  const detail = String(firewall.detail || "").trim();
+  const description = [
+    t(descriptionKey, descriptionVars),
+    detail ? t("ports.firewall.profiles", { profiles: detail }) : "",
+  ].filter(Boolean).join(" · ");
+  const tone = status === "active" ? "ok" : (status === "inactive" ? "warn" : "muted");
+  const badgeClass = status === "active"
+    ? " service-badge-ok"
+    : (status === "inactive" ? " service-badge-warn" : "");
+  const title = backend
+    ? `${t("ports.firewall.title")} · ${backend}`
+    : t("ports.firewall.title");
+  const rules = Array.isArray(firewall.rules) ? firewall.rules : [];
+  const rulesHtml = status === "active" ? `
+      <div class="firewall-rules">
+        <button type="button" class="firewall-rules-toggle" data-firewall-rules-toggle aria-expanded="${portsFirewallRulesExpanded}" aria-controls="terminal-firewall-rules">
+          <svg class="zt-icon service-group-caret${portsFirewallRulesExpanded ? " open" : ""}" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
+          <span>${t("ports.firewall.rules.title")}</span>
+          <small>${t("ports.firewall.rules.count", { count: rules.length })}</small>
+        </button>
+        <div id="terminal-firewall-rules" class="firewall-rules-body" ${portsFirewallRulesExpanded ? "" : "hidden"}>
+          ${rules.length ? `<ul>${rules.map((rule) => {
+            const action = rule?.action === "allow" || rule?.action === "block" ? rule.action : "other";
+            return `<li><span class="firewall-rule-action firewall-rule-action-${action}">${t(`ports.firewall.rules.action.${action}`)}</span><code>${escapeMetricText(rule?.text || "")}</code></li>`;
+          }).join("")}</ul>` : `<p>${t("ports.firewall.rules.empty")}</p>`}
+          ${firewall.rulesTruncated ? `<p class="firewall-rules-note">${t("ports.firewall.rules.truncated", { count: rules.length })}</p>` : ""}
+        </div>
+      </div>` : "";
+  return `
+    <article class="firewall-card firewall-card-${tone}">
+      <span class="firewall-card-icon" aria-hidden="true">
+        <svg class="zt-icon" viewBox="0 0 24 24"><path d="M12 3 4.5 6v5.5c0 4.6 3 7.9 7.5 9.5 4.5-1.6 7.5-4.9 7.5-9.5V6L12 3Z"></path><path d="m9.5 12 1.7 1.7 3.6-4"></path></svg>
+      </span>
+      <div class="firewall-card-copy">
+        <strong>${escapeMetricText(title)}</strong>
+        <span>${escapeMetricText(description)}</span>
+        ${!backend && status === "unavailable" ? `<small>${t("ports.firewall.backend.none")}</small>` : ""}
+      </div>
+      <span class="service-badge${badgeClass}">
+        <span class="service-state service-state-${tone}" aria-hidden="true"></span>
+        ${t(`ports.firewall.status.${status}`)}
+      </span>
+      ${rulesHtml}
+    </article>`;
+}
+
+function portsPanelContentHtml(content) {
+  return `${firewallStatusHtml()}${content}`;
+}
+
 function renderListeningPortRows() {
   if (!terminalPortsBody) return;
   const rows = filteredPortRows();
@@ -4433,18 +4553,22 @@ function renderListeningPortRows() {
       udp,
     });
   }
+  if (portsLoadError) {
+    terminalPortsBody.innerHTML = portsPanelContentHtml(`<div class="terminal-side-empty"><strong>${t("ports.unavailable.title")}</strong><p>${escapeMetricText(portsLoadError)}</p></div>`);
+    return;
+  }
   if (!portsMergedRows.length) {
-    terminalPortsBody.innerHTML = `<div class="terminal-side-empty"><strong>${t("ports.empty.title")}</strong><p>${t("ports.empty.desc")}</p></div>`;
+    terminalPortsBody.innerHTML = portsPanelContentHtml(`<div class="terminal-side-empty"><strong>${t("ports.empty.title")}</strong><p>${t("ports.empty.desc")}</p></div>`);
     return;
   }
   if (!rows.length) {
-    terminalPortsBody.innerHTML = `<div class="terminal-side-empty"><strong>${t("ports.no_match.title")}</strong><p>${t("ports.no_match.desc")}</p></div>`;
+    terminalPortsBody.innerHTML = portsPanelContentHtml(`<div class="terminal-side-empty"><strong>${t("ports.no_match.title")}</strong><p>${t("ports.no_match.desc")}</p></div>`);
     return;
   }
   const groups = ["tcp", "udp"].filter((group) => rows.some((row) => row.protocol === group));
-  terminalPortsBody.innerHTML = groups
+  terminalPortsBody.innerHTML = portsPanelContentHtml(groups
     .map((group) => portGroupHtml(group, rows.filter((row) => row.protocol === group)))
-    .join("");
+    .join(""));
 }
 
 async function renderPortsPanel(options = {}) {
@@ -4455,29 +4579,55 @@ async function renderPortsPanel(options = {}) {
   if (!pane) {
     portsLastRows = [];
     portsMergedRows = [];
+    portsFirewallStatus = null;
+    portsLoadError = "";
     if (terminalPortsSummary) terminalPortsSummary.textContent = "";
     terminalPortsBody.innerHTML = `<div class="terminal-side-empty"><strong>${t("metrics.empty.title")}</strong><p>${t("metrics.empty.desc")}</p></div>`;
     return;
   }
-  if (!silent || !terminalPortsBody.querySelector(".port-card")) {
+  if (!silent || !terminalPortsBody.querySelector(".firewall-card")) {
     portsLastRows = [];
     portsMergedRows = [];
+    portsFirewallStatus = null;
+    portsLoadError = "";
     if (terminalPortsSummary) terminalPortsSummary.textContent = "";
     terminalPortsBody.innerHTML = `<div class="terminal-side-empty"><strong>${t("ports.loading")}</strong><p>${escapeMetricText(pane.host?.name || pane.host?.host || "Local")}</p></div>`;
   }
   if (terminalPortsRefresh) terminalPortsRefresh.disabled = true;
   try {
-    const rows = await invoke("list_listening_ports", { hostId: pane.host?.id || null });
+    const hostId = pane.host?.id || null;
+    const [portsResult, firewallResult] = await Promise.allSettled([
+      invoke("list_listening_ports", { hostId }),
+      invoke("detect_firewall_status", { hostId }),
+    ]);
     if (token !== portsRefreshToken || terminalActiveSidePanel !== "ports") return;
-    portsLastRows = Array.isArray(rows) ? rows : [];
+    portsLastRows = portsResult.status === "fulfilled" && Array.isArray(portsResult.value)
+      ? portsResult.value
+      : [];
     portsMergedRows = mergedListeningPortRows(portsLastRows);
+    portsLoadError = portsResult.status === "rejected" ? String(portsResult.reason) : "";
+    portsFirewallStatus = firewallResult.status === "fulfilled"
+      ? firewallResult.value
+      : {
+          status: "unknown",
+          backend: "",
+          inboundPolicy: "unknown",
+          detail: "",
+        };
     renderListeningPortRows();
   } catch (e) {
     if (token !== portsRefreshToken || terminalActiveSidePanel !== "ports") return;
     portsLastRows = [];
     portsMergedRows = [];
+    portsFirewallStatus = {
+      status: "unknown",
+      backend: "",
+      inboundPolicy: "unknown",
+      detail: "",
+    };
+    portsLoadError = String(e);
     if (terminalPortsSummary) terminalPortsSummary.textContent = "";
-    terminalPortsBody.innerHTML = `<div class="terminal-side-empty"><strong>${t("ports.unavailable.title")}</strong><p>${escapeMetricText(String(e))}</p></div>`;
+    renderListeningPortRows();
   } finally {
     if (token === portsRefreshToken && terminalPortsRefresh) terminalPortsRefresh.disabled = false;
   }
@@ -15046,6 +15196,14 @@ terminalPortsSearch?.addEventListener("input", () => {
 });
 
 terminalPortsBody?.addEventListener("click", (ev) => {
+  const firewallToggle = ev.target.closest("button[data-firewall-rules-toggle]");
+  if (firewallToggle) {
+    portsFirewallRulesExpanded = !portsFirewallRulesExpanded;
+    firewallToggle.setAttribute("aria-expanded", String(portsFirewallRulesExpanded));
+    firewallToggle.querySelector(".service-group-caret")?.classList.toggle("open", portsFirewallRulesExpanded);
+    firewallToggle.closest(".firewall-rules")?.querySelector(".firewall-rules-body")?.toggleAttribute("hidden", !portsFirewallRulesExpanded);
+    return;
+  }
   const groupToggle = ev.target.closest("button[data-port-group]");
   if (groupToggle) {
     const group = groupToggle.getAttribute("data-port-group") || "";

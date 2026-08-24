@@ -4779,11 +4779,124 @@ pub struct ListeningPortDto {
     pub processes: Vec<PortProcessDto>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct FirewallRuleDto {
+    /// allow | block | other
+    pub action: String,
+    /// Backend-native, whitespace-normalized rule summary.
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct FirewallStatusDto {
+    /// active | inactive | unknown | unavailable
+    pub status: String,
+    /// Human-readable firewall implementation (UFW, firewalld, nftables...).
+    pub backend: String,
+    /// block | allow | unknown. Only reported when the tool exposes a default
+    /// inbound policy without requiring us to interpret arbitrary rules.
+    pub inbound_policy: String,
+    /// Optional fixed-format context, such as the enabled Windows profiles.
+    pub detail: String,
+    /// Enabled/readable rules for the selected firewall implementation.
+    pub rules: Vec<FirewallRuleDto>,
+    /// True when more rules were returned than the UI safety limit.
+    pub rules_truncated: bool,
+}
+
 /// `ss` first (iproute2, present on every modern distro); `netstat` as the
 /// fallback for older or minimal images. Both are line-parsed by
 /// `parse_listening_ports`, which auto-detects the two column layouts.
 const LINUX_PORTS_SCRIPT: &str =
     "LC_ALL=C ss -tulnp 2>/dev/null || LC_ALL=C netstat -tulnp 2>/dev/null";
+
+/// Emits one fixed-format row per installed Linux firewall implementation.
+/// Multiple managers can coexist, so Rust selects active > unknown > inactive.
+/// No privilege elevation is attempted: an unreadable ruleset is deliberately
+/// reported as unknown instead of making a misleading security claim.
+const LINUX_FIREWALL_SCRIPT: &str = r#"
+emit_rule_lines() {
+  backend=$1
+  awk -v backend="$backend" '
+    NF && count < 101 {
+      line=tolower($0)
+      action="other"
+      if (line ~ /(^|[^a-z])(deny|reject|drop|block)([^a-z]|$)/) action="block"
+      else if (line ~ /(^|[^a-z])(allow|accept|pass)([^a-z]|$)/) action="allow"
+      else if (backend == "firewalld") action="allow"
+      print "R|" backend "|" action "|" $0
+      count++
+    }
+  '
+}
+found=0
+if command -v ufw >/dev/null 2>&1; then
+  found=1
+  out=$(LC_ALL=C ufw status verbose 2>&1)
+  case "$out" in
+    *"Status: active"*)
+      policy=$(printf '%s\n' "$out" | sed -n 's/^Default: \([^ ]*\) (incoming).*$/\1/p' | head -n 1)
+      case "$policy" in deny|reject) policy=block;; allow) policy=allow;; *) policy=unknown;; esac
+      printf 'ufw|active|%s|\n' "$policy"
+      LC_ALL=C ufw status numbered 2>/dev/null | sed -n '/^\[[[:space:]]*[0-9][0-9]*\]/p' | emit_rule_lines ufw
+      ;;
+    *"Status: inactive"*) printf 'ufw|inactive|unknown|\n';;
+    *) printf 'ufw|unknown|unknown|\n';;
+  esac
+fi
+if command -v firewall-cmd >/dev/null 2>&1; then
+  found=1
+  state=$(LC_ALL=C firewall-cmd --state 2>/dev/null || true)
+  if [ "$state" = running ]; then
+    printf 'firewalld|active|unknown|\n'
+    LC_ALL=C firewall-cmd --get-active-zones 2>/dev/null | awk 'NF && $1 !~ /^[[:space:]]/ { print $1 }' | while IFS= read -r zone; do
+      for kind in services ports protocols source-ports forward-ports rich-rules; do
+        values=$(LC_ALL=C firewall-cmd --zone="$zone" --list-$kind 2>/dev/null)
+        if [ -n "$values" ]; then
+          printf '%s\n' "$values" | awk -v zone="$zone" -v kind="$kind" 'NF { print zone " " kind ": " $0 }'
+        fi
+      done
+      if LC_ALL=C firewall-cmd --zone="$zone" --query-masquerade >/dev/null 2>&1; then
+        printf '%s\n' "$zone masquerade: enabled"
+      fi
+    done | emit_rule_lines firewalld
+  elif command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet firewalld 2>/dev/null; then
+    printf 'firewalld|active|unknown|\n'
+  else
+    printf 'firewalld|inactive|unknown|\n'
+  fi
+fi
+if command -v nft >/dev/null 2>&1; then
+  found=1
+  rules=$(LC_ALL=C nft list ruleset 2>/dev/null)
+  result=$?
+  if [ "$result" -ne 0 ]; then
+    printf 'nftables|unknown|unknown|\n'
+  elif [ -n "$rules" ]; then
+    printf 'nftables|active|unknown|\n'
+    printf '%s\n' "$rules" | awk 'NF && tolower($0) ~ /(policy| dport| sport| saddr| daddr|ct state| accept| drop| reject| jump| counter)/' | emit_rule_lines nftables
+  else
+    printf 'nftables|inactive|unknown|\n'
+  fi
+fi
+if command -v iptables >/dev/null 2>&1; then
+  found=1
+  rules=$(LC_ALL=C iptables -S 2>/dev/null)
+  result=$?
+  if [ "$result" -ne 0 ]; then
+    printf 'iptables|unknown|unknown|\n'
+  elif printf '%s\n' "$rules" | awk '$1=="-P" && $2=="INPUT" && $3!="ACCEPT" { active=1 } $1=="-A" && $2=="INPUT" { active=1 } END { exit active ? 0 : 1 }'; then
+    printf 'iptables|active|unknown|\n'
+    printf '%s\n' "$rules" | emit_rule_lines iptables
+  else
+    printf 'iptables|inactive|allow|\n'
+  fi
+fi
+if [ "$found" -eq 0 ]; then printf 'none|unavailable|unknown|\n'; fi
+true
+"#;
 
 #[cfg(target_os = "windows")]
 const WINDOWS_PORTS_SCRIPT: &str = r#"
@@ -4796,8 +4909,219 @@ Get-NetTCPConnection -State Listen | ForEach-Object { $procId = [int]$_.OwningPr
 Get-NetUDPEndpoint | ForEach-Object { $procId = [int]$_.OwningProcess; 'udp|' + $_.LocalAddress + '|' + $_.LocalPort + '|' + $procId + '|' + $names[$procId] + '|' + $svcs[$procId] }
 "#;
 
+#[cfg(target_os = "windows")]
+const WINDOWS_FIREWALL_SCRIPT: &str = r#"
+$ErrorActionPreference = 'SilentlyContinue'
+$profiles = @(Get-NetFirewallProfile)
+if ($profiles.Count -eq 0) { 'none|unavailable|unknown|'; exit 0 }
+$enabled = @($profiles | Where-Object { $_.Enabled -eq $true })
+$status = if ($enabled.Count -gt 0) { 'active' } else { 'inactive' }
+$policy = 'unknown'
+if ($enabled.Count -gt 0) {
+  $actions = @($enabled | ForEach-Object { [string]$_.DefaultInboundAction } | Select-Object -Unique)
+  if ($actions.Count -eq 1 -and $actions[0] -eq 'Block') { $policy = 'block' }
+  elseif ($actions.Count -eq 1 -and $actions[0] -eq 'Allow') { $policy = 'allow' }
+}
+$names = @($enabled | ForEach-Object { [string]$_.Name }) -join ', '
+'windows|' + $status + '|' + $policy + '|' + $names
+if ($status -eq 'active') {
+  @(Get-NetFirewallRule -Enabled True | Select-Object -First 101) | ForEach-Object {
+    $rule = $_
+    $filters = @($rule | Get-NetFirewallPortFilter)
+    $endpoints = @($filters | ForEach-Object {
+      $protocol = [string]$_.Protocol
+      $local = [string]$_.LocalPort
+      $remote = [string]$_.RemotePort
+      if ($local -and $local -ne 'Any') { $protocol + ' local:' + $local }
+      elseif ($remote -and $remote -ne 'Any') { $protocol + ' remote:' + $remote }
+      else { $protocol }
+    } | Select-Object -Unique) -join ', '
+    $action = if ([string]$rule.Action -eq 'Block') { 'block' } elseif ([string]$rule.Action -eq 'Allow') { 'allow' } else { 'other' }
+    $text = ([string]$rule.Direction + ' · ' + $endpoints + ' · ' + [string]$rule.DisplayName) -replace '[\r\n]', ' '
+    'R|windows|' + $action + '|' + $text
+  }
+}
+"#;
+
 #[cfg(target_os = "macos")]
 const MACOS_PORTS_SCRIPT: &str = "LC_ALL=C lsof -nP -iTCP -sTCP:LISTEN -FpcPn 2>/dev/null; LC_ALL=C lsof -nP -iUDP -FpcPn 2>/dev/null; true";
+
+#[cfg(target_os = "macos")]
+const MACOS_FIREWALL_SCRIPT: &str = r#"
+emit_rule_lines() {
+  backend=$1
+  awk -v backend="$backend" '
+    NF && count < 101 {
+      line=tolower($0)
+      action="other"
+      if (line ~ /(block|deny|drop|reject)/) action="block"
+      else if (line ~ /(allow|accept|pass)/) action="allow"
+      print "R|" backend "|" action "|" $0
+      count++
+    }
+  '
+}
+found=0
+appfw=/usr/libexec/ApplicationFirewall/socketfilterfw
+if [ -x "$appfw" ]; then
+  found=1
+  out=$(LC_ALL=C "$appfw" --getglobalstate 2>&1)
+  case "$out" in
+    *"State = 1"*|*"enabled"*)
+      printf 'macos|active|unknown|\n'
+      LC_ALL=C "$appfw" --listapps 2>/dev/null | awk '
+        /^[[:space:]]*[0-9]+[[:space:]]*:/ { app=$0; next }
+        app && /incoming connections/ { print app " " $0; app="" }
+      ' | emit_rule_lines macos
+      ;;
+    *"State = 0"*|*"disabled"*) printf 'macos|inactive|unknown|\n';;
+    *) printf 'macos|unknown|unknown|\n';;
+  esac
+fi
+if [ -x /sbin/pfctl ]; then
+  found=1
+  out=$(LC_ALL=C /sbin/pfctl -s info 2>/dev/null)
+  case "$out" in
+    *"Status: Enabled"*)
+      printf 'pf|active|unknown|\n'
+      LC_ALL=C /sbin/pfctl -sr 2>/dev/null | emit_rule_lines pf
+      ;;
+    *"Status: Disabled"*) printf 'pf|inactive|unknown|\n';;
+    *) printf 'pf|unknown|unknown|\n';;
+  esac
+fi
+if [ "$found" -eq 0 ]; then printf 'none|unavailable|unknown|\n'; fi
+true
+"#;
+
+fn parse_firewall_status(output: &str) -> FirewallStatusDto {
+    let backend_name = |raw: &str| match raw {
+        "ufw" => "UFW",
+        "firewalld" => "firewalld",
+        "nftables" => "nftables",
+        "iptables" => "iptables",
+        "macos" => "macOS Application Firewall",
+        "pf" => "pf",
+        "windows" => "Windows Defender Firewall",
+        _ => "",
+    };
+    let status_rank = |status: &str| match status {
+        "active" => 3,
+        "unknown" => 2,
+        "inactive" => 1,
+        _ => 0,
+    };
+    // Prefer a high-level manager over its underlying nftables/iptables
+    // implementation when both report active, so users do not see duplicate
+    // rules for the same effective policy.
+    let backend_rank = |backend: &str| match backend {
+        "ufw" => 5,
+        "firewalld" => 4,
+        "windows" | "macos" => 3,
+        "pf" => 2,
+        "nftables" => 1,
+        "iptables" => 0,
+        _ => 0,
+    };
+    let normalize_rule_text = |raw: &str| {
+        raw.split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .chars()
+            .take(512)
+            .collect::<String>()
+    };
+    let mut candidates: Vec<(String, FirewallStatusDto)> = Vec::new();
+    let mut parsed_rules: Vec<(String, FirewallRuleDto)> = Vec::new();
+    for line in output.lines() {
+        let line = line.trim();
+        if let Some(rule_line) = line.strip_prefix("R|") {
+            let mut fields = rule_line.splitn(3, '|');
+            let Some(backend) = fields.next().map(str::trim).filter(|v| !v.is_empty()) else {
+                continue;
+            };
+            let raw_action = fields.next().unwrap_or("other").trim();
+            let text = normalize_rule_text(fields.next().unwrap_or(""));
+            if text.is_empty() {
+                continue;
+            }
+            let lower = text.to_ascii_lowercase();
+            let action = match raw_action {
+                "allow" => "allow",
+                "block" => "block",
+                _ if [" deny", " reject", " drop", " block"]
+                    .iter()
+                    .any(|needle| lower.contains(needle)) =>
+                {
+                    "block"
+                }
+                _ if [" allow", " accept", " pass"]
+                    .iter()
+                    .any(|needle| lower.contains(needle)) =>
+                {
+                    "allow"
+                }
+                _ => "other",
+            };
+            parsed_rules.push((
+                backend.to_string(),
+                FirewallRuleDto {
+                    action: action.to_string(),
+                    text,
+                },
+            ));
+            continue;
+        }
+
+        let mut fields = line.splitn(4, '|');
+        let Some(raw_backend) = fields.next().map(str::trim) else {
+            continue;
+        };
+        let Some(status) = fields.next().map(str::trim) else {
+            continue;
+        };
+        if !matches!(status, "active" | "inactive" | "unknown" | "unavailable") {
+            continue;
+        }
+        let inbound_policy = match fields.next().unwrap_or("unknown").trim() {
+            "block" => "block",
+            "allow" => "allow",
+            _ => "unknown",
+        };
+        candidates.push((
+            raw_backend.to_string(),
+            FirewallStatusDto {
+                status: status.to_string(),
+                backend: backend_name(raw_backend).to_string(),
+                inbound_policy: inbound_policy.to_string(),
+                detail: fields.next().unwrap_or("").trim().to_string(),
+                rules: Vec::new(),
+                rules_truncated: false,
+            },
+        ));
+    }
+
+    let Some((selected_backend, mut selected)) = candidates
+        .into_iter()
+        .max_by_key(|(backend, row)| (status_rank(&row.status), backend_rank(backend)))
+    else {
+        return FirewallStatusDto {
+            status: "unavailable".to_string(),
+            backend: String::new(),
+            inbound_policy: "unknown".to_string(),
+            detail: String::new(),
+            rules: Vec::new(),
+            rules_truncated: false,
+        };
+    };
+    const MAX_FIREWALL_RULES: usize = 100;
+    let mut matching_rules = parsed_rules
+        .into_iter()
+        .filter_map(|(backend, rule)| (backend == selected_backend).then_some(rule));
+    selected.rules = matching_rules.by_ref().take(MAX_FIREWALL_RULES).collect();
+    selected.rules_truncated = matching_rules.next().is_some();
+    selected
+}
 
 /// Splits `0.0.0.0:22`, `[::]:22`, `*:80`, `127.0.0.53%lo:53`, `:::22` into
 /// (address, port). Returns None for non-numeric ports (`*:*` peer columns).
@@ -5111,6 +5435,70 @@ pub async fn list_listening_ports(
         return Err(listening_ports_error(&stderr));
     }
     Ok(rows)
+}
+
+#[tauri::command]
+pub async fn detect_firewall_status(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+    host_id: Option<String>,
+) -> Result<FirewallStatusDto, String> {
+    let host_id = host_id.unwrap_or_default();
+    if host_id.is_empty() || host_id.starts_with("local-") {
+        #[cfg(target_os = "windows")]
+        {
+            let output = tokio::process::Command::new("powershell")
+                .creation_flags(CREATE_NO_WINDOW)
+                .args([
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-Command",
+                    WINDOWS_FIREWALL_SCRIPT,
+                ])
+                .output()
+                .await
+                .map_err(|e| format!("detecting local firewall failed: {e}"))?;
+            return Ok(parse_firewall_status(&String::from_utf8_lossy(
+                &output.stdout,
+            )));
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let output = Command::new("sh")
+                .arg("-lc")
+                .arg(MACOS_FIREWALL_SCRIPT)
+                .output()
+                .await
+                .map_err(|e| format!("detecting local firewall failed: {e}"))?;
+            return Ok(parse_firewall_status(&String::from_utf8_lossy(
+                &output.stdout,
+            )));
+        }
+        #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+        {
+            let output = Command::new("sh")
+                .arg("-lc")
+                .arg(LINUX_FIREWALL_SCRIPT)
+                .output()
+                .await
+                .map_err(|e| format!("detecting local firewall failed: {e}"))?;
+            return Ok(parse_firewall_status(&String::from_utf8_lossy(
+                &output.stdout,
+            )));
+        }
+    }
+
+    let (_host, cfg, jump_cfg) = build_connect_chain_for_host(&state, &app_handle, &host_id)?;
+    let session = state
+        .sftp_pool
+        .acquire_session(host_id, cfg, jump_cfg)
+        .await?;
+    let (_code, stdout, _stderr) = session
+        .exec(LINUX_FIREWALL_SCRIPT)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(parse_firewall_status(&String::from_utf8_lossy(&stdout)))
 }
 
 /// Kill targets come from the ports panel, so the surface is pinned to a
@@ -7512,6 +7900,25 @@ mod tests {
         assert!(status.success());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn firewall_detection_scripts_have_valid_shell_syntax() {
+        let linux = std::process::Command::new("sh")
+            .args(["-n", "-c", LINUX_FIREWALL_SCRIPT])
+            .status()
+            .expect("run Linux firewall shell syntax check");
+        assert!(linux.success());
+
+        #[cfg(target_os = "macos")]
+        {
+            let macos = std::process::Command::new("sh")
+                .args(["-n", "-c", MACOS_FIREWALL_SCRIPT])
+                .status()
+                .expect("run macOS firewall shell syntax check");
+            assert!(macos.success());
+        }
+    }
+
     #[test]
     fn docker_args_allow_lifecycle_but_reject_run_and_exec() {
         assert!(validate_docker_args(&["ps".into(), "-a".into()]).is_ok());
@@ -7700,6 +8107,63 @@ mod tests {
         assert_eq!(split_local_address(":::22"), Some(("::".to_string(), 22)));
         assert_eq!(split_local_address("*:*"), None);
         assert_eq!(split_local_address("no-port"), None);
+    }
+
+    #[test]
+    fn firewall_status_prefers_active_manager_and_parses_policy() {
+        let status = parse_firewall_status(
+            "ufw|inactive|unknown|\n\
+             firewalld|active|unknown|\n\
+             nftables|unknown|unknown|\n",
+        );
+        assert_eq!(status.status, "active");
+        assert_eq!(status.backend, "firewalld");
+        assert_eq!(status.inbound_policy, "unknown");
+
+        let ufw = parse_firewall_status(
+            "ufw|active|block|\n\
+             R|ufw|allow|[ 1] 22/tcp ALLOW IN Anywhere\n\
+             R|ufw|block|[ 2] 3306/tcp DENY IN Anywhere\n",
+        );
+        assert_eq!(ufw.backend, "UFW");
+        assert_eq!(ufw.inbound_policy, "block");
+        assert_eq!(ufw.rules.len(), 2);
+        assert_eq!(ufw.rules[0].action, "allow");
+        assert_eq!(ufw.rules[1].action, "block");
+        assert!(!ufw.rules_truncated);
+
+        let preferred = parse_firewall_status(
+            "ufw|active|block|\n\
+             nftables|active|unknown|\n\
+             R|ufw|allow|22/tcp ALLOW IN Anywhere\n\
+             R|nftables|allow|tcp dport 22 accept\n",
+        );
+        assert_eq!(preferred.backend, "UFW");
+        assert_eq!(preferred.rules[0].text, "22/tcp ALLOW IN Anywhere");
+    }
+
+    #[test]
+    fn firewall_status_handles_missing_or_unreadable_tools() {
+        let missing = parse_firewall_status("none|unavailable|unknown|\n");
+        assert_eq!(missing.status, "unavailable");
+        assert!(missing.backend.is_empty());
+
+        let unknown = parse_firewall_status("nftables|unknown|garbage|\n");
+        assert_eq!(unknown.status, "unknown");
+        assert_eq!(unknown.inbound_policy, "unknown");
+    }
+
+    #[test]
+    fn firewall_rules_are_bounded_and_normalized() {
+        let mut output = "ufw|active|block|\n".to_string();
+        for index in 0..101 {
+            output.push_str(&format!("R|ufw|allow|  rule   {index}   allow  \n"));
+        }
+        let status = parse_firewall_status(&output);
+        assert_eq!(status.rules.len(), 100);
+        assert!(status.rules_truncated);
+        assert_eq!(status.rules[0].text, "rule 0 allow");
+        assert_eq!(status.rules[99].text, "rule 99 allow");
     }
 
     #[cfg(target_os = "windows")]

@@ -196,6 +196,7 @@ pub fn run() {
             commands::system_service_action,
             commands::system_service_file,
             commands::list_listening_ports,
+            commands::detect_firewall_status,
             commands::kill_port_process,
             commands::docker_exec,
             commands::respond_host_key,
