@@ -5596,10 +5596,81 @@ body[data-app-theme="light"] .pane-ai-toggle.active {
   border-color: rgba(255, 255, 255, 0.2);
 }
 
+.pane-reconnect-btn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
 .pane-body {
+  position: relative;
   flex: 1;
   min-height: 0;
   background: transparent;
+}
+
+.pane-connection-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  color: rgba(226, 232, 240, 0.92);
+  background: rgba(7, 12, 24, 0.72);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+.pane-connection-loading[hidden] {
+  display: none;
+}
+
+.pane-connection-spinner {
+  width: 30px;
+  height: 30px;
+  box-sizing: border-box;
+  border: 2px solid rgba(125, 211, 252, 0.22);
+  border-top-color: #7dd3fc;
+  border-radius: 50%;
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.16);
+  animation: pane-connection-spin 0.85s linear infinite;
+}
+
+.pane-connection-loading-label {
+  max-width: min(360px, calc(100% - 32px));
+  overflow: hidden;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-app-theme="light"] .pane-connection-loading {
+  color: rgba(30, 41, 59, 0.92);
+  background: rgba(248, 250, 252, 0.78);
+}
+
+body[data-app-theme="light"] .pane-connection-spinner {
+  border-color: rgba(37, 99, 235, 0.18);
+  border-top-color: #2563eb;
+  box-shadow: 0 0 14px rgba(37, 99, 235, 0.12);
+}
+
+@keyframes pane-connection-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pane-connection-spinner {
+    animation: none;
+  }
 }
 
 .term-pane {

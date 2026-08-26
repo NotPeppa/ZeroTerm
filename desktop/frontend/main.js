@@ -546,6 +546,9 @@ const I18N = {
     "terminal.new_tab_hint": "Select a host to open a new terminal tab.",
     "terminal.pane.empty": "Empty pane",
     "terminal.status.connecting": "connecting...",
+    "terminal.status.reconnecting": "reconnecting...",
+    "terminal.loading.connecting": "Connecting to {host}",
+    "terminal.loading.reconnecting": "Reconnecting to {host}",
     "terminal.status.connected": "connected",
     "terminal.status.unresponsive": "unresponsive",
     "terminal.status.disconnected": "disconnected",
@@ -1564,6 +1567,9 @@ const I18N = {
     "terminal.new_tab_hint": "请选择一个主机来打开新终端标签页。",
     "terminal.pane.empty": "空窗格",
     "terminal.status.connecting": "连接中...",
+    "terminal.status.reconnecting": "正在重新连接...",
+    "terminal.loading.connecting": "正在连接 {host}",
+    "terminal.loading.reconnecting": "正在重新连接 {host}",
     "terminal.status.connected": "已连接",
     "terminal.status.unresponsive": "无响应",
     "terminal.status.disconnected": "已断开",
@@ -14812,6 +14818,10 @@ function createPane(host) {
     latencyEl: null,
     statusEl: null,
     reconnectBtn: null,
+    connectionLoadingEl: null,
+    connectionLoadingLabelEl: null,
+    connecting: false,
+    connectionAttempts: 0,
     term: null,
     fitAddon: null,
     searchAddon: null,
@@ -14921,29 +14931,43 @@ async function connectQuickHostAndOpenTerminal(input) {
   setWorkspaceMode("terminal");
   renderTerminalWorkspace();
 
-  await connectQuickIntoPane(pane, input);
   pane.reconnectFactory = async () => {
     await connectQuickIntoPane(pane, input);
   };
+  await connectQuickIntoPane(pane, input);
 }
 
 async function connectQuickIntoPane(pane, input) {
-  const cols = pane.term ? pane.term.cols : 80;
-  const rows = pane.term ? pane.term.rows : 24;
-  const sessionId = await invoke("connect_quick_host", {
-    input: {
-      user: input.user,
-      host: input.host,
-      port: input.port,
-      auth: input.auth,
-    },
-    cols,
-    rows,
-  });
-  pane.sessionId = sessionId;
-  if (pane.statusEl) pane.statusEl.textContent = t("terminal.status.connected");
-  if (pane.reconnectBtn) pane.reconnectBtn.hidden = true;
-  await wirePaneSessionEvents(pane, sessionId);
+  if (pane.connecting) return;
+  const reconnecting = pane.connectionAttempts > 0;
+  pane.connectionAttempts += 1;
+  setPaneConnecting(pane, true, { reconnecting });
+  try {
+    const cols = pane.term ? pane.term.cols : 80;
+    const rows = pane.term ? pane.term.rows : 24;
+    const sessionId = await invoke("connect_quick_host", {
+      input: {
+        user: input.user,
+        host: input.host,
+        port: input.port,
+        auth: input.auth,
+      },
+      cols,
+      rows,
+    });
+    pane.sessionId = sessionId;
+    if (pane.statusEl) pane.statusEl.textContent = t("terminal.status.connected");
+    if (pane.reconnectBtn) pane.reconnectBtn.hidden = true;
+    await wirePaneSessionEvents(pane, sessionId);
+  } catch (e) {
+    if (pane.statusEl) {
+      pane.statusEl.textContent = t("terminal.error.connect_failed_status", { error: e });
+    }
+    if (pane.reconnectBtn) pane.reconnectBtn.hidden = false;
+    throw e;
+  } finally {
+    setPaneConnecting(pane, false);
+  }
 }
 
 function syncQuickConnectAuthSections() {
@@ -15771,6 +15795,31 @@ termTabScrollRight?.addEventListener("click", () => scrollTermTabs(1));
 termTabStrip?.addEventListener("scroll", updateTabOverflowControls, { passive: true });
 window.addEventListener("resize", updateTabOverflowControls);
 
+function setPaneConnecting(pane, connecting, { reconnecting = false } = {}) {
+  pane.connecting = connecting;
+  pane.rootEl?.classList.toggle("connecting", connecting);
+  pane.rootEl?.setAttribute("aria-busy", connecting ? "true" : "false");
+
+  if (pane.connectionLoadingEl) pane.connectionLoadingEl.hidden = !connecting;
+  if (pane.reconnectBtn) {
+    pane.reconnectBtn.disabled = connecting;
+    if (connecting) pane.reconnectBtn.hidden = true;
+  }
+  if (!connecting) return;
+
+  const statusKey = reconnecting
+    ? "terminal.status.reconnecting"
+    : "terminal.status.connecting";
+  const loadingKey = reconnecting
+    ? "terminal.loading.reconnecting"
+    : "terminal.loading.connecting";
+  const host = pane.host?.name || pane.host?.host || "SSH";
+  const label = t(loadingKey, { host });
+  if (pane.statusEl) pane.statusEl.textContent = t(statusKey);
+  if (pane.connectionLoadingLabelEl) pane.connectionLoadingLabelEl.textContent = label;
+  pane.connectionLoadingEl?.setAttribute("aria-label", label);
+}
+
 function ensurePaneElements(pane, tab) {
   if (pane.rootEl) return;
 
@@ -15816,6 +15865,19 @@ function ensurePaneElements(pane, tab) {
   const body = document.createElement("div");
   body.className = "pane-body";
 
+  const connectionLoading = document.createElement("div");
+  connectionLoading.className = "pane-connection-loading";
+  connectionLoading.hidden = true;
+  connectionLoading.setAttribute("role", "status");
+  connectionLoading.setAttribute("aria-live", "polite");
+  const connectionSpinner = document.createElement("span");
+  connectionSpinner.className = "pane-connection-spinner";
+  connectionSpinner.setAttribute("aria-hidden", "true");
+  const connectionLoadingLabel = document.createElement("span");
+  connectionLoadingLabel.className = "pane-connection-loading-label";
+  connectionLoading.append(connectionSpinner, connectionLoadingLabel);
+  body.append(connectionLoading);
+
   const findBar = document.createElement("div");
   findBar.className = "pane-findbar";
   findBar.hidden = true;
@@ -15857,6 +15919,8 @@ function ensurePaneElements(pane, tab) {
   pane.latencyEl = latency;
   pane.statusEl = status;
   pane.reconnectBtn = reconnectBtn;
+  pane.connectionLoadingEl = connectionLoading;
+  pane.connectionLoadingLabelEl = connectionLoadingLabel;
   pane.findBarEl = findBar;
   pane.findInputEl = findInput;
   pane.findCountEl = findCount;
@@ -16719,10 +16783,14 @@ async function preparePaneTerminalForSession(pane, rounds = 2) {
 
 async function connectPaneSession(pane) {
   if (!pane.host) return;
+  if (pane.connecting) return;
+  const reconnecting = pane.connectionAttempts > 0;
+  pane.connectionAttempts += 1;
   if (!pane.bodyEl || !pane.bodyEl.isConnected) {
     renderTerminalWorkspace();
     await nextFrame();
   }
+  setPaneConnecting(pane, true, { reconnecting });
   ensurePaneTerminal(pane);
   if (!pane.term) {
     renderTerminalWorkspace();
@@ -16731,18 +16799,20 @@ async function connectPaneSession(pane) {
   }
   if (!pane.term) {
     if (pane.statusEl) pane.statusEl.textContent = t("terminal.error.connect_failed_status", { error: "terminal init failed" });
+    setPaneConnecting(pane, false);
+    if (pane.reconnectBtn) pane.reconnectBtn.hidden = false;
     return;
   }
-  await preparePaneTerminalForSession(pane, 2);
-
-  if (pane.sessionId !== null) {
-    await disconnectPaneSession(pane, { dispose: false });
-  }
-
-  const cols = pane.term ? pane.term.cols : 80;
-  const rows = pane.term ? pane.term.rows : 24;
 
   try {
+    await preparePaneTerminalForSession(pane, 2);
+
+    if (pane.sessionId !== null) {
+      await disconnectPaneSession(pane, { dispose: false });
+    }
+
+    const cols = pane.term ? pane.term.cols : 80;
+    const rows = pane.term ? pane.term.rows : 24;
     const sessionId = await invoke("connect_host", {
       hostId: pane.host.id,
       cols,
@@ -16780,6 +16850,8 @@ async function connectPaneSession(pane) {
     if (pane.term) {
       writePaneTerminalData(pane, `\x1b[31m${t("terminal.error.connect_failed_term", { error: e })}\x1b[0m\r\n`, { stickToBottom: true });
     }
+  } finally {
+    setPaneConnecting(pane, false);
   }
 }
 
@@ -17029,6 +17101,9 @@ async function disconnectPaneSession(pane, { dispose }) {
     pane.latencyEl = null;
     pane.statusEl = null;
     pane.reconnectBtn = null;
+    pane.connectionLoadingEl = null;
+    pane.connectionLoadingLabelEl = null;
+    pane.connecting = false;
   }
 }
 
