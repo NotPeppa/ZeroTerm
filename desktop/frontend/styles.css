@@ -14118,3 +14118,59 @@ body[data-app-theme="light"] .settings-bg-slider input[type="range"]::-webkit-sl
 .settings-bg-slider input[type="range"]::-webkit-slider-thumb:active {
   transform: scale(0.95);
 }
+
+.settings-terminal-sidebar-features {
+  display: grid;
+  gap: 14px;
+}
+
+.settings-terminal-sidebar-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.settings-terminal-sidebar-feature {
+  min-width: 0;
+  min-height: 46px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.025);
+  color: #dfe9ff;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.settings-terminal-sidebar-feature:hover {
+  border-color: rgba(104, 168, 255, 0.3);
+  background: rgba(104, 168, 255, 0.07);
+}
+
+.settings-terminal-sidebar-feature .settings-switch {
+  flex: 0 0 auto;
+  margin-top: 0;
+}
+
+body[data-app-theme="light"] .settings-terminal-sidebar-feature {
+  border-color: rgba(31, 41, 55, 0.09);
+  background: rgba(15, 23, 42, 0.025);
+  color: #263449;
+}
+
+body[data-app-theme="light"] .settings-terminal-sidebar-feature:hover {
+  border-color: rgba(37, 99, 235, 0.25);
+  background: rgba(37, 99, 235, 0.06);
+}
+
+@media (max-width: 760px) {
+  .settings-terminal-sidebar-feature-grid {
+    grid-template-columns: 1fr;
+  }
+}

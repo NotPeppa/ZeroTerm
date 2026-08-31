@@ -1292,6 +1292,16 @@ const I18N = {
     "settings.terminal.cwd.hint": "Open Local terminal tabs in this directory. Leave empty to use the default.",
     "settings.terminal.cwd.placeholder": "e.g. D:\\projects",
     "settings.terminal.cwd.browse": "Browse",
+    "settings.terminal.sidebar_features.label": "Right sidebar features",
+    "settings.terminal.sidebar_features.hint": "Choose which features appear in the terminal right sidebar.",
+    "settings.terminal.sidebar_features.snippets": "Command Snippets",
+    "settings.terminal.sidebar_features.ai": "AI Assistant",
+    "settings.terminal.sidebar_features.metrics": "Metrics",
+    "settings.terminal.sidebar_features.services": "Service Manager",
+    "settings.terminal.sidebar_features.ports": "Port Manager",
+    "settings.terminal.sidebar_features.docker": "Docker",
+    "settings.terminal.sidebar_features.sftp": "SFTP",
+    "settings.terminal.sidebar_features.theme": "Theme",
     "settings.terminal.selection_menu_order.label": "Context menu order",
     "settings.terminal.selection_menu_order.hint": "Drag items to customize the right-click menu order shown after selecting terminal text.",
     "settings.terminal.selection_menu_order.reset": "Reset order",
@@ -2310,6 +2320,16 @@ const I18N = {
     "settings.terminal.cwd.hint": "配置后，每次打开「本地」终端标签页都会自动切换到该目录。留空则使用默认目录。",
     "settings.terminal.cwd.placeholder": "例如：D:\\projects",
     "settings.terminal.cwd.browse": "浏览",
+    "settings.terminal.sidebar_features.label": "右侧栏功能",
+    "settings.terminal.sidebar_features.hint": "选择在终端右侧栏中显示的功能。",
+    "settings.terminal.sidebar_features.snippets": "命令片段",
+    "settings.terminal.sidebar_features.ai": "AI 助手",
+    "settings.terminal.sidebar_features.metrics": "指标监控",
+    "settings.terminal.sidebar_features.services": "服务管理",
+    "settings.terminal.sidebar_features.ports": "端口管理",
+    "settings.terminal.sidebar_features.docker": "Docker",
+    "settings.terminal.sidebar_features.sftp": "SFTP",
+    "settings.terminal.sidebar_features.theme": "主题",
     "settings.terminal.selection_menu_order.label": "右键菜单排序",
     "settings.terminal.selection_menu_order.hint": "拖动调整选中终端文本后右键菜单里的功能展示顺序。",
     "settings.terminal.selection_menu_order.reset": "恢复默认",
@@ -5157,8 +5177,69 @@ function ensureDockerLogsOverlay() {
 }
 
 
+function getTerminalSidebarFeatures() {
+  let saved = {};
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SETTINGS_KEY_TERMINAL_SIDEBAR_FEATURES) || "{}");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) saved = parsed;
+  } catch {
+    // Invalid or legacy values fall back to all features enabled.
+  }
+  return Object.fromEntries(
+    TERMINAL_SIDEBAR_FEATURE_IDS.map((featureId) => [featureId, saved[featureId] !== false])
+  );
+}
+
+function isTerminalSidebarFeatureEnabled(featureId) {
+  if (!TERMINAL_SIDEBAR_FEATURE_IDS.includes(featureId)) return false;
+  return getTerminalSidebarFeatures()[featureId];
+}
+
+function hasEnabledTerminalSidebarFeatures() {
+  const features = getTerminalSidebarFeatures();
+  return TERMINAL_SIDEBAR_FEATURE_IDS.some((featureId) => features[featureId]);
+}
+
+function syncTerminalSidebarFeatureSettings() {
+  if (!settingsTerminalSidebarFeatures) return;
+  const features = getTerminalSidebarFeatures();
+  for (const input of settingsTerminalSidebarFeatures.querySelectorAll("input[data-terminal-sidebar-feature]")) {
+    input.checked = features[input.dataset.terminalSidebarFeature] !== false;
+  }
+}
+
+function setTerminalSidebarFeatureEnabled(featureId, enabled) {
+  if (!TERMINAL_SIDEBAR_FEATURE_IDS.includes(featureId)) return;
+  const features = getTerminalSidebarFeatures();
+  features[featureId] = Boolean(enabled);
+  localStorage.setItem(SETTINGS_KEY_TERMINAL_SIDEBAR_FEATURES, JSON.stringify(features));
+  applyTerminalSidebarFeatureSettings();
+}
+
+function applyTerminalSidebarFeatureSettings() {
+  const features = getTerminalSidebarFeatures();
+  for (const featureId of TERMINAL_SIDEBAR_FEATURE_IDS) {
+    const toggle = TERMINAL_SIDEBAR_FEATURE_TOGGLES[featureId];
+    if (toggle) toggle.hidden = !features[featureId];
+  }
+  for (const [paneKey, panel] of terminalSidePanelByPane.entries()) {
+    if (panel && features[panel] === false) terminalSidePanelByPane.set(paneKey, null);
+  }
+  syncTerminalSidebarFeatureSettings();
+
+  const railWasHidden = terminalSidebarRail?.hidden;
+  if (terminalSidebarRail) {
+    terminalSidebarRail.hidden = !getActiveTab() || !hasEnabledTerminalSidebarFeatures();
+  }
+  if (terminalActiveSidePanel && features[terminalActiveSidePanel] === false) {
+    setTerminalSidePanel(null);
+  } else if (terminalSidebarRail && railWasHidden !== terminalSidebarRail.hidden) {
+    refitActiveTerminalPanes({ reason: "sidebar-features", forceBottom: true });
+  }
+}
+
 function setTerminalSidePanel(panel, { skipSftpConnect = false } = {}) {
-  terminalActiveSidePanel = panel || null;
+  terminalActiveSidePanel = panel && isTerminalSidebarFeatureEnabled(panel) ? panel : null;
   const paneKey = getAiPaneKey();
   if (paneKey !== "no-terminal") {
     terminalSidePanelByPane.set(paneKey, terminalActiveSidePanel);
@@ -7952,6 +8033,7 @@ const settingsTerminalShellReset = document.getElementById("settings-terminal-sh
 const settingsTerminalShellCurrent = document.getElementById("settings-terminal-shell-current");
 const settingsTerminalCwd = document.getElementById("settings-terminal-cwd");
 const settingsTerminalCwdBrowse = document.getElementById("settings-terminal-cwd-browse");
+const settingsTerminalSidebarFeatures = document.getElementById("settings-terminal-sidebar-features");
 const settingsTerminalSelectionMenuOrder = document.getElementById("settings-terminal-selection-menu-order");
 const settingsTerminalSelectionMenuOrderReset = document.getElementById("settings-terminal-selection-menu-order-reset");
 const settingsTerminalAttentionFlash = document.getElementById("settings-terminal-attention-flash");
@@ -8072,6 +8154,27 @@ const SETTINGS_KEY_TERMINAL_LOCAL_CWD = "zeroterm.settings.terminal.local_cwd";
 const SETTINGS_KEY_TERMINAL_LINE_HEIGHT = "zeroterm.settings.terminal.line_height";
 const SETTINGS_KEY_TERMINAL_SELECTION_MENU_ORDER = "zeroterm.settings.terminal.selection_menu_order";
 const SETTINGS_KEY_TERMINAL_ATTENTION_FLASH = "zeroterm.settings.terminal.attention_flash";
+const SETTINGS_KEY_TERMINAL_SIDEBAR_FEATURES = "zeroterm.settings.terminal.sidebar_features";
+const TERMINAL_SIDEBAR_FEATURE_IDS = Object.freeze([
+  "snippets",
+  "ai",
+  "metrics",
+  "services",
+  "ports",
+  "docker",
+  "sftp",
+  "theme",
+]);
+const TERMINAL_SIDEBAR_FEATURE_TOGGLES = Object.freeze({
+  snippets: terminalSidebarSnippetsToggle,
+  ai: terminalSidebarAiToggle,
+  metrics: terminalSidebarMetricsToggle,
+  services: terminalSidebarServicesToggle,
+  ports: terminalSidebarPortsToggle,
+  docker: terminalSidebarDockerToggle,
+  sftp: terminalSidebarSftpToggle,
+  theme: terminalSidebarThemeToggle,
+});
 const TERMINAL_SELECTION_MENU_DEFAULT_ORDER = Object.freeze(["url", "search", "copy", "execute", "sftp", "ai"]);
 const SETTINGS_KEY_APP_BG_OPACITY = "zeroterm.settings.app_background.opacity";
 const SETTINGS_KEY_APP_BG_BLUR = "zeroterm.settings.app_background.blur";
@@ -9952,6 +10055,7 @@ function setWorkspaceMode(mode) {
     if (settingsTerminalAttentionFlash) {
       settingsTerminalAttentionFlash.checked = isTerminalAttentionFlashEnabled();
     }
+    syncTerminalSidebarFeatureSettings();
     renderTerminalSelectionMenuOrderSettings();
     syncTerminalFontPreview();
     syncTerminalThemeCardsActive();
@@ -13015,6 +13119,12 @@ function applyI18n() {
   setText("settings-terminal-cwd-hint", "settings.terminal.cwd.hint");
   setText("settings-terminal-cwd-browse", "settings.terminal.cwd.browse");
   setPlaceholder("settings-terminal-cwd", "settings.terminal.cwd.placeholder");
+  setText("settings-terminal-sidebar-features-label", "settings.terminal.sidebar_features.label");
+  setText("settings-terminal-sidebar-features-hint", "settings.terminal.sidebar_features.hint");
+  for (const featureId of TERMINAL_SIDEBAR_FEATURE_IDS) {
+    setText(`settings-terminal-sidebar-feature-${featureId}`, `settings.terminal.sidebar_features.${featureId}`);
+  }
+  syncTerminalSidebarFeatureSettings();
   setText("settings-terminal-selection-menu-order-label", "settings.terminal.selection_menu_order.label");
   setText("settings-terminal-selection-menu-order-hint", "settings.terminal.selection_menu_order.hint");
   setText("settings-terminal-selection-menu-order-reset", "settings.terminal.selection_menu_order.reset");
@@ -14232,6 +14342,11 @@ settingsTerminalAttentionFlash?.addEventListener("change", () => {
   );
   if (!settingsTerminalAttentionFlash.checked) cancelWindowAttentionFlash();
 });
+settingsTerminalSidebarFeatures?.addEventListener("change", (ev) => {
+  const input = ev.target.closest("input[data-terminal-sidebar-feature]");
+  if (!input) return;
+  setTerminalSidebarFeatureEnabled(input.dataset.terminalSidebarFeature, input.checked);
+});
 settingsTerminalLineHeight?.addEventListener("change", () => {
   localStorage.setItem(SETTINGS_KEY_TERMINAL_LINE_HEIGHT, String(settingsTerminalLineHeight.value || "1.25"));
   applyTerminalThemeToAllPanes();
@@ -15070,7 +15185,9 @@ function renderTerminalWorkspace() {
   const tab = getActiveTab();
   const hasTerminalTab = !!tab;
   terminalSessionLayout?.classList.toggle("no-terminal-sidebar", !hasTerminalTab);
-  if (terminalSidebarRail) terminalSidebarRail.hidden = !hasTerminalTab;
+  if (terminalSidebarRail) {
+    terminalSidebarRail.hidden = !hasTerminalTab || !hasEnabledTerminalSidebarFeatures();
+  }
   if (!tab) {
     terminalWorkspace.className = "terminal-workspace layout-single";
     const empty = document.createElement("div");
@@ -21093,6 +21210,7 @@ window.addEventListener("blur", () => hideTerminalSelectionMenu());
 
 applyTerminalSelectionMenuOrder();
 applyI18n();
+applyTerminalSidebarFeatureSettings();
 loadNetworkProxyConfig({ quiet: true }).catch(() => {});
 refreshVaultStatus();
 function openSettingsPage() {
