@@ -225,6 +225,8 @@ pub fn run() {
             sftp::sftp_chmod,
             sftp::sftp_remove,
             sftp::sftp_remove_dir,
+            sftp::sftp_remove_dir_command_preview,
+            sftp::sftp_remove_dir_command,
             sftp::sftp_rename,
             sftp::sftp_mkdir,
             sftp::sftp_copy_entry_between_panes,

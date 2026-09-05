@@ -27,7 +27,7 @@ use crate::sftp::transfer::{
 };
 use crate::sftp::tree::{
     copy_local_tree_to_local, copy_local_tree_to_remote, copy_remote_tree_to_local,
-    copy_remote_tree_to_remote, sftp_remove_dir_recursive,
+    copy_remote_tree_to_remote, normalize_removable_remote_dir, sftp_remove_dir_recursive,
 };
 use crate::state::{AppState, SftpHandle};
 use zeroterm_ssh::{SftpErrorKind, SshError};
@@ -658,6 +658,54 @@ pub async fn sftp_remove(
     .await
 }
 
+fn fast_remote_remove_command(path: &str) -> Result<(String, String), String> {
+    let normalized = normalize_removable_remote_dir(path)?;
+    let command = format!("rm -rf -- {}", direct::sh_quote(&normalized));
+    Ok((normalized, command))
+}
+
+async fn try_fast_remote_remove_dir(
+    state: &AppState,
+    app_handle: &AppHandle,
+    host_id: &str,
+    path: &str,
+) -> Result<(), String> {
+    let (_host, cfg, jump_cfg) = build_connect_chain_for_host(state, app_handle, host_id)?;
+    let session = state
+        .sftp_pool
+        .acquire_session(host_id.to_string(), cfg, jump_cfg)
+        .await?;
+    let (_normalized, command) = fast_remote_remove_command(path)?;
+    let (code, stdout, stderr) = session.exec(&command).await.map_err(ssh_error)?;
+    if code == 0 {
+        return Ok(());
+    }
+    let detail = String::from_utf8_lossy(if stderr.is_empty() { &stdout } else { &stderr })
+        .trim()
+        .to_string();
+    Err(string_error(if detail.is_empty() {
+        format!("remote rm failed with exit code {code}")
+    } else {
+        detail
+    }))
+}
+
+#[tauri::command]
+pub async fn sftp_remove_dir_command_preview(path: String) -> Result<String, String> {
+    fast_remote_remove_command(&path).map(|(_normalized, command)| command)
+}
+
+#[tauri::command]
+pub async fn sftp_remove_dir_command(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+    sftp_id: u64,
+    path: String,
+) -> Result<(), String> {
+    let host_id = lookup_sftp_host_id(&state, sftp_id)?;
+    try_fast_remote_remove_dir(&state, &app_handle, &host_id, &path).await
+}
+
 #[tauri::command]
 pub async fn sftp_remove_dir(
     state: State<'_, AppState>,
@@ -939,5 +987,18 @@ mod tests {
         });
         let parsed = parse_ipc_error(&payload).expect("ipc payload");
         assert_eq!(parsed.code, "CHANNEL_CLOSED");
+    }
+
+    #[test]
+    fn fast_remote_remove_command_quotes_paths_and_rejects_root() {
+        let (path, command) = fast_remote_remove_command("/srv/a'; touch /tmp/pwned; '")
+            .expect("safe absolute path");
+        assert_eq!(path, "/srv/a'; touch /tmp/pwned; '");
+        assert_eq!(
+            command,
+            "rm -rf -- '/srv/a'\\''; touch /tmp/pwned; '\\'''"
+        );
+        assert!(fast_remote_remove_command("/").is_err());
+        assert!(fast_remote_remove_command("relative/path").is_err());
     }
 }

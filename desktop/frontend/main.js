@@ -751,6 +751,12 @@ const I18N = {
     "files.prompt.rename": "Rename \"{name}\" to:",
     "files.error.rename_failed": "rename failed: {error}",
     "files.confirm.delete_entry": "Delete {path}?",
+    "files.delete_method.title": "Delete remote folder",
+    "files.delete_method.description": "Choose how to delete this folder. This action cannot be undone.",
+    "files.delete_method.command_label": "Full command",
+    "files.delete_method.sftp": "SFTP recursive delete",
+    "files.delete_method.command": "Command delete",
+    "files.delete_method.close": "Close without deleting",
     "files.error.delete_failed": "delete failed: {error}",
     "files.confirm.delete_selected": "Delete {count} selected item(s)?",
     "files.error.delete_failed_for": "delete failed for {name}: {error}",
@@ -1781,6 +1787,12 @@ const I18N = {
     "files.prompt.rename": "将“{name}”重命名为：",
     "files.error.rename_failed": "重命名失败：{error}",
     "files.confirm.delete_entry": "确认删除 {path}？",
+    "files.delete_method.title": "删除远程文件夹",
+    "files.delete_method.description": "请选择删除方式。此操作无法撤销。",
+    "files.delete_method.command_label": "完整命令",
+    "files.delete_method.sftp": "SFTP 递归删除",
+    "files.delete_method.command": "命令删除",
+    "files.delete_method.close": "关闭且不删除",
     "files.error.delete_failed": "删除失败：{error}",
     "files.confirm.delete_selected": "确认删除已选的 {count} 项？",
     "files.error.delete_failed_for": "删除 {name} 失败：{error}",
@@ -4907,10 +4919,23 @@ async function dockerGroupAction(project, op, btn) {
   }
 }
 
-function dockerComposeArgs(project, op) {
+function dockerProjectFiles(project) {
   const rows = dockerLastRows.filter((r) => r.project === project);
   const configFiles = rows.find((r) => r.configFiles)?.configFiles || "";
-  const files = configFiles.split(",").map((file) => file.trim()).filter(Boolean);
+  const workingDir = rows.find((r) => r.workingDir)?.workingDir || "";
+  return configFiles.split(",").map((file) => file.trim()).filter(Boolean).map((file) => {
+    // Compose normally stores absolute config paths in the container label. Keep
+    // compatibility with engines that expose paths relative to the project dir.
+    const absolute = file.startsWith("/") || /^[A-Za-z]:[\\/]/.test(file) || file.startsWith("\\\\");
+    if (absolute || !workingDir) return file;
+    const separator = workingDir.includes("\\") && !workingDir.includes("/") ? "\\" : "/";
+    return `${workingDir.replace(/[\\/]+$/, "")}${separator}${file.replace(/^[\\/]+/, "")}`;
+  });
+}
+
+function dockerComposeArgs(project, op) {
+  const rows = dockerLastRows.filter((r) => r.project === project);
+  const files = dockerProjectFiles(project);
   if (!files.length) return null;
 
   const args = ["compose", "--project-name", project];
@@ -4953,6 +4978,25 @@ async function dockerComposeAction(project, op) {
   }
 }
 
+async function dockerEditComposeFile(project, path) {
+  if (!path) return;
+  const active = getActivePane();
+  if (!active) {
+    showToast("没有可用的终端会话。", "error", 3200);
+    return;
+  }
+  try {
+    // Reuse the terminal SFTP pane's connection even while its sidebar is
+    // hidden. Local sessions use the same editor through local_* commands.
+    await connectTerminalSftpToActivePane();
+    const pane = sftpPanes.terminal;
+    if (!pane || !isPaneConnected(pane)) throw new Error("无法建立文件连接");
+    await openFileEditorAtPath(pane, path);
+  } catch (e) {
+    showToast(`无法打开 Compose 文件：${String(e)}`, "error", 5000);
+  }
+}
+
 let dockerGroupMenuProject = "";
 
 function ensureDockerGroupMenu() {
@@ -4963,6 +5007,8 @@ function ensureDockerGroupMenu() {
   menu.className = "hosts-context-menu docker-group-menu";
   menu.hidden = true;
   menu.innerHTML = `
+    <div class="docker-compose-file-actions" data-compose-files hidden></div>
+    <div class="menu-separator docker-compose-file-separator" aria-hidden="true" hidden></div>
     <button type="button" data-compose-op="pull">
       <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><path d="M5 20h14"/></svg>
       <span>拉取镜像（pull）</span>
@@ -4986,14 +5032,16 @@ function ensureDockerGroupMenu() {
     </button>`;
   document.body.appendChild(menu);
   menu.addEventListener("click", (ev) => {
-    const b = ev.target.closest("button[data-op], button[data-compose-op]");
+    const b = ev.target.closest("button[data-op], button[data-compose-op], button[data-compose-file]");
     if (!b) return;
     const op = b.getAttribute("data-op");
     const composeOp = b.getAttribute("data-compose-op");
+    const composeFile = b.getAttribute("data-compose-file");
     const project = dockerGroupMenuProject;
     hideDockerGroupMenu();
     if (!project) return;
-    if (composeOp) dockerComposeAction(project, composeOp);
+    if (composeFile) dockerEditComposeFile(project, composeFile);
+    else if (composeOp) dockerComposeAction(project, composeOp);
     else dockerGroupAction(project, op);
   });
   document.addEventListener("click", (ev) => {
@@ -5016,6 +5064,18 @@ function openDockerGroupMenu(project, anchorBtn) {
   // Re-clicking the same group's button closes the menu (toggle).
   if (!menu.hidden && dockerGroupMenuProject === project) { hideDockerGroupMenu(); return; }
   dockerGroupMenuProject = project || "";
+  const files = dockerProjectFiles(project);
+  const fileActions = menu.querySelector("[data-compose-files]");
+  const fileSeparator = menu.querySelector(".docker-compose-file-separator");
+  if (fileActions) {
+    fileActions.innerHTML = files.map((file) => `
+      <button type="button" data-compose-file="${escapeMetricText(file)}" title="${escapeMetricText(file)}">
+        <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="m13.5 13.5-5 5L6 19l.5-2.5 5-5z"/></svg>
+        <span>编辑 ${escapeMetricText(basename(file))}</span>
+      </button>`).join("");
+    fileActions.hidden = files.length === 0;
+  }
+  if (fileSeparator) fileSeparator.hidden = files.length === 0;
   menu.style.left = "0px";
   menu.style.top = "0px";
   menu.hidden = false;
@@ -12895,6 +12955,13 @@ function applyI18n() {
   setText("files-menu-rename", "files.menu.rename");
   setText("files-menu-delete", "files.menu.delete");
   setText("files-menu-close", "files.menu.close");
+  setText("sftp-delete-method-title", "files.delete_method.title");
+  setText("sftp-delete-method-description", "files.delete_method.description");
+  setText("sftp-delete-command-label", "files.delete_method.command_label");
+  setText("sftp-delete-method-sftp", "files.delete_method.sftp");
+  setText("sftp-delete-method-command-button", "files.delete_method.command");
+  setAttr("sftp-delete-method-close", "title", "files.delete_method.close");
+  setAttr("sftp-delete-method-close", "aria-label", "files.delete_method.close");
   renderAllExternalSftpEdits();
 
   setText("hk-reject", "host_key.reject");
@@ -17901,6 +17968,12 @@ const fileEditorReplaceAllButton = document.getElementById("file-editor-replace-
 const fileEditorError = document.getElementById("file-editor-error");
 const fileEditorSaveButton = document.getElementById("file-editor-save");
 const fileEditorCancelButton = document.getElementById("file-editor-cancel");
+const sftpDeleteMethodOverlay = document.getElementById("sftp-delete-method-overlay");
+const sftpDeleteMethodPath = document.getElementById("sftp-delete-method-path");
+const sftpDeleteMethodCommand = document.getElementById("sftp-delete-method-command");
+const sftpDeleteMethodClose = document.getElementById("sftp-delete-method-close");
+const sftpDeleteMethodSftp = document.getElementById("sftp-delete-method-sftp");
+const sftpDeleteMethodCommandButton = document.getElementById("sftp-delete-method-command-button");
 
 const filesContextMenu = document.getElementById("files-context-menu");
 const filesMenuOpen = document.getElementById("files-menu-open");
@@ -18110,6 +18183,7 @@ const fileEditorState = {
   dirty: false,
   saving: false,
 };
+let sftpDeleteMethodResolve = null;
 const externalSftpEdits = new Map();
 let externalSftpEditMonitorTimer = null;
 let externalSftpEditCheckRunning = false;
@@ -19890,20 +19964,67 @@ async function sftpRenameEntry(pane, entry) {
   }
 }
 
+function closeSftpDeleteMethodDialog(choice = null) {
+  if (sftpDeleteMethodOverlay) sftpDeleteMethodOverlay.hidden = true;
+  const resolve = sftpDeleteMethodResolve;
+  sftpDeleteMethodResolve = null;
+  resolve?.(choice);
+}
+
+async function chooseRemoteDirectoryDeleteMethod(target) {
+  const command = await invoke("sftp_remove_dir_command_preview", { path: target });
+  if (!sftpDeleteMethodOverlay || !sftpDeleteMethodPath || !sftpDeleteMethodCommand) return null;
+  if (sftpDeleteMethodResolve) closeSftpDeleteMethodDialog(null);
+  sftpDeleteMethodPath.textContent = target;
+  sftpDeleteMethodCommand.textContent = command;
+  sftpDeleteMethodOverlay.hidden = false;
+  return new Promise((resolve) => {
+    sftpDeleteMethodResolve = resolve;
+    requestAnimationFrame(() => sftpDeleteMethodClose?.focus());
+  });
+}
+
+sftpDeleteMethodClose?.addEventListener("click", () => closeSftpDeleteMethodDialog(null));
+sftpDeleteMethodSftp?.addEventListener("click", () => closeSftpDeleteMethodDialog("sftp"));
+sftpDeleteMethodCommandButton?.addEventListener("click", () => closeSftpDeleteMethodDialog("command"));
+sftpDeleteMethodOverlay?.addEventListener("click", (ev) => {
+  if (ev.target === sftpDeleteMethodOverlay) closeSftpDeleteMethodDialog(null);
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key !== "Escape" || !sftpDeleteMethodOverlay || sftpDeleteMethodOverlay.hidden) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  closeSftpDeleteMethodDialog(null);
+});
+
+async function removePaneEntry(pane, entry, target, remoteDirMethod = null) {
+  if (isLocalPane(pane)) {
+    const command = entry.kind === "dir" ? "local_remove_dir" : "local_remove";
+    await invoke(command, { path: target });
+    return;
+  }
+  const command = entry.kind === "dir" && remoteDirMethod === "command"
+    ? "sftp_remove_dir_command"
+    : entry.kind === "dir" ? "sftp_remove_dir" : "sftp_remove";
+  await invoke(command, { sftpId: pane.sftpId, path: target });
+}
+
 async function sftpDeleteEntry(pane, entry) {
   const target = joinPanePath(pane, entry.name);
-  if (!confirm(t("files.confirm.delete_entry", { path: target }))) return;
   try {
-    if (isLocalPane(pane)) {
-      const command = entry.kind === "dir" ? "local_remove_dir" : "local_remove";
-      await invoke(command, { path: target });
-    } else {
-      const command = entry.kind === "dir" ? "sftp_remove_dir" : "sftp_remove";
-      await invoke(command, { sftpId: pane.sftpId, path: target });
+    let remoteDirMethod = null;
+    if (!isLocalPane(pane) && entry.kind === "dir") {
+      remoteDirMethod = await chooseRemoteDirectoryDeleteMethod(target);
+      if (!remoteDirMethod) return false;
+    } else if (!confirm(t("files.confirm.delete_entry", { path: target }))) {
+      return false;
     }
+    await removePaneEntry(pane, entry, target, remoteDirMethod);
     await navigateSftpPane(pane, pane.path);
+    return true;
   } catch (e) {
     pane.statusEl.textContent = t("files.error.delete_failed", { error: normalizeSftpError(e).message });
+    return false;
   }
 }
 
@@ -20309,11 +20430,7 @@ function fileEditorTextInfo(content) {
   return `${encoding} text · ${lines} lines · ${suffix}`;
 }
 
-async function openRemoteEditor(pane, entry) {
-  if (!canInlineEditEntry(entry)) {
-    alert(t("editor.alert.unsupported"));
-    return;
-  }
+async function openFileEditorAtPath(pane, path) {
   if (!isPaneConnected(pane)) return;
   if (!ensureFileEditorAce()) {
     alert(t("editor.alert.component_failed"));
@@ -20325,8 +20442,7 @@ async function openRemoteEditor(pane, entry) {
   }
 
   resetFileEditorState();
-  const path = joinPanePath(pane, entry.name);
-  const maxBytes = fileEditorMaxBytesForName(entry.name);
+  const maxBytes = fileEditorMaxBytesForName(basename(path));
   fileEditorOverlay.hidden = false;
   fileEditorTitle.textContent = t("editor.hint.opening");
   fileEditorPath.textContent = path;
@@ -20369,6 +20485,14 @@ async function openRemoteEditor(pane, entry) {
     fileEditorHint.textContent = t("editor.hint.unavailable");
     fileEditorTitle.textContent = t("editor.title");
   }
+}
+
+async function openRemoteEditor(pane, entry) {
+  if (!canInlineEditEntry(entry)) {
+    alert(t("editor.alert.unsupported"));
+    return;
+  }
+  return openFileEditorAtPath(pane, joinPanePath(pane, entry.name));
 }
 
 function closeRemoteEditor({ force = false } = {}) {
@@ -20641,8 +20765,8 @@ async function openSftpEntry(pane, entry, { forceEditor = false } = {}) {
 async function sftpDeleteEntries(pane, entries) {
   if (!pane || !isPaneConnected(pane) || entries.length === 0) return;
   if (entries.length === 1) {
-    await sftpDeleteEntry(pane, entries[0]);
-    pane.selectedEntries.delete(entries[0].name);
+    const deleted = await sftpDeleteEntry(pane, entries[0]);
+    if (deleted) pane.selectedEntries.delete(entries[0].name);
     return;
   }
   if (!confirm(t("files.confirm.delete_selected", { count: entries.length }))) return;
@@ -20650,13 +20774,15 @@ async function sftpDeleteEntries(pane, entries) {
   for (const entry of entries) {
     const target = joinPanePath(pane, entry.name);
     try {
-      if (isLocalPane(pane)) {
-        const command = entry.kind === "dir" ? "local_remove_dir" : "local_remove";
-        await invoke(command, { path: target });
-      } else {
-        const command = entry.kind === "dir" ? "sftp_remove_dir" : "sftp_remove";
-        await invoke(command, { sftpId: pane.sftpId, path: target });
+      let remoteDirMethod = null;
+      if (!isLocalPane(pane) && entry.kind === "dir") {
+        remoteDirMethod = await chooseRemoteDirectoryDeleteMethod(target);
+        if (!remoteDirMethod) {
+          await navigateSftpPane(pane, pane.path);
+          return;
+        }
       }
+      await removePaneEntry(pane, entry, target, remoteDirMethod);
       pane.selectedEntries.delete(entry.name);
     } catch (e) {
       pane.statusEl.textContent = t("files.error.delete_failed_for", {

@@ -11331,6 +11331,85 @@ body[data-app-theme="light"] .theme-edit-preview-title {
   gap: 8px;
 }
 
+.sftp-delete-method-dialog {
+  width: min(620px, calc(100vw - 24px));
+}
+
+.sftp-delete-method-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.sftp-delete-method-header h3,
+.sftp-delete-method-header p {
+  margin: 0;
+}
+
+.sftp-delete-method-header p {
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+
+.sftp-delete-method-close {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 12px;
+}
+
+.sftp-delete-method-close .zt-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.sftp-delete-method-description {
+  margin: 18px 0 12px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.sftp-delete-command-wrap {
+  display: grid;
+  gap: 8px;
+}
+
+.sftp-delete-command-wrap > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+#sftp-delete-method-command {
+  display: block;
+  max-height: 180px;
+  overflow: auto;
+  padding: 14px;
+  border: 1px solid var(--stroke);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.24);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+.sftp-delete-method-actions {
+  margin-top: 20px;
+  gap: 10px;
+}
+
+.sftp-delete-method-actions button {
+  min-height: 44px;
+}
+
 #file-editor-path {
   margin-bottom: 2px;
 }

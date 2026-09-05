@@ -1655,6 +1655,29 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
         </div>
       </div>
 
+      <div id="sftp-delete-method-overlay" class="overlay" hidden>
+        <div class="dialog sftp-delete-method-dialog" role="dialog" aria-modal="true" aria-labelledby="sftp-delete-method-title">
+          <header class="sftp-delete-method-header">
+            <div>
+              <h3 id="sftp-delete-method-title">Delete remote folder</h3>
+              <p id="sftp-delete-method-path" class="tiny muted"></p>
+            </div>
+            <button id="sftp-delete-method-close" type="button" class="sftp-delete-method-close" aria-label="Close" title="Close">
+              <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+          </header>
+          <p id="sftp-delete-method-description" class="sftp-delete-method-description">Choose how to delete this folder. This action cannot be undone.</p>
+          <div class="sftp-delete-command-wrap">
+            <span id="sftp-delete-command-label">Full command</span>
+            <code id="sftp-delete-method-command"></code>
+          </div>
+          <div class="dialog-actions sftp-delete-method-actions">
+            <button id="sftp-delete-method-sftp" type="button">SFTP recursive delete</button>
+            <button id="sftp-delete-method-command-button" type="button" class="danger">Command delete</button>
+          </div>
+        </div>
+      </div>
+
       <div id="text-input-overlay" class="overlay" hidden>
         <div class="dialog text-input-dialog">
           <h3 id="text-input-title">Input</h3>

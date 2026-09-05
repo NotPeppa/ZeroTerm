@@ -2003,7 +2003,7 @@ pub(crate) async fn copy_remote_tree_to_remote(
     }
 }
 
-fn normalize_removable_remote_dir(path: &str) -> Result<String, String> {
+pub(crate) fn normalize_removable_remote_dir(path: &str) -> Result<String, String> {
     // `normalize_remote_path` treats every input as absolute, so a relative
     // path would be silently rewritten to a root-level one before deletion.
     // Refuse instead of guessing what the caller meant.
