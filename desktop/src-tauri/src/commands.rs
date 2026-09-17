@@ -2267,6 +2267,7 @@ pub async fn forget_keychain() -> Result<(), String> {
 #[tauri::command]
 pub async fn open_new_window(app_handle: AppHandle) -> Result<(), String> {
     let label = format!("window-{}", uuid::Uuid::new_v4());
+    let (w, h) = read_startup_window_size().unwrap_or((1500.0, 860.0));
     #[allow(unused_mut)]
     let mut builder = tauri::WebviewWindowBuilder::new(
         &app_handle,
@@ -2274,7 +2275,8 @@ pub async fn open_new_window(app_handle: AppHandle) -> Result<(), String> {
         tauri::WebviewUrl::App("index.html".into()),
     )
     .title("ZeroTerm")
-    .inner_size(1500.0, 860.0);
+    .inner_size(w, h)
+    .center();
     #[cfg(target_os = "windows")]
     {
         builder = builder.decorations(false);
@@ -4497,6 +4499,99 @@ fn validate_system_service_action(action: &str, unit: &str, scope: &str) -> Resu
         return Err(format!("service action `{action}` is not allowed"));
     }
     validate_system_service_target(unit, scope)
+}
+
+/// One `tmux ls` row plus the server version, for the tmux side panel.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TmuxSessionDto {
+    pub name: String,
+    pub windows: u32,
+    pub attached: bool,
+    pub created: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TmuxStateDto {
+    /// Empty when tmux is not installed on the target.
+    pub version: String,
+    pub sessions: Vec<TmuxSessionDto>,
+}
+
+// `tmux ls` exits 1 with "no server running" when nothing is started, which is
+// a normal empty state rather than an error - so both commands are run in one
+// shot and the exit codes are ignored in favour of parsing what came back.
+const TMUX_LIST_SCRIPT: &str = concat!(
+    "command -v tmux >/dev/null 2>&1 || exit 0; ",
+    "echo \"V|$(tmux -V 2>/dev/null)\"; ",
+    "tmux list-sessions -F 'S|#{session_name}|#{session_windows}|#{session_attached}|#{t:session_created}' 2>/dev/null",
+);
+
+fn parse_tmux_state(text: &str) -> TmuxStateDto {
+    let mut version = String::new();
+    let mut sessions = Vec::new();
+    for line in text.lines() {
+        let line = line.trim_end();
+        if let Some(rest) = line.strip_prefix("V|") {
+            version = rest.trim().trim_start_matches("tmux ").to_string();
+        } else if let Some(rest) = line.strip_prefix("S|") {
+            let mut fields = rest.split('|');
+            let name = fields.next().unwrap_or("").to_string();
+            if name.is_empty() {
+                continue;
+            }
+            sessions.push(TmuxSessionDto {
+                windows: fields.next().unwrap_or("0").trim().parse().unwrap_or(0),
+                attached: fields.next().unwrap_or("0").trim() != "0",
+                created: fields.next().unwrap_or("").trim().to_string(),
+                name,
+            });
+        }
+    }
+    TmuxStateDto { version, sessions }
+}
+
+#[tauri::command]
+pub async fn list_tmux_sessions(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+    host_id: Option<String>,
+) -> Result<TmuxStateDto, String> {
+    let host_id = host_id.unwrap_or_default();
+    if host_id.is_empty() || host_id.starts_with("local-") {
+        #[cfg(target_os = "windows")]
+        {
+            // No PTY-capable tmux on Windows; report it as simply absent.
+            return Ok(TmuxStateDto {
+                version: String::new(),
+                sessions: Vec::new(),
+            });
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let output = Command::new("sh")
+                .arg("-lc")
+                .arg(TMUX_LIST_SCRIPT)
+                .output()
+                .await
+                .map_err(|e| format!("tmux lookup failed: {e}"))?;
+            return Ok(parse_tmux_state(&String::from_utf8_lossy(&output.stdout)));
+        }
+    }
+    let (_host, cfg, jump_cfg) = build_connect_chain_for_host(&state, &app_handle, &host_id)?;
+    let session = state
+        .sftp_pool
+        .acquire_session(host_id, cfg, jump_cfg)
+        .await?;
+    let (_code, stdout, stderr) = session
+        .exec(TMUX_LIST_SCRIPT)
+        .await
+        .map_err(|e| e.to_string())?;
+    if stdout.is_empty() && !stderr.is_empty() {
+        return Err(String::from_utf8_lossy(&stderr).to_string());
+    }
+    Ok(parse_tmux_state(&String::from_utf8_lossy(&stdout)))
 }
 
 #[tauri::command]

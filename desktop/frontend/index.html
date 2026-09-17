@@ -58,11 +58,10 @@
                         </button>
                       </div>
                       <div class="top-actions">
-                        <button id="workspace-nav-vaults" type="button" class="workspace-icon-btn workspace-nav-btn active" title="Vaults" aria-label="Vaults">
+                        <button id="new-window-button" type="button" class="workspace-icon-btn" title="New window" aria-label="New window">
                           <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
-                            <path d="m3 10.5 9-7 9 7"></path>
-                            <path d="M6 9.5V20h12V9.5"></path>
-                            <path d="M10 20v-6h4v6"></path>
+                            <rect x="3" y="5" width="13" height="13" rx="2"></rect>
+                            <path d="M19 9v10a2 2 0 0 1-2 2H7"></path>
                           </svg>
                         </button>
                         <button id="workspace-nav-sftp" type="button" class="workspace-icon-btn workspace-nav-btn" title="SFTP" aria-label="SFTP">
@@ -191,12 +190,6 @@
                         <button id="term-tab-scroll-right" type="button" class="term-tab-scroll-btn" aria-label="Scroll tabs right" title="Scroll tabs right" hidden>›</button>
                       </div>
                       <div class="workspace-actions topbar-hidden-actions" hidden>
-                        <button id="new-window-button" type="button" class="workspace-icon-btn" aria-label="New window">
-                          <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
-                            <path d="M12 5v14"></path>
-                            <path d="M5 12h14"></path>
-                          </svg>
-                        </button>
                         <button id="settings-button" type="button" class="workspace-icon-btn" aria-label="Settings">
                           <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
                             <path d="M4 6h5M13 6h7"></path>
@@ -599,6 +592,36 @@
                           </header>
                           <div id="terminal-docker-body" class="terminal-side-body docker-body"></div>
                         </section>
+                        <section id="terminal-tmux-panel" class="terminal-side-panel" hidden>
+                          <header class="terminal-side-header">
+                            <div class="terminal-side-title-wrap">
+                              <span class="terminal-side-mark" aria-hidden="true">
+                                <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                  <path d="m12 3 9 4.5-9 4.5-9-4.5z"></path>
+                                  <path d="m3 12 9 4.5 9-4.5"></path>
+                                  <path d="m3 16.5 9 4.5 9-4.5"></path>
+                                </svg>
+                              </span>
+                              <div>
+                                <strong id="terminal-tmux-title">tmux</strong>
+                                <span id="terminal-tmux-subtitle">当前终端会话</span>
+                              </div>
+                            </div>
+                            <button id="terminal-tmux-refresh" type="button" class="terminal-side-add-btn" title="刷新" aria-label="刷新">
+                              <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M21 12a9 9 0 0 1-15.2 6.5"></path>
+                                <path d="M3 12A9 9 0 0 1 18.2 5.5"></path>
+                                <path d="M18 3v4h-4"></path>
+                                <path d="M6 21v-4h4"></path>
+                              </svg>
+                            </button>
+                          </header>
+                          <div class="tmux-actions">
+                            <button id="terminal-tmux-new" type="button" class="tmux-action-btn primary">+ 新建</button>
+                            <button id="terminal-tmux-detach" type="button" class="tmux-action-btn">退出当前</button>
+                          </div>
+                          <div id="terminal-tmux-body" class="terminal-side-body tmux-body" aria-live="polite"></div>
+                        </section>
                         <section id="terminal-sftp-panel" class="terminal-side-panel" hidden>
                           <header class="terminal-side-header">
                             <div class="terminal-side-title-wrap">
@@ -756,6 +779,13 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
                             <path d="M3 13c0 4 3 6 7 6 6 0 9-4 10-8"></path>
                           </svg>
                         </button>
+                        <button id="terminal-sidebar-tmux-toggle" type="button" class="terminal-side-btn" title="tmux" aria-label="tmux">
+                          <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="m12 3 9 4.5-9 4.5-9-4.5z"></path>
+                            <path d="m3 12 9 4.5 9-4.5"></path>
+                            <path d="m3 16.5 9 4.5 9-4.5"></path>
+                          </svg>
+                        </button>
                         <button id="terminal-sidebar-sftp-toggle" type="button" class="terminal-side-btn" title="SFTP" aria-label="SFTP">
                           <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
                             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
@@ -782,6 +812,7 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
                             <div id="settings-nav-pref" class="settings-nav-label">偏好</div>
                             <button id="settings-nav-general" type="button" class="settings-nav-item active"><svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>常规</button>
                             <button id="settings-nav-terminal" type="button" class="settings-nav-item"><svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="21" y1="9" x2="3" y2="9"></line><path d="m8 14-2 2 2 2"></path><line x1="12" y1="18" x2="16" y2="18"></line></svg>终端</button>
+                            <button id="settings-nav-keys" type="button" class="settings-nav-item"><svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"></rect><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M18 14h.01"></path><path d="M9 14h6"></path></svg>快捷键</button>
                             <button id="settings-nav-ai" type="button" class="settings-nav-item"><svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 4.8L18.5 10l-4.7 2.2L12 17l-1.8-4.8L5.5 10l4.7-2.2z"></path><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"></path></svg>AI</button>
                             <button id="settings-nav-sync" type="button" class="settings-nav-item"><svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>同步</button>
                             <button id="settings-nav-data" type="button" class="settings-nav-item"><svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"></path></svg>数据管理</button>
@@ -971,6 +1002,13 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
                                     </span>
                                   </label>
                                   <label class="settings-terminal-sidebar-feature">
+                                    <span id="settings-terminal-sidebar-feature-tmux">tmux</span>
+                                    <span class="settings-switch">
+                                      <input type="checkbox" data-terminal-sidebar-feature="tmux" checked />
+                                      <span></span>
+                                    </span>
+                                  </label>
+                                  <label class="settings-terminal-sidebar-feature">
                                     <span id="settings-terminal-sidebar-feature-theme">主题</span>
                                     <span class="settings-switch">
                                       <input type="checkbox" data-terminal-sidebar-feature="theme" checked />
@@ -991,6 +1029,52 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
                                 </div>
                               </div>
                               <div class="settings-divider"></div>
+                              <div class="settings-row settings-row-dir">
+                                <div>
+                                  <div id="settings-terminal-cursor-style-label" class="settings-item-title">光标样式</div>
+                                  <p id="settings-terminal-cursor-style-hint" class="muted tiny">终端光标的形状，立即应用到所有打开的终端。</p>
+                                </div>
+                                <div id="settings-terminal-cursor-style" class="settings-segmented" role="radiogroup" aria-labelledby="settings-terminal-cursor-style-label">
+                                  <label class="settings-segment">
+                                    <input type="radio" name="terminal-cursor-style" value="block" />
+                                    <i class="cursor-glyph cursor-glyph-block" aria-hidden="true"></i>
+                                    <span id="settings-terminal-cursor-style-block">方块</span>
+                                  </label>
+                                  <label class="settings-segment">
+                                    <input type="radio" name="terminal-cursor-style" value="underline" />
+                                    <i class="cursor-glyph cursor-glyph-underline" aria-hidden="true"></i>
+                                    <span id="settings-terminal-cursor-style-underline">下划线</span>
+                                  </label>
+                                  <label class="settings-segment">
+                                    <input type="radio" name="terminal-cursor-style" value="bar" />
+                                    <i class="cursor-glyph cursor-glyph-bar" aria-hidden="true"></i>
+                                    <span id="settings-terminal-cursor-style-bar">竖线</span>
+                                  </label>
+                                </div>
+                              </div>
+                              <div class="settings-divider"></div>
+                              <div class="settings-row">
+                                <div>
+                                  <div id="settings-terminal-auto-reconnect-label" class="settings-item-title">自动重连</div>
+                                  <p id="settings-terminal-auto-reconnect-hint" class="muted tiny">连接意外断开后自动重试，最多 3 次，间隔逐次翻倍（1 秒、2 秒、4 秒）。</p>
+                                </div>
+                                <label class="settings-switch">
+                                  <input id="settings-terminal-auto-reconnect" type="checkbox" />
+                                  <span></span>
+                                </label>
+                              </div>
+                              <div class="settings-divider"></div>
+                              <div class="settings-row">
+                                <div>
+                                  <div id="settings-terminal-header-metrics-label" class="settings-item-title">标题栏显示指标</div>
+                                  <p id="settings-terminal-header-metrics-hint" class="muted tiny">在终端标题栏的会话名后面追加实时 CPU / 内存 / 磁盘占用。</p>
+                                </div>
+                                <label class="settings-switch">
+                                  <input id="settings-terminal-header-metrics" type="checkbox" />
+                                  <span></span>
+                                </label>
+                              </div>
+                              <div class="settings-divider"></div>
                               <div class="settings-row">
                                 <div>
                                   <div id="settings-terminal-attention-flash-label" class="settings-item-title">后台等待时闪烁任务栏图标</div>
@@ -1001,6 +1085,18 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
                                   <span></span>
                                 </label>
                               </div>
+                            </section>
+                          </section>
+
+                          <section id="settings-keys-panel" class="settings-panel" hidden>
+                            <section class="settings-section">
+                              <div class="settings-row">
+                                <div>
+                                  <div id="settings-keys-hint" class="muted tiny">点击右侧按钮后按下新的组合键；Esc 取消，Backspace 清除。</div>
+                                </div>
+                                <button id="settings-keys-reset" type="button" class="settings-link-btn">全部恢复默认</button>
+                              </div>
+                              <div id="settings-keys-list" class="settings-keys-list"></div>
                             </section>
                           </section>
 

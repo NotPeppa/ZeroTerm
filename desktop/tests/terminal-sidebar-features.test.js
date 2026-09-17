@@ -12,7 +12,7 @@ if (start < 0 || end < 0) {
   throw new Error("terminal sidebar feature helpers were not found");
 }
 
-const featureIds = ["snippets", "ai", "metrics", "services", "ports", "docker", "sftp", "theme"];
+const featureIds = ["snippets", "ai", "metrics", "services", "ports", "docker", "tmux", "sftp", "theme"];
 
 function createFixture(savedValue = null, activePanel = null) {
   const values = new Map();

@@ -86,6 +86,7 @@ const helpers = vm.runInNewContext(
     getActivePane: () => null,
     syncAiTerminalControlUi: () => {},
     stopPaneAliveWatchdog: () => {},
+    resetAutoReconnect: () => {},
     disposePaneAttentionHandlers: () => {},
     clearTimeout: () => {},
     cancelAnimationFrame: () => {},

@@ -319,6 +319,24 @@ const I18N = {
     "sidebar.lock": "Lock",
     "sidebar.collapse": "Collapse",
     "sidebar.expand": "Expand",
+    "tmux.subtitle.missing": "tmux not installed",
+    "tmux.loading": "Reading tmux sessions...",
+    "tmux.new": "+ New",
+    "tmux.detach": "Detach",
+    "tmux.new.prompt": "Session name",
+    "tmux.empty.title": "No tmux sessions",
+    "tmux.empty.desc": "Create one to keep work running across disconnects.",
+    "tmux.empty.missing.title": "tmux not found",
+    "tmux.empty.missing.desc": "Install tmux on this host to manage sessions here.",
+    "tmux.row.windows": "{count} windows",
+    "tmux.row.attached": "attached",
+    "tmux.row.detached": "detached",
+    "tmux.row.attach": "Attach to {name}",
+    "tmux.row.rename": "Rename session",
+    "tmux.row.kill": "Kill session",
+    "tmux.row.kill_confirm": "Kill tmux session \"{name}\"? Everything running in it stops.",
+    "tmux.error.list": "Failed to list tmux sessions: {error}",
+    "tmux.error.send": "Failed to send the tmux command: {error}",
     "metrics.title": "Metrics",
     "metrics.subtitle": "Current terminal session",
     "metrics.refresh": "Refresh",
@@ -1203,6 +1221,22 @@ const I18N = {
     "theme.mode.light": "Light",
     "settings.nav.sftp": "SFTP",
     "settings.nav.hotkeys": "Hotkeys",
+    "settings.keys.title": "Hotkeys",
+    "settings.keys.desc": "Rebind the application shortcuts. Terminal input is untouched.",
+    "settings.keys.hint": "Click a shortcut, then press the new combination. Esc cancels, Backspace clears it.",
+    "settings.keys.reset_all": "Restore defaults",
+    "settings.keys.recording": "Press keys...",
+    "settings.keys.unset": "Not set",
+    "settings.keys.need_modifier": "A shortcut needs at least one modifier (Ctrl / Alt / Shift with Ctrl).",
+    "settings.keys.conflict": "{combo} is already used by {action}.",
+    "settings.keys.action.terminal.find": "Find in terminal",
+    "settings.keys.action.terminal.new_local": "New local terminal",
+    "settings.keys.action.terminal.close_tab": "Close current tab",
+    "settings.keys.action.terminal.next_tab": "Next tab",
+    "settings.keys.action.terminal.prev_tab": "Previous tab",
+    "settings.keys.action.app.quick_connect": "Quick connect",
+    "settings.keys.action.app.new_window": "New window",
+    "settings.keys.action.app.settings": "Open settings",
     "settings.terminal.desc": "Configure terminal themes and visual behavior.",
     "settings.ai.title": "AI Assistant",
     "settings.ai.desc": "Configure the model service and what the assistant is allowed to do.",
@@ -1298,6 +1332,16 @@ const I18N = {
     "settings.terminal.cwd.hint": "Open Local terminal tabs in this directory. Leave empty to use the default.",
     "settings.terminal.cwd.placeholder": "e.g. D:\\projects",
     "settings.terminal.cwd.browse": "Browse",
+    "settings.terminal.auto_reconnect.label": "Auto reconnect",
+    "settings.terminal.auto_reconnect.hint": "After an unexpected drop, retry the SSH session up to 3 times with an increasing delay (1s, 2s, 4s).",
+    "terminal.status.auto_reconnect": "reconnecting in {seconds}s ({attempt}/{max})",
+    "settings.terminal.cursor_style.label": "Cursor style",
+    "settings.terminal.cursor_style.hint": "Shape of the terminal cursor; applies to every open terminal immediately.",
+    "settings.terminal.cursor_style.block": "Block",
+    "settings.terminal.cursor_style.underline": "Underline",
+    "settings.terminal.cursor_style.bar": "Bar",
+    "settings.terminal.header_metrics.label": "Show metrics in pane header",
+    "settings.terminal.header_metrics.hint": "Append live CPU / memory / disk usage after the session title in each terminal pane header.",
     "settings.terminal.sidebar_features.label": "Right sidebar features",
     "settings.terminal.sidebar_features.hint": "Choose which features appear in the terminal right sidebar.",
     "settings.terminal.sidebar_features.snippets": "Command Snippets",
@@ -1306,6 +1350,7 @@ const I18N = {
     "settings.terminal.sidebar_features.services": "Service Manager",
     "settings.terminal.sidebar_features.ports": "Port Manager",
     "settings.terminal.sidebar_features.docker": "Docker",
+    "settings.terminal.sidebar_features.tmux": "tmux",
     "settings.terminal.sidebar_features.sftp": "SFTP",
     "settings.terminal.sidebar_features.theme": "Theme",
     "settings.terminal.selection_menu_order.label": "Context menu order",
@@ -1356,6 +1401,24 @@ const I18N = {
     "sidebar.lock": "锁定",
     "sidebar.collapse": "收起",
     "sidebar.expand": "展开",
+    "tmux.subtitle.missing": "未安装 tmux",
+    "tmux.loading": "正在读取 tmux 会话…",
+    "tmux.new": "+ 新建",
+    "tmux.detach": "退出当前",
+    "tmux.new.prompt": "会话名称",
+    "tmux.empty.title": "暂无 tmux 会话",
+    "tmux.empty.desc": "新建一个，断线后工作还在继续跑。",
+    "tmux.empty.missing.title": "未找到 tmux",
+    "tmux.empty.missing.desc": "在这台主机上安装 tmux 后即可在此管理会话。",
+    "tmux.row.windows": "{count} 个窗口",
+    "tmux.row.attached": "已接入",
+    "tmux.row.detached": "已分离",
+    "tmux.row.attach": "接入 {name}",
+    "tmux.row.rename": "重命名会话",
+    "tmux.row.kill": "结束会话",
+    "tmux.row.kill_confirm": "结束 tmux 会话「{name}」？其中运行的一切都会停止。",
+    "tmux.error.list": "读取 tmux 会话失败：{error}",
+    "tmux.error.send": "发送 tmux 命令失败：{error}",
     "metrics.title": "指标监控",
     "metrics.subtitle": "当前终端会话",
     "metrics.refresh": "刷新",
@@ -2237,6 +2300,22 @@ const I18N = {
     "theme.mode.light": "浅色",
     "settings.nav.sftp": "SFTP",
     "settings.nav.hotkeys": "快捷键",
+    "settings.keys.title": "快捷键",
+    "settings.keys.desc": "自定义应用级快捷键，不影响终端里的按键输入。",
+    "settings.keys.hint": "点击右侧按钮后按下新的组合键；Esc 取消，Backspace 清除。",
+    "settings.keys.reset_all": "全部恢复默认",
+    "settings.keys.recording": "请按下组合键…",
+    "settings.keys.unset": "未设置",
+    "settings.keys.need_modifier": "快捷键至少需要一个修饰键（Ctrl / Alt，或 Ctrl 加 Shift）。",
+    "settings.keys.conflict": "{combo} 已被「{action}」占用。",
+    "settings.keys.action.terminal.find": "终端内查找",
+    "settings.keys.action.terminal.new_local": "新建本地终端",
+    "settings.keys.action.terminal.close_tab": "关闭当前标签页",
+    "settings.keys.action.terminal.next_tab": "下一个标签页",
+    "settings.keys.action.terminal.prev_tab": "上一个标签页",
+    "settings.keys.action.app.quick_connect": "快捷连接",
+    "settings.keys.action.app.new_window": "新建窗口",
+    "settings.keys.action.app.settings": "打开设置",
     "settings.terminal.desc": "配置终端主题与视觉表现。",
     "settings.ai.title": "AI 助手",
     "settings.ai.desc": "配置模型服务，以及 AI 可以执行哪些操作。",
@@ -2332,6 +2411,16 @@ const I18N = {
     "settings.terminal.cwd.hint": "配置后，每次打开「本地」终端标签页都会自动切换到该目录。留空则使用默认目录。",
     "settings.terminal.cwd.placeholder": "例如：D:\\projects",
     "settings.terminal.cwd.browse": "浏览",
+    "settings.terminal.auto_reconnect.label": "自动重连",
+    "settings.terminal.auto_reconnect.hint": "连接意外断开后自动重试，最多 3 次，间隔逐次翻倍（1 秒、2 秒、4 秒）。",
+    "terminal.status.auto_reconnect": "{seconds} 秒后自动重连（{attempt}/{max}）",
+    "settings.terminal.cursor_style.label": "光标样式",
+    "settings.terminal.cursor_style.hint": "终端光标的形状，立即应用到所有打开的终端。",
+    "settings.terminal.cursor_style.block": "方块",
+    "settings.terminal.cursor_style.underline": "下划线",
+    "settings.terminal.cursor_style.bar": "竖线",
+    "settings.terminal.header_metrics.label": "标题栏显示指标",
+    "settings.terminal.header_metrics.hint": "在终端标题栏的会话名后面追加实时 CPU / 内存 / 磁盘占用。",
     "settings.terminal.sidebar_features.label": "右侧栏功能",
     "settings.terminal.sidebar_features.hint": "选择在终端右侧栏中显示的功能。",
     "settings.terminal.sidebar_features.snippets": "命令片段",
@@ -2340,6 +2429,7 @@ const I18N = {
     "settings.terminal.sidebar_features.services": "服务管理",
     "settings.terminal.sidebar_features.ports": "端口管理",
     "settings.terminal.sidebar_features.docker": "Docker",
+    "settings.terminal.sidebar_features.tmux": "tmux",
     "settings.terminal.sidebar_features.sftp": "SFTP",
     "settings.terminal.sidebar_features.theme": "主题",
     "settings.terminal.selection_menu_order.label": "右键菜单排序",
@@ -2759,7 +2849,6 @@ const groupsMenuEdit = document.getElementById("groups-menu-edit");
 const groupsMenuDelete = document.getElementById("groups-menu-delete");
 const workspaceTabVaults = document.getElementById("workspace-tab-vaults");
 const workspaceTabSftp = document.getElementById("workspace-tab-sftp");
-const workspaceNavVaults = document.getElementById("workspace-nav-vaults");
 const workspaceNavSftp = document.getElementById("workspace-nav-sftp");
 const workspaceSidebarToggle = document.getElementById("workspace-sidebar-toggle");
 const workspaceSidebarToggleRight = document.getElementById("workspace-sidebar-toggle-right");
@@ -2806,6 +2895,13 @@ const terminalDockerPanel = document.getElementById("terminal-docker-panel");
 const terminalSidebarDockerToggle = document.getElementById("terminal-sidebar-docker-toggle");
 const terminalDockerBody = document.getElementById("terminal-docker-body");
 const terminalDockerRefresh = document.getElementById("terminal-docker-refresh");
+const terminalTmuxPanel = document.getElementById("terminal-tmux-panel");
+const terminalSidebarTmuxToggle = document.getElementById("terminal-sidebar-tmux-toggle");
+const terminalTmuxBody = document.getElementById("terminal-tmux-body");
+const terminalTmuxSubtitle = document.getElementById("terminal-tmux-subtitle");
+const terminalTmuxRefresh = document.getElementById("terminal-tmux-refresh");
+const terminalTmuxNew = document.getElementById("terminal-tmux-new");
+const terminalTmuxDetach = document.getElementById("terminal-tmux-detach");
 const terminalSftpRefresh = document.getElementById("terminal-sftp-refresh");
 const terminalSftpTitle = document.getElementById("terminal-sftp-title");
 const terminalSftpSubtitle = document.getElementById("terminal-sftp-subtitle");
@@ -2903,6 +2999,10 @@ const themeModeLight = document.getElementById("theme-mode-light");
 const settingsBackButton = document.getElementById("settings-back");
 const settingsNavGeneral = document.getElementById("settings-nav-general");
 const settingsNavTerminal = document.getElementById("settings-nav-terminal");
+const settingsNavKeys = document.getElementById("settings-nav-keys");
+const settingsKeysPanel = document.getElementById("settings-keys-panel");
+const settingsKeysList = document.getElementById("settings-keys-list");
+const settingsKeysReset = document.getElementById("settings-keys-reset");
 const settingsNavAi = document.getElementById("settings-nav-ai");
 const settingsNavSync = document.getElementById("settings-nav-sync");
 const settingsGeneralPanel = document.getElementById("settings-general-panel");
@@ -4137,10 +4237,257 @@ function startMetricsAutoRefresh() {
   }, 5000);
 }
 
+// Pane-header metrics chip: same collector as the sidebar panel, but only for
+// the panes the user can actually see (active tab) and at a slower cadence —
+// each remote sample is an SSH exec, so polling every open tab would multiply
+// the load for a line of text nobody is looking at.
+function isPaneHeaderMetricsEnabled() {
+  return localStorage.getItem(SETTINGS_KEY_TERMINAL_HEADER_METRICS) !== "false";
+}
+
+function applyPaneHeaderMetricsVisibility() {
+  const enabled = isPaneHeaderMetricsEnabled();
+  for (const tab of termState.tabs) {
+    for (const pane of tab.panes) {
+      if (pane.metricsEl) pane.metricsEl.hidden = !enabled || !pane.metricsEl.innerHTML;
+    }
+  }
+  if (enabled) refreshPaneHeaderMetrics();
+}
+
+let paneHeaderMetricsInFlight = false;
+
+async function refreshPaneHeaderMetrics() {
+  if (!isPaneHeaderMetricsEnabled() || document.hidden) return;
+  if (terminalSessionLayout?.hidden) return;
+  const tab = getActiveTab();
+  if (!tab) return;
+  // A sample can outlive the poll interval (the Windows local collector spawns
+  // PowerShell and sleeps a second to measure network deltas). Without this,
+  // ticks would stack up and spawn a new collector before the last one landed.
+  if (paneHeaderMetricsInFlight) return;
+  paneHeaderMetricsInFlight = true;
+  try {
+    await samplePaneHeaderMetrics(tab);
+  } finally {
+    paneHeaderMetricsInFlight = false;
+  }
+}
+
+async function samplePaneHeaderMetrics(tab) {
+  for (const pane of tab.panes) {
+    if (!pane.metricsEl || !pane.sessionId) continue;
+    try {
+      const m = await invoke("collect_system_metrics", { hostId: pane.host?.id || null });
+      if (!pane.metricsEl || !pane.sessionId) continue;
+      const cpu = Number(m.cpuUsage) || 0;
+      const ram = m.memoryTotal > 0 ? (m.memoryUsed / m.memoryTotal) * 100 : 0;
+      const disks = Array.isArray(m.disks) ? m.disks : [];
+      const disk = disks.reduce(
+        (worst, d) => ((Number(d.usage) || 0) > (Number(worst?.usage) || 0) ? d : worst),
+        disks[0] || null
+      );
+      const diskUsage = Number(disk?.usage) || 0;
+      const net = (Array.isArray(m.networks) ? m.networks : []).reduce(
+        (sum, n) => ({
+          rx: sum.rx + (Number(n.rxBytesPerSec) || 0),
+          tx: sum.tx + (Number(n.txBytesPerSec) || 0),
+        }),
+        { rx: 0, tx: 0 }
+      );
+      const seg = (icon, label, value, tone, extra) =>
+        `<span class="pane-metric"><i aria-hidden="true">${icon}</i>${label} <b class="${tone || ""}">${value}</b>${extra ? `<em>${extra}</em>` : ""}</span>`;
+      pane.metricsEl.innerHTML = [
+        seg("⚙", t("metrics.cpu"), `${cpu.toFixed(1)}%`, metricTone(cpu)),
+        seg("▥", t("metrics.ram"), `${ram.toFixed(1)}%`, metricTone(ram),
+          `${formatMetricBytes(m.memoryUsed)} / ${formatMetricBytes(m.memoryTotal)}`),
+        disk
+          ? seg("▤", t("metrics.disk"), `${diskUsage.toFixed(0)}%`, metricTone(diskUsage),
+            `${formatMetricBytes(disk.used)} / ${formatMetricBytes(disk.total)}`)
+          : "",
+        seg("⇅", t("metrics.network"), `↓ ${formatMetricBytes(net.rx)}/s`, "", `↑ ${formatMetricBytes(net.tx)}/s`),
+      ].join("");
+      pane.metricsEl.hidden = !isPaneHeaderMetricsEnabled();
+    } catch (e) {
+      // Transient collector failure: keep the last reading rather than flicker.
+      console.warn("pane header metrics failed", e);
+    }
+  }
+}
+
+setInterval(refreshPaneHeaderMetrics, 10000);
+
 function stopMetricsAutoRefresh() {
   if (metricsRefreshTimer) clearInterval(metricsRefreshTimer);
   metricsRefreshTimer = null;
   metricsRefreshToken += 1;
+}
+
+// ---------- tmux panel ----------
+// The panel drives tmux the way a person would: it reads `tmux ls` over the
+// side channel (same pooled session the metrics/services panels use) and
+// attaches by typing into the terminal. Panes stay drawn by tmux itself — this
+// is session management, not control mode.
+let tmuxRefreshToken = 0;
+
+// tmux default prefix, Ctrl-B (STX).
+const TMUX_PREFIX = "\u0002";
+
+function tmuxPaneTarget() {
+  const pane = getActivePane();
+  return pane?.sessionId ? pane : null;
+}
+
+async function sendTmuxCommand(command) {
+  const pane = tmuxPaneTarget();
+  if (!pane) return;
+  try {
+    await sendTextToPane(pane, command, { submit: true });
+    // tmux needs a moment to create/destroy the session before `ls` is honest.
+    setTimeout(() => renderTmuxPanel({ silent: true }), 400);
+  } catch (e) {
+    showToast(t("tmux.error.send", { error: String(e) }), "error", 3200);
+  }
+}
+
+// Detach is a prefix chord, not a command line: C-b d. Sending it as text is
+// the only thing that works while tmux owns the terminal.
+async function sendTmuxDetach() {
+  const pane = tmuxPaneTarget();
+  if (!pane) return;
+  try {
+    await sendTextToPane(pane, TMUX_PREFIX + "d");
+    setTimeout(() => renderTmuxPanel({ silent: true }), 400);
+  } catch (e) {
+    showToast(t("tmux.error.send", { error: String(e) }), "error", 3200);
+  }
+}
+
+function renderTmuxSessions(state) {
+  const sessions = Array.isArray(state.sessions) ? state.sessions : [];
+  if (terminalTmuxSubtitle) {
+    terminalTmuxSubtitle.textContent = state.version
+      ? `tmux ${state.version}`
+      : t("tmux.subtitle.missing");
+  }
+  if (terminalTmuxNew) terminalTmuxNew.disabled = !state.version;
+  // Detaching is only meaningful while a session is actually attached: with
+  // none, `C-b d` lands in the shell's readline and leaves a stray "d" behind.
+  if (terminalTmuxDetach) {
+    terminalTmuxDetach.disabled = !state.version || !sessions.some((session) => session.attached);
+  }
+  if (!state.version) {
+    terminalTmuxBody.innerHTML = `<div class="terminal-side-empty"><strong>${t("tmux.empty.missing.title")}</strong><p>${t("tmux.empty.missing.desc")}</p></div>`;
+    return;
+  }
+  if (!sessions.length) {
+    terminalTmuxBody.innerHTML = `<div class="terminal-side-empty"><strong>${t("tmux.empty.title")}</strong><p>${t("tmux.empty.desc")}</p></div>`;
+    return;
+  }
+  terminalTmuxBody.innerHTML = "";
+  for (const session of sessions) {
+    terminalTmuxBody.appendChild(buildTmuxRow(session));
+  }
+}
+
+function tmuxIconButton(className, label, svg, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = className;
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  button.innerHTML = svg;
+  button.addEventListener("click", () => onClick());
+  return button;
+}
+
+function buildTmuxRow(session) {
+  const quoted = JSON.stringify(session.name);
+  const row = document.createElement("div");
+  row.className = `tmux-row${session.attached ? " attached" : ""}`;
+
+  const name = document.createElement("strong");
+  name.textContent = session.name;
+
+  const sub = document.createElement("div");
+  sub.className = "tmux-row-sub";
+  const state = document.createElement("span");
+  state.className = "tmux-row-state";
+  state.textContent = session.attached ? t("tmux.row.attached") : t("tmux.row.detached");
+  const windows = document.createElement("span");
+  windows.className = "tmux-row-windows";
+  windows.textContent = t("tmux.row.windows", { count: session.windows });
+  sub.append(state, windows);
+
+  const info = document.createElement("div");
+  info.className = "tmux-row-info";
+  info.append(name, sub);
+
+  // Attaching from inside a tmux session would nest it; switch-client is the
+  // right move there, so let tmux pick whichever applies.
+  const attach = () =>
+    sendTmuxCommand(`tmux attach -t ${quoted} 2>/dev/null || tmux switch-client -t ${quoted}`);
+
+  const actions = document.createElement("div");
+  actions.className = "tmux-row-actions";
+  actions.append(
+    tmuxIconButton(
+      "tmux-row-action",
+      t("tmux.row.attach", { name: session.name }),
+      '<svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 8 4 4-4 4"></path><path d="M12 16h7"></path></svg>',
+      attach
+    ),
+    tmuxIconButton(
+      "tmux-row-action",
+      t("tmux.row.rename"),
+      '<svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>',
+      async () => {
+        const next = await openTextInputDialog({
+          title: t("tmux.row.rename"),
+          message: t("tmux.new.prompt"),
+          defaultValue: session.name,
+        });
+        const trimmed = String(next || "").trim();
+        if (!trimmed || trimmed === session.name) return;
+        sendTmuxCommand(`tmux rename-session -t ${quoted} ${JSON.stringify(trimmed)}`);
+      }
+    ),
+    tmuxIconButton(
+      "tmux-row-action danger",
+      t("tmux.row.kill"),
+      '<svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"></path><path d="M9 7V5h6v2"></path><path d="M6 7l1 13h10l1-13"></path></svg>',
+      () => {
+        // Killing a session takes its processes with it, so confirm first.
+        if (!confirm(t("tmux.row.kill_confirm", { name: session.name }))) return;
+        sendTmuxCommand(`tmux kill-session -t ${quoted}`);
+      }
+    )
+  );
+
+  row.append(info, actions);
+  return row;
+}
+
+async function renderTmuxPanel(options = {}) {
+  if (!terminalTmuxBody) return;
+  const silent = Boolean(options.silent);
+  const token = ++tmuxRefreshToken;
+  const pane = getActivePane();
+  if (!pane) {
+    terminalTmuxBody.innerHTML = `<div class="terminal-side-empty"><strong>${t("metrics.empty.title")}</strong><p>${t("metrics.empty.desc")}</p></div>`;
+    return;
+  }
+  if (!silent) {
+    terminalTmuxBody.innerHTML = `<div class="terminal-side-empty"><strong>${t("tmux.loading")}</strong><p>${escapeMetricText(pane.host?.name || pane.host?.host || "Local")}</p></div>`;
+  }
+  try {
+    const state = await invoke("list_tmux_sessions", { hostId: pane.host?.id || null });
+    if (token !== tmuxRefreshToken || terminalActiveSidePanel !== "tmux") return;
+    renderTmuxSessions(state);
+  } catch (e) {
+    if (token !== tmuxRefreshToken || terminalActiveSidePanel !== "tmux") return;
+    terminalTmuxBody.innerHTML = `<div class="terminal-side-empty"><strong>${escapeMetricText(t("tmux.error.list", { error: String(e) }))}</strong></div>`;
+  }
 }
 
 // ---------- systemd services panel ----------
@@ -5315,6 +5662,7 @@ function setTerminalSidePanel(panel, { skipSftpConnect = false } = {}) {
   if (terminalSftpPanel) terminalSftpPanel.hidden = terminalActiveSidePanel !== "sftp";
   if (terminalThemePanel) terminalThemePanel.hidden = terminalActiveSidePanel !== "theme";
   if (terminalDockerPanel) terminalDockerPanel.hidden = terminalActiveSidePanel !== "docker";
+  if (terminalTmuxPanel) terminalTmuxPanel.hidden = terminalActiveSidePanel !== "tmux";
   terminalSidebarAiToggle?.classList.toggle("active", terminalActiveSidePanel === "ai");
   if (terminalSidebarAiToggle) {
     const label = terminalActiveSidePanel === "ai" ? t("ai.panel.collapse") : t("ai.panel.expand");
@@ -5328,6 +5676,7 @@ function setTerminalSidePanel(panel, { skipSftpConnect = false } = {}) {
   terminalSidebarSftpToggle?.classList.toggle("active", terminalActiveSidePanel === "sftp");
   terminalSidebarThemeToggle?.classList.toggle("active", terminalActiveSidePanel === "theme");
   terminalSidebarDockerToggle?.classList.toggle("active", terminalActiveSidePanel === "docker");
+  terminalSidebarTmuxToggle?.classList.toggle("active", terminalActiveSidePanel === "tmux");
   if (terminalActiveSidePanel === "ai") refreshAiModelsOnFirstPanelOpen();
   if (terminalActiveSidePanel === "metrics") {
     renderMetricsPanel();
@@ -5337,6 +5686,7 @@ function setTerminalSidePanel(panel, { skipSftpConnect = false } = {}) {
   }
   if (terminalActiveSidePanel === "services") renderServicesPanel();
   if (terminalActiveSidePanel === "ports") renderPortsPanel();
+  if (terminalActiveSidePanel === "tmux") renderTmuxPanel();
   if (terminalActiveSidePanel === "sftp" && !skipSftpConnect) {
     connectTerminalSftpToActivePane().catch((e) => console.warn("terminal sftp connect failed", e));
   }
@@ -8097,6 +8447,9 @@ const settingsTerminalSidebarFeatures = document.getElementById("settings-termin
 const settingsTerminalSelectionMenuOrder = document.getElementById("settings-terminal-selection-menu-order");
 const settingsTerminalSelectionMenuOrderReset = document.getElementById("settings-terminal-selection-menu-order-reset");
 const settingsTerminalAttentionFlash = document.getElementById("settings-terminal-attention-flash");
+const settingsTerminalHeaderMetrics = document.getElementById("settings-terminal-header-metrics");
+const settingsTerminalCursorStyle = document.getElementById("settings-terminal-cursor-style");
+const settingsTerminalAutoReconnect = document.getElementById("settings-terminal-auto-reconnect");
 const settingsTerminalFontPreview = document.getElementById("settings-terminal-font-preview");
 const terminalThemeListLight = document.getElementById("terminal-theme-list-light");
 const terminalThemeListDark = document.getElementById("terminal-theme-list-dark");
@@ -8214,6 +8567,10 @@ const SETTINGS_KEY_TERMINAL_LOCAL_CWD = "zeroterm.settings.terminal.local_cwd";
 const SETTINGS_KEY_TERMINAL_LINE_HEIGHT = "zeroterm.settings.terminal.line_height";
 const SETTINGS_KEY_TERMINAL_SELECTION_MENU_ORDER = "zeroterm.settings.terminal.selection_menu_order";
 const SETTINGS_KEY_TERMINAL_ATTENTION_FLASH = "zeroterm.settings.terminal.attention_flash";
+const SETTINGS_KEY_TERMINAL_HEADER_METRICS = "zeroterm.settings.terminal.header_metrics";
+const SETTINGS_KEY_TERMINAL_AUTO_RECONNECT = "zeroterm.settings.terminal.auto_reconnect";
+const SETTINGS_KEY_TERMINAL_CURSOR_STYLE = "zeroterm.settings.terminal.cursor_style";
+const TERMINAL_CURSOR_STYLES = Object.freeze(["block", "bar", "underline"]);
 const SETTINGS_KEY_TERMINAL_SIDEBAR_FEATURES = "zeroterm.settings.terminal.sidebar_features";
 const TERMINAL_SIDEBAR_FEATURE_IDS = Object.freeze([
   "snippets",
@@ -8222,6 +8579,7 @@ const TERMINAL_SIDEBAR_FEATURE_IDS = Object.freeze([
   "services",
   "ports",
   "docker",
+  "tmux",
   "sftp",
   "theme",
 ]);
@@ -8232,6 +8590,7 @@ const TERMINAL_SIDEBAR_FEATURE_TOGGLES = Object.freeze({
   services: terminalSidebarServicesToggle,
   ports: terminalSidebarPortsToggle,
   docker: terminalSidebarDockerToggle,
+  tmux: terminalSidebarTmuxToggle,
   sftp: terminalSidebarSftpToggle,
   theme: terminalSidebarThemeToggle,
 });
@@ -8874,6 +9233,10 @@ async function resetLocalSettingsToDefaults() {
     SETTINGS_KEY_TERMINAL_LINE_HEIGHT,
     SETTINGS_KEY_TERMINAL_SELECTION_MENU_ORDER,
     SETTINGS_KEY_TERMINAL_ATTENTION_FLASH,
+    SETTINGS_KEY_TERMINAL_HEADER_METRICS,
+    SETTINGS_KEY_TERMINAL_CURSOR_STYLE,
+    SETTINGS_KEY_TERMINAL_AUTO_RECONNECT,
+    SETTINGS_KEY_KEYBINDINGS,
     SETTINGS_KEY_APP_BG_OPACITY,
     SETTINGS_KEY_APP_BG_BLUR,
     SETTINGS_KEY_APP_BG_ENABLED,
@@ -8926,6 +9289,13 @@ async function resetLocalSettingsToDefaults() {
   populateLocalShellSelect();
   updateLocalShellCurrentHint();
   if (settingsTerminalCwd) settingsTerminalCwd.value = getLocalCwd();
+  if (settingsTerminalHeaderMetrics) {
+    settingsTerminalHeaderMetrics.checked = isPaneHeaderMetricsEnabled();
+  }
+  if (settingsTerminalAutoReconnect) {
+    settingsTerminalAutoReconnect.checked = isTerminalAutoReconnectEnabled();
+  }
+  syncTerminalCursorStyleControl();
   if (settingsTerminalAttentionFlash) {
     settingsTerminalAttentionFlash.checked = isTerminalAttentionFlashEnabled();
   }
@@ -9204,6 +9574,19 @@ function getTerminalLineHeight() {
   return Number.isFinite(n) ? Math.min(2, Math.max(1, n)) : 1.25;
 }
 
+function getTerminalCursorStyle() {
+  const saved = localStorage.getItem(SETTINGS_KEY_TERMINAL_CURSOR_STYLE);
+  return TERMINAL_CURSOR_STYLES.includes(saved) ? saved : "block";
+}
+
+function syncTerminalCursorStyleControl() {
+  if (!settingsTerminalCursorStyle) return;
+  const current = getTerminalCursorStyle();
+  for (const input of settingsTerminalCursorStyle.querySelectorAll("input[type=radio]")) {
+    input.checked = input.value === current;
+  }
+}
+
 function applyTerminalThemeToAllPanes() {
   if (typeof termState === "undefined" || !termState || !termState.tabs) return;
   // While the theme editor is open, terminalEditingThemeId points at the
@@ -9237,6 +9620,7 @@ function applyTerminalThemeToAllPanes() {
       pane.term.options.fontFamily = getTerminalFontFamily();
       pane.term.options.fontSize = getTerminalFontSize();
       pane.term.options.lineHeight = getTerminalLineHeight();
+      pane.term.options.cursorStyle = getTerminalCursorStyle();
       
       // Pane container chrome — the glass backdrop when a background image
       // is set, or the solid theme-aware background otherwise — is owned by
@@ -10083,7 +10467,6 @@ function setWorkspaceMode(mode) {
   terminalSessionLayout?.classList.toggle("ai-collapsed", aiPanelCollapsed);
   workspaceTabVaults.classList.toggle("active", mode === "vaults");
   workspaceTabSftp.classList.toggle("active", mode === "sftp");
-  workspaceNavVaults?.classList.toggle("active", mode === "vaults");
   workspaceNavSftp?.classList.toggle("active", mode === "sftp");
   portForwardButton?.classList.toggle("active", showingPortForward);
   if (mode === "terminal") {
@@ -10112,6 +10495,13 @@ function setWorkspaceMode(mode) {
     populateLocalShellSelect();
     updateLocalShellCurrentHint();
     if (settingsTerminalCwd) settingsTerminalCwd.value = getLocalCwd();
+    if (settingsTerminalHeaderMetrics) {
+      settingsTerminalHeaderMetrics.checked = isPaneHeaderMetricsEnabled();
+    }
+    if (settingsTerminalAutoReconnect) {
+      settingsTerminalAutoReconnect.checked = isTerminalAutoReconnectEnabled();
+    }
+    syncTerminalCursorStyleControl();
     if (settingsTerminalAttentionFlash) {
       settingsTerminalAttentionFlash.checked = isTerminalAttentionFlashEnabled();
     }
@@ -10507,6 +10897,8 @@ async function savePortForwardEditor() {
 function setSettingsSection(section) {
   settingsSection = section === "terminal"
     ? "terminal"
+    : section === "keys"
+      ? "keys"
     : section === "ai"
       ? "ai"
       : section === "sync"
@@ -10518,12 +10910,15 @@ function setSettingsSection(section) {
           : "general";
   settingsNavGeneral?.classList.toggle("active", settingsSection === "general");
   settingsNavTerminal?.classList.toggle("active", settingsSection === "terminal");
+  settingsNavKeys?.classList.toggle("active", settingsSection === "keys");
   settingsNavAi?.classList.toggle("active", settingsSection === "ai");
   settingsNavSync?.classList.toggle("active", settingsSection === "sync");
   settingsNavData?.classList.toggle("active", settingsSection === "data");
   settingsNavAbout?.classList.toggle("active", settingsSection === "about");
   if (settingsGeneralPanel) settingsGeneralPanel.hidden = settingsSection !== "general";
   if (settingsTerminalPanel) settingsTerminalPanel.hidden = settingsSection !== "terminal";
+  if (settingsKeysPanel) settingsKeysPanel.hidden = settingsSection !== "keys";
+  if (settingsSection === "keys") renderKeybindingSettings();
   if (settingsAiPanel) settingsAiPanel.hidden = settingsSection !== "ai";
   if (settingsSyncPanel) settingsSyncPanel.hidden = settingsSection !== "sync";
   settingsPageBody?.classList.toggle("settings-sync-scrollbar", settingsSection === "sync");
@@ -10537,6 +10932,8 @@ function setSettingsSection(section) {
   if (settingsGeneralTitle) {
     settingsGeneralTitle.textContent = settingsSection === "terminal"
         ? t("settings.terminal.title")
+        : settingsSection === "keys"
+        ? t("settings.keys.title")
         : settingsSection === "ai"
         ? t("settings.ai.title")
         : settingsSection === "sync"
@@ -10550,6 +10947,8 @@ function setSettingsSection(section) {
   if (settingsGeneralDesc) {
     settingsGeneralDesc.textContent = settingsSection === "terminal"
         ? t("settings.terminal.desc")
+        : settingsSection === "keys"
+        ? t("settings.keys.desc")
         : settingsSection === "ai"
         ? t("settings.ai.desc")
         : settingsSection === "sync"
@@ -12855,7 +13254,6 @@ function applyI18n() {
   const vaultLocalTitle = document.getElementById("vault-local-title");
   if (vaultLocalTitle) vaultLocalTitle.textContent = "ZeroTerm";
   setText("vault-settings-text", "sidebar.settings");
-  setAttr("workspace-nav-vaults", "title", "workspace.tab.vaults");
   setAttr("workspace-nav-sftp", "title", "workspace.tab.sftp");
   setAttr("new-window-button", "title", "sidebar.new_window");
   setAttr("settings-button", "title", "sidebar.settings");
@@ -13186,6 +13584,8 @@ function applyI18n() {
   setText("settings-terminal-cwd-hint", "settings.terminal.cwd.hint");
   setText("settings-terminal-cwd-browse", "settings.terminal.cwd.browse");
   setPlaceholder("settings-terminal-cwd", "settings.terminal.cwd.placeholder");
+  setText("terminal-tmux-new", "tmux.new");
+  setText("terminal-tmux-detach", "tmux.detach");
   setText("settings-terminal-sidebar-features-label", "settings.terminal.sidebar_features.label");
   setText("settings-terminal-sidebar-features-hint", "settings.terminal.sidebar_features.hint");
   for (const featureId of TERMINAL_SIDEBAR_FEATURE_IDS) {
@@ -13195,6 +13595,19 @@ function applyI18n() {
   setText("settings-terminal-selection-menu-order-label", "settings.terminal.selection_menu_order.label");
   setText("settings-terminal-selection-menu-order-hint", "settings.terminal.selection_menu_order.hint");
   setText("settings-terminal-selection-menu-order-reset", "settings.terminal.selection_menu_order.reset");
+  setText("settings-nav-keys", "settings.nav.hotkeys");
+  setText("settings-keys-hint", "settings.keys.hint");
+  setText("settings-keys-reset", "settings.keys.reset_all");
+  if (settingsKeysPanel && !settingsKeysPanel.hidden) renderKeybindingSettings();
+  setText("settings-terminal-auto-reconnect-label", "settings.terminal.auto_reconnect.label");
+  setText("settings-terminal-auto-reconnect-hint", "settings.terminal.auto_reconnect.hint");
+  setText("settings-terminal-cursor-style-label", "settings.terminal.cursor_style.label");
+  setText("settings-terminal-cursor-style-hint", "settings.terminal.cursor_style.hint");
+  for (const style of TERMINAL_CURSOR_STYLES) {
+    setText(`settings-terminal-cursor-style-${style}`, `settings.terminal.cursor_style.${style}`);
+  }
+  setText("settings-terminal-header-metrics-label", "settings.terminal.header_metrics.label");
+  setText("settings-terminal-header-metrics-hint", "settings.terminal.header_metrics.hint");
   setText("settings-terminal-attention-flash-label", "settings.terminal.attention_flash.label");
   setText("settings-terminal-attention-flash-hint", "settings.terminal.attention_flash.hint");
   renderTerminalSelectionMenuOrderSettings();
@@ -13420,7 +13833,6 @@ buildCustomSelect(document.getElementById("sftp-left-host"));
 buildCustomSelect(document.getElementById("sftp-right-host"));
 workspaceTabVaults.addEventListener("click", () => setWorkspaceMode("vaults"));
 workspaceTabSftp.addEventListener("click", () => setWorkspaceMode("sftp"));
-workspaceNavVaults?.addEventListener("click", () => setWorkspaceMode("vaults"));
 workspaceNavSftp?.addEventListener("click", () => setWorkspaceMode("sftp"));
 portForwardButton?.addEventListener("click", () => setWorkspaceMode("port-forward"));
 portForwardRefresh?.addEventListener("click", () => loadPortForwardPage().catch((e) => alert(String(e))));
@@ -13711,7 +14123,7 @@ window.addEventListener("click", () => hideGroupsContextMenu());
 window.addEventListener("click", () => hideThemeModeMenu());
 window.addEventListener("blur", () => hideHostsContextMenu());
 window.addEventListener("blur", () => hideGroupsContextMenu());
-window.addEventListener("keydown", handleGlobalTerminalFindShortcut, true);
+window.addEventListener("keydown", handleKeybindingShortcut, true);
 window.addEventListener("keydown", handleGlobalTerminalFindNav, true);
 settingsButton.addEventListener("click", openSettingsPage);
 quickConnectButton?.addEventListener("click", openQuickConnectOverlay);
@@ -13741,6 +14153,11 @@ themeModeLight?.addEventListener("click", (ev) => {
 settingsBackButton?.addEventListener("click", () => setWorkspaceMode("vaults"));
 settingsNavGeneral?.addEventListener("click", () => setSettingsSection("general"));
 settingsNavTerminal?.addEventListener("click", () => setSettingsSection("terminal"));
+settingsNavKeys?.addEventListener("click", () => setSettingsSection("keys"));
+settingsKeysReset?.addEventListener("click", () => {
+  localStorage.removeItem(SETTINGS_KEY_KEYBINDINGS);
+  renderKeybindingSettings();
+});
 settingsNavAi?.addEventListener("click", () => setSettingsSection("ai"));
 settingsNavSync?.addEventListener("click", () => setSettingsSection("sync"));
 settingsNavData?.addEventListener("click", () => setSettingsSection("data"));
@@ -14402,6 +14819,30 @@ settingsTerminalSelectionMenuOrderReset?.addEventListener("click", () => {
   applyTerminalSelectionMenuOrder();
   renderTerminalSelectionMenuOrderSettings();
 });
+settingsTerminalAutoReconnect?.addEventListener("change", () => {
+  localStorage.setItem(
+    SETTINGS_KEY_TERMINAL_AUTO_RECONNECT,
+    settingsTerminalAutoReconnect.checked ? "true" : "false"
+  );
+  if (!settingsTerminalAutoReconnect.checked) {
+    for (const tab of termState.tabs) {
+      for (const pane of tab.panes) cancelAutoReconnect(pane);
+    }
+  }
+});
+settingsTerminalCursorStyle?.addEventListener("change", (ev) => {
+  const value = ev.target?.value;
+  if (!TERMINAL_CURSOR_STYLES.includes(value)) return;
+  localStorage.setItem(SETTINGS_KEY_TERMINAL_CURSOR_STYLE, value);
+  applyTerminalThemeToAllPanes();
+});
+settingsTerminalHeaderMetrics?.addEventListener("change", () => {
+  localStorage.setItem(
+    SETTINGS_KEY_TERMINAL_HEADER_METRICS,
+    settingsTerminalHeaderMetrics.checked ? "true" : "false"
+  );
+  applyPaneHeaderMetricsVisibility();
+});
 settingsTerminalAttentionFlash?.addEventListener("change", () => {
   localStorage.setItem(
     SETTINGS_KEY_TERMINAL_ATTENTION_FLASH,
@@ -14993,6 +15434,8 @@ function createPane(host) {
     host,
     isLocal,
     reconnectFactory: null,
+    autoReconnectAttempts: 0,
+    autoReconnectTimer: null,
     sessionId: null,
     rootEl: null,
     bodyEl: null,
@@ -15139,6 +15582,7 @@ async function connectQuickIntoPane(pane, input) {
     });
     pane.sessionId = sessionId;
     if (pane.statusEl) pane.statusEl.textContent = t("terminal.status.connected");
+    resetAutoReconnect(pane);
     if (pane.reconnectBtn) pane.reconnectBtn.hidden = true;
     await wirePaneSessionEvents(pane, sessionId);
   } catch (e) {
@@ -15146,6 +15590,7 @@ async function connectQuickIntoPane(pane, input) {
       pane.statusEl.textContent = t("terminal.error.connect_failed_status", { error: e });
     }
     if (pane.reconnectBtn) pane.reconnectBtn.hidden = false;
+    scheduleAutoReconnect(pane);
     throw e;
   } finally {
     setPaneConnecting(pane, false);
@@ -15245,6 +15690,7 @@ function renderTerminalWorkspace() {
   if (terminalActiveSidePanel === "metrics") renderMetricsPanel();
   if (terminalActiveSidePanel === "services") renderServicesPanel();
   if (terminalActiveSidePanel === "ports") renderPortsPanel();
+  if (terminalActiveSidePanel === "tmux") renderTmuxPanel();
   if (terminalActiveSidePanel === "docker") renderDockerPanel();
   if (terminalActiveSidePanel === "sftp") connectTerminalSftpToActivePane().catch((e) => console.warn("terminal sftp sync failed", e));
 
@@ -15430,8 +15876,26 @@ terminalPortsBody?.addEventListener("click", (ev) => {
   runKillPortProcess(row, button.getAttribute("data-port-kill") === "force", button);
 });
 
+terminalTmuxRefresh?.addEventListener("click", () => renderTmuxPanel());
+terminalTmuxNew?.addEventListener("click", async () => {
+  const name = await openTextInputDialog({
+    title: t("settings.terminal.sidebar_features.tmux"),
+    message: t("tmux.new.prompt"),
+    defaultValue: "",
+  });
+  if (name === null) return;
+  const trimmed = String(name || "").trim();
+  // `new -A` attaches when the name already exists instead of erroring out,
+  // which is also what makes reconnecting land back in the same session.
+  await sendTmuxCommand(trimmed ? `tmux new -A -s ${JSON.stringify(trimmed)}` : "tmux new");
+});
+terminalTmuxDetach?.addEventListener("click", () => sendTmuxDetach());
 terminalSidebarDockerToggle?.addEventListener("click", () => {
   setTerminalSidePanel(terminalActiveSidePanel === "docker" ? null : "docker");
+});
+
+terminalSidebarTmuxToggle?.addEventListener("click", () => {
+  setTerminalSidePanel(terminalActiveSidePanel === "tmux" ? null : "tmux");
 });
 
 terminalDockerRefresh?.addEventListener("click", () => renderDockerPanel());
@@ -16021,6 +16485,10 @@ function ensurePaneElements(pane, tab) {
       : `${pane.host.name} (${pane.host.user}@${pane.host.host}:${pane.host.port})`)
     : t("terminal.pane.empty");
 
+  const paneMetrics = document.createElement("span");
+  paneMetrics.className = "pane-metrics";
+  paneMetrics.hidden = true;
+
   const status = document.createElement("span");
   status.className = "pane-status";
   status.textContent = t("terminal.status.connecting");
@@ -16036,6 +16504,7 @@ function ensurePaneElements(pane, tab) {
   reconnectBtn.hidden = true;
   reconnectBtn.addEventListener("click", (ev) => {
     ev.stopPropagation();
+    resetAutoReconnect(pane);
     const runReconnect = pane.reconnectFactory || (() => connectPaneSession(pane));
     runReconnect().catch((e) => {
       console.warn("reconnect failed", e);
@@ -16082,7 +16551,7 @@ function ensurePaneElements(pane, tab) {
   findClose.textContent = "✕";
   findBar.append(findInput, findCount, findPrev, findNext, findClose);
 
-  header.append(title, meta);
+  header.append(title, paneMetrics, meta);
   root.append(header, body, findBar);
 
   root.addEventListener("click", () => {
@@ -16100,6 +16569,7 @@ function ensurePaneElements(pane, tab) {
   pane.rootEl = root;
   pane.bodyEl = body;
   pane.titleEl = title;
+  pane.metricsEl = paneMetrics;
   pane.latencyEl = latency;
   pane.statusEl = status;
   pane.reconnectBtn = reconnectBtn;
@@ -16175,6 +16645,7 @@ function ensurePaneTerminal(pane) {
     // Canvas renderer (used on macOS now) composites faint text correctly, like
     // the DOM renderer, so no contrast boosting is needed on any platform.
     minimumContrastRatio: 1,
+    cursorStyle: getTerminalCursorStyle(),
     cursorBlink: true,
     allowProposedApi: true,
     customGlyphs: true,
@@ -16574,18 +17045,6 @@ function runPaneFind(pane, direction = "next", { resetIndex = false } = {}) {
   return true;
 }
 
-function handleGlobalTerminalFindShortcut(ev) {
-  const isF = ev.key?.toLowerCase?.() === "f";
-  const withFindModifier = ev.ctrlKey || ev.metaKey;
-  if (!isF || !withFindModifier) return;
-  if (workspaceMode !== "terminal") return;
-  const pane = getActivePane();
-  if (!pane) return;
-  ev.preventDefault();
-  ev.stopPropagation();
-  openPaneFindPrompt(pane).catch((e) => console.warn("open find prompt failed", e));
-}
-
 function handleGlobalTerminalFindNav(ev) {
   if (workspaceMode !== "terminal") return;
   const pane = getActivePane();
@@ -16965,6 +17424,58 @@ async function preparePaneTerminalForSession(pane, rounds = 2) {
   await stabilizePaneSize(pane, rounds);
 }
 
+// Auto-reconnect: bounded retry after an *unexpected* drop only. A remote
+// shell that exited on its own (`exit`, or the user closing the pane) is not a
+// failure, and retrying it would fight the user - see the callers for which
+// close reasons qualify.
+const AUTO_RECONNECT_MAX_ATTEMPTS = 3;
+const AUTO_RECONNECT_BASE_DELAY_MS = 1000;
+
+function isTerminalAutoReconnectEnabled() {
+  return localStorage.getItem(SETTINGS_KEY_TERMINAL_AUTO_RECONNECT) !== "false";
+}
+
+function cancelAutoReconnect(pane) {
+  if (!pane) return;
+  if (pane.autoReconnectTimer != null) {
+    clearTimeout(pane.autoReconnectTimer);
+    pane.autoReconnectTimer = null;
+  }
+}
+
+function resetAutoReconnect(pane) {
+  cancelAutoReconnect(pane);
+  if (pane) pane.autoReconnectAttempts = 0;
+}
+
+// Returns true when a retry was armed, so the caller can leave its own status
+// text alone. The attempt counter is cleared only by a successful connect, so
+// a flapping link cannot retry forever.
+function scheduleAutoReconnect(pane) {
+  if (!pane || pane.isLocal || !pane.reconnectFactory) return false;
+  if (!isTerminalAutoReconnectEnabled()) return false;
+  cancelAutoReconnect(pane);
+  const attempt = (pane.autoReconnectAttempts || 0) + 1;
+  if (attempt > AUTO_RECONNECT_MAX_ATTEMPTS) return false;
+  pane.autoReconnectAttempts = attempt;
+  const delay = AUTO_RECONNECT_BASE_DELAY_MS * 2 ** (attempt - 1);
+  if (pane.statusEl) {
+    pane.statusEl.textContent = t("terminal.status.auto_reconnect", {
+      seconds: Math.round(delay / 1000),
+      attempt,
+      max: AUTO_RECONNECT_MAX_ATTEMPTS,
+    });
+  }
+  pane.autoReconnectTimer = setTimeout(() => {
+    pane.autoReconnectTimer = null;
+    if (!isTerminalAutoReconnectEnabled() || pane.sessionId !== null) return;
+    Promise.resolve(pane.reconnectFactory()).catch((e) => {
+      console.warn("auto reconnect failed", e);
+    });
+  }, delay);
+  return true;
+}
+
 async function connectPaneSession(pane) {
   if (!pane.host) return;
   if (pane.connecting) return;
@@ -17006,6 +17517,7 @@ async function connectPaneSession(pane) {
     pane.lastSentCols = cols;
     pane.lastSentRows = rows;
     pane.statusEl.textContent = t("terminal.status.connected");
+    resetAutoReconnect(pane);
     if (pane.latencyEl) pane.latencyEl.hidden = true;
     if (pane.reconnectBtn) pane.reconnectBtn.hidden = true;
 
@@ -17034,6 +17546,7 @@ async function connectPaneSession(pane) {
     if (pane.term) {
       writePaneTerminalData(pane, `\x1b[31m${t("terminal.error.connect_failed_term", { error: e })}\x1b[0m\r\n`, { stickToBottom: true });
     }
+    scheduleAutoReconnect(pane);
   } finally {
     setPaneConnecting(pane, false);
   }
@@ -17041,6 +17554,10 @@ async function connectPaneSession(pane) {
 
 async function wirePaneSessionEvents(pane, sessionId) {
   if (pane === getActivePane()) syncAiTerminalControlUi();
+  // Fill the header chip as soon as any session is live — local terminals
+  // never went through the SSH connect path, so they used to wait out a full
+  // poll interval before showing anything.
+  refreshPaneHeaderMetrics();
   if (pane.dataUnlisten) {
     pane.dataUnlisten();
     pane.dataUnlisten = null;
@@ -17137,12 +17654,16 @@ async function wirePaneSessionEvents(pane, sessionId) {
         : `\r\n\x1b[2m${t("terminal.closed.disconnected")}\x1b[0m\r\n`;
 
     forgetAiPaneState(`session:${sessionId}`);
+    const wasLive = pane.sessionId === sessionId;
     pane.sessionId = null;
     stopPaneAliveWatchdog(pane);
     clearPaneAttention(pane);
     if (pane.statusEl) pane.statusEl.textContent = t("terminal.status.disconnected");
     if (pane.latencyEl) pane.latencyEl.hidden = true;
     if (pane.reconnectBtn) pane.reconnectBtn.hidden = false;
+    // `message` set means the backend lost the link; a plain exit code is the
+    // remote shell ending on purpose, and both null is our own disconnect.
+    if (wasLive && ev.payload.message) scheduleAutoReconnect(pane);
     if (pane.term) writePaneTerminalData(pane, tail, { stickToBottom: true });
     syncAiTerminalControlUi();
   });
@@ -17162,6 +17683,7 @@ function stopPaneAliveWatchdog(pane) {
 async function disconnectPaneSession(pane, { dispose }) {
   const sid = pane.sessionId;
   pane.sessionId = null;
+  resetAutoReconnect(pane);
   pane.lastSentCols = 0;
   pane.lastSentRows = 0;
   clearPaneAttention(pane, { rerender: false });
@@ -21329,6 +21851,208 @@ window.addEventListener("resize", () => {
   resetSftpDragState();
 });
 window.addEventListener("blur", () => hideTerminalSelectionMenu());
+
+
+// --------------------------------------------------------------------------
+// Configurable hotkeys
+// --------------------------------------------------------------------------
+// One table is the single source of truth: the dispatcher, the settings list
+// and the defaults all read it. "Mod" means Cmd on macOS and Ctrl elsewhere,
+// so one default string is correct on every platform.
+const SETTINGS_KEY_KEYBINDINGS = "zeroterm.settings.keybindings";
+
+const KEYBINDING_ACTIONS = [
+  {
+    id: "terminal.find",
+    combo: "Mod+F",
+    when: () => workspaceMode === "terminal" && !!getActivePane(),
+    run: () => {
+      const pane = getActivePane();
+      if (pane) openPaneFindPrompt(pane).catch((e) => console.warn("open find prompt failed", e));
+    },
+  },
+  {
+    id: "terminal.new_local",
+    combo: "Mod+Shift+T",
+    run: () => openLocalTerminalInTab().catch((e) => console.warn("open local terminal failed", e)),
+  },
+  {
+    id: "terminal.close_tab",
+    combo: "Mod+Shift+W",
+    when: () => !!termState.activeTabId,
+    run: () => closeTab(termState.activeTabId).catch((e) => console.warn("closeTab failed", e)),
+  },
+  {
+    id: "terminal.next_tab",
+    combo: "Ctrl+Tab",
+    when: () => termState.tabs.length > 1,
+    run: () => activateTabByOffset(1),
+  },
+  {
+    id: "terminal.prev_tab",
+    combo: "Ctrl+Shift+Tab",
+    when: () => termState.tabs.length > 1,
+    run: () => activateTabByOffset(-1),
+  },
+  { id: "app.quick_connect", combo: "Mod+Shift+K", run: () => openQuickConnectOverlay() },
+  {
+    id: "app.new_window",
+    combo: "Mod+Shift+N",
+    run: () => invoke("open_new_window").catch((e) => alert(t("terminal.error.new_window_failed", { error: e }))),
+  },
+  { id: "app.settings", combo: "Mod+,", run: () => openSettingsPage() },
+];
+
+const MODIFIER_KEYS = new Set(["Control", "Shift", "Alt", "Meta", "OS"]);
+
+function readKeybindingOverrides() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SETTINGS_KEY_KEYBINDINGS) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+// An override of "" is a deliberately cleared binding, which is why this
+// checks for the key's presence instead of falling back on a falsy value.
+function getKeybindingCombo(action) {
+  const overrides = readKeybindingOverrides();
+  return Object.prototype.hasOwnProperty.call(overrides, action.id)
+    ? String(overrides[action.id] || "")
+    : action.combo;
+}
+
+function setKeybindingOverride(actionId, combo) {
+  const overrides = readKeybindingOverrides();
+  overrides[actionId] = combo;
+  localStorage.setItem(SETTINGS_KEY_KEYBINDINGS, JSON.stringify(overrides));
+}
+
+function normalizeKeybindingKey(key) {
+  if (!key) return "";
+  if (key === " ") return "Space";
+  return key.length === 1 ? key.toUpperCase() : key;
+}
+
+// Canonical order so a recorded combo always compares equal to a default.
+function comboFromEvent(ev) {
+  if (MODIFIER_KEYS.has(ev.key)) return "";
+  const parts = [];
+  const modPressed = isMacPlatform ? ev.metaKey : ev.ctrlKey;
+  const otherPressed = isMacPlatform ? ev.ctrlKey : ev.metaKey;
+  if (modPressed) parts.push("Mod");
+  if (otherPressed) parts.push(isMacPlatform ? "Ctrl" : "Meta");
+  if (ev.altKey) parts.push("Alt");
+  if (ev.shiftKey) parts.push("Shift");
+  parts.push(normalizeKeybindingKey(ev.key));
+  return parts.join("+");
+}
+
+function formatKeybindingCombo(combo) {
+  if (!combo) return t("settings.keys.unset");
+  return combo
+    .split("+")
+    .map((part) => (part === "Mod" ? (isMacPlatform ? "⌘" : "Ctrl") : part))
+    .join(isMacPlatform ? " " : "+");
+}
+
+// Shift alone never qualifies: it would swallow ordinary typing.
+function isUsableKeybindingCombo(combo) {
+  const parts = combo.split("+");
+  return parts.length > 1 && parts.some((part) => part === "Mod" || part === "Ctrl" || part === "Meta" || part === "Alt");
+}
+
+function activateTabByOffset(delta) {
+  const tabs = termState.tabs;
+  if (tabs.length < 2) return;
+  const idx = tabs.findIndex((tab) => tab.id === termState.activeTabId);
+  const next = tabs[(((idx < 0 ? 0 : idx) + delta) % tabs.length + tabs.length) % tabs.length];
+  termState.activeTabId = next.id;
+  setWorkspaceMode("terminal");
+  renderTerminalWorkspace();
+}
+
+let keybindingRecordingId = null;
+
+function handleKeybindingShortcut(ev) {
+  if (keybindingRecordingId || ev.defaultPrevented) return;
+  const combo = comboFromEvent(ev);
+  if (!combo || !isUsableKeybindingCombo(combo)) return;
+  const action = KEYBINDING_ACTIONS.find((candidate) => getKeybindingCombo(candidate) === combo);
+  if (!action || (action.when && !action.when())) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  action.run();
+}
+
+function renderKeybindingSettings() {
+  if (!settingsKeysList) return;
+  settingsKeysList.innerHTML = "";
+  for (const action of KEYBINDING_ACTIONS) {
+    const row = document.createElement("div");
+    row.className = "settings-keys-row";
+
+    const label = document.createElement("span");
+    label.textContent = t(`settings.keys.action.${action.id}`);
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "settings-keys-btn";
+    button.textContent = formatKeybindingCombo(getKeybindingCombo(action));
+    button.addEventListener("click", () => startKeybindingRecording(action, button));
+
+    row.append(label, button);
+    settingsKeysList.appendChild(row);
+  }
+}
+
+function startKeybindingRecording(action, button) {
+  keybindingRecordingId = action.id;
+  button.classList.add("recording");
+  button.textContent = t("settings.keys.recording");
+
+  const stop = () => {
+    keybindingRecordingId = null;
+    window.removeEventListener("keydown", onKey, true);
+    button.classList.remove("recording");
+    renderKeybindingSettings();
+  };
+
+  const onKey = (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (ev.key === "Escape") return stop();
+    if (ev.key === "Backspace") {
+      setKeybindingOverride(action.id, "");
+      return stop();
+    }
+    const combo = comboFromEvent(ev);
+    if (!combo) return;
+    if (!isUsableKeybindingCombo(combo)) {
+      showToast(t("settings.keys.need_modifier"), "error", 3000);
+      return;
+    }
+    const clash = KEYBINDING_ACTIONS.find(
+      (other) => other.id !== action.id && getKeybindingCombo(other) === combo
+    );
+    if (clash) {
+      showToast(
+        t("settings.keys.conflict", {
+          combo: formatKeybindingCombo(combo),
+          action: t(`settings.keys.action.${clash.id}`),
+        }),
+        "error",
+        3200
+      );
+      return;
+    }
+    setKeybindingOverride(action.id, combo);
+    stop();
+  };
+
+  window.addEventListener("keydown", onKey, true);
+}
 
 // --------------------------------------------------------------------------
 // Boot

@@ -824,10 +824,6 @@ body.has-app-bg[data-app-theme="light"] #unlock-path {
   font-size: 13px;
 }
 
-#new-window-button {
-  order: 3;
-}
-
 #settings-button {
   order: 1;
 }
@@ -5558,6 +5554,75 @@ body[data-app-theme="light"] .pane-ai-toggle.active {
   overflow: hidden;
   text-overflow: ellipsis;
   color: rgba(221, 233, 255, 0.85);
+}
+
+.pane-metrics {
+  margin-right: auto;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  font-size: 10px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: rgba(165, 181, 214, 0.65);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.pane-metric {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.pane-metric:first-child {
+  border-left: 0;
+}
+
+.pane-metric i {
+  font-style: normal;
+  opacity: 0.55;
+}
+
+.pane-metric b {
+  font-weight: 600;
+  color: rgba(221, 233, 255, 0.9);
+}
+
+/* Same tone palette as the metrics panel gauges, so a value reads identically
+   in the header and in the sidebar. */
+.pane-metric b.good {
+  color: var(--metric-tone-good, #20d29a);
+}
+
+.pane-metric b.warn {
+  color: var(--metric-tone-warn, #f59e0b);
+}
+
+.pane-metric b.danger {
+  color: var(--metric-tone-danger, #ff4d5f);
+}
+
+.pane-metric em {
+  font-style: normal;
+  opacity: 0.6;
+}
+
+body[data-app-theme="light"] .pane-metrics {
+  color: rgba(71, 85, 105, 0.75);
+  --metric-tone-good: #059669;
+  --metric-tone-warn: #d97706;
+  --metric-tone-danger: #dc2626;
+}
+
+body[data-app-theme="light"] .pane-metric {
+  border-left-color: rgba(31, 41, 55, 0.12);
+}
+
+body[data-app-theme="light"] .pane-metric b {
+  color: #263449;
 }
 
 .pane-status {
@@ -14198,23 +14263,419 @@ body[data-app-theme="light"] .settings-bg-slider input[type="range"]::-webkit-sl
   transform: scale(0.95);
 }
 
+.tmux-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 12px 14px 4px;
+}
+
+.tmux-action-btn {
+  height: 36px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: #dfe9ff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.tmux-action-btn.primary {
+  border-color: transparent;
+  background: linear-gradient(135deg, #5aa9ff 0%, #3b82f6 100%);
+  color: #ffffff;
+}
+
+.tmux-action-btn:hover:not(:disabled) {
+  border-color: rgba(104, 168, 255, 0.5);
+}
+
+.tmux-action-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.tmux-body {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 12px 14px;
+}
+
+.tmux-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.03);
+  text-align: left;
+  color: #dfe9ff;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.tmux-row:hover,
+.tmux-row:focus-within {
+  border-color: rgba(104, 168, 255, 0.35);
+  background: rgba(104, 168, 255, 0.08);
+}
+
+.tmux-row-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.tmux-row strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tmux-row-sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 3px;
+  min-width: 0;
+}
+
+.tmux-row-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: rgba(169, 191, 223, 0.75);
+}
+
+.tmux-row-state::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(169, 191, 223, 0.45);
+}
+
+.tmux-row.attached .tmux-row-state {
+  color: #5fd39a;
+}
+
+.tmux-row.attached .tmux-row-state::before {
+  background: #20d29a;
+  box-shadow: 0 0 6px rgba(32, 210, 154, 0.6);
+}
+
+.tmux-row-windows {
+  min-width: 0;
+  font-size: 11px;
+  color: rgba(169, 191, 223, 0.6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tmux-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.tmux-row:hover .tmux-row-actions,
+.tmux-row:focus-within .tmux-row-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.tmux-row-action {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  /* Transparent border reserved up front: the hover outline must not resize
+     the button and nudge its neighbours. */
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(213, 226, 245, 0.8);
+  cursor: pointer;
+}
+
+.tmux-row-action:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
+/* The generic `button.danger` fill (element + class) outranks the plain
+   `.tmux-row-action` rule, so the icon button has to restate its own chrome. */
+.tmux-row-action.danger {
+  border: 1px solid transparent;
+  background: transparent;
+  color: #ef4444;
+}
+
+.tmux-row-action.danger:hover {
+  background: rgba(239, 68, 68, 0.14);
+  border-color: rgba(239, 68, 68, 0.6);
+  color: #ff5f5f;
+}
+
+.tmux-row-action .zt-icon {
+  width: 15px;
+  height: 15px;
+}
+
+body[data-app-theme="light"] .tmux-action-btn {
+  border-color: rgba(31, 41, 55, 0.14);
+  background: rgba(15, 23, 42, 0.04);
+  color: #263449;
+}
+
+body[data-app-theme="light"] .tmux-action-btn.primary {
+  color: #ffffff;
+}
+
+body[data-app-theme="light"] .tmux-row {
+  border-color: rgba(31, 41, 55, 0.1);
+  background: rgba(15, 23, 42, 0.03);
+  color: #263449;
+}
+
+body[data-app-theme="light"] .tmux-row-state,
+body[data-app-theme="light"] .tmux-row-windows {
+  color: rgba(71, 85, 105, 0.8);
+}
+
+body[data-app-theme="light"] .tmux-row-state::before {
+  background: rgba(100, 116, 139, 0.5);
+}
+
+body[data-app-theme="light"] .tmux-row.attached .tmux-row-state {
+  color: #059669;
+}
+
+body[data-app-theme="light"] .tmux-row.attached .tmux-row-state::before {
+  background: #059669;
+}
+
+body[data-app-theme="light"] .tmux-row-action {
+  color: rgba(51, 65, 85, 0.85);
+}
+
+body[data-app-theme="light"] .tmux-row-action:hover {
+  background: rgba(15, 23, 42, 0.08);
+  border-color: rgba(31, 41, 55, 0.2);
+  color: #111827;
+}
+
+body[data-app-theme="light"] .tmux-row-action.danger {
+  color: #dc2626;
+}
+
+body[data-app-theme="light"] .tmux-row-action.danger:hover {
+  background: rgba(220, 38, 38, 0.1);
+  border-color: rgba(220, 38, 38, 0.5);
+  color: #b91c1c;
+}
+
+.settings-keys-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.settings-keys-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 13px;
+  color: #dfe9ff;
+}
+
+.settings-keys-btn {
+  min-width: 120px;
+  padding: 5px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  background: rgba(10, 16, 30, 0.6);
+  color: #dfe9ff;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.settings-keys-btn:hover {
+  border-color: rgba(104, 168, 255, 0.45);
+}
+
+.settings-keys-btn.recording {
+  border-color: rgba(104, 168, 255, 0.8);
+  background: rgba(104, 168, 255, 0.16);
+  color: #ffffff;
+}
+
+body[data-app-theme="light"] .settings-keys-row {
+  border-color: rgba(31, 41, 55, 0.1);
+  background: rgba(15, 23, 42, 0.03);
+  color: #263449;
+}
+
+body[data-app-theme="light"] .settings-keys-btn {
+  border-color: rgba(31, 41, 55, 0.18);
+  background: #ffffff;
+  color: #263449;
+}
+
+.settings-segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.settings-segment {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(197, 209, 232, 0.72);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+/* Hairline between adjacent unselected segments, like a native segmented
+   control — it disappears next to the raised selected chip. */
+.settings-segment + .settings-segment::before {
+  content: "";
+  position: absolute;
+  left: -2px;
+  top: 6px;
+  bottom: 6px;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.settings-segment input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.settings-segment:hover {
+  color: #dfe9ff;
+}
+
+.settings-segment:has(input:checked) {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.settings-segment:has(input:checked)::before,
+.settings-segment:has(input:checked) + .settings-segment::before {
+  opacity: 0;
+}
+
+.settings-segment input:focus-visible + .cursor-glyph {
+  outline: 2px solid rgba(104, 168, 255, 0.7);
+  outline-offset: 2px;
+}
+
+/* Miniature of the actual terminal cursor each option selects. */
+.cursor-glyph {
+  display: inline-flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  width: 7px;
+  height: 12px;
+}
+
+.cursor-glyph::after {
+  content: "";
+  background: currentColor;
+  border-radius: 1px;
+}
+
+.cursor-glyph-block::after {
+  width: 7px;
+  height: 12px;
+}
+
+.cursor-glyph-underline::after {
+  width: 7px;
+  height: 2px;
+}
+
+.cursor-glyph-bar::after {
+  width: 2px;
+  height: 12px;
+}
+
+body[data-app-theme="light"] .settings-segmented {
+  border-color: rgba(31, 41, 55, 0.12);
+  background: rgba(15, 23, 42, 0.04);
+}
+
+body[data-app-theme="light"] .settings-segment {
+  color: rgba(71, 85, 105, 0.85);
+}
+
+body[data-app-theme="light"] .settings-segment + .settings-segment::before {
+  background: rgba(31, 41, 55, 0.14);
+}
+
+body[data-app-theme="light"] .settings-segment:hover,
+body[data-app-theme="light"] .settings-segment:has(input:checked) {
+  color: #1f2937;
+}
+
+body[data-app-theme="light"] .settings-segment:has(input:checked) {
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+}
+
 .settings-terminal-sidebar-features {
   display: grid;
-  gap: 14px;
+  gap: 10px;
 }
 
 .settings-terminal-sidebar-feature-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 8px;
 }
 
 .settings-terminal-sidebar-feature {
   min-width: 0;
-  min-height: 46px;
-  padding: 10px 12px;
+  min-height: 34px;
+  padding: 5px 10px;
   border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 11px;
+  border-radius: 9px;
   background: rgba(255, 255, 255, 0.025);
   color: #dfe9ff;
   font-size: 13px;
@@ -14237,6 +14698,22 @@ body[data-app-theme="light"] .settings-bg-slider input[type="range"]::-webkit-sl
   margin-top: 0;
 }
 
+.settings-terminal-sidebar-feature .settings-switch span {
+  width: 32px;
+  height: 18px;
+}
+
+.settings-terminal-sidebar-feature .settings-switch span::after {
+  width: 13px;
+  height: 13px;
+  left: 2px;
+  bottom: 2px;
+}
+
+.settings-terminal-sidebar-feature .settings-switch input:checked + span::after {
+  transform: translateX(13px);
+}
+
 body[data-app-theme="light"] .settings-terminal-sidebar-feature {
   border-color: rgba(31, 41, 55, 0.09);
   background: rgba(15, 23, 42, 0.025);
@@ -14248,8 +14725,4 @@ body[data-app-theme="light"] .settings-terminal-sidebar-feature:hover {
   background: rgba(37, 99, 235, 0.06);
 }
 
-@media (max-width: 760px) {
-  .settings-terminal-sidebar-feature-grid {
-    grid-template-columns: 1fr;
-  }
-}
+

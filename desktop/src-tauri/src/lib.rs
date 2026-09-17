@@ -193,6 +193,7 @@ pub fn run() {
             commands::session_info,
             commands::collect_system_metrics,
             commands::list_system_services,
+            commands::list_tmux_sessions,
             commands::system_service_action,
             commands::system_service_file,
             commands::list_listening_ports,
