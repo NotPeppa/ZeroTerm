@@ -178,6 +178,7 @@ pub fn run() {
             commands::read_local_text_file,
             commands::local_read_text,
             commands::local_write_text,
+            commands::write_clipboard_text,
             commands::connect_host,
             commands::list_port_forward_status,
             commands::list_port_forward_hosts,

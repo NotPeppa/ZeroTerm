@@ -32,6 +32,22 @@ function show(name) {
   }
 }
 
+async function writeClipboardText(value) {
+  const text = String(value ?? "");
+  try {
+    await invoke("write_clipboard_text", { text });
+    return;
+  } catch (nativeError) {
+    // Keep browser preview/dev mode usable when the native command is absent.
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch (webError) {
+      throw new Error(`${String(nativeError)}; ${String(webError)}`);
+    }
+  }
+}
+
 function formatSize(n) {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
@@ -4689,7 +4705,7 @@ function ensureServiceFileOverlay() {
     const text = String(overlay._serviceFileText || "");
     if (!text) return;
     try {
-      await navigator.clipboard.writeText(text);
+      await writeClipboardText(text);
       showToast(t("services.file.copied"), "success");
     } catch (e) {
       showToast(String(e), "error");
@@ -7202,7 +7218,7 @@ async function copyAiInlineCode(value) {
   const text = String(value ?? "");
   if (!text) return;
   try {
-    await navigator.clipboard.writeText(text);
+    await writeClipboardText(text);
     showToast("已复制", "success", 1600);
   } catch (error) {
     showToast(`复制失败：${error}`, "error", 3600);
@@ -12662,7 +12678,7 @@ function showTerminalSelectionMenu(pane, text, x, y) {
 async function copyTerminalSelectionMenuText() {
   if (!terminalSelectionMenuText) return;
   try {
-    await navigator.clipboard.writeText(terminalSelectionMenuText);
+    await writeClipboardText(terminalSelectionMenuText);
   } catch (e) {
     showToast(t("terminal.selection.copy_failed", { error: e }), "error", 3200);
     throw e;
@@ -13966,7 +13982,7 @@ hostsMenuCopy?.addEventListener("click", async () => {
   if (!host) return;
   const text = `${host.user}@${host.host}:${host.port}`;
   try {
-    await navigator.clipboard.writeText(text);
+    await writeClipboardText(text);
   } catch {
     await openTextInputDialog({
       title: t("hosts.copy.title"),
@@ -15912,7 +15928,7 @@ terminalDockerBody?.addEventListener("click", (ev) => {
   if (act === "detail") return toggleDockerDetail(id);
   if (act === "copy-name") {
     const name = btn.getAttribute("data-name") || id;
-    navigator.clipboard.writeText(name)
+    writeClipboardText(name)
       .then(() => showToast(`已复制：${name}`, "success", 1800))
       .catch((e) => showToast(String(e), "error", 3000));
     return;
@@ -16821,7 +16837,7 @@ function ensurePaneTerminal(pane) {
         const selected = pane.term?.getSelection?.() || "";
         if (selected) {
           ev.preventDefault();
-          navigator.clipboard.writeText(selected).catch((e) => {
+          writeClipboardText(selected).catch((e) => {
             console.warn("terminal copy failed", e);
           });
           return false;
@@ -16841,7 +16857,7 @@ function ensurePaneTerminal(pane) {
         const selected = pane.term?.getSelection?.() || "";
         if (selected) {
           ev.preventDefault();
-          navigator.clipboard.writeText(selected).catch((e) => {
+          writeClipboardText(selected).catch((e) => {
             console.warn("terminal copy failed", e);
           });
           return false;

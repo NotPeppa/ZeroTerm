@@ -69,6 +69,96 @@ pub struct SystemFontDto {
     pub family: String,
 }
 
+const MAX_CLIPBOARD_TEXT_BYTES: usize = 16 * 1024 * 1024;
+
+fn pipe_text_to_clipboard_program(
+    program: &str,
+    args: &[&str],
+    text: &str,
+) -> Result<(), String> {
+    let mut child = std::process::Command::new(program)
+        .args(args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("starting {program}: {e}"))?;
+    let write_result = child
+        .stdin
+        .take()
+        .ok_or_else(|| format!("{program} stdin is unavailable"))?
+        .write_all(text.as_bytes())
+        .map_err(|e| format!("writing to {program}: {e}"));
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("waiting for {program}: {e}"))?;
+    write_result?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    Err(if detail.is_empty() {
+        format!("{program} exited with status {}", output.status)
+    } else {
+        detail
+    })
+}
+
+fn write_native_clipboard_text(text: &str) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        return pipe_text_to_clipboard_program("/usr/bin/pbcopy", &[], text);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        return pipe_text_to_clipboard_program(
+            "powershell.exe",
+            &[
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "Set-Clipboard -Value ([Console]::In.ReadToEnd())",
+            ],
+            text,
+        );
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let candidates: [(&str, &[&str]); 3] = [
+            ("wl-copy", &[]),
+            ("xclip", &["-selection", "clipboard"]),
+            ("xsel", &["--clipboard", "--input"]),
+        ];
+        let mut errors = Vec::new();
+        for (program, args) in candidates {
+            match pipe_text_to_clipboard_program(program, args, text) {
+                Ok(()) => return Ok(()),
+                Err(error) => errors.push(error),
+            }
+        }
+        return Err(format!(
+            "no usable system clipboard command: {}",
+            errors.join("; ")
+        ));
+    }
+    #[allow(unreachable_code)]
+    Err("system clipboard is unsupported on this platform".to_string())
+}
+
+#[tauri::command]
+pub async fn write_clipboard_text(text: String) -> Result<(), String> {
+    if text.len() > MAX_CLIPBOARD_TEXT_BYTES {
+        return Err(format!(
+            "clipboard text is {} bytes, above the {} byte limit",
+            text.len(),
+            MAX_CLIPBOARD_TEXT_BYTES
+        ));
+    }
+    tauri::async_runtime::spawn_blocking(move || write_native_clipboard_text(&text))
+        .await
+        .map_err(|e| format!("clipboard task failed: {e}"))?
+}
+
 const AI_CONFIG_FILE: &str = "ai-config.json";
 const AI_SESSION_FILE: &str = "ai-sessions.json";
 const NETWORK_PROXY_FILE: &str = "network-proxy.json";
