@@ -8701,6 +8701,8 @@ body[data-app-theme="light"] .sftp-pin-menu-remove:hover {
 .overlay {
   position: fixed;
   inset: 0;
+  box-sizing: border-box;
+  padding: 44px 12px 12px;
   background: rgba(6, 10, 20, 0.45);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
@@ -8709,6 +8711,21 @@ body[data-app-theme="light"] .sftp-pin-menu-remove:hover {
   justify-content: center;
   z-index: 100;
   transition: all 0.25s ease;
+}
+
+.overlay-window-drag-region {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 44px;
+  z-index: 1;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.platform-macos .overlay-window-drag-region {
+  left: 80px;
 }
 
 .dialog {
@@ -8741,7 +8758,7 @@ body.has-app-bg[data-app-theme="light"] .dialog {
 }
 
 #host-edit-overlay .dialog.wide {
-  height: min(660px, calc(100vh - 28px));
+  height: min(660px, calc(100vh - 68px));
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -11391,6 +11408,8 @@ body[data-app-theme="light"] .theme-edit-preview-title {
 
 .dialog.file-editor-dialog {
   width: min(1040px, calc(100vw - 24px));
+  height: min(800px, calc(100vh - 68px));
+  max-height: calc(100vh - 68px);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -11517,7 +11536,9 @@ body[data-app-theme="light"] .theme-edit-preview-title {
 
 #file-editor-content {
   width: 100%;
-  height: min(64vh, 640px);
+  height: auto;
+  min-height: 120px;
+  flex: 1 1 auto;
   border: 1px solid #36496f;
   border-radius: 10px;
   background: #0d162b;
@@ -14724,5 +14745,4 @@ body[data-app-theme="light"] .settings-terminal-sidebar-feature:hover {
   border-color: rgba(37, 99, 235, 0.25);
   background: rgba(37, 99, 235, 0.06);
 }
-
 

@@ -10175,6 +10175,18 @@ if (workspaceTitlebar && appWindow?.startDragging) {
 bindDragOnBar(vaultLeftTopbar);
 bindDragOnBar(vaultRightTopbar);
 
+// Full-screen modal backdrops sit above the normal title bars. Give every
+// modal its own top drag strip so the window can still be moved while a
+// dialog is open (especially important when its actions are off-screen).
+for (const overlay of document.querySelectorAll(".overlay")) {
+  const dragRegion = document.createElement("div");
+  dragRegion.className = "overlay-window-drag-region";
+  dragRegion.setAttribute("aria-hidden", "true");
+  overlay.prepend(dragRegion);
+  bindDragOnBar(dragRegion);
+  bindDblclickMaximizeOnBar(dragRegion);
+}
+
 if (windowControls) {
   windowControls.hidden = !isWindowsPlatform;
 }
