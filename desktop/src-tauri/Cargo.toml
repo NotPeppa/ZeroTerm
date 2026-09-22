@@ -49,6 +49,11 @@ objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSOpenPanel", "NSPanel", "NSResponder", "NSSavePanel", "NSWindow"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSURL"] }
 
+[target.'cfg(target_os = "windows")'.dependencies]
+# Use the native Win32 clipboard in-process. Disabling image support keeps this
+# text-only path small and avoids pulling in image codecs and GDI bindings.
+arboard = { version = "3.6.1", default-features = false }
+
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]

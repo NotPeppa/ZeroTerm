@@ -111,16 +111,11 @@ fn write_native_clipboard_text(text: &str) -> Result<(), String> {
     }
     #[cfg(target_os = "windows")]
     {
-        return pipe_text_to_clipboard_program(
-            "powershell.exe",
-            &[
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                "Set-Clipboard -Value ([Console]::In.ReadToEnd())",
-            ],
-            text,
-        );
+        let mut clipboard =
+            arboard::Clipboard::new().map_err(|e| format!("opening the Windows clipboard: {e}"))?;
+        return clipboard
+            .set_text(text)
+            .map_err(|e| format!("writing to the Windows clipboard: {e}"));
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {

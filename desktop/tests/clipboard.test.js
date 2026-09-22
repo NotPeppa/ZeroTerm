@@ -5,6 +5,10 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const source = fs.readFileSync(path.join(__dirname, "../frontend/main.js"), "utf8");
+const commandSource = fs.readFileSync(
+  path.join(__dirname, "../src-tauri/src/commands.rs"),
+  "utf8",
+);
 const start = source.indexOf("async function writeClipboardText");
 const end = source.indexOf("\nfunction formatSize", start);
 if (start < 0 || end < 0) throw new Error("clipboard helper was not found");
@@ -48,6 +52,13 @@ async function run() {
   const directWebWrites = source.match(/navigator\.clipboard\.writeText/g) || [];
   if (directWebWrites.length !== 1) {
     throw new Error("some copy actions still bypass the shared clipboard helper");
+  }
+
+  if (!commandSource.includes("arboard::Clipboard::new()")) {
+    throw new Error("Windows clipboard writes do not use the in-process native clipboard");
+  }
+  if (commandSource.includes("Set-Clipboard -Value")) {
+    throw new Error("Windows clipboard writes still launch PowerShell");
   }
 
   console.log("clipboard.test.js: passed");
