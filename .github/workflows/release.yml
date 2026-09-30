@@ -26,11 +26,29 @@ jobs:
       version: ${{ steps.ver.outputs.version }}
       tag: ${{ steps.ver.outputs.tag }}
       notes: ${{ steps.notes.outputs.notes }}
+      android_enabled: ${{ steps.android_signing.outputs.enabled }}
     steps:
       # Full history + tags so the notes step can diff against the previous release tag.
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      - name: Check Android release signing
+        id: android_signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          enabled=true
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [[ ! "${!name}" =~ [^[:space:]] ]]; then
+              echo "::warning::Android release skipped: missing secret $name"
+              enabled=false
+            fi
+          done
+          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
 
       - id: ver
         run: |
@@ -176,10 +194,19 @@ jobs:
 
   android:
     needs: prepare
+    if: needs.prepare.outputs.android_enabled == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
+
+      - name: Decode release keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          umask 077
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/zeroterm.jks"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/zeroterm.jks" >> "$GITHUB_ENV"
 
       - name: Apply version from tag
         shell: bash
@@ -211,18 +238,6 @@ jobs:
 
       - name: local.properties
         run: echo "sdk.dir=$ANDROID_HOME" > android/local.properties
-
-      - name: Decode keystore (optional)
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-        run: |
-          if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ]; then
-            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/zeroterm.jks"
-            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/zeroterm.jks" >> "$GITHUB_ENV"
-            echo "Using release keystore"
-          else
-            echo "No ANDROID_KEYSTORE_BASE64 secret — signing with debug keystore"
-          fi
 
       - name: assembleRelease
         working-directory: android

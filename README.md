@@ -198,7 +198,7 @@ cargo tauri build
 推送版本标签后，`.github/workflows/release.yml` 会：
 
 1. **根据 tag 自动改版本号**（`tauri.conf.json` / desktop `Cargo.toml` / Android `versionName`+`versionCode` / core workspace）。
-2. 打包桌面 + Android。
+2. 打包桌面；Android 签名 Secrets 配齐后才打包 APK。
 3. 创建 **draft** Release。
 
 本地不必先手改版本文件，只推 tag 即可：
@@ -233,10 +233,12 @@ git push origin 0.1.12
 |--------|------|
 | `TAURI_SIGNING_PRIVATE_KEY` | 桌面 updater 签名私钥（与 `tauri.conf.json` 里 pubkey 配对） |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | 私钥密码（可空） |
-| `ANDROID_KEYSTORE_BASE64` | 可选；release 签名 keystore（base64）。未配置时用 debug 签名 |
-| `ANDROID_KEYSTORE_PASSWORD` | 可选 |
-| `ANDROID_KEY_ALIAS` | 可选 |
-| `ANDROID_KEY_PASSWORD` | 可选 |
+| `ANDROID_KEYSTORE_BASE64` | Android 发布必需；正式签名 keystore（base64） |
+| `ANDROID_KEYSTORE_PASSWORD` | Android 发布必需；keystore 密码 |
+| `ANDROID_KEY_ALIAS` | Android 发布必需；签名密钥别名 |
+| `ANDROID_KEY_PASSWORD` | Android 发布必需；签名密钥密码 |
+
+Android 的四项 Secrets 必须全部配置；未配齐时 CI 会提示缺失项并跳过 Android，桌面发布继续。正式 APK 不使用 debug 签名。
 
 CI 完成后到 GitHub Releases 检查 draft，确认附件齐全后点 **Publish**。
 
