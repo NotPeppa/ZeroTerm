@@ -71,6 +71,9 @@ pub struct SystemFontDto {
 
 const MAX_CLIPBOARD_TEXT_BYTES: usize = 16 * 1024 * 1024;
 
+// Windows writes the clipboard in-process via arboard; only the macOS/Unix
+// branches below shell out to a helper program.
+#[cfg(not(target_os = "windows"))]
 fn pipe_text_to_clipboard_program(
     program: &str,
     args: &[&str],

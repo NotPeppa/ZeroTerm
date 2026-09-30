@@ -11498,40 +11498,149 @@ body[data-app-theme="light"] .theme-edit-preview-title {
   margin-bottom: 2px;
 }
 
-.file-editor-tools {
-  display: none;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-}
-
-.file-editor-tools-inline {
+/* Anchors the floating findbar over the editor, mirroring .pane-findbar. */
+.file-editor-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 120px;
   display: flex;
-  gap: 6px;
-  align-items: center;
 }
 
-.file-editor-tools-inline input[type="text"] {
-  height: 34px;
-  min-width: 180px;
-  flex: 1 1 240px;
+.file-editor-findbar {
+  position: absolute;
+  top: 8px;
+  right: 18px;
+  z-index: 5;
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid #36538a;
+  background: rgba(16, 30, 56, 0.96);
+  box-shadow: 0 8px 20px rgba(8, 14, 28, 0.42);
 }
 
-#file-editor-inline-close {
-  min-width: 36px;
-  height: 34px;
+/* VS Code's chevron column: one click shows or hides the replace row. */
+.file-editor-findbar-expand {
+  width: 18px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #c7d7f7;
   padding: 0;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
 }
 
-.file-editor-tools input[type="text"] {
-  height: 34px;
-  min-width: 180px;
-  flex: 1 1 200px;
+.file-editor-findbar-expand:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
-.file-editor-tools button {
-  padding: 6px 10px;
+.file-editor-findbar-expand span {
+  display: inline-block;
+  transition: transform 0.12s ease;
+}
+
+.file-editor-findbar-expand[aria-expanded="true"] span {
+  transform: rotate(90deg);
+}
+
+.file-editor-findbar-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.file-editor-findbar-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* The input and its inline toggles share one framed box, as in VS Code. */
+.file-editor-findbar-field {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 26px;
+  padding: 0 3px 0 0;
+  border: 1px solid #425f93;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.file-editor-findbar-field:focus-within {
+  border-color: #6ea6ff;
+}
+
+.file-editor-findbar-field input[type="text"] {
+  width: 178px;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: #e8f1ff;
+  padding: 0 8px;
   font-size: 12px;
+  outline: none;
+}
+
+.file-editor-findbar-toggle {
+  display: inline-flex;
+  cursor: pointer;
+}
+
+.file-editor-findbar-toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.file-editor-findbar-toggle span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 3px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #9fb4da;
+  font-size: 11px;
+}
+
+.file-editor-findbar-toggle:hover span {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e8f1ff;
+}
+
+.file-editor-findbar-toggle input:checked + span {
+  background: #26467c;
+  border-color: #486aa4;
+  color: #e8f1ff;
+}
+
+.file-editor-findbar-count {
+  min-width: 56px;
+  text-align: center;
+  color: #9fb4da;
+  font-size: 11px;
+}
+
+.file-editor-findbar button:not(.file-editor-findbar-expand) {
+  height: 26px;
+  min-width: 26px;
+  border-radius: 7px;
+  border: 1px solid #486aa4;
+  background: #1c3665;
+  color: #e8f1ff;
+  padding: 0 6px;
+  font-size: 12px;
+}
+
+.file-editor-findbar button:not(.file-editor-findbar-expand):hover {
+  background: #26467c;
 }
 
 #file-editor-content {
@@ -11539,6 +11648,7 @@ body[data-app-theme="light"] .theme-edit-preview-title {
   height: auto;
   min-height: 120px;
   flex: 1 1 auto;
+  min-width: 0;
   border: 1px solid #36496f;
   border-radius: 10px;
   background: #0d162b;

@@ -868,6 +868,11 @@ const I18N = {
     "editor.find.placeholder": "Search...",
     "editor.replace.placeholder": "Replace...",
     "editor.match_case": "Match case",
+    "editor.find.whole_word": "Whole word",
+    "editor.find.regex": "Use regular expression",
+    "editor.find.toggle_replace": "Toggle Replace",
+    "editor.find.no_results": "No results",
+    "editor.find.results": "{count} results",
     "editor.button.prev": "Prev",
     "editor.button.next": "Next",
     "editor.button.replace": "Replace",
@@ -1948,6 +1953,11 @@ const I18N = {
     "editor.find.placeholder": "查找...",
     "editor.replace.placeholder": "替换...",
     "editor.match_case": "区分大小写",
+    "editor.find.whole_word": "全字匹配",
+    "editor.find.regex": "使用正则表达式",
+    "editor.find.toggle_replace": "切换替换",
+    "editor.find.no_results": "无结果",
+    "editor.find.results": "{count} 个结果",
     "editor.button.prev": "上一个",
     "editor.button.next": "下一个",
     "editor.button.replace": "替换",
@@ -13473,11 +13483,13 @@ function applyI18n() {
 
   setPlaceholder("file-editor-find", "editor.find.placeholder");
   setPlaceholder("file-editor-replace", "editor.replace.placeholder");
-  setPlaceholder("file-editor-find-inline", "editor.find.placeholder");
-  setPlaceholder("file-editor-replace-inline", "editor.replace.placeholder");
-  setText("editor-match-case-label", "editor.match_case");
-  setText("file-editor-find-prev", "editor.button.prev");
-  setText("file-editor-find-next", "editor.button.next");
+  // The compact findbar shows glyphs; every label lives in a tooltip.
+  setAttr("file-editor-match-case-toggle", "title", "editor.match_case");
+  setAttr("file-editor-whole-word-toggle", "title", "editor.find.whole_word");
+  setAttr("file-editor-regex-toggle", "title", "editor.find.regex");
+  setAttr("file-editor-findbar-expand", "title", "editor.find.toggle_replace");
+  setAttr("file-editor-find-prev", "title", "editor.button.prev");
+  setAttr("file-editor-find-next", "title", "editor.button.next");
   setText("file-editor-replace-one", "editor.button.replace");
   setText("file-editor-replace-all", "editor.button.replace_all");
   setText("file-editor-inline-close", "editor.button.close_inline");
@@ -17074,7 +17086,7 @@ function runPaneFind(pane, direction = "next", { resetIndex = false } = {}) {
 }
 
 function handleGlobalTerminalFindNav(ev) {
-  if (workspaceMode !== "terminal") return;
+  if (workspaceMode !== "terminal" || modalOverlayOpen()) return;
   const pane = getActivePane();
   if (!pane?.searchQuery) return;
   const isEnter = ev.key === "Enter";
@@ -18507,10 +18519,13 @@ const fileEditorHint = document.getElementById("file-editor-hint");
 const fileEditorFindInput = document.getElementById("file-editor-find");
 const fileEditorReplaceInput = document.getElementById("file-editor-replace");
 const fileEditorToolsInline = document.getElementById("file-editor-tools-inline");
-const fileEditorFindInline = document.getElementById("file-editor-find-inline");
-const fileEditorReplaceInline = document.getElementById("file-editor-replace-inline");
 const fileEditorInlineClose = document.getElementById("file-editor-inline-close");
 const fileEditorMatchCaseInput = document.getElementById("file-editor-match-case");
+const fileEditorWholeWordInput = document.getElementById("file-editor-whole-word");
+const fileEditorRegexInput = document.getElementById("file-editor-regex");
+const fileEditorFindCount = document.getElementById("file-editor-find-count");
+const fileEditorFindbarExpand = document.getElementById("file-editor-findbar-expand");
+const fileEditorReplaceRow = document.getElementById("file-editor-findbar-replace-row");
 const fileEditorFindPrevButton = document.getElementById("file-editor-find-prev");
 const fileEditorFindNextButton = document.getElementById("file-editor-find-next");
 const fileEditorReplaceOneButton = document.getElementById("file-editor-replace-one");
@@ -20812,6 +20827,20 @@ function ensureFileEditorAce() {
     bindKey: { win: "Esc", mac: "Esc" },
     exec: () => closeRemoteEditor(),
   });
+  // Ace binds Ctrl-F/Ctrl-H to its own searchbox extension (not bundled) and
+  // stops the event, so the document-level handler never sees it. Point the
+  // same keys at our inline find bar instead.
+  fileEditorAce.commands.addCommand({
+    name: "openEditorFind",
+    bindKey: { win: "Ctrl-F", mac: "Command-F" },
+    exec: () => openEditorFindInline(),
+    readOnly: true,
+  });
+  fileEditorAce.commands.addCommand({
+    name: "openEditorReplace",
+    bindKey: { win: "Ctrl-H|Ctrl-R", mac: "Command-H|Command-R" },
+    exec: () => openEditorFindInline(),
+  });
 
   return true;
 }
@@ -20871,8 +20900,8 @@ function editorSearchOptions({ backwards = false } = {}) {
     backwards,
     wrap: true,
     caseSensitive: fileEditorMatchCaseInput.checked,
-    wholeWord: false,
-    regExp: false,
+    wholeWord: fileEditorWholeWordInput.checked,
+    regExp: fileEditorRegexInput.checked,
   };
 }
 
@@ -20883,7 +20912,14 @@ function searchInEditor({ backwards = false } = {}) {
     setFileEditorError(t("editor.error.enter_search"));
     return false;
   }
-  const range = fileEditorAce.find(needle, editorSearchOptions({ backwards }));
+  let range = null;
+  try {
+    range = fileEditorAce.find(needle, editorSearchOptions({ backwards }));
+  } catch (e) {
+    // A half-typed regex throws; report it like any other failed search.
+    setFileEditorError(String(e));
+    return false;
+  }
   if (!range) {
     setFileEditorError(t("editor.error.no_matches"));
     return false;
@@ -20892,26 +20928,48 @@ function searchInEditor({ backwards = false } = {}) {
   return true;
 }
 
-function openEditorFindInline(withReplace = false) {
+// $search.findAll only reads the session, so the count refreshes without
+// disturbing the selection or the cursor.
+// ponytail: total only, no "3 of 12" index -- add if someone asks.
+function updateEditorFindCount() {
+  if (!fileEditorFindCount) return;
+  const needle = fileEditorFindInput.value;
+  if (!needle || !fileEditorAce) {
+    fileEditorFindCount.textContent = "";
+    return;
+  }
+  let count = 0;
+  try {
+    fileEditorAce.$search.set({ ...editorSearchOptions(), needle });
+    count = fileEditorAce.$search.findAll(fileEditorAce.session).length;
+  } catch {
+    // An in-progress regex is invalid more often than not; show it as no match.
+    count = 0;
+  }
+  fileEditorFindCount.textContent = count
+    ? t("editor.find.results", { count })
+    : t("editor.find.no_results");
+}
+
+function setEditorReplaceVisible(visible) {
+  if (!fileEditorReplaceRow || !fileEditorFindbarExpand) return;
+  fileEditorReplaceRow.hidden = !visible;
+  fileEditorFindbarExpand.setAttribute("aria-expanded", visible ? "true" : "false");
+}
+
+function openEditorFindInline() {
   if (!fileEditorToolsInline) return;
   fileEditorToolsInline.hidden = false;
-  if (fileEditorFindInline) {
-    fileEditorFindInline.value = fileEditorFindInput.value || "";
-  }
-  if (fileEditorReplaceInline) {
-    fileEditorReplaceInline.value = fileEditorReplaceInput.value || "";
-    fileEditorReplaceInline.style.display = withReplace ? "" : "none";
-  }
+  updateEditorFindCount();
   requestAnimationFrame(() => {
-    fileEditorFindInline?.focus();
-    fileEditorFindInline?.select();
+    fileEditorFindInput.focus();
+    fileEditorFindInput.select();
   });
 }
 
 function closeEditorFindInline() {
   if (!fileEditorToolsInline) return;
   fileEditorToolsInline.hidden = true;
-  if (fileEditorReplaceInline) fileEditorReplaceInline.style.display = "none";
 }
 
 function replaceInEditor({ all = false } = {}) {
@@ -20932,6 +20990,7 @@ function replaceInEditor({ all = false } = {}) {
     }
     setFileEditorError("");
     fileEditorHint.textContent = t("editor.hint.replaced_many", { count: replaced });
+    updateEditorFindCount();
     return;
   }
 
@@ -20943,6 +21002,7 @@ function replaceInEditor({ all = false } = {}) {
   }
   setFileEditorError("");
   fileEditorHint.textContent = t("editor.hint.replaced_one");
+  updateEditorFindCount();
 }
 
 function resetFileEditorState() {
@@ -20961,10 +21021,12 @@ function resetFileEditorState() {
   }
   fileEditorFindInput.value = "";
   fileEditorReplaceInput.value = "";
-  if (fileEditorFindInline) fileEditorFindInline.value = "";
-  if (fileEditorReplaceInline) fileEditorReplaceInline.value = "";
   closeEditorFindInline();
+  setEditorReplaceVisible(false);
   fileEditorMatchCaseInput.checked = false;
+  fileEditorWholeWordInput.checked = false;
+  fileEditorRegexInput.checked = false;
+  if (fileEditorFindCount) fileEditorFindCount.textContent = "";
   fileEditorPath.textContent = "";
   fileEditorHint.textContent = t("editor.hint.default");
   fileEditorTitle.textContent = t("editor.title");
@@ -21787,49 +21849,36 @@ fileEditorFindInput.addEventListener("keydown", (ev) => {
     ev.preventDefault();
     searchInEditor({ backwards: ev.shiftKey });
   }
+  if (ev.key === "Escape") {
+    ev.preventDefault();
+    closeEditorFindInline();
+    fileEditorFocus();
+  }
 });
 fileEditorReplaceInput.addEventListener("keydown", (ev) => {
   if (ev.key === "Enter") {
     ev.preventDefault();
     replaceInEditor({ all: ev.shiftKey });
   }
+  if (ev.key === "Escape") {
+    ev.preventDefault();
+    closeEditorFindInline();
+    fileEditorFocus();
+  }
 });
 fileEditorInlineClose?.addEventListener("click", () => {
   closeEditorFindInline();
   fileEditorFocus();
 });
-fileEditorFindInline?.addEventListener("input", () => {
-  fileEditorFindInput.value = fileEditorFindInline.value;
+fileEditorFindbarExpand?.addEventListener("click", () => {
+  const expanded = fileEditorFindbarExpand.getAttribute("aria-expanded") === "true";
+  setEditorReplaceVisible(!expanded);
+  if (!expanded) fileEditorReplaceInput.focus();
 });
-fileEditorReplaceInline?.addEventListener("input", () => {
-  fileEditorReplaceInput.value = fileEditorReplaceInline.value;
-});
-fileEditorFindInline?.addEventListener("keydown", (ev) => {
-  if (ev.key === "Enter") {
-    ev.preventDefault();
-    fileEditorFindInput.value = fileEditorFindInline.value;
-    searchInEditor({ backwards: ev.shiftKey });
-  }
-  if (ev.key === "Escape") {
-    ev.preventDefault();
-    closeEditorFindInline();
-    fileEditorFocus();
-  }
-});
-fileEditorReplaceInline?.addEventListener("keydown", (ev) => {
-  if (ev.key === "Enter") {
-    ev.preventDefault();
-    fileEditorFindInput.value = fileEditorFindInline.value;
-    fileEditorReplaceInput.value = fileEditorReplaceInline.value;
-    replaceInEditor({ all: ev.shiftKey });
-  }
-  if (ev.key === "Escape") {
-    ev.preventDefault();
-    closeEditorFindInline();
-    fileEditorFocus();
-  }
-});
-
+fileEditorFindInput.addEventListener("input", updateEditorFindCount);
+for (const toggle of [fileEditorMatchCaseInput, fileEditorWholeWordInput, fileEditorRegexInput]) {
+  toggle?.addEventListener("change", updateEditorFindCount);
+}
 document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape" && aiSessionOpen) {
     setAiSessionOpen(false);
@@ -21839,12 +21888,12 @@ document.addEventListener("keydown", (ev) => {
   const key = ev.key.toLowerCase();
   if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && key === "f") {
     ev.preventDefault();
-    openEditorFindInline(false);
+    openEditorFindInline();
     return;
   }
   if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && key === "r") {
     ev.preventDefault();
-    openEditorFindInline(true);
+    openEditorFindInline();
   }
 });
 
@@ -22003,8 +22052,17 @@ function activateTabByOffset(delta) {
 
 let keybindingRecordingId = null;
 
+// A modal dialog owns the keyboard. Both hotkey listeners below run in the
+// capture phase on window, so without this they fire before the dialog's own
+// handlers -- Mod+F opened the terminal find bar while the file editor was on
+// top of it.
+function modalOverlayOpen() {
+  return !!document.querySelector(".overlay:not([hidden])");
+}
+
 function handleKeybindingShortcut(ev) {
   if (keybindingRecordingId || ev.defaultPrevented) return;
+  if (modalOverlayOpen()) return;
   const combo = comboFromEvent(ev);
   if (!combo || !isUsableKeybindingCombo(combo)) return;
   const action = KEYBINDING_ACTIONS.find((candidate) => getKeybindingCombo(candidate) === combo);

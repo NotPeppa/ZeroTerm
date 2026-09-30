@@ -1725,24 +1725,45 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
           <p id="file-editor-hint" class="tiny muted">
             Supports common UTF-8 text files. Press Ctrl/Cmd + S to save.
           </p>
-          <div class="file-editor-tools">
-            <input id="file-editor-find" type="text" placeholder="Search..." autocomplete="off" />
-            <input id="file-editor-replace" type="text" placeholder="Replace..." autocomplete="off" />
-            <label class="checkbox slim">
-              <input id="file-editor-match-case" type="checkbox" />
-              <span id="editor-match-case-label">Match case</span>
-            </label>
-            <button id="file-editor-find-prev" type="button">Prev</button>
-            <button id="file-editor-find-next" type="button">Next</button>
-            <button id="file-editor-replace-one" type="button">Replace</button>
-            <button id="file-editor-replace-all" type="button">Replace All</button>
+          <div class="file-editor-body">
+            <div id="file-editor-tools-inline" class="file-editor-findbar" hidden>
+              <button id="file-editor-findbar-expand" class="file-editor-findbar-expand" type="button"
+                aria-expanded="false" title="Toggle Replace">
+                <span aria-hidden="true">›</span>
+              </button>
+              <div class="file-editor-findbar-rows">
+                <div class="file-editor-findbar-row">
+                  <div class="file-editor-findbar-field">
+                    <input id="file-editor-find" type="text" placeholder="Search..." autocomplete="off" />
+                    <label class="file-editor-findbar-toggle" id="file-editor-match-case-toggle" title="Match case">
+                      <input id="file-editor-match-case" type="checkbox" />
+                      <span aria-hidden="true">Aa</span>
+                    </label>
+                    <label class="file-editor-findbar-toggle" id="file-editor-whole-word-toggle" title="Whole word">
+                      <input id="file-editor-whole-word" type="checkbox" />
+                      <span aria-hidden="true">ab</span>
+                    </label>
+                    <label class="file-editor-findbar-toggle" id="file-editor-regex-toggle" title="Use regular expression">
+                      <input id="file-editor-regex" type="checkbox" />
+                      <span aria-hidden="true">.*</span>
+                    </label>
+                  </div>
+                  <span id="file-editor-find-count" class="file-editor-findbar-count"></span>
+                  <button id="file-editor-find-prev" type="button" title="Previous">↑</button>
+                  <button id="file-editor-find-next" type="button" title="Next">↓</button>
+                  <button id="file-editor-inline-close" type="button" title="Close">✕</button>
+                </div>
+                <div id="file-editor-findbar-replace-row" class="file-editor-findbar-row" hidden>
+                  <div class="file-editor-findbar-field">
+                    <input id="file-editor-replace" type="text" placeholder="Replace..." autocomplete="off" />
+                  </div>
+                  <button id="file-editor-replace-one" type="button">Replace</button>
+                  <button id="file-editor-replace-all" type="button">All</button>
+                </div>
+              </div>
+            </div>
+            <div id="file-editor-content"></div>
           </div>
-          <div id="file-editor-tools-inline" class="file-editor-tools-inline" hidden>
-            <input id="file-editor-find-inline" type="text" placeholder="Search..." autocomplete="off" />
-            <input id="file-editor-replace-inline" type="text" placeholder="Replace..." autocomplete="off" />
-            <button id="file-editor-inline-close" type="button">✕</button>
-          </div>
-          <div id="file-editor-content"></div>
           <p id="file-editor-error" class="error" hidden></p>
           <div class="dialog-actions">
             <button id="file-editor-cancel" type="button">Close</button>
