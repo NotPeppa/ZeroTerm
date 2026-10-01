@@ -696,6 +696,7 @@ const I18N = {
     "port_forward.status.running": "running",
     "port_forward.status.reconnecting": "reconnecting…",
     "port_forward.status.stopped": "stopped",
+    "port_forward.group.summary": "{count} forwards · {active} active",
     "port_forward.action.start": "Start",
     "port_forward.action.stop": "Stop",
     "port_forward.action.starting": "Starting...",
@@ -1782,6 +1783,7 @@ const I18N = {
     "port_forward.status.running": "运行中",
     "port_forward.status.reconnecting": "重连中…",
     "port_forward.status.stopped": "未启动",
+    "port_forward.group.summary": "{count} 条转发 · {active} 条已启动",
     "port_forward.action.start": "启动",
     "port_forward.action.stop": "停止",
     "port_forward.action.starting": "启动中...",
@@ -10592,6 +10594,7 @@ let portForwardEditorForwards = [];
 let portForwardEditorMode = "edit";
 let portForwardEditorIndex = null;
 let portForwardRowsCache = [];
+const portForwardExpandedHosts = new Set();
 
 async function loadPortForwardPage() {
   if (!portForwardList || !portForwardEmpty) return;
@@ -10636,7 +10639,41 @@ function renderPortForwardRows() {
     if (desc) desc.textContent = query ? t("port_forward.empty.search_desc") : t("port_forward.empty.desc");
   }
 
+  const groups = new Map();
   for (const row of rows) {
+    let group = groups.get(row.hostId);
+    if (!group) {
+      const details = document.createElement("details");
+      details.className = "port-forward-group port-forward-card";
+      details.open = Boolean(query) || portForwardExpandedHosts.has(row.hostId);
+      details.addEventListener("toggle", () => {
+        if (query || !details.isConnected) return;
+        if (details.open) portForwardExpandedHosts.add(row.hostId);
+        else portForwardExpandedHosts.delete(row.hostId);
+      });
+      const summary = document.createElement("summary");
+      summary.className = "port-forward-group-head";
+      const chevron = document.createElement("span");
+      chevron.className = "port-forward-group-chevron";
+      chevron.setAttribute("aria-hidden", "true");
+      chevron.innerHTML = svgIcon('<path d="m6 9 6 6 6-6"></path>');
+      const title = document.createElement("strong");
+      title.className = "port-forward-group-title";
+      title.textContent = row.hostName;
+      const meta = document.createElement("span");
+      meta.className = "port-forward-group-meta";
+      summary.append(chevron, title, meta);
+      const body = document.createElement("div");
+      body.className = "port-forward-group-body";
+      details.append(summary, body);
+      portForwardList.appendChild(details);
+      group = { body, meta, count: 0, active: 0 };
+      groups.set(row.hostId, group);
+    }
+    group.count += 1;
+    if (row.active) group.active += 1;
+    group.meta.textContent = t("port_forward.group.summary", { count: group.count, active: group.active });
+
     const reconnecting = row.active?.state === "reconnecting";
     const card = document.createElement("article");
     card.className =
@@ -10733,7 +10770,7 @@ function renderPortForwardRows() {
     list.appendChild(raw);
 
     card.append(head, list);
-    portForwardList.appendChild(card);
+    group.body.appendChild(card);
   }
 }
 

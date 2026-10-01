@@ -1163,6 +1163,82 @@ body[data-app-theme="light"]:not(.has-app-bg) .settings-page-head {
   border-color: rgba(245, 180, 80, 0.38);
 }
 
+.port-forward-group {
+  padding: 0;
+}
+
+.port-forward-group-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 16px;
+  border-radius: 18px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.port-forward-group-head::-webkit-details-marker {
+  display: none;
+}
+
+.port-forward-group-head:hover {
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.port-forward-group-head:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -3px;
+}
+
+.port-forward-group-title {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 15px;
+}
+
+.port-forward-group-meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.port-forward-group-chevron {
+  display: flex;
+  flex: 0 0 16px;
+  transform: rotate(-90deg);
+  transition: transform 160ms ease;
+}
+
+.port-forward-group-chevron .zt-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.port-forward-group[open] > .port-forward-group-head .port-forward-group-chevron {
+  transform: rotate(0);
+}
+
+.port-forward-group-body {
+  display: grid;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+
+.port-forward-group .port-forward-group-body > .port-forward-card {
+  border-radius: 12px;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .port-forward-group-chevron {
+    transition: none;
+  }
+}
+
 .port-forward-card-head {
   display: flex;
   align-items: center;
