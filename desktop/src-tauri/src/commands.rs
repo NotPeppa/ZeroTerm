@@ -4938,6 +4938,70 @@ pub async fn system_service_file(
     Ok(String::from_utf8_lossy(&stdout).to_string())
 }
 
+#[tauri::command]
+pub async fn system_service_logs(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+    host_id: Option<String>,
+    unit: String,
+    scope: String,
+) -> Result<String, String> {
+    validate_system_service_target(&unit, &scope)?;
+    let host_id = host_id.unwrap_or_default();
+    let (code, stdout, stderr) = if host_id.is_empty() || host_id.starts_with("local-") {
+        let mut args = Vec::with_capacity(8);
+        if scope == "user" {
+            args.push("--user");
+        }
+        args.extend([
+            "--no-pager",
+            "--output=short-iso",
+            "--lines=300",
+            "--unit",
+            unit.as_str(),
+        ]);
+        #[cfg(target_os = "windows")]
+        let output = tokio::process::Command::new("journalctl")
+            .creation_flags(CREATE_NO_WINDOW)
+            .args(&args)
+            .output()
+            .await
+            .map_err(|e| format!("journalctl not available: {e}"))?;
+        #[cfg(not(target_os = "windows"))]
+        let output = Command::new("journalctl")
+            .args(&args)
+            .output()
+            .await
+            .map_err(|e| format!("journalctl not available: {e}"))?;
+        (
+            output.status.code().unwrap_or(-1),
+            output.stdout,
+            output.stderr,
+        )
+    } else {
+        let (_host, cfg, jump_cfg) = build_connect_chain_for_host(&state, &app_handle, &host_id)?;
+        let session = state
+            .sftp_pool
+            .acquire_session(host_id, cfg, jump_cfg)
+            .await?;
+        let command = format!(
+            "journalctl{} --no-pager --output=short-iso --lines=300 --unit {}",
+            if scope == "user" { " --user" } else { "" },
+            shell_quote(&unit)
+        );
+        let (code, stdout, stderr) = session.exec(&command).await.map_err(|e| e.to_string())?;
+        (code as i32, stdout, stderr)
+    };
+    if code != 0 {
+        return Err(service_command_error("journalctl", code, &stdout, &stderr));
+    }
+    const MAX_SERVICE_LOG_BYTES: usize = 2 * 1024 * 1024;
+    if stdout.len() > MAX_SERVICE_LOG_BYTES {
+        return Err("systemd service log output exceeds 2 MiB".to_string());
+    }
+    Ok(String::from_utf8_lossy(&stdout).to_string())
+}
+
 // --------------------------------------------------------------------------
 // listening ports
 // --------------------------------------------------------------------------

@@ -403,12 +403,19 @@ const I18N = {
     "services.action.stop": "Stop",
     "services.action.restart": "Restart",
     "services.action.details": "Details",
+    "services.action.logs": "Logs",
     "services.file.title": "Service file",
     "services.file.loading": "Loading service file...",
     "services.file.empty": "The service file is empty.",
     "services.file.copy": "Copy",
     "services.file.copied": "Service file copied",
     "services.file.close": "Close",
+    "services.logs.title": "Service logs",
+    "services.logs.loading": "Loading service logs...",
+    "services.logs.empty": "No logs were returned.",
+    "services.logs.copy": "Copy",
+    "services.logs.copied": "Service logs copied",
+    "services.logs.close": "Close",
     "services.confirm.stop.title": "Stop service",
     "services.confirm.stop.message": "Stop {name}? Dependent applications may be interrupted.",
     "services.toast.success": "{name}: {action} completed",
@@ -1491,12 +1498,19 @@ const I18N = {
     "services.action.stop": "停止",
     "services.action.restart": "重启",
     "services.action.details": "详情",
+    "services.action.logs": "日志",
     "services.file.title": "服务文件",
     "services.file.loading": "正在读取服务文件...",
     "services.file.empty": "服务文件内容为空。",
     "services.file.copy": "复制",
     "services.file.copied": "已复制服务文件内容",
     "services.file.close": "关闭",
+    "services.logs.title": "服务日志",
+    "services.logs.loading": "正在读取服务日志...",
+    "services.logs.empty": "没有返回日志。",
+    "services.logs.copy": "复制",
+    "services.logs.copied": "已复制服务日志",
+    "services.logs.close": "关闭",
     "services.confirm.stop.title": "停止服务",
     "services.confirm.stop.message": "确定停止 {name}？依赖它的应用可能会中断。",
     "services.toast.success": "{name}：{action}完成",
@@ -4562,7 +4576,7 @@ function serviceCardHtml(service) {
       <div class="service-card-foot">
         <span class="service-sub-state">${escapeMetricText(subState)}</span>
         <div class="service-actions">
-          <button type="button" class="service-btn" data-service-detail data-service-unit="${unitAttr}" data-service-scope="${scope}">${t("services.action.details")}</button>
+          <button type="button" class="service-btn" data-service-logs data-service-unit="${unitAttr}" data-service-scope="${scope}">${t("services.action.logs")}</button><button type="button" class="service-btn" data-service-detail data-service-unit="${unitAttr}" data-service-scope="${scope}">${t("services.action.details")}</button>
           ${running
             ? `<button type="button" class="service-btn" data-service-action="restart" data-service-unit="${unitAttr}" data-service-scope="${scope}">${t("services.action.restart")}</button><button type="button" class="service-btn service-btn-danger" data-service-action="stop" data-service-unit="${unitAttr}" data-service-scope="${scope}">${t("services.action.stop")}</button>`
             : `<button type="button" class="service-btn service-btn-success" data-service-action="${state.key === "failed" ? "restart" : "start"}" data-service-unit="${unitAttr}" data-service-scope="${scope}">${t(state.key === "failed" ? "services.action.restart" : "services.action.start")}</button>`}
@@ -4718,7 +4732,7 @@ function ensureServiceFileOverlay() {
     if (!text) return;
     try {
       await writeClipboardText(text);
-      showToast(t("services.file.copied"), "success");
+      showToast(t(overlay._serviceCopyToast || "services.file.copied"), "success");
     } catch (e) {
       showToast(String(e), "error");
     }
@@ -4732,7 +4746,7 @@ function ensureServiceFileOverlay() {
   return overlay;
 }
 
-async function showSystemServiceFile(unit, scope) {
+async function showSystemServiceOutput(unit, scope, options) {
   const pane = getActivePane();
   const hostId = pane?.host?.id || null;
   const overlay = ensureServiceFileOverlay();
@@ -4743,22 +4757,23 @@ async function showSystemServiceFile(unit, scope) {
   const copy = overlay.querySelector(".service-file-copy");
   const close = overlay.querySelector(".service-file-close");
   if (overlay.hidden) serviceFileLastFocus = document.activeElement;
-  title.textContent = `${t("services.file.title")} · ${unit}`;
-  command.textContent = `systemctl${scope === "user" ? " --user" : ""} cat ${unit}`;
-  body.textContent = t("services.file.loading");
+  title.textContent = `${t(options.title)} · ${unit}`;
+  command.textContent = options.command(unit, scope);
+  body.textContent = t(options.loading);
   body.setAttribute("aria-busy", "true");
   overlay._serviceFileText = "";
-  copy.textContent = t("services.file.copy");
+  overlay._serviceCopyToast = options.copied;
+  copy.textContent = t(options.copy);
   copy.disabled = true;
-  close.textContent = t("services.file.close");
+  close.textContent = t(options.close);
   overlay.hidden = false;
   close.focus();
   try {
-    const content = await invoke("system_service_file", { hostId, unit, scope });
+    const content = await invoke(options.invoke, { hostId, unit, scope });
     if (token !== serviceFileRequestToken || overlay.hidden) return;
     const text = String(content || "");
     overlay._serviceFileText = text;
-    body.textContent = text || t("services.file.empty");
+    body.textContent = text || t(options.empty);
     copy.disabled = !text;
   } catch (e) {
     if (token !== serviceFileRequestToken || overlay.hidden) return;
@@ -4766,6 +4781,32 @@ async function showSystemServiceFile(unit, scope) {
   } finally {
     if (token === serviceFileRequestToken) body.removeAttribute("aria-busy");
   }
+}
+
+function showSystemServiceFile(unit, scope) {
+  return showSystemServiceOutput(unit, scope, {
+    invoke: "system_service_file",
+    title: "services.file.title",
+    loading: "services.file.loading",
+    empty: "services.file.empty",
+    copy: "services.file.copy",
+    copied: "services.file.copied",
+    close: "services.file.close",
+    command: (name, serviceScope) => `systemctl${serviceScope === "user" ? " --user" : ""} cat ${name}`,
+  });
+}
+
+function showSystemServiceLogs(unit, scope) {
+  return showSystemServiceOutput(unit, scope, {
+    invoke: "system_service_logs",
+    title: "services.logs.title",
+    loading: "services.logs.loading",
+    empty: "services.logs.empty",
+    copy: "services.logs.copy",
+    copied: "services.logs.copied",
+    close: "services.logs.close",
+    command: (name, serviceScope) => `journalctl${serviceScope === "user" ? " --user" : ""} --no-pager --output=short-iso --lines=300 --unit ${name}`,
+  });
 }
 
 // ---------- listening ports panel ----------
@@ -15886,6 +15927,19 @@ terminalServicesBody?.addEventListener("click", (ev) => {
     groupToggle.setAttribute("aria-expanded", String(!expanded));
     groupToggle.querySelector(".service-group-caret")?.classList.toggle("open", !expanded);
     groupToggle.closest(".service-group")?.querySelector(".service-group-body")?.toggleAttribute("hidden", expanded);
+    return;
+  }
+  const logsButton = ev.target.closest("button[data-service-logs]");
+  if (logsButton) {
+    let unit = "";
+    try {
+      unit = decodeURIComponent(logsButton.getAttribute("data-service-unit") || "");
+    } catch {
+      return;
+    }
+    if (!unit) return;
+    const scope = logsButton.getAttribute("data-service-scope") === "user" ? "user" : "system";
+    showSystemServiceLogs(unit, scope);
     return;
   }
   const detailButton = ev.target.closest("button[data-service-detail]");

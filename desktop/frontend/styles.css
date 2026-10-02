@@ -7136,6 +7136,7 @@ body[data-app-theme="light"] .docker-group-head {
 
 .service-card-foot {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
@@ -7153,6 +7154,7 @@ body[data-app-theme="light"] .docker-group-head {
 
 .service-actions {
   display: flex;
+  flex-wrap: wrap;
   flex: 0 0 auto;
   gap: 6px;
 }
