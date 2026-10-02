@@ -13,6 +13,7 @@ pub mod keychain;
 mod port_forward;
 mod snippet;
 mod sync;
+mod sync_secrets;
 
 pub use app::{App, HostDiagnostics};
 pub use ai::AiProfile;
@@ -21,6 +22,7 @@ pub use host::{ForwardSpec, Host, HostAuth};
 pub use host_group::HostGroup;
 pub use port_forward::PortForwardRule;
 pub use snippet::Snippet;
+pub use sync_secrets::SyncSecret;
 pub use sync::{
     local_device_id, set_sync_known_hosts_path, ConflictResolution, ConflictView, SyncBackend,
     SyncJoinOutcome, SyncManager, SyncOutcome, SyncProfile, SyncStatus,

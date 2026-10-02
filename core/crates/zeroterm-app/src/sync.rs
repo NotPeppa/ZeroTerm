@@ -24,6 +24,8 @@ use zeroterm_sync::error::Error as SyncErrorKind;
 use zeroterm_sync::local_store::{LocalRecord, LocalRecordStore};
 
 use crate::{App, AppError};
+#[cfg(any(feature = "webdav-backend", feature = "s3-backend"))]
+use crate::SyncSecret;
 
 const SYNC_PROFILE_KIND: &str = "sync_profile";
 
@@ -536,11 +538,10 @@ impl App {
                         "webdav username is required".to_string(),
                     ));
                 }
-                let password = crate::keychain::get_sync_backend_credential(&profile.id)
-                    .map_err(|e| AppError::SyncConfig(format!("keychain: {e}")))?
+                let password = self.get_sync_secret(&profile.id, SyncSecret::BackendCredential)?
                     .ok_or_else(|| {
                         AppError::SyncConfig(
-                            "webdav password not in keychain — re-save the profile".into(),
+                            "webdav password not saved on this device — re-save the profile".into(),
                         )
                     })?;
 
@@ -580,19 +581,15 @@ impl App {
                 if access_key_id.trim().is_empty() {
                     return Err(AppError::SyncConfig("s3 access_key_id is required".into()));
                 }
-                let secret = crate::keychain::get_sync_backend_credential(&profile.id)
-                    .map_err(|e| AppError::SyncConfig(format!("keychain: {e}")))?
+                let secret = self.get_sync_secret(&profile.id, SyncSecret::BackendCredential)?
                     .ok_or_else(|| {
                         AppError::SyncConfig(
-                            "s3 secret access key not in keychain — re-save the profile".into(),
+                            "s3 secret access key not saved on this device — re-save the profile".into(),
                         )
                     })?;
 
-                // Optional session token lives in the keychain too,
-                // under a sibling entry. Absence is normal (no STS).
-                let session_token = crate::keychain::get_sync_backend_extra(&profile.id)
-                    .ok()
-                    .flatten();
+                // Absence of the optional session token is normal (no STS).
+                let session_token = self.get_sync_secret(&profile.id, SyncSecret::BackendExtra)?;
 
                 let adapter = S3Adapter::new(S3Config {
                     region: region.clone(),

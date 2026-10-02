@@ -206,7 +206,8 @@ fun SyncScreen(
         SyncProfileDialog(
             hosts = hosts,
             initial = editingProfile,
-            saving = busyProfileId == editingProfile?.id || busyProfileId == "new",
+            saving = busyProfileId != null &&
+                (busyProfileId == editingProfile?.id || busyProfileId == "new"),
             externalError = error,
             onDismiss = {
                 if (busyProfileId == null) {
@@ -223,6 +224,7 @@ fun SyncScreen(
                     val result = withContext(Dispatchers.Default) {
                         runCatching {
                             val id = zeroTerm.saveSyncProfile(input)
+                            if (input.id != null) zeroTerm.syncForgetEngine(id)
                             when (bootstrapMode) {
                                 "create" -> zeroTerm.syncCreateRepo(id, input.encryptionPassphrase)
                                 "join" -> zeroTerm.syncJoinRepo(id, input.encryptionPassphrase)

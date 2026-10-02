@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use tracing::info;
+use zeroterm_app::SyncSecret;
 
 use crate::error::{map_app_error, FfiError};
 use crate::facade::ZeroTerm;
@@ -40,7 +41,7 @@ pub struct SyncProfileSummary {
 }
 
 /// Input for create/update. Secrets (passphrase, webdav password, s3 secret)
-/// are optional — empty means "leave keychain entry unchanged".
+/// are optional — empty means "leave saved secret unchanged".
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct SyncProfileInput {
     pub id: Option<String>,
@@ -245,30 +246,24 @@ fn input_to_backend(input: &SyncProfileInput) -> Result<zeroterm_app::SyncBacken
     }
 }
 
-fn persist_secrets(profile_id: &str, input: &SyncProfileInput) {
+fn persist_secrets(
+    app: &zeroterm_app::App,
+    profile_id: &str,
+    input: &SyncProfileInput,
+) -> Result<(), FfiError> {
     if !input.encryption_passphrase.is_empty() {
-        let _ = zeroterm_app::keychain::save_sync_encryption_secret(
-            profile_id,
-            &input.encryption_passphrase,
-        );
+        app.save_sync_secret(profile_id, SyncSecret::EncryptionPassphrase, &input.encryption_passphrase)
+            .map_err(map_app_error)?;
     }
-    match input.backend.as_str() {
-        "webdav" | "s3" => {
-            if !input.password.is_empty() {
-                let _ = zeroterm_app::keychain::save_sync_backend_credential(
-                    profile_id,
-                    &input.password,
-                );
-            }
-            if input.backend == "s3" && !input.session_token.is_empty() {
-                let _ = zeroterm_app::keychain::save_sync_backend_extra(
-                    profile_id,
-                    &input.session_token,
-                );
-            }
-        }
-        _ => {}
+    if matches!(input.backend.as_str(), "webdav" | "s3") && !input.password.is_empty() {
+        app.save_sync_secret(profile_id, SyncSecret::BackendCredential, &input.password)
+            .map_err(map_app_error)?;
     }
+    if input.backend == "s3" && !input.session_token.is_empty() {
+        app.save_sync_secret(profile_id, SyncSecret::BackendExtra, &input.session_token)
+            .map_err(map_app_error)?;
+    }
+    Ok(())
 }
 
 fn app_arc(zt: &ZeroTerm) -> Result<Arc<zeroterm_app::App>, FfiError> {
@@ -307,8 +302,7 @@ impl ZeroTerm {
                     backend,
                 };
                 app.update_sync_profile(&p).map_err(map_app_error)?;
-                drop(guard);
-                persist_secrets(id, &input);
+                persist_secrets(app, id, &input)?;
                 return Ok(id.clone());
             }
         }
@@ -319,8 +313,7 @@ impl ZeroTerm {
             backend,
         };
         let id = app.save_sync_profile(&p).map_err(map_app_error)?;
-        drop(guard);
-        persist_secrets(&id, &input);
+        persist_secrets(app, &id, &input)?;
         Ok(id)
     }
 
@@ -328,15 +321,14 @@ impl ZeroTerm {
         let guard = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
         app.delete_sync_profile(&id).map_err(map_app_error)?;
-        drop(guard);
-        let _ = zeroterm_app::keychain::forget_sync_encryption_secret(&id);
-        let _ = zeroterm_app::keychain::forget_sync_backend_credential(&id);
-        let _ = zeroterm_app::keychain::forget_sync_backend_extra(&id);
+        for kind in [SyncSecret::EncryptionPassphrase, SyncSecret::BackendCredential, SyncSecret::BackendExtra] {
+            app.forget_sync_secret(&id, kind).map_err(map_app_error)?;
+        }
         Ok(())
     }
 
     /// Create a new remote repo (first device). Requires encryption passphrase
-    /// either in keychain or passed via prior `saveSyncProfile`.
+    /// either saved on this device or passed via prior `saveSyncProfile`.
     pub async fn sync_create_repo(
         &self,
         profile_id: String,
@@ -344,15 +336,14 @@ impl ZeroTerm {
     ) -> Result<u32, FfiError> {
         let app = app_arc(self)?;
         let pw = if passphrase.is_empty() {
-            zeroterm_app::keychain::get_sync_encryption_secret(&profile_id)
-                .map_err(|e| FfiError::Other {
-                    detail: e.to_string(),
-                })?
+            app.get_sync_secret(&profile_id, SyncSecret::EncryptionPassphrase)
+                .map_err(map_app_error)?
                 .ok_or_else(|| FfiError::Other {
                     detail: "encryption passphrase required".into(),
                 })?
         } else {
-            let _ = zeroterm_app::keychain::save_sync_encryption_secret(&profile_id, &passphrase);
+            app.save_sync_secret(&profile_id, SyncSecret::EncryptionPassphrase, &passphrase)
+                .map_err(map_app_error)?;
             passphrase
         };
         info!(%profile_id, "ffi: sync create_repo");
@@ -371,15 +362,14 @@ impl ZeroTerm {
     ) -> Result<SyncOutcomeRecord, FfiError> {
         let app = app_arc(self)?;
         let pw = if passphrase.is_empty() {
-            zeroterm_app::keychain::get_sync_encryption_secret(&profile_id)
-                .map_err(|e| FfiError::Other {
-                    detail: e.to_string(),
-                })?
+            app.get_sync_secret(&profile_id, SyncSecret::EncryptionPassphrase)
+                .map_err(map_app_error)?
                 .ok_or_else(|| FfiError::Other {
                     detail: "encryption passphrase required".into(),
                 })?
         } else {
-            let _ = zeroterm_app::keychain::save_sync_encryption_secret(&profile_id, &passphrase);
+            app.save_sync_secret(&profile_id, SyncSecret::EncryptionPassphrase, &passphrase)
+                .map_err(map_app_error)?;
             passphrase
         };
         info!(%profile_id, "ffi: sync join_repo");
@@ -401,25 +391,34 @@ impl ZeroTerm {
         })
     }
 
-    /// One sync round-trip. Engine must already be bootstrapped via
-    /// createRepo or joinRepo.
+    /// One sync round-trip. Reconnects using the saved passphrase when needed.
     pub async fn sync_now(&self, profile_id: String) -> Result<SyncOutcomeRecord, FfiError> {
         let app = app_arc(self)?;
-        // Auto-bootstrap if passphrase is in keychain but engine not loaded.
-        if !self.sync_manager.is_bootstrapped(&profile_id).await {
-            if let Ok(Some(pw)) =
-                zeroterm_app::keychain::get_sync_encryption_secret(&profile_id)
-            {
-                let _ = app
-                    .sync_join_repo(&self.sync_manager, &profile_id, &pw)
-                    .await;
-            }
-        }
+        // Reconnect after app restart, preserving the actual join error.
+        let joined = if !self.sync_manager.is_bootstrapped(&profile_id).await {
+            let pw = app.get_sync_secret(&profile_id, SyncSecret::EncryptionPassphrase)
+                .map_err(map_app_error)?
+                .ok_or_else(|| FfiError::Other {
+                    detail: "encryption passphrase required — re-save the sync profile".into(),
+                })?;
+            Some(app.sync_join_repo(&self.sync_manager, &profile_id, &pw)
+                .await.map_err(map_app_error)?)
+        } else {
+            None
+        };
         info!(%profile_id, "ffi: sync_now");
-        let r = app
+        let mut r = app
             .sync_now(&self.sync_manager, &profile_id)
             .await
             .map_err(map_app_error)?;
+        if let Some(joined) = joined {
+            r.events_pulled += joined.events_pulled;
+            r.upserts_applied += joined.upserts_applied;
+            r.deletes_applied += joined.deletes_applied;
+            r.conflicts_detected += joined.conflicts_detected;
+            r.already_seen += joined.already_seen;
+            r.skipped += joined.skipped;
+        }
         Ok(SyncOutcomeRecord {
             profile_id: r.profile_id,
             events_pulled: r.events_pulled as u32,

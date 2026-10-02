@@ -3,7 +3,7 @@
  *
  * Invoked from app/build.gradle.kts. Builds libzeroterm_ffi.so for each
  * ABI, copies into jniLibs, regenerates Kotlin bindings into the app
- * source set (build-time only; committed bindings live under core/).
+ * source set from the library being packaged.
  *
  * 16KB page-size alignment is required for Android 15+ Play uploads.
  * cargo-ndk 3.x / NDK r28+ handle this via RUSTFLAGS when set below.
@@ -77,6 +77,7 @@ val isReleaseBuild = gradle.startParameter.taskNames.any {
 
 val buildProfile = if (isReleaseBuild) "release" else "debug"
 val buildAbis = if (isReleaseBuild) abiTargets.keys.toList() else rustAbis
+extra["zeroterm.buildAbis"] = buildAbis
 
 tasks.register("cargoNdkBuild") {
     group = "zeroterm"
@@ -87,6 +88,8 @@ tasks.register("cargoNdkBuild") {
     inputs.dir(coreDir.resolve("crates"))
     inputs.file(coreDir.resolve("Cargo.toml"))
     inputs.file(coreDir.resolve("Cargo.lock"))
+    inputs.property("abis", buildAbis)
+    inputs.property("profile", buildProfile)
     outputs.dir(jniLibsDir)
 
     doLast {
@@ -171,24 +174,28 @@ tasks.register("cargoNdkBuild") {
 
 tasks.register("generateKotlinBindings") {
     group = "zeroterm"
-    description = "Copy committed uniffi Kotlin bindings into the app source tree"
+    description = "Generate matching uniffi Kotlin bindings from the Android library"
     dependsOn("cargoNdkBuild")
 
     doLast {
-        val src = coreDir.resolve("crates/zeroterm-ffi/bindings/kotlin/com/zeroterm/ffi")
-        val dest = generatedFfiDir.asFile
-        if (!src.isDirectory) {
-            logger.warn("Kotlin bindings not found at $src — run uniffi-bindgen first")
-            return@doLast
+        val abi = buildAbis.firstOrNull() ?: error("No Android ABIs selected")
+        val library = File(jniLibsDir.asFile, "$abi/lib$libName.so")
+        if (!library.isFile) error("Android FFI library missing: $library")
+        // Library mode reads ELF metadata without executing Android code.
+        // The generator is a small host-side crate, so macOS/Windows builds
+        // do not need to compile the FFI runtime's terminal/SSH dependencies.
+        project.exec {
+            workingDir = coreDir
+            commandLine(
+                "cargo", "run", "--locked", "-p", "zeroterm-bindgen", "--",
+                "generate", "--library", library.absolutePath,
+                "--language", "kotlin", "--out-dir",
+                layout.projectDirectory.dir("src/main/java").asFile.absolutePath,
+                "--config", coreDir.resolve("crates/zeroterm-ffi/uniffi.toml").absolutePath,
+                "--no-format",
+            )
         }
-        dest.mkdirs()
-        src.walkTopDown().filter { it.isFile }.forEach { file ->
-            val rel = file.relativeTo(src)
-            val target = File(dest, rel.path)
-            target.parentFile.mkdirs()
-            file.copyTo(target, overwrite = true)
-        }
-        logger.lifecycle("Copied Kotlin bindings → ${dest.absolutePath}")
+        logger.lifecycle("Generated Kotlin bindings → ${generatedFfiDir.asFile.absolutePath}")
     }
 }
 

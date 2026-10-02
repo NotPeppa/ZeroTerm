@@ -1,0 +1,9 @@
+[package]
+name = "zeroterm-bindgen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Host-side UniFFI binding generator without mobile runtime dependencies"
+
+[dependencies]
+uniffi.workspace = true

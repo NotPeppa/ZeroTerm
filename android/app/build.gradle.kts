@@ -34,8 +34,11 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
-            // Overridden by build-rust; keep all three for packaging when present
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+            // Package only libraries rebuilt for this invocation; stale libraries
+            // for other ABIs may have incompatible UniFFI checksums.
+            @Suppress("UNCHECKED_CAST")
+            val builtAbis = project.extra["zeroterm.buildAbis"] as List<String>
+            abiFilters += builtAbis
         }
 
         externalNativeBuild {

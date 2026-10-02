@@ -2,6 +2,8 @@
 
 Kotlin + Jetpack Compose (Material 3) client. Reuses `core/` via uniffi
 Kotlin bindings + per-ABI `libzeroterm_ffi.so`. Design: [RFC-003](../RFC-003-android.md).
+The Gradle build generates Kotlin bindings directly from the packaged library
+using the host-side `zeroterm-bindgen` tool, keeping UniFFI checksums in sync.
 
 ## Status
 
@@ -105,7 +107,10 @@ Hosts menu → **Sync**:
 3. **Sync now**, or enable **Auto-sync in foreground** under Settings.
 
 Secrets (WebDAV password, S3 secret, encryption passphrase) go to the
-OS keychain via core — not into the vault profile JSON.
+vault's encrypted local state via core. They survive app restarts, are only
+available while the vault is unlocked, and are excluded from sync events and
+snapshots. They are not stored in the profile JSON. Older APKs only cached
+these secrets in memory; re-enter them once when editing an existing profile.
 
 ## Notes
 

@@ -5933,6 +5933,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "zeroterm-bindgen"
+version = "0.1.11"
+dependencies = [
+ "uniffi",
+]
+
+[[package]]
 name = "zeroterm-cli"
 version = "0.1.11"
 dependencies = [

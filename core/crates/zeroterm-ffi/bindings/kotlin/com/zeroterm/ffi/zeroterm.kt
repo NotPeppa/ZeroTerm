@@ -1605,7 +1605,7 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_set_data_dir() != 36841.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_set_network_proxy() != 8690.toShort()) {
+    if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_set_network_proxy() != 35407.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_set_vault_path() != 22249.toShort()) {
@@ -1644,7 +1644,7 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_sync_compact() != 59359.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_sync_create_repo() != 55726.toShort()) {
+    if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_sync_create_repo() != 33419.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_sync_delete_remote_repo() != 61124.toShort()) {
@@ -1659,7 +1659,7 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_sync_list_devices() != 3548.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_sync_now() != 50997.toShort()) {
+    if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_sync_now() != 54138.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_zeroterm_ffi_checksum_method_zeroterm_sync_repo_stats() != 37661.toShort()) {
@@ -3630,6 +3630,15 @@ public interface ZeroTermInterface {
     /**
      * Configure one process-wide HTTP CONNECT proxy for SSH and network
      * clients. An empty value disables the proxy.
+     *
+     * SSH-6: this used to mutate the six proxy environment variables with
+     * `std::env::set_var` so reqwest would pick the proxy up from the
+     * environment. But `setenv` is not thread-safe — in a multi-threaded
+     * tokio process it races other threads' `getenv` (reqwest /
+     * getaddrinfo), and on glibc a concurrent `environ` reallocation can
+     * segfault. Instead we keep the proxy only in the process-global
+     * `RwLock` and have every HTTP client we build read it explicitly via
+     * [`reqwest::ClientBuilder::proxy`]. Nothing touches the environment.
      */
     fun `setNetworkProxy`(`proxyUrl`: kotlin.String): kotlin.String
     
@@ -3677,7 +3686,7 @@ public interface ZeroTermInterface {
     
     /**
      * Create a new remote repo (first device). Requires encryption passphrase
-     * either in keychain or passed via prior `saveSyncProfile`.
+     * either saved on this device or passed via prior `saveSyncProfile`.
      */
     suspend fun `syncCreateRepo`(`profileId`: kotlin.String, `passphrase`: kotlin.String): kotlin.UInt
     
@@ -3693,8 +3702,7 @@ public interface ZeroTermInterface {
     suspend fun `syncListDevices`(`profileId`: kotlin.String): List<SyncDeviceRecord>
     
     /**
-     * One sync round-trip. Engine must already be bootstrapped via
-     * createRepo or joinRepo.
+     * One sync round-trip. Reconnects using the saved passphrase when needed.
      */
     suspend fun `syncNow`(`profileId`: kotlin.String): SyncOutcomeRecord
     
@@ -4420,6 +4428,15 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
     /**
      * Configure one process-wide HTTP CONNECT proxy for SSH and network
      * clients. An empty value disables the proxy.
+     *
+     * SSH-6: this used to mutate the six proxy environment variables with
+     * `std::env::set_var` so reqwest would pick the proxy up from the
+     * environment. But `setenv` is not thread-safe — in a multi-threaded
+     * tokio process it races other threads' `getenv` (reqwest /
+     * getaddrinfo), and on glibc a concurrent `environ` reallocation can
+     * segfault. Instead we keep the proxy only in the process-global
+     * `RwLock` and have every HTTP client we build read it explicitly via
+     * [`reqwest::ClientBuilder::proxy`]. Nothing touches the environment.
      */
     @Throws(FfiException::class)override fun `setNetworkProxy`(`proxyUrl`: kotlin.String): kotlin.String {
             return FfiConverterString.lift(
@@ -4692,7 +4709,7 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
     
     /**
      * Create a new remote repo (first device). Requires encryption passphrase
-     * either in keychain or passed via prior `saveSyncProfile`.
+     * either saved on this device or passed via prior `saveSyncProfile`.
      */
     @Throws(FfiException::class)
     @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
@@ -4805,8 +4822,7 @@ open class ZeroTerm: Disposable, AutoCloseable, ZeroTermInterface {
 
     
     /**
-     * One sync round-trip. Engine must already be bootstrapped via
-     * createRepo or joinRepo.
+     * One sync round-trip. Reconnects using the saved passphrase when needed.
      */
     @Throws(FfiException::class)
     @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
@@ -5897,7 +5913,7 @@ public object FfiConverterTypeSyncOutcomeRecord: FfiConverterRustBuffer<SyncOutc
 
 /**
  * Input for create/update. Secrets (passphrase, webdav password, s3 secret)
- * are optional — empty means "leave keychain entry unchanged".
+ * are optional — empty means "leave saved secret unchanged".
  */
 data class SyncProfileInput (
     var `id`: kotlin.String?, 
