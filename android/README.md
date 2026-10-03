@@ -103,6 +103,28 @@ Override ABIs:
 .\gradlew.bat assembleDebug -Pzeroterm.abis=arm64-v8a
 ```
 
+### Automatic release signing
+
+Run `./gradlew assembleRelease` (`.\gradlew.bat assembleRelease` on Windows).
+The first local release build creates a private, persistent signing key under
+`~/.zeroterm/android-signing/com.zeroterm.android/identity/`; subsequent builds
+reuse it. Back up the entire directory and restore it when changing computers.
+Debug builds keep their separate debug signature. Set `-Pzeroterm.signingDir=...`
+to use a different private directory.
+
+For GitHub releases, run `python3 scripts/setup-android-signing.py` once from the
+repository root, with JDK 17, Python 3 and an authenticated GitHub CLI available.
+It generates/reuses the local key and stores its encrypted configuration in the
+`ANDROID_SIGNING_BUNDLE` repository Secret. Existing repository signing secrets
+are preserved. Subsequent tag builds restore that same key automatically, never
+generate a different key on an ephemeral runner, and never publish key files.
+Existing complete `ANDROID_KEYSTORE_*` / `ANDROID_KEY_*` environment variables
+or the four legacy repository Secrets remain supported. Partial configurations
+fail instead of silently choosing a new signing identity.
+
+Older APKs signed with a debug certificate cannot be directly replaced by the
+new release signature. Back up data before migrating from those builds.
+
 ## First run
 
 1. Install APK on device/emulator

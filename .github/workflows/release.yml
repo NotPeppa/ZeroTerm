@@ -26,29 +26,11 @@ jobs:
       version: ${{ steps.ver.outputs.version }}
       tag: ${{ steps.ver.outputs.tag }}
       notes: ${{ steps.notes.outputs.notes }}
-      android_enabled: ${{ steps.android_signing.outputs.enabled }}
     steps:
       # Full history + tags so the notes step can diff against the previous release tag.
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-
-      - name: Check Android release signing
-        id: android_signing
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          enabled=true
-          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
-            if [[ ! "${!name}" =~ [^[:space:]] ]]; then
-              echo "::warning::Android release skipped: missing secret $name"
-              enabled=false
-            fi
-          done
-          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
 
       - id: ver
         run: |
@@ -194,19 +176,19 @@ jobs:
 
   android:
     needs: prepare
-    if: needs.prepare.outputs.android_enabled == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
 
-      - name: Decode release keystore
+      - name: Restore persistent Android signing
         env:
+          ANDROID_SIGNING_BUNDLE: ${{ secrets.ANDROID_SIGNING_BUNDLE }}
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-        run: |
-          umask 077
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/zeroterm.jks"
-          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/zeroterm.jks" >> "$GITHUB_ENV"
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: python3 scripts/restore-android-signing.py
 
       - name: Apply version from tag
         shell: bash
@@ -243,10 +225,6 @@ jobs:
         working-directory: android
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
-          ANDROID_KEYSTORE_PATH: ${{ env.ANDROID_KEYSTORE_PATH }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon -Pzeroterm.abis=arm64-v8a,armeabi-v7a,x86_64
@@ -255,6 +233,12 @@ jobs:
         id: apk
         run: |
           SRC=$(ls android/app/build/outputs/apk/release/*.apk | head -n1)
+          CERT_SHA256=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$SRC" | awk '/Signer #1 certificate SHA-256 digest:/ {print $NF}')
+          if [ -z "$CERT_SHA256" ] || { [ -n "${ANDROID_SIGNING_CERT_SHA256:-}" ] && [ "$CERT_SHA256" != "$ANDROID_SIGNING_CERT_SHA256" ]; }; then
+            echo "::error::APK signing certificate does not match the persistent Android signing key."
+            exit 1
+          fi
+          echo "Verified Android signing certificate: $CERT_SHA256"
           VERSION="${{ needs.prepare.outputs.version }}"
           OUT="ZeroTerm_${VERSION}_android-arm64.apk"
           cp "$SRC" "$OUT"

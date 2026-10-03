@@ -31,6 +31,9 @@ android/.gradle/
 android/local.properties
 android/**/build/
 android/app/src/main/jniLibs/
+android/.signing/
+*.jks
+*.keystore
 # uniffi bindings under app are build copies; source of truth is core/
 android/app/src/main/java/com/zeroterm/ffi/
 

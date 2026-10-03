@@ -198,7 +198,7 @@ cargo tauri build
 推送版本标签后，`.github/workflows/release.yml` 会：
 
 1. **根据 tag 自动改版本号**（`tauri.conf.json` / desktop `Cargo.toml` / Android `versionName`+`versionCode` / core workspace）。
-2. 打包桌面；Android 签名 Secrets 配齐后才打包 APK。
+2. 打包桌面及自动签名的 Android APK，Android 始终复用已保存的固定密钥。
 3. 创建 **draft** Release。
 
 本地不必先手改版本文件，只推 tag 即可：
@@ -233,12 +233,19 @@ git push origin 0.1.12
 |--------|------|
 | `TAURI_SIGNING_PRIVATE_KEY` | 桌面 updater 签名私钥（与 `tauri.conf.json` 里 pubkey 配对） |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | 私钥密码（可空） |
-| `ANDROID_KEYSTORE_BASE64` | Android 发布必需；正式签名 keystore（base64） |
-| `ANDROID_KEYSTORE_PASSWORD` | Android 发布必需；keystore 密码 |
-| `ANDROID_KEY_ALIAS` | Android 发布必需；签名密钥别名 |
-| `ANDROID_KEY_PASSWORD` | Android 发布必需；签名密钥密码 |
+| `ANDROID_SIGNING_BUNDLE` | 初始化脚本自动保存的 Android 固定签名密钥及凭据，无需手动填写 |
 
-Android 的四项 Secrets 必须全部配置；未配齐时 CI 会提示缺失项并跳过 Android，桌面发布继续。正式 APK 不使用 debug 签名。
+Android 首次初始化只需在已登录 GitHub 的电脑上运行一次（需要 JDK 17、Python 3 和 GitHub CLI）：
+
+```bash
+python3 scripts/setup-android-signing.py
+```
+
+脚本自动生成或复用本机密钥，并加密保存到仓库的 `ANDROID_SIGNING_BUNDLE` Secret；已配置的仓库密钥不会被覆盖。以后推送版本标签即可自动打包、签名。原有四项 `ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD` 仍兼容，已经配齐时沿用原密钥。
+
+本地进入 `android` 目录执行 `./gradlew assembleRelease` 也会自动签名。密钥及密码保存在用户目录的 `.zeroterm/android-signing/com.zeroterm.android/identity/`，请备份整个目录；更换电脑时恢复该目录，避免生成不同密钥。密钥不会提交到代码仓库，也不会作为 Release 附件。CI 只恢复固定密钥，不会临时生成替代密钥。
+
+之前使用调试签名的 APK 与新的固定发布签名不同，需要先备份数据再迁移；固定发布签名启用后，后续版本可直接覆盖更新。
 
 CI 完成后到 GitHub Releases 检查 draft，确认附件齐全后点 **Publish**。
 
