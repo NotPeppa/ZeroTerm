@@ -15,6 +15,7 @@ import androidx.navigation.navArgument
 import com.zeroterm.android.data.AppContainer
 import com.zeroterm.android.ui.hosts.HostEditScreen
 import com.zeroterm.android.ui.hosts.HostsViewModel
+import com.zeroterm.android.ui.forward.ForwardHostKeyDialog
 import com.zeroterm.android.ui.quick.QuickConnectScreen
 import com.zeroterm.android.ui.settings.SettingsScreen
 import com.zeroterm.android.ui.sftp.SftpBrowserScreen
@@ -83,6 +84,18 @@ fun ZeroTermNav(container: AppContainer) {
 
     val start = if (unlocked) Routes.Hosts else Routes.Unlock
 
+    androidx.compose.runtime.LaunchedEffect(container) {
+        container.openPortForwardRequests.collect {
+            if (container.repository.unlocked.value) {
+                nav.navigate(Routes.Hosts) {
+                    popUpTo(Routes.Hosts) { inclusive = false }
+                    launchSingleTop = true
+                }
+                container.showPortForwardPage()
+            }
+        }
+    }
+
     fun persistFont(sp: Float) {
         scope.launch { container.settings.setFontSize(sp) }
     }
@@ -110,6 +123,7 @@ fun ZeroTermNav(container: AppContainer) {
             drawer = settings.drawerTransparency,
         ),
     ) {
+    ForwardHostKeyDialog(container.portForwards)
     NavHost(navController = nav, startDestination = start) {
         composable(Routes.Unlock) {
             UnlockScreen(
@@ -142,6 +156,7 @@ fun ZeroTermNav(container: AppContainer) {
                 onLock = {
                     scope.launch {
                         container.sessions.disconnectAll()
+                        container.portForwards.stopAll()
                         container.sftp.close()
                         container.repository.lock(clearCache = false)
                         unlockVm.prepareForUnlock()
@@ -265,6 +280,7 @@ fun ZeroTermNav(container: AppContainer) {
                 alreadyConnected = false,
                 sessions = container.sessions,
                 repository = container.repository,
+                sftp = container.sftp,
                 settings = container.settings,
                 fontSizeSp = settings.fontSizeSp,
                 backgroundImagePath = settings.backgroundImagePath,
@@ -290,6 +306,7 @@ fun ZeroTermNav(container: AppContainer) {
                 alreadyConnected = true,
                 sessions = container.sessions,
                 repository = container.repository,
+                sftp = container.sftp,
                 settings = container.settings,
                 fontSizeSp = settings.fontSizeSp,
                 backgroundImagePath = settings.backgroundImagePath,

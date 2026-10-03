@@ -37,22 +37,25 @@ class SessionForegroundService : Service() {
         when (intent?.action) {
             ACTION_STOP -> {
                 serviceScope.launch {
-                    (application as ZeroTermApp).container.sessions.disconnectAll()
+                    val container = (application as ZeroTermApp).container
+                    container.portForwards.stopAll()
+                    container.sessions.disconnectAll()
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     stopSelfResult(startId)
                 }
                 return START_NOT_STICKY
             }
         }
-        val sessions = (application as ZeroTermApp).container.sessions
-        val connecting = intent?.getBooleanExtra(EXTRA_CONNECTING, false) == true
-        val count = intent?.getIntExtra(EXTRA_SESSION_COUNT, sessions.sessionCount())
-            ?: sessions.sessionCount()
+        val container = (application as ZeroTermApp).container
+        val sessions = container.sessions
+        val forwards = container.zeroTerm.activePortForwardCount().toInt()
+        val connecting = intent?.getBooleanExtra(EXTRA_CONNECTING, false) == true || container.portForwards.isStarting || sessions.connecting.value
+        val count = sessions.sessionCount() + forwards
         if (count <= 0 && !connecting) {
             stopSelfResult(startId)
             return START_NOT_STICKY
         }
-        val notification = buildNotification(count.coerceAtLeast(1), connecting)
+        val notification = buildNotification(sessions.sessionCount(), forwards, connecting)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(
                 NOTIFICATION_ID,
@@ -74,7 +77,9 @@ class SessionForegroundService : Service() {
 
     override fun onTimeout(startId: Int, fgsType: Int) {
         serviceScope.launch {
-            (application as ZeroTermApp).container.sessions.disconnectAll()
+            val container = (application as ZeroTermApp).container
+            container.portForwards.stopAll()
+            container.sessions.disconnectAll()
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelfResult(startId)
         }
@@ -112,13 +117,13 @@ class SessionForegroundService : Service() {
         wakeLock = null
     }
 
-    private fun buildNotification(sessionCount: Int, connecting: Boolean): Notification {
+    private fun buildNotification(sessionCount: Int, forwardCount: Int, connecting: Boolean): Notification {
         ensureChannel()
         val open = PendingIntent.getActivity(
             this,
             0,
             Intent(this, MainActivity::class.java).apply {
-                action = MainActivity.ACTION_OPEN_ACTIVE_SESSION
+                action = if (sessionCount > 0) MainActivity.ACTION_OPEN_ACTIVE_SESSION else MainActivity.ACTION_OPEN_PORT_FORWARDS
                 flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
                 // AND-7: stamp the intent as internally originated + restrict
                 // delivery to our own package so MainActivity can reject the
@@ -136,6 +141,8 @@ class SessionForegroundService : Service() {
         )
         val text = if (connecting) {
             getString(R.string.session_service_connecting)
+        } else if (forwardCount > 0) {
+            getString(R.string.session_service_forwards, sessionCount, forwardCount)
         } else if (sessionCount == 1) {
             getString(R.string.session_service_one)
         } else {
@@ -177,7 +184,11 @@ class SessionForegroundService : Service() {
         }
 
         fun stop(context: Context) {
-            context.stopService(Intent(context, SessionForegroundService::class.java))
+            val container = (context.applicationContext as ZeroTermApp).container
+            val count = container.sessions.sessionCount() + container.zeroTerm.activePortForwardCount().toInt()
+            if (count > 0 || container.portForwards.isStarting || container.sessions.connecting.value) {
+                start(context, count, container.portForwards.isStarting || container.sessions.connecting.value)
+            } else context.stopService(Intent(context, SessionForegroundService::class.java))
         }
     }
 }

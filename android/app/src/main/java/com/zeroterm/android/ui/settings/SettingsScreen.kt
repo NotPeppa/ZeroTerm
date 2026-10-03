@@ -128,6 +128,11 @@ fun SettingsScreen(
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
 
+            Spacer(Modifier.height(20.dp))
+            TerminalSidebarSettings(snap.hiddenTerminalSidebarFeatures) { feature, enabled ->
+                scope.launch { settings.setTerminalSidebarFeature(feature, enabled) }
+            }
+
             Spacer(Modifier.height(24.dp))
             Text(stringResource(R.string.settings_sync), style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))

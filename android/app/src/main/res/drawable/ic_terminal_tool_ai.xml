@@ -4,25 +4,29 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
+    <!-- Shared optical bounds; scale-compensated stroke: 2.26 x 0.84 = 1.90. -->
+    <group android:pivotX="12" android:pivotY="12"
+        android:scaleX="0.84" android:scaleY="0.84" android:translateY="-0.5">
     <path
         android:pathData="M12,3 L10.088,8.813 A2,2 0,0 1,8.813 10.088 L3,12 L8.813,13.912 A2,2 0,0 1,10.088 15.187 L12,21 L13.912,15.187 A2,2 0,0 1,15.187 13.912 L21,12 L15.187,10.088 A2,2 0,0 1,13.912 8.813 Z"
         android:fillColor="@android:color/transparent"
         android:strokeColor="#FF000000"
-        android:strokeWidth="1.9"
+        android:strokeWidth="2.26"
         android:strokeLineCap="round"
         android:strokeLineJoin="round" />
     <path
         android:pathData="M5,3 L6,5.5 L8.5,6 L6,7 L5,9.5 L4,7 L1.5,6 L4,5.5 Z"
         android:fillColor="@android:color/transparent"
         android:strokeColor="#FF000000"
-        android:strokeWidth="1.9"
+        android:strokeWidth="2.26"
         android:strokeLineCap="round"
         android:strokeLineJoin="round" />
     <path
         android:pathData="M19,17 L20,19.5 L22.5,20 L20,21 L19,23.5 L18,21 L15.5,20 L18,19 Z"
         android:fillColor="@android:color/transparent"
         android:strokeColor="#FF000000"
-        android:strokeWidth="1.9"
+        android:strokeWidth="2.26"
         android:strokeLineCap="round"
         android:strokeLineJoin="round" />
+    </group>
 </vector>

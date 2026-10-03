@@ -2354,23 +2354,29 @@ pub async fn forget_keychain() -> Result<(), String> {
 
 #[tauri::command]
 pub async fn open_new_window(app_handle: AppHandle) -> Result<(), String> {
-    let label = format!("window-{}", uuid::Uuid::new_v4());
-    let (w, h) = read_startup_window_size().unwrap_or((1500.0, 860.0));
-    #[allow(unused_mut)]
-    let mut builder = tauri::WebviewWindowBuilder::new(
-        &app_handle,
-        label,
-        tauri::WebviewUrl::App("index.html".into()),
-    )
-    .title("ZeroTerm")
-    .inner_size(w, h)
-    .center();
-    #[cfg(target_os = "windows")]
-    {
-        builder = builder.decorations(false);
-    }
-    builder = builder.disable_drag_drop_handler();
-    builder.build().map(|_| ()).map_err(|e| e.to_string())
+    // Reuse the platform's main-window config so native chrome, theme and
+    // size constraints stay consistent with the original window.
+    let mut config = app_handle
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|config| config.label == "main")
+        .cloned()
+        .ok_or_else(|| "main window configuration not found".to_string())?;
+    config.label = format!("window-{}", uuid::Uuid::new_v4());
+    let (w, h) = read_startup_window_size().unwrap_or((config.width, config.height));
+
+    tauri::WebviewWindowBuilder::from_config(&app_handle, &config)
+        .map_err(|e| e.to_string())?
+        .inner_size(w, h)
+        .center()
+        // The main window starts hidden and is shown during app setup; new
+        // windows must be visible immediately because setup won't run again.
+        .visible(true)
+        .build()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

@@ -93,6 +93,10 @@ import com.zeroterm.android.data.ActiveSession
 import com.zeroterm.android.data.AppSettings
 import com.zeroterm.android.data.SessionManager
 import com.zeroterm.android.data.SettingsSnapshot
+import com.zeroterm.android.data.SftpManager
+import com.zeroterm.android.data.TerminalSidebarFeature
+import com.zeroterm.android.data.enabledTerminalSidebarFeatures
+import com.zeroterm.android.data.resolveTerminalSidebarFeature
 import com.zeroterm.android.data.ZeroTermRepository
 import com.zeroterm.android.terminal.CustomTerminalTheme
 import com.zeroterm.android.terminal.ExtraKeyId
@@ -103,6 +107,7 @@ import com.zeroterm.android.terminal.TerminalThemeDef
 import com.zeroterm.android.ui.ai.AiScreen
 import com.zeroterm.android.ui.ai.rememberAiConversationState
 import com.zeroterm.android.ui.snippets.SnippetsScreen
+import com.zeroterm.android.ui.sftp.SftpBrowserScreen
 import com.zeroterm.android.ui.components.ZeroTopBar
 import com.zeroterm.android.ui.components.LocalChromeTransparency
 import kotlinx.coroutines.flow.first
@@ -115,6 +120,7 @@ fun TerminalScreen(
     hostLabel: String,
     alreadyConnected: Boolean = false,
     sessions: SessionManager,
+    sftp: SftpManager,
     repository: ZeroTermRepository,
     settings: AppSettings? = null,
     fontSizeSp: Float = 13f,
@@ -145,9 +151,16 @@ fun TerminalScreen(
     val toolsDrawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     var toolsDrawerOpenKey by remember { mutableIntStateOf(0) }
     val drawerAlpha = 1f - LocalChromeTransparency.current.drawer.coerceIn(0f, 0.8f)
-    var toolsPage by remember { mutableStateOf(TerminalToolsPage.Snippets) }
+    var toolsPage by remember { mutableStateOf(TerminalSidebarFeature.Snippets) }
     val settingsSnap by (settings?.flow ?: kotlinx.coroutines.flow.flowOf(SettingsSnapshot()))
         .collectAsState(initial = SettingsSnapshot())
+    val enabledSidebarFeatures = remember(settingsSnap.hiddenTerminalSidebarFeatures) {
+        enabledTerminalSidebarFeatures(settingsSnap.hiddenTerminalSidebarFeatures)
+    }
+    LaunchedEffect(enabledSidebarFeatures) {
+        val next = resolveTerminalSidebarFeature(toolsPage, enabledSidebarFeatures)
+        if (next == null) toolsDrawerState.close() else toolsPage = next
+    }
     val enabledExtraKeys = remember(settingsSnap.terminalExtraKeysCsv) {
         ExtraKeyId.parseCsv(settingsSnap.terminalExtraKeysCsv)
     }
@@ -367,16 +380,17 @@ fun TerminalScreen(
         clearSelectionState()
     }
 
-    fun openToolsDrawer(page: TerminalToolsPage = TerminalToolsPage.Snippets) {
+    fun openToolsDrawer(page: TerminalSidebarFeature = TerminalSidebarFeature.Snippets) {
+        val enabledPage = resolveTerminalSidebarFeature(page, enabledSidebarFeatures) ?: return
         // Keep soft keyboard down until user taps an input field.
         termView?.hideIme()
-        toolsPage = page
+        toolsPage = enabledPage
         toolsDrawerOpenKey += 1
         scope.launch { toolsDrawerState.open() }
     }
 
     fun sendSelectionToAi() {
-        openToolsDrawer(TerminalToolsPage.Ai)
+        openToolsDrawer(TerminalSidebarFeature.Ai)
         // Keep selection so user can still copy if needed; clear after open.
         clearSelectionState()
     }
@@ -465,7 +479,7 @@ fun TerminalScreen(
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         ModalNavigationDrawer(
             drawerState = toolsDrawerState,
-            gesturesEnabled = active != null,
+            gesturesEnabled = active != null && enabledSidebarFeatures.isNotEmpty(),
             drawerContent = {
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                     ModalDrawerSheet(
@@ -477,14 +491,18 @@ fun TerminalScreen(
                     ) {
                         TerminalToolsDrawer(
                             selectedPage = toolsPage,
+                            enabledFeatures = enabledSidebarFeatures,
                             onPageSelected = { toolsPage = it },
                             onClose = { scope.launch { toolsDrawerState.close() } },
                             repository = repository,
                             settings = settings,
                             sessions = sessions,
+                            sftp = sftp,
+                            hostId = hostId,
                             hostLabel = hostLabel,
                             contextProvider = { sessions.viewportText() },
                             toolsDrawerOpenKey = toolsDrawerOpenKey,
+                            toolsVisible = toolsDrawerState.isOpen,
                             selectedThemeId = terminalThemeId,
                             themes = terminalThemes,
                             onThemeSelected = { id ->
@@ -579,9 +597,11 @@ fun TerminalScreen(
                     onExecuteSelection = { executeSelection() },
                     onOpenSelectionUrl = { openSelectionUrl() },
                     onSendSelectionToAi = { sendSelectionToAi() },
+                    aiEnabled = TerminalSidebarFeature.Ai in enabledSidebarFeatures,
                     selectionUrl = if (hasSelection) extractUrl(selectedText()) else null,
                     onRefreshPaint = { refreshPaint() },
                     onOpenTools = { openToolsDrawer() },
+                    toolsEnabled = enabledSidebarFeatures.isNotEmpty(),
                     onFontSizeChanged = onFontSizeChanged,
                 )
             }
@@ -631,9 +651,11 @@ private fun TerminalContent(
     onExecuteSelection: () -> Unit,
     onOpenSelectionUrl: () -> Unit,
     onSendSelectionToAi: () -> Unit,
+    aiEnabled: Boolean,
     selectionUrl: String?,
     onRefreshPaint: () -> Unit,
     onOpenTools: () -> Unit,
+    toolsEnabled: Boolean,
     onFontSizeChanged: (Float) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -693,7 +715,7 @@ private fun TerminalContent(
                                 contentDescription = stringResource(R.string.terminal_selection_execute),
                             )
                         }
-                        IconButton(onClick = onSendSelectionToAi) {
+                        if (aiEnabled) IconButton(onClick = onSendSelectionToAi) {
                             Icon(
                                 Icons.Default.AutoAwesome,
                                 contentDescription = stringResource(R.string.terminal_selection_ai),
@@ -838,7 +860,7 @@ private fun TerminalContent(
                             .fillMaxWidth(0.92f),
                     )
                 }
-                if (active != null) {
+                if (active != null && toolsEnabled) {
                     Box(
                         modifier = Modifier
                             .align(Alignment.CenterEnd)
@@ -925,19 +947,24 @@ private fun resolveTerminalTheme(
         ?: TerminalPalettes.byId(id, customThemes, hiddenBuiltins)
 }
 
-private enum class TerminalToolsPage { Ai, Snippets, Metrics, Docker, Theme }
+private val terminalToolIconSize = 24.dp
+private val terminalToolButtonSize = 48.dp
 
 @Composable
 private fun TerminalToolsDrawer(
-    selectedPage: TerminalToolsPage,
-    onPageSelected: (TerminalToolsPage) -> Unit,
+    selectedPage: TerminalSidebarFeature,
+    enabledFeatures: List<TerminalSidebarFeature>,
+    onPageSelected: (TerminalSidebarFeature) -> Unit,
     onClose: () -> Unit,
     repository: ZeroTermRepository,
     settings: AppSettings? = null,
     sessions: SessionManager,
+    sftp: SftpManager,
+    hostId: String?,
     hostLabel: String,
     contextProvider: () -> String,
     toolsDrawerOpenKey: Int = 0,
+    toolsVisible: Boolean = false,
     selectedThemeId: String,
     themes: List<TerminalThemeDef>,
     onThemeSelected: (String) -> Unit,
@@ -948,6 +975,8 @@ private fun TerminalToolsDrawer(
     onTerminalCommand: (String) -> Unit,
 ) {
     val aiConversationState = rememberAiConversationState()
+    val activePage = resolveTerminalSidebarFeature(selectedPage, enabledFeatures)
+    val active by sessions.active.collectAsState()
     Column(Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
@@ -956,43 +985,30 @@ private fun TerminalToolsDrawer(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TerminalToolIconButton(
-                selected = selectedPage == TerminalToolsPage.Snippets,
-                icon = painterResource(R.drawable.ic_terminal_tool_snippets),
-                label = stringResource(R.string.snippets_title),
-                onClick = { onPageSelected(TerminalToolsPage.Snippets) },
-            )
-            TerminalToolIconButton(
-                selected = selectedPage == TerminalToolsPage.Ai,
-                icon = painterResource(R.drawable.ic_terminal_tool_ai),
-                label = stringResource(R.string.ai_title),
-                onClick = { onPageSelected(TerminalToolsPage.Ai) },
-            )
-            TerminalToolIconButton(
-                selected = selectedPage == TerminalToolsPage.Metrics,
-                icon = painterResource(R.drawable.ic_terminal_tool_metrics),
-                label = stringResource(R.string.monitor_title),
-                onClick = { onPageSelected(TerminalToolsPage.Metrics) },
-            )
-            TerminalToolIconButton(
-                selected = selectedPage == TerminalToolsPage.Docker,
-                icon = painterResource(R.drawable.ic_terminal_tool_docker),
-                label = stringResource(R.string.docker_title),
-                onClick = { onPageSelected(TerminalToolsPage.Docker) },
-            )
-            TerminalToolIconButton(
-                selected = selectedPage == TerminalToolsPage.Theme,
-                icon = painterResource(R.drawable.ic_terminal_tool_theme),
-                label = stringResource(R.string.terminal_theme_title),
-                onClick = { onPageSelected(TerminalToolsPage.Theme) },
-            )
-            Spacer(Modifier.weight(1f))
-            IconButton(onClick = onClose) {
-                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.common_close))
+            Row(
+                Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                enabledFeatures.forEach { feature ->
+                    TerminalToolIconButton(
+                        selected = activePage == feature,
+                        icon = painterResource(feature.iconResource()),
+                        label = stringResource(feature.labelResource()),
+                        onClick = { onPageSelected(feature) },
+                    )
+                }
+            }
+            IconButton(onClick = onClose, modifier = Modifier.size(terminalToolButtonSize)) {
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = stringResource(R.string.common_close),
+                    modifier = Modifier.size(terminalToolIconSize),
+                )
             }
         }
-        when (selectedPage) {
-            TerminalToolsPage.Ai -> AiScreen(
+        when (activePage) {
+            TerminalSidebarFeature.Ai -> AiScreen(
                 repository = repository,
                 settings = settings,
                 contextLabel = hostLabel,
@@ -1002,21 +1018,38 @@ private fun TerminalToolsDrawer(
                 embeddedOpenKey = toolsDrawerOpenKey,
                 conversationState = aiConversationState,
             )
-            TerminalToolsPage.Snippets -> SnippetsScreen(
+            TerminalSidebarFeature.Snippets -> SnippetsScreen(
                 repository = repository,
                 onInsert = onInsertSnippet,
                 allowEditingInPickMode = true,
                 embedded = true,
             )
-            TerminalToolsPage.Metrics -> MetricsPanel(sessions)
-            TerminalToolsPage.Docker -> DockerPanel(sessions, onTerminalCommand)
-            TerminalToolsPage.Theme -> TerminalThemePanel(
+            TerminalSidebarFeature.Metrics -> MetricsPanel(sessions)
+            TerminalSidebarFeature.Services -> androidx.compose.runtime.key(active?.sessionId) { ServicesPanel(sessions, toolsVisible) }
+            TerminalSidebarFeature.Ports -> androidx.compose.runtime.key(active?.sessionId) { PortsPanel(sessions, toolsVisible) }
+            TerminalSidebarFeature.Docker -> DockerPanel(sessions, onTerminalCommand)
+            TerminalSidebarFeature.Sftp -> active?.let { session ->
+                androidx.compose.runtime.key(session.sessionId) {
+                    SftpBrowserScreen(
+                        hostId = hostId,
+                        hostLabel = hostLabel,
+                        sftp = sftp,
+                        sessionId = session.sessionId,
+                        embedded = true,
+                        visible = toolsVisible,
+                        onBack = onClose,
+                    )
+                }
+            }
+            TerminalSidebarFeature.Tmux -> TmuxPanel(sessions, toolsVisible, onClose)
+            TerminalSidebarFeature.Theme -> TerminalThemePanel(
                 selectedThemeId = selectedThemeId,
                 themes = themes,
                 onThemeSelected = onThemeSelected,
                 onSaveTheme = onSaveTheme,
                 onDeleteTheme = onDeleteTheme,
             )
+            null -> Unit
         }
     }
 }
@@ -1031,13 +1064,14 @@ private fun TerminalToolIconButton(
     IconToggleButton(
         checked = selected,
         onCheckedChange = { onClick() },
+        modifier = Modifier.size(terminalToolButtonSize),
         colors = IconButtonDefaults.iconToggleButtonColors(
             contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             checkedContainerColor = MaterialTheme.colorScheme.primaryContainer,
             checkedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
         ),
     ) {
-        Icon(icon, contentDescription = label)
+        Icon(icon, contentDescription = label, modifier = Modifier.size(terminalToolIconSize))
     }
 }
 

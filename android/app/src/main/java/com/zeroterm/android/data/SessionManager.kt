@@ -40,6 +40,7 @@ data class ActiveSession(
     val hostId: String,
     val hostLabel: String,
     val terminal: Terminal,
+    val tmuxClientOption: String = "@zeroterm_android_" + java.util.UUID.randomUUID().toString().replace("-", ""),
 )
 
 data class SessionCloseEvent(
@@ -246,9 +247,21 @@ class SessionManager(
         sendInput(text.toByteArray(Charsets.UTF_8))
     }
 
-    suspend fun execCommand(command: String): Result<HostExecResult> {
+    suspend fun sendSessionText(sessionId: ULong, text: String): Result<Unit> {
+        if (_active.value?.sessionId != sessionId) {
+            return Result.failure(IllegalStateException("Session disconnected"))
+        }
+        return withContext(Dispatchers.Default) {
+            runCatching { zeroTerm.sendInput(sessionId, text.toByteArray(Charsets.UTF_8)) }
+        }
+    }
+
+    suspend fun execCommand(command: String, expectedSessionId: ULong? = null): Result<HostExecResult> {
         val sid = _active.value?.sessionId
             ?: return Result.failure(IllegalStateException("No active session"))
+        if (expectedSessionId != null && sid != expectedSessionId) {
+            return Result.failure(IllegalStateException("Session changed"))
+        }
         return withContext(Dispatchers.Default) {
             runCatching { zeroTerm.execSessionCommand(sid, command) }
         }

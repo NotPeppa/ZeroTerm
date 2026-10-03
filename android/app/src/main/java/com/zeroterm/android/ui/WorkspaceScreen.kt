@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.DropdownMenu
@@ -70,6 +71,7 @@ import com.zeroterm.android.ui.ai.AiScreen
 import com.zeroterm.android.ui.components.LocalChromeTransparency
 import com.zeroterm.android.ui.hosts.HostsScreen
 import com.zeroterm.android.ui.hosts.HostsViewModel
+import com.zeroterm.android.ui.forward.PortForwardScreen
 import com.zeroterm.android.ui.settings.WorkspaceSettingsPage
 import com.zeroterm.android.ui.settings.WorkspaceSettingsPane
 import com.zeroterm.android.ui.sync.SyncScreen
@@ -78,7 +80,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-private enum class WorkspacePage { Hosts, General, Terminal, Ai, Sync, About }
+private enum class WorkspacePage { Hosts, PortForwards, General, Terminal, Ai, Sync, About }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -93,6 +95,9 @@ fun WorkspaceScreen(
     onLock: () -> Unit,
 ) {
     var page by rememberSaveable { mutableStateOf(WorkspacePage.Hosts) }
+    LaunchedEffect(container) {
+        container.portForwardPageRequests.collect { page = WorkspacePage.PortForwards }
+    }
     val hosts by container.repository.hosts.collectAsState()
     val settingsSnap by container.settings.flow.collectAsState(initial = SettingsSnapshot())
     val syncSnap by container.autoSync.snapshot.collectAsState()
@@ -174,6 +179,11 @@ fun WorkspaceScreen(
         },
     ) {
         when (page) {
+            WorkspacePage.PortForwards -> PortForwardScreen(
+                manager = container.portForwards,
+                repository = container.repository,
+                onOpenNavigation = openDrawer,
+            )
             WorkspacePage.Hosts -> HostsScreen(
                 viewModel = hostsViewModel,
                 onHostClick = onHostClick,
@@ -369,6 +379,7 @@ private fun WorkspaceDrawerItem(
 ) {
     val icon: ImageVector = when (page) {
         WorkspacePage.Hosts -> Icons.Default.Computer
+        WorkspacePage.PortForwards -> Icons.Default.SwapHoriz
         WorkspacePage.General -> Icons.Default.Settings
         WorkspacePage.Terminal -> Icons.Default.Keyboard
         WorkspacePage.Ai -> Icons.Default.AutoAwesome
@@ -377,6 +388,7 @@ private fun WorkspaceDrawerItem(
     }
     val label = when (page) {
         WorkspacePage.Hosts -> stringResource(R.string.hosts_title)
+        WorkspacePage.PortForwards -> stringResource(R.string.port_forward_title)
         WorkspacePage.General -> stringResource(R.string.settings_general)
         WorkspacePage.Terminal -> stringResource(R.string.settings_terminal)
         WorkspacePage.Ai -> stringResource(R.string.ai_settings_title)

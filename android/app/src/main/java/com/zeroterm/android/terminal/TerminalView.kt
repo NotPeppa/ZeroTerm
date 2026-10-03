@@ -546,7 +546,7 @@ private fun isDefaultCellBackground(bgPacked: Int, defaultBgPacked: Int): Boolea
     return packed == (defaultBgPacked and 0xFFFFFF)
 }
 
-private fun DrawScope.drawTermGrid(
+internal fun DrawScope.drawTermGrid(
     grid: TermGridState,
     cellW: Float,
     cellH: Float,
@@ -560,8 +560,13 @@ private fun DrawScope.drawTermGrid(
 ) {
     val native = drawContext.canvas.nativeCanvas
     val baseline = -paint.fontMetrics.ascent
+    // Paint the entire background layer before any glyphs. CJK glyphs span
+    // two columns; painting the next column afterward erased their right half.
     for (row in 0 until grid.rows) {
         for (col in 0 until grid.cols) {
+            // The Rust snapshot exports a wide character's continuation as a
+            // blank default cell. Its leading cell owns both columns' styling.
+            if (col > 0 && grid.cellAt(row, col - 1).wide) continue
             val cell = grid.cellAt(row, col)
             val x = col * cellW
             val y = row * cellH
@@ -570,9 +575,17 @@ private fun DrawScope.drawTermGrid(
             if (!transparentDefaultBackground || !isDefaultBackground) {
                 drawRect(cell.bg, topLeft = Offset(x, y), size = Size(w, cellH))
             }
-            if (grid.isSelected(row, col)) {
+            if (grid.isSelected(row, col) || (cell.wide && grid.isSelected(row, col + 1))) {
                 drawRect(selectionColor.copy(alpha = 0.4f), topLeft = Offset(x, y), size = Size(w, cellH))
             }
+        }
+    }
+    for (row in 0 until grid.rows) {
+        for (col in 0 until grid.cols) {
+            if (col > 0 && grid.cellAt(row, col - 1).wide) continue
+            val cell = grid.cellAt(row, col)
+            val x = col * cellW
+            val y = row * cellH
             paint.color = cell.fg.toArgb()
             paint.isFakeBoldText = cell.bold
             paint.isUnderlineText = cell.underline

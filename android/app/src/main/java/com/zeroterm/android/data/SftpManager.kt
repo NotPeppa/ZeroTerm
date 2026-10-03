@@ -26,6 +26,7 @@ class SftpManager(
 ) {
     private var sftpId: ULong? = null
     private var currentHostId: String? = null
+    private var currentSessionId: ULong? = null
 
     private val _path = MutableStateFlow("/")
     val path: StateFlow<String> = _path.asStateFlow()
@@ -47,6 +48,7 @@ class SftpManager(
 
     fun isOpen(): Boolean = sftpId != null
     fun isOpenFor(hostId: String): Boolean = sftpId != null && currentHostId == hostId
+    fun isOpenForSession(sessionId: ULong): Boolean = sftpId != null && currentSessionId == sessionId
 
     fun cacheDir(): File {
         val dir = File(appContext.cacheDir, "sftp")
@@ -61,6 +63,7 @@ class SftpManager(
             sftpId?.let { id -> runCatching { zeroTerm.sftpClose(id) } }
             sftpId = null
             currentHostId = null
+            currentSessionId = null
             val prompt = object : HostKeyPromptCallback {
                 override fun onPrompt(requestId: String, info: HostKeyInfo, stored: String?) {
                     _hostKeyPrompts.tryEmit(HostKeyPrompt(requestId, info, stored))
@@ -78,10 +81,32 @@ class SftpManager(
         }.map { }
     }
 
+    suspend fun openSession(sessionId: ULong): Result<Unit> = withContext(Dispatchers.Default) {
+        _busy.value = true
+        _error.value = null
+        runCatching {
+            sftpId?.let { id -> runCatching { zeroTerm.sftpClose(id) } }
+            sftpId = null
+            currentHostId = null
+            currentSessionId = null
+            _entries.value = emptyList()
+            _progress.value = null
+            val id = zeroTerm.sftpOpenSession(sessionId)
+            sftpId = id
+            currentSessionId = sessionId
+            _path.value = "/"
+            _entries.value = zeroTerm.sftpList(id, "/")
+        }.mapFfi().also {
+            _busy.value = false
+            it.exceptionOrNull()?.let { e -> _error.value = e.message }
+        }.map { }
+    }
+
     suspend fun close() = withContext(Dispatchers.Default) {
         sftpId?.let { id -> runCatching { zeroTerm.sftpClose(id) } }
         sftpId = null
         currentHostId = null
+        currentSessionId = null
         _entries.value = emptyList()
         _path.value = "/"
         _progress.value = null

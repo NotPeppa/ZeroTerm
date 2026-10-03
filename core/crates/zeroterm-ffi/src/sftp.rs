@@ -97,6 +97,24 @@ fn map_ssh(e: zeroterm_ssh::SshError) -> FfiError {
 
 #[uniffi::export(async_runtime = "tokio")]
 impl ZeroTerm {
+    /// Open a sibling SFTP channel on an authenticated terminal transport.
+    /// Supports Quick Connect and retains ProxyJump transports without another
+    /// login or host-key prompt. Closing SFTP leaves the terminal connected.
+    pub async fn sftp_open_session(&self, session_id: u64) -> Result<u64, FfiError> {
+        let (jump_session, session) = self.session_transport(session_id)?;
+        let sftp = session.sftp().await.map_err(map_ssh)?;
+        let id = self.next_sftp_id.fetch_add(1, Ordering::SeqCst);
+        self.sftp_handles.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(
+            id,
+            SftpEntry {
+                _jump_session: jump_session,
+                _session: session,
+                sftp: Arc::new(sftp),
+            },
+        );
+        Ok(id)
+    }
+
     /// Open an SFTP channel to a saved host. Host-key prompts use the same
     /// callback protocol as `connectHost`.
     pub async fn sftp_open(

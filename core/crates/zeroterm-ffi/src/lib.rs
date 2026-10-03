@@ -18,6 +18,7 @@ uniffi::setup_scaffolding!("zeroterm");
 mod error;
 mod facade;
 mod listener;
+mod port_forward;
 mod sftp;
 mod sync_api;
 mod term;
@@ -26,6 +27,7 @@ mod types;
 pub use error::FfiError;
 pub use facade::ZeroTerm;
 pub use listener::{HostKeyPromptCallback, SessionListener};
+pub use port_forward::{ForwardKind, PortForwardInput, PortForwardRecord};
 pub use sftp::{SftpDirEntry, SftpFileKind, TransferListener, TransferProgress};
 pub use sync_api::{
     ConflictRecord, SyncBackendKind, SyncCompactRecord, SyncDeviceRecord, SyncOutcomeRecord,

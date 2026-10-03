@@ -21,8 +21,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
@@ -31,7 +29,6 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -59,6 +56,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
@@ -113,10 +111,11 @@ fun HostsScreen(
                 },
                 actions = {
                     Box {
-                        IconButton(onClick = { addMenuOpen = true }) {
+                        IconButton(onClick = { addMenuOpen = true }, modifier = Modifier.size(48.dp)) {
                             Icon(
-                                Icons.Default.Add,
+                                painter = painterResource(R.drawable.ic_hosts_add),
                                 contentDescription = stringResource(R.string.hosts_add_action),
+                                modifier = Modifier.size(24.dp),
                             )
                         }
                         DropdownMenu(
@@ -142,16 +141,18 @@ fun HostsScreen(
                             )
                         }
                     }
-                    IconButton(onClick = onQuickConnect) {
+                    IconButton(onClick = onQuickConnect, modifier = Modifier.size(48.dp)) {
                         Icon(
-                            Icons.Default.Bolt,
+                            painter = painterResource(R.drawable.ic_hosts_quick_connect),
                             contentDescription = stringResource(R.string.hosts_quick_connect),
+                            modifier = Modifier.size(24.dp),
                         )
                     }
-                    IconButton(onClick = viewModel::refresh) {
+                    IconButton(onClick = viewModel::refresh, modifier = Modifier.size(48.dp)) {
                         Icon(
-                            Icons.Default.Refresh,
+                            painter = painterResource(R.drawable.ic_hosts_refresh),
                             contentDescription = stringResource(R.string.common_refresh),
+                            modifier = Modifier.size(24.dp),
                         )
                     }
                 },

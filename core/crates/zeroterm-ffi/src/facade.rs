@@ -53,10 +53,13 @@ pub struct ZeroTerm {
 
     /// Sync engines keyed by profile id (batch-6).
     pub(crate) sync_manager: Arc<zeroterm_app::SyncManager>,
+    pub(crate) port_forwards: crate::port_forward::ForwardMap,
 }
 
 struct SessionEntry {
     control_tx: mpsc::Sender<SessionCommand>,
+    transport: Session,
+    jump_transport: Option<Session>,
 }
 
 #[derive(Debug)]
@@ -179,6 +182,7 @@ impl ZeroTerm {
             transfer_cancels: Arc::new(Mutex::new(HashMap::new())),
             next_transfer_id: AtomicU64::new(1),
             sync_manager: Arc::new(zeroterm_app::SyncManager::new()),
+            port_forwards: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -299,7 +303,9 @@ impl ZeroTerm {
     }
 
     pub fn lock(&self) {
-        *self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        let mut app = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        *app = None;
+        self.cancel_port_forwards_where(|_| true);
         // Drop any live sync engines; re-join after next unlock.
     }
 
@@ -663,7 +669,9 @@ impl ZeroTerm {
     pub fn delete_host(&self, id: String) -> Result<(), FfiError> {
         let guard = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let app = guard.as_ref().ok_or(FfiError::VaultLocked)?;
-        app.delete_host(&id).map_err(map_app_error)
+        app.delete_host(&id).map_err(map_app_error)?;
+        self.cancel_port_forwards_where(|entry| entry.host_id == id);
+        Ok(())
     }
 
     // -- snippets ---------------------------------------------------------
@@ -1015,6 +1023,12 @@ impl ZeroTerm {
         let session_id = self.next_session_id.fetch_add(1, Ordering::SeqCst);
         let (control_tx, control_rx) = mpsc::channel::<SessionCommand>(64);
 
+        self.sessions.lock().unwrap().insert(session_id, SessionEntry {
+            control_tx,
+            transport: session.clone(),
+            jump_transport: jump_session.clone(),
+        });
+
         let sessions = self.sessions.clone();
         tokio::spawn(async move {
             run_session_task(
@@ -1028,11 +1042,6 @@ impl ZeroTerm {
             )
             .await;
         });
-
-        self.sessions
-            .lock()
-            .unwrap()
-            .insert(session_id, SessionEntry { control_tx });
 
         info!(session_id, "ffi: session ready");
         Ok(session_id)
@@ -1059,6 +1068,13 @@ impl ZeroTerm {
             .ok_or_else(|| FfiError::NotFound {
                 detail: format!("session {session_id}"),
             })
+    }
+
+    pub(crate) fn session_transport(&self, session_id: u64) -> Result<(Option<Session>, Session), FfiError> {
+        self.sessions.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&session_id)
+            .map(|entry| (entry.jump_transport.clone(), entry.transport.clone()))
+            .ok_or_else(|| FfiError::NotFound { detail: format!("session {session_id}") })
     }
 
     fn maybe_lookup_tx(&self, session_id: u64) -> Option<mpsc::Sender<SessionCommand>> {

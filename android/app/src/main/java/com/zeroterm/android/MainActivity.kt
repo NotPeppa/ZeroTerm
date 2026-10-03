@@ -58,7 +58,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleIntent(intent: Intent?, app: ZeroTermApp) {
-        if (intent?.action != ACTION_OPEN_ACTIVE_SESSION) return
+        if (intent?.action != ACTION_OPEN_ACTIVE_SESSION && intent?.action != ACTION_OPEN_PORT_FORWARDS) return
         // AND-7: MainActivity must stay exported for the LAUNCHER category, so
         // any app can deliver this custom navigation action. Only honor it when
         // it originates from our own process: the intent must carry the internal
@@ -71,11 +71,13 @@ class MainActivity : AppCompatActivity() {
         if (!intent.getBooleanExtra(EXTRA_INTERNAL_NAV, false)) return
         val referrerPackage = referrer?.host
         if (referrerPackage != null && referrerPackage != packageName) return
-        app.container.requestOpenActiveSession()
+        if (intent.action == ACTION_OPEN_PORT_FORWARDS) app.container.requestOpenPortForwards()
+        else app.container.requestOpenActiveSession()
     }
 
     companion object {
         const val ACTION_OPEN_ACTIVE_SESSION = "com.zeroterm.android.OPEN_ACTIVE_SESSION"
+        const val ACTION_OPEN_PORT_FORWARDS = "com.zeroterm.android.OPEN_PORT_FORWARDS"
 
         /**
          * Internal marker extra proving [ACTION_OPEN_ACTIVE_SESSION] was raised

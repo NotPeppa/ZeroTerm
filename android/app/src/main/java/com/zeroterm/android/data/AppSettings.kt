@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -71,6 +72,8 @@ data class SettingsSnapshot(
     val terminalHiddenBuiltinThemesJson: String = "[]",
     /** Comma-separated ExtraKeyId names for terminal bottom key bar. */
     val terminalExtraKeysCsv: String = "",
+    /** Stable IDs of terminal drawer features explicitly switched off. */
+    val hiddenTerminalSidebarFeatures: Set<String> = emptySet(),
 )
 
 /**
@@ -98,6 +101,7 @@ class AppSettings(private val context: Context) {
             terminalCustomThemesJson = prefs[KEY_TERMINAL_CUSTOM_THEMES] ?: "[]",
             terminalHiddenBuiltinThemesJson = prefs[KEY_TERMINAL_HIDDEN_BUILTINS] ?: "[]",
             terminalExtraKeysCsv = prefs[KEY_TERMINAL_EXTRA_KEYS].orEmpty(),
+            hiddenTerminalSidebarFeatures = prefs[KEY_TERMINAL_HIDDEN_SIDEBAR_FEATURES].orEmpty(),
         )
     }
 
@@ -233,6 +237,14 @@ class AppSettings(private val context: Context) {
         }
     }
 
+    suspend fun setTerminalSidebarFeature(feature: TerminalSidebarFeature, enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            val hidden = prefs[KEY_TERMINAL_HIDDEN_SIDEBAR_FEATURES].orEmpty().toMutableSet()
+            if (enabled) hidden.remove(feature.id) else hidden.add(feature.id)
+            prefs[KEY_TERMINAL_HIDDEN_SIDEBAR_FEATURES] = hidden
+        }
+    }
+
     companion object {
         const val MIN_FONT = 9f
         const val MAX_FONT = 28f
@@ -255,6 +267,7 @@ class AppSettings(private val context: Context) {
         private val KEY_TERMINAL_CUSTOM_THEMES = stringPreferencesKey("terminal_custom_themes_json")
         private val KEY_TERMINAL_HIDDEN_BUILTINS = stringPreferencesKey("terminal_hidden_builtin_themes_json")
         private val KEY_TERMINAL_EXTRA_KEYS = stringPreferencesKey("terminal_extra_keys_csv")
+        private val KEY_TERMINAL_HIDDEN_SIDEBAR_FEATURES = stringSetPreferencesKey("terminal_hidden_sidebar_features")
         private const val BACKGROUND_FILE_LEGACY = "terminal-background-image"
         private const val BACKGROUND_FILE_PREFIX = "terminal-background-image-"
 

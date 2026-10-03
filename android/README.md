@@ -31,12 +31,43 @@ using the host-side `zeroterm-bindgen` tool, keeping UniFFI checksums in sync.
 - [x] Quick Connect (`connectDirect`)
 - [x] SFTP browser (list/mkdir/rename/delete + SAF upload/download + cancel)
 - [x] Snippets CRUD + insert into terminal
+- [x] tmux drawer: list/create/attach/switch/detach/rename/end sessions over the active SSH connection (including Quick Connect)
+- [x] Port forwarding in the left workspace drawer: synced local/remote/SOCKS5 rules, independent start/stop, host groups, and reconnects
 - [x] Sync profiles (WebDAV/SFTP/S3), create/join, sync now, conflicts
 - [x] Foreground auto-sync (settings toggle + interval)
 - [x] R8 keep rules (JNA/uniffi)
 - [ ] CI smoke build (optional; release packaging is via tag → `release.yml`)
 - [ ] Play internal testing / signed release (operator)
 - [ ] Real-device exit criteria (vim/tmux/CJK/perf) — measure on device
+
+## tmux sessions
+
+Open the terminal tools drawer and select **tmux**. The server must have tmux
+installed. Create a detached session, then enter it from a shell prompt. For
+sessions entered through this panel, switching and detaching target only this
+APP client, including with a custom tmux prefix. Rename and end-session actions
+use a separate SSH channel; ending a session requires confirmation. Manually
+attached sessions should be detached before entering through the panel. The
+panel manages the default tmux socket and refreshes when opened, after session
+actions, or when the refresh button is tapped; it does not poll periodically.
+Initial attach prepares a private, one-use launcher over the SSH exec channel,
+so the terminal does not echo client bookkeeping commands when detaching. Normal
+detach is quiet; attach errors remain visible. The launcher deletes itself.
+
+## Port forwarding
+
+Open the left workspace drawer and select **Port Forwarding**. Choose a saved
+SSH host and create a local (-L), remote (-R), or SOCKS5 (-D) rule. Local and
+SOCKS5 listeners run on the phone; remote listeners run on the SSH server and
+connect back to a target the phone can reach. Rules use the same independent
+Vault records as the desktop client and sync with it.
+
+Forwards run independently of terminal sessions, remain active when leaving
+the page, and reconnect after a dropped SSH connection. A foreground notification
+keeps active tunnels and terminal sessions running together. Its **Disconnect all**
+action stops both. Editing a running rule stops it before saving; start it again
+to apply the new configuration. Deleting its rule/host or locking the Vault also
+stops the tunnel. Restarting the app does not automatically start saved rules.
 
 ## Prerequisites
 

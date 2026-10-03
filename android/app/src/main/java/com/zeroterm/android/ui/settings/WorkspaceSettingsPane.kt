@@ -453,6 +453,16 @@ fun WorkspaceSettingsPane(
                 }
 
                 WorkspaceSettingsPage.Terminal -> {
+                    Surface(
+                        shape = MaterialTheme.shapes.large,
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.48f),
+                    ) {
+                        Column(Modifier.padding(16.dp)) {
+                            TerminalSidebarSettings(snap.hiddenTerminalSidebarFeatures) { feature, enabled ->
+                                scope.launch { settings.setTerminalSidebarFeature(feature, enabled) }
+                            }
+                        }
+                    }
                     ZeroSectionCard(
                         title = stringResource(R.string.settings_font_size),
                         translucent = true,

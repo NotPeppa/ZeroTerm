@@ -34,6 +34,16 @@ iOS) and Kotlin (Android, JVM).
 - `disconnectSession(sessionId)`
 - `respondHostKey(requestId, accept)`
 
+### Independent SSH port forwarding
+- `migratePortForwardRules`, `listPortForwards`, `savePortForward`, `deletePortForward`
+- `startPortForward(ruleId, hostKeyPrompt)`, `stopPortForward(ruleId)`, `stopAllPortForwards`
+- `activePortForwardCount` includes connecting and reconnecting tunnels
+- `PortForwardInput` / `PortForwardRecord`, `ForwardKind` (local/remote/dynamic)
+- Rules use desktop-compatible Vault records and schedule debounced sync after
+  mutations. Tunnels use separate SSH transports with ProxyJump and host-key
+  verification, and reconnect after disconnects. Stop/delete/lock cancels a
+  pending connection as well as a running tunnel; editing stops before saving.
+
 ### SFTP (batch-4)
 - `sftpOpen(hostId, hostKeyPrompt) -> sftpId`
 - `sftpClose(sftpId)`

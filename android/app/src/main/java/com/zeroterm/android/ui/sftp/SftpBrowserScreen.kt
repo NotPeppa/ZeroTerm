@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -37,6 +39,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -52,6 +55,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.window.DialogProperties
 import com.zeroterm.android.R
 import com.zeroterm.android.data.HostKeyPrompt
@@ -67,10 +71,13 @@ import com.zeroterm.android.ui.components.ZeroEmptyState
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SftpBrowserScreen(
-    hostId: String,
+    hostId: String?,
     hostLabel: String,
     sftp: SftpManager,
     onBack: () -> Unit,
+    sessionId: ULong? = null,
+    embedded: Boolean = false,
+    visible: Boolean = true,
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -127,9 +134,11 @@ fun SftpBrowserScreen(
         }
     }
 
-    LaunchedEffect(hostId) {
-        if (!sftp.isOpenFor(hostId)) {
-            sftp.open(hostId).onFailure {
+    LaunchedEffect(hostId, sessionId, visible) {
+        if (!visible) return@LaunchedEffect
+        val needsOpen = if (sessionId != null) !sftp.isOpenForSession(sessionId) else hostId != null && !sftp.isOpenFor(hostId)
+        if (needsOpen) {
+            (if (sessionId != null) sftp.openSession(sessionId) else sftp.open(requireNotNull(hostId))).onFailure {
                 Toast.makeText(context, it.message ?: context.getString(R.string.sftp_open_failed), Toast.LENGTH_LONG).show()
             }
         }
@@ -265,9 +274,33 @@ fun SftpBrowserScreen(
     }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.48f),
+        containerColor = if (embedded) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.background.copy(alpha = 0.48f),
         contentColor = MaterialTheme.colorScheme.onBackground,
+        contentWindowInsets = if (embedded) WindowInsets(0, 0, 0, 0) else ScaffoldDefaults.contentWindowInsets,
         topBar = {
+            if (embedded) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = { if (path != "/" && !busy) scope.launch { sftp.list(SftpManager.parentPath(path)) } }, enabled = path != "/" && !busy) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text(stringResource(R.string.sidebar_sftp), style = MaterialTheme.typography.titleLarge)
+                        Text(path, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                    IconButton(onClick = { scope.launch { if (sessionId != null && !sftp.isOpenForSession(sessionId)) sftp.openSession(sessionId) else sftp.list(path) } }, enabled = !busy) {
+                        Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.common_refresh))
+                    }
+                    IconButton(onClick = { mkdirOpen = true }, enabled = !busy && sftp.isOpen()) {
+                        Icon(Icons.Default.CreateNewFolder, contentDescription = stringResource(R.string.sftp_mkdir))
+                    }
+                    IconButton(onClick = { openDoc.launch(arrayOf("*/*")) }, enabled = !busy && sftp.isOpen()) {
+                        Icon(Icons.Default.Upload, contentDescription = stringResource(R.string.common_upload))
+                    }
+                }
+            } else {
             ZeroTopBar(
                 title = hostLabel,
                 subtitle = path,
@@ -296,6 +329,7 @@ fun SftpBrowserScreen(
                     }
                 },
             )
+            }
         },
     ) { padding ->
         Column(

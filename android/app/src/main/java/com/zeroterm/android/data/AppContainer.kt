@@ -35,6 +35,8 @@ class AppContainer(context: Context) {
         appContext = appContext,
     )
 
+    val portForwards = PortForwardManager(zeroTerm, repository, appContext)
+
     val sftp = SftpManager(
         zeroTerm = zeroTerm,
         appContext = appContext,
@@ -52,4 +54,11 @@ class AppContainer(context: Context) {
     fun requestOpenActiveSession() {
         openActiveSessionChannel.trySend(Unit)
     }
+
+    private val openPortForwardsChannel = Channel<Unit>(Channel.CONFLATED)
+    val openPortForwardRequests = openPortForwardsChannel.receiveAsFlow()
+    fun requestOpenPortForwards() { openPortForwardsChannel.trySend(Unit) }
+    private val portForwardPageChannel = Channel<Unit>(Channel.CONFLATED)
+    val portForwardPageRequests = portForwardPageChannel.receiveAsFlow()
+    fun showPortForwardPage() { portForwardPageChannel.trySend(Unit) }
 }
