@@ -82,6 +82,7 @@ fun SftpBrowserScreen(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val path by sftp.path.collectAsState()
+    val bastionIdentity by sftp.bastionIdentity.collectAsState()
     val entries by sftp.entries.collectAsState()
     val busy by sftp.busy.collectAsState()
     val error by sftp.error.collectAsState()
@@ -303,7 +304,7 @@ fun SftpBrowserScreen(
             } else {
             ZeroTopBar(
                 title = hostLabel,
-                subtitle = path,
+                subtitle = bastionIdentity?.let { raw -> org.json.JSONObject(raw).let { m -> "${m.getString("asset_name")} · ${m.getString("account")} · ${m.getJSONArray("capabilities")} · ${m.getString("connection_id")}" } } ?: path,
                 navigationIcon = {
                     IconButton(onClick = {
                         if (path != "/") {

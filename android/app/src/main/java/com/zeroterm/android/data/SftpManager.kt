@@ -28,6 +28,9 @@ class SftpManager(
     private var currentHostId: String? = null
     private var currentSessionId: ULong? = null
 
+    private val _bastionIdentity = MutableStateFlow<String?>(null)
+    val bastionIdentity: StateFlow<String?> = _bastionIdentity.asStateFlow()
+
     private val _path = MutableStateFlow("/")
     val path: StateFlow<String> = _path.asStateFlow()
 
@@ -62,6 +65,7 @@ class SftpManager(
         runCatching {
             sftpId?.let { id -> runCatching { zeroTerm.sftpClose(id) } }
             sftpId = null
+            _bastionIdentity.value = null
             currentHostId = null
             currentSessionId = null
             val prompt = object : HostKeyPromptCallback {
@@ -71,6 +75,7 @@ class SftpManager(
             }
             val id = zeroTerm.sftpOpen(hostId, prompt)
             sftpId = id
+            _bastionIdentity.value = zeroTerm.bastionSftpIdentityJson(id).takeUnless { it == "null" }
             currentHostId = hostId
             _path.value = "/"
             val entries = zeroTerm.sftpList(id, "/")
@@ -87,12 +92,14 @@ class SftpManager(
         runCatching {
             sftpId?.let { id -> runCatching { zeroTerm.sftpClose(id) } }
             sftpId = null
+            _bastionIdentity.value = null
             currentHostId = null
             currentSessionId = null
             _entries.value = emptyList()
             _progress.value = null
             val id = zeroTerm.sftpOpenSession(sessionId)
             sftpId = id
+            _bastionIdentity.value = zeroTerm.bastionSftpIdentityJson(id).takeUnless { it == "null" }
             currentSessionId = sessionId
             _path.value = "/"
             _entries.value = zeroTerm.sftpList(id, "/")
@@ -105,6 +112,7 @@ class SftpManager(
     suspend fun close() = withContext(Dispatchers.Default) {
         sftpId?.let { id -> runCatching { zeroTerm.sftpClose(id) } }
         sftpId = null
+        _bastionIdentity.value = null
         currentHostId = null
         currentSessionId = null
         _entries.value = emptyList()

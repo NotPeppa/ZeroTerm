@@ -50,6 +50,8 @@ pub enum AuthMethod {
     /// service named pipe on Windows). Tries every identity the agent
     /// offers, in agent-supplied order.
     Agent,
+    /// Resolves a fresh, single-use credential immediately before each transport connect.
+    Managed(Arc<dyn ManagedConnection>),
 }
 
 impl std::fmt::Debug for AuthMethod {
@@ -81,6 +83,7 @@ impl std::fmt::Debug for AuthMethod {
                 )
                 .finish(),
             AuthMethod::Agent => f.write_str("Agent"),
+            AuthMethod::Managed(_) => f.write_str("Managed(<redacted>)"),
         }
     }
 }
@@ -94,9 +97,26 @@ impl Drop for AuthMethod {
                 pem.zeroize();
                 passphrase.zeroize();
             }
-            Self::Agent => {}
+            Self::Agent | Self::Managed(_) => {}
         }
     }
+}
+
+/// A control-plane adapter; no ticket is retained in a reusable ConnectConfig.
+#[async_trait::async_trait]
+pub trait ManagedConnection: Send + Sync {
+    async fn prepare(&self) -> Result<(ConnectConfig, ManagedSession), SshError>;
+    async fn failure(&self, connection_id: &str) -> String;
+}
+
+/// Public identity and permissions bound to one managed SSH connection.
+#[derive(Clone, Debug)]
+pub struct ManagedSession {
+    pub connection_id: String,
+    pub asset_name: String,
+    pub account: String,
+    pub capabilities: Vec<String>,
+    pub cancelled: tokio_util::sync::CancellationToken,
 }
 
 #[derive(Clone)]
@@ -397,6 +417,8 @@ impl Handler for ZeroTermHandler {
 /// An authenticated SSH session.
 #[derive(Clone)]
 pub struct Session {
+    managed: Option<ManagedSession>,
+    managed_provider: Option<Arc<dyn ManagedConnection>>,
     // Global requests and channel opens share one connection handle. An async mutex
     // gives both paths safe shared access and removes the old `Arc::get_mut`
     // ordering failure when `-L`/`-D` cloned the handle before `-R` (SSH-4).
@@ -603,6 +625,53 @@ fn client_config() -> client::Config {
 
 impl Session {
     pub async fn connect(cfg: ConnectConfig) -> Result<Self, SshError> {
+        let provider = cfg.auth_methods.iter().find_map(|m| match m {
+            AuthMethod::Managed(p) => Some(p.clone()), _ => None,
+        });
+        if let Some(provider) = provider {
+            if cfg.auth_methods.len() != 1 {
+                return Err(SshError::Managed("INVALID_ARGUMENT: managed authentication cannot have fallback methods".into()));
+            }
+            let (prepared, metadata) = provider.prepare().await?;
+            if prepared.auth_methods.iter().any(|m| matches!(m, AuthMethod::Managed(_))) {
+                return Err(SshError::Managed("INVALID_ARGUMENT: recursive managed connection".into()));
+            }
+            let result = tokio::select! {
+                _ = metadata.cancelled.cancelled() => return Err(SshError::Cancelled),
+                result = Self::connect_direct(prepared) => result,
+            };
+            let mut session = match result {
+                Ok(session) => session,
+                Err(SshError::Protocol(russh::Error::UnknownKey)) => return Err(SshError::Managed("GATEWAY_HOST_KEY_CHANGED".into())),
+                Err(_) => return Err(SshError::Managed(provider.failure(&metadata.connection_id).await)),
+            };
+            // Weak ownership lets the watcher disappear when the session is dropped.
+            let weak = Arc::downgrade(&session.handle);
+            let cancelled = metadata.cancelled.clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::select! {
+                        _ = cancelled.cancelled() => {
+                            if let Some(handle) = weak.upgrade() {
+                                let _ = handle.lock().await.disconnect(Disconnect::ByApplication, "login session ended", "en").await;
+                            }
+                            break;
+                        }
+                        _ = tokio::time::sleep(Duration::from_secs(1)) => {
+                            let Some(handle) = weak.upgrade() else { break; };
+                            if handle.lock().await.is_closed() { break; }
+                        }
+                    }
+                }
+            });
+            session.managed = Some(metadata);
+            session.managed_provider = Some(provider);
+            return Ok(session);
+        }
+        Self::connect_direct(cfg).await
+    }
+
+    async fn connect_direct(cfg: ConnectConfig) -> Result<Self, SshError> {
         if cfg.auth_methods.is_empty() {
             return Err(SshError::NoAuthMethod);
         }
@@ -674,6 +743,10 @@ impl Session {
     /// is provided by an existing SSH session via `direct-tcpip`. This
     /// is `ssh -J jumpHost target` semantics: SSH-over-SSH for one hop.
     pub async fn connect_via(cfg: ConnectConfig, jump: &Session) -> Result<Self, SshError> {
+        jump.require_unmanaged()?;
+        if cfg.auth_methods.iter().any(|m| matches!(m, AuthMethod::Managed(_))) {
+            return Err(SshError::Managed("CHANNEL_PERMISSION_DENIED: managed connections do not support ProxyJump".into()));
+        }
         if cfg.auth_methods.is_empty() {
             return Err(SshError::NoAuthMethod);
         }
@@ -726,6 +799,24 @@ impl Session {
     /// Cheap clone of the underlying russh handle. Used by long-lived
     /// background tasks (port-forward listeners) that need to open
     /// channels without exclusive access to the `Session`.
+    pub fn managed_identity(&self) -> Option<&ManagedSession> { self.managed.as_ref() }
+
+    pub(crate) fn require_unmanaged(&self) -> Result<(), SshError> {
+        if self.managed.is_some() {
+            Err(SshError::Managed("CHANNEL_PERMISSION_DENIED: forwarding is disabled for managed connections".into()))
+        } else { Ok(()) }
+    }
+
+    fn require_capability(&self, capability: &str) -> Result<(), SshError> {
+        if let Some(metadata) = &self.managed {
+            if metadata.cancelled.is_cancelled() { return Err(SshError::Cancelled); }
+            if !metadata.capabilities.iter().any(|c| c == capability) {
+                return Err(SshError::Managed(format!("CHANNEL_PERMISSION_DENIED: {capability}")));
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn handle_clone(&self) -> SharedHandle {
         Arc::clone(&self.handle)
     }
@@ -735,6 +826,7 @@ impl Session {
     /// timeout). Long-lived supervisors (e.g. port forwards) poll this to
     /// notice a passive disconnect and reconnect.
     pub fn is_closed(&self) -> bool {
+        if self.managed.as_ref().is_some_and(|m| m.cancelled.is_cancelled()) { return true; }
         // Channel/global requests hold the async mutex only until russh
         // confirms the open. If a health poll lands during that brief window,
         // report "not known closed" and let the next poll decide.
@@ -807,6 +899,7 @@ impl Session {
 
     /// Open an interactive shell on a freshly allocated PTY.
     pub async fn open_shell(&mut self, size: PtySize) -> Result<ShellChannel, SshError> {
+        self.require_capability("shell")?;
         let channel = {
             let handle = self.handle.lock().await;
             handle.channel_open_session().await?
@@ -843,6 +936,7 @@ impl Session {
         &self,
         tuning: crate::sftp::SftpTuning,
     ) -> Result<crate::sftp::Sftp, SshError> {
+        self.require_capability("sftp")?;
         let channel = {
             let handle = self.handle.lock().await;
             handle.channel_open_session().await?
@@ -871,11 +965,14 @@ impl Session {
         )
         .await
         .map_err(map_sftp_err)?;
-        Ok(crate::sftp::Sftp::from_session(session, tuning))
+        let mut sftp = crate::sftp::Sftp::from_session(session, tuning);
+        sftp.managed = self.managed.clone();
+        Ok(sftp)
     }
 
     /// Execute a non-interactive command and collect stdout/stderr.
     pub async fn exec(&self, command: &str) -> Result<(u32, Vec<u8>, Vec<u8>), SshError> {
+        self.require_capability("exec")?;
         let mut channel = {
             let handle = self.handle.lock().await;
             handle.channel_open_session().await?
@@ -883,6 +980,7 @@ impl Session {
         channel.exec(true, command).await?;
 
         let mut code = 0;
+        let mut signal = None;
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
         while let Some(msg) = channel.wait().await {
@@ -890,10 +988,13 @@ impl Session {
                 ChannelMsg::Data { data } => stdout.extend_from_slice(&data),
                 ChannelMsg::ExtendedData { data, ext: 1 } => stderr.extend_from_slice(&data),
                 ChannelMsg::ExitStatus { exit_status } => code = exit_status,
-                ChannelMsg::Close | ChannelMsg::Eof => break,
+                ChannelMsg::ExitSignal { signal_name, .. } => signal = Some(signal_label(signal_name)),
+                ChannelMsg::Close => break,
+                ChannelMsg::Eof => continue,
                 _ => {}
             }
         }
+        if let Some(signal) = signal { return Err(SshError::ExitSignal(signal)); }
         Ok((code, stdout, stderr))
     }
 
@@ -944,6 +1045,7 @@ impl Session {
     where
         F: FnMut(ExecStream, &[u8]) + Send,
     {
+        self.require_unmanaged()?;
         let _grant = AgentForwardGrant::new(Arc::clone(&self.agent_forward_grants));
         let _lease = IdentityLease::new(Arc::clone(&self.forward_identities), identities);
 
@@ -962,7 +1064,8 @@ impl Session {
                 ChannelMsg::Data { data } => on_output(ExecStream::Stdout, &data),
                 ChannelMsg::ExtendedData { data, ext: 1 } => on_output(ExecStream::Stderr, &data),
                 ChannelMsg::ExitStatus { exit_status } => code = exit_status,
-                ChannelMsg::Close | ChannelMsg::Eof => break,
+                ChannelMsg::Close => break,
+                ChannelMsg::Eof => continue,
                 _ => {}
             }
         }
@@ -1014,6 +1117,8 @@ async fn authenticate(
                     Arc::clone(&routes),
                 ));
                 return Ok(Session {
+                    managed: None,
+                    managed_provider: None,
                     handle,
                     remote_forward_routes: routes,
                     agent_forward_grants,
@@ -1118,6 +1223,7 @@ async fn try_authenticate(
                 .success())
         }
         AuthMethod::Agent => crate::agent::try_agent_auth(handle, username).await,
+        AuthMethod::Managed(_) => Err(SshError::NoAuthMethod),
     }
 }
 
@@ -1144,6 +1250,7 @@ fn method_name(m: &AuthMethod) -> &'static str {
         AuthMethod::PrivateKey { .. } => "publickey(file)",
         AuthMethod::PrivateKeyData { .. } => "publickey(vault)",
         AuthMethod::Agent => "publickey(agent)",
+        AuthMethod::Managed(_) => "managed",
     }
 }
 
@@ -1160,7 +1267,9 @@ pub enum ChannelEvent {
     Stderr(Vec<u8>),
     /// Remote process exited with this status.
     Exit(u32),
-    /// Channel closed (EOF / close from remote, or unexpected).
+    /// Remote process terminated by an SSH exit signal.
+    ExitSignal(String),
+    /// Channel closed (close from remote, or unexpected).
     Closed,
 }
 
@@ -1199,7 +1308,9 @@ impl ShellChannel {
                 Some(ChannelMsg::ExitStatus { exit_status }) => {
                     return ChannelEvent::Exit(exit_status);
                 }
-                Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) => return ChannelEvent::Closed,
+                Some(ChannelMsg::ExitSignal { signal_name, .. }) => return ChannelEvent::ExitSignal(signal_label(signal_name)),
+                Some(ChannelMsg::Eof) => continue,
+                Some(ChannelMsg::Close) => return ChannelEvent::Closed,
                 Some(_) => {}
             }
         }
@@ -1247,4 +1358,8 @@ mod tests {
         );
         assert!(routes.lock().await.is_empty());
     }
+}
+
+fn signal_label(signal: russh::Sig) -> String {
+    match signal { russh::Sig::Custom(name) => name, other => format!("{other:?}") }
 }

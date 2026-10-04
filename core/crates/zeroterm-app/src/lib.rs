@@ -5,6 +5,11 @@
 //! rather than the lower layers directly.
 
 mod app;
+mod bastion;
+pub use bastion::{
+    BastionAccount, BastionAsset, BastionAssetGroup, BastionCatalog, BastionError, BastionManager,
+    BastionProfile,
+};
 mod ai;
 mod error;
 mod host;

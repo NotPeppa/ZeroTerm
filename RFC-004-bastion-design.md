@@ -1,4 +1,7 @@
-# RFC-004: ZeroTerm 堡垒机设计与实施方案
+# RFC-004: ZeroTerm 堡垒机设计与实施方案（历史稿）
+
+> 本文保留早期“ZeroTerm 为主入口”的设计记录。当前服务端以独立 Web 堡垒机为中心，权威设计为相邻仓库的 [zeroterm-terminal RFC-004](../zeroterm-terminal/docs/RFC-004-bastion-design.md)。本项目只负责 ZeroTerm 客户端；已实现的客户端行为、入口、契约差异与验证范围见 [堡垒机客户端接入](./docs/bastion-client.md)。下文待实现的服务端任务不属于本次客户端适配范围。
+
 
 | 项目 | 内容 |
 |---|---|

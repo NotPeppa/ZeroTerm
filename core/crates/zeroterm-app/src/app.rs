@@ -33,6 +33,7 @@ pub struct HostDiagnostics {
 
 pub struct App {
     pub(crate) vault: Vault,
+    pub(crate) bastions: std::sync::Arc<crate::BastionManager>,
 }
 
 impl App {
@@ -40,13 +41,13 @@ impl App {
     /// if the master password is wrong.
     pub fn open<P: AsRef<Path>>(path: P, master_password: &str) -> Result<Self, AppError> {
         let vault = Vault::unlock(path, master_password)?;
-        Ok(Self { vault })
+        Ok(Self { vault, bastions: Default::default() })
     }
 
     /// Create a brand-new vault at this path. Fails if one already exists.
     pub fn create<P: AsRef<Path>>(path: P, master_password: &str) -> Result<Self, AppError> {
         let vault = Vault::create(path, master_password)?;
-        Ok(Self { vault })
+        Ok(Self { vault, bastions: Default::default() })
     }
 
     /// Cheap existence check — does NOT unlock.
@@ -188,12 +189,17 @@ impl App {
 
     /// Save a new host.
     pub fn save_host(&self, host: &Host) -> Result<String, AppError> {
+        validate_managed_host(host)?;
         let json = serde_json::to_vec(host).map_err(AppError::BadHostRecord)?;
         Ok(self.vault.insert(HOST_KIND, &json)?)
     }
 
     /// Replace an existing host by id.
     pub fn update_host(&self, host: &Host) -> Result<(), AppError> {
+        validate_managed_host(host)?;
+        if self.find_host_by_id(&host.id)?.is_some_and(|h| matches!(h.auth, crate::HostAuth::Bastion { .. })) && !matches!(host.auth, crate::HostAuth::Bastion { .. }) {
+            return Err(AppError::BadHost("managed assets must be edited through the bastion catalog".into()));
+        }
         let json = serde_json::to_vec(host).map_err(AppError::BadHostRecord)?;
         self.vault.update(&host.id, &json)?;
         Ok(())
@@ -283,6 +289,7 @@ impl App {
     }
 
     pub fn clear_vault_data(&self) -> Result<(), AppError> {
+        self.bastions.clear();
         self.vault.clear_all_data()?;
         Ok(())
     }
@@ -520,7 +527,10 @@ impl App {
             host: host.host.clone(),
             port: host.port,
             username: host.user.clone(),
-            auth_methods: host.to_auth_methods(),
+            auth_methods: match &host.auth {
+                crate::HostAuth::Bastion { profile_id, asset_id, account_id } => vec![self.managed_auth(profile_id, asset_id, account_id)],
+                _ => host.to_auth_methods(),
+            },
             connect_timeout,
             host_key_policy,
         }
@@ -560,7 +570,7 @@ mod tests {
             },
         )
         .unwrap();
-        App { vault }
+        App { vault, bastions: Default::default() }
     }
 
     fn sample_host(name: &str) -> Host {
@@ -727,4 +737,13 @@ mod tests {
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].group, "keep");
     }
+}
+
+fn validate_managed_host(host: &Host) -> Result<(), AppError> {
+    if let crate::HostAuth::Bastion { profile_id, asset_id, account_id } = &host.auth {
+        if profile_id.is_empty() || uuid::Uuid::parse_str(asset_id).is_err() || uuid::Uuid::parse_str(account_id).is_err() || !host.forwards.is_empty() || host.proxy_jump_host_id.is_some() {
+            return Err(AppError::BadHost("invalid managed asset reference, forwarding or ProxyJump".into()));
+        }
+    }
+    Ok(())
 }

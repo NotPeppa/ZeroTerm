@@ -14934,3 +14934,219 @@ body[data-app-theme="light"] .settings-terminal-sidebar-feature:hover {
   background: rgba(37, 99, 235, 0.06);
 }
 
+
+/* Bastion dialogs use the shared dialog actions and select components. */
+.bastion-dialog {
+  --bastion-border: rgba(255, 255, 255, 0.10);
+  --bastion-field-border: rgba(255, 255, 255, 0.10);
+  --bastion-field: rgba(255, 255, 255, 0.035);
+  --bastion-hover: rgba(255, 255, 255, 0.07);
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100dvh - 72px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+  padding: 24px;
+  color: var(--text);
+}
+.bastion-body {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  margin-left: -4px;
+  margin-right: -12px;
+  padding: 4px 12px 4px 4px;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+  overscroll-behavior: contain;
+}
+.bastion-body::-webkit-scrollbar { width: 6px; }
+.bastion-body::-webkit-scrollbar-track { background: transparent; }
+.bastion-body::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 999px; }
+.bastion-body::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+.bastion-body::-webkit-scrollbar-corner { background: transparent; }
+.bastion-header { display: flex; flex-shrink: 0; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.bastion-dialog .bastion-header h3 { margin: 0 0 6px; }
+.bastion-dialog .bastion-header p { margin: 0; color: var(--muted); font-size: 13px; }
+.bastion-dialog .bastion-close {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 8px;
+  border-radius: 8px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+.bastion-dialog .bastion-close:hover { background: var(--bastion-hover); color: var(--text); }
+.bastion-dialog svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.bastion-profile-picker { display: flex; align-items: flex-end; gap: 12px; margin-bottom: 20px; }
+.bastion-profile-field { flex: 1; min-width: 0; }
+.bastion-profile-field > label { display: block; margin-bottom: 8px; font-size: 12px; font-weight: 500; color: var(--muted); }
+.bastion-dialog .bastion-profile-field > select,
+.bastion-dialog .zt-select-trigger { width: 100%; height: 38px; min-height: 38px; box-sizing: border-box; }
+.bastion-dialog .zt-select-trigger-input { color: var(--text); }
+.bastion-dialog .bastion-actions { margin: 0; align-items: center; gap: 8px; flex-wrap: wrap; }
+.bastion-dialog .bastion-actions button { height: 38px; min-width: 72px; padding: 0 14px; box-sizing: border-box; white-space: nowrap; }
+.bastion-dialog .bastion-actions button:not(.primary):disabled { opacity: .45; }
+.bastion-dialog .bastion-actions .bastion-delete:not(.primary) { color: var(--danger) !important; }
+.bastion-dialog .bastion-actions .bastion-delete:hover:not(:disabled) { border-color: var(--danger) !important; background: color-mix(in srgb, var(--danger) 10%, transparent) !important; }
+.bastion-section { border-top: 1px solid var(--bastion-border); }
+.bastion-dialog h4 { margin: 0; color: var(--text); font-size: 13px; font-weight: 600; line-height: 20px; }
+.bastion-dialog summary { display: flex; align-items: center; gap: 12px; min-height: 48px; font-size: 13px; font-weight: 600; cursor: pointer; list-style: none; }
+.bastion-dialog summary::-webkit-details-marker { display: none; }
+.bastion-dialog summary svg { margin-left: auto; width: 14px; height: 14px; flex-shrink: 0; color: var(--muted); transition: transform .15s ease; }
+.bastion-dialog details[open] summary svg { transform: rotate(90deg); }
+#bastion-endpoint { margin-left: auto; min-width: 0; color: var(--muted); font-size: 12px; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#bastion-endpoint:empty { display: none; }
+#bastion-endpoint:not(:empty) + svg { margin-left: 0; }
+.bastion-dialog #bastion-profile-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px 16px; padding: 0 0 20px; }
+.bastion-dialog .bastion-help { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.bastion-dialog .bastion-form label { min-width: 0; gap: 8px; color: var(--muted); }
+.bastion-dialog form.bastion-form input,
+.bastion-dialog form.bastion-form textarea,
+.bastion-dialog .bastion-profile-field > select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--bastion-field-border) !important;
+  border-radius: 8px;
+  background: var(--bastion-field) !important;
+  color: var(--text) !important;
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.bastion-dialog form.bastion-form input { height: 38px; }
+.bastion-dialog form.bastion-form textarea { resize: vertical; min-height: 64px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
+.bastion-dialog form.bastion-form input::placeholder,
+.bastion-dialog form.bastion-form textarea::placeholder { color: var(--muted); opacity: .7; }
+.bastion-dialog form.bastion-form input:focus,
+.bastion-dialog form.bastion-form textarea:focus,
+.bastion-dialog .zt-select-trigger:focus-within,
+.bastion-dialog .bastion-profile-field > select:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 15%, transparent) !important;
+}
+.bastion-dialog button:focus-visible,
+.bastion-dialog summary:focus-visible,
+.bastion-dialog .zt-select-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.bastion-dialog input:disabled { opacity: .45; cursor: not-allowed; }
+.bastion-wide { grid-column: 1 / -1; }
+.bastion-login { padding: 20px 0; }
+.bastion-dialog #bastion-login-hint { margin-top: 6px; }
+.bastion-dialog #bastion-login-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: 12px; margin-top: 14px; }
+.bastion-assets-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 0 12px; }
+.bastion-empty { display: grid; place-items: center; min-height: 76px; padding: 12px; box-sizing: border-box; border: 1px dashed var(--bastion-border); border-radius: 8px; color: var(--muted); font-size: 12px; }
+.bastion-asset { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px 0; border-top: 1px solid var(--bastion-border); }
+.bastion-asset:first-child { border-top: 0; }
+.bastion-asset-identity { flex: 1; min-width: 160px; display: flex; flex-direction: column; gap: 5px; overflow-wrap: anywhere; }
+.bastion-asset-identity strong { font-size: 13px; font-weight: 600; }
+.bastion-asset-identity span { color: var(--muted); font-size: 12px; }
+.bastion-dialog #bastion-message { margin: 16px 0 0; padding: 10px 12px; border-radius: 8px; background: var(--bastion-field); font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.bastion-dialog #bastion-message[data-state="error"] { color: var(--danger) !important; }
+.bastion-dialog #bastion-message[data-state="success"] { color: var(--ok) !important; }
+.bastion-dialog .bastion-security { border-top: 1px solid var(--bastion-border); margin: 20px 0 0; padding-top: 14px; font-size: 12px; line-height: 1.6; color: var(--muted); }
+.bastion-connection-info { font-size: 11px; overflow-wrap: anywhere; padding: 4px 8px; opacity: .8; }
+body[data-app-theme="light"] .bastion-dialog { --bastion-border: rgba(148, 163, 184, 0.3); --bastion-field-border: rgba(203, 213, 225, 0.8); --bastion-field: #ffffff; --bastion-hover: rgba(15, 23, 42, 0.04); }
+body[data-app-theme="light"] .bastion-dialog form.bastion-form input,
+body[data-app-theme="light"] .bastion-dialog form.bastion-form textarea {
+  border-color: var(--bastion-field-border) !important;
+  background: var(--bastion-field) !important;
+  color: var(--text) !important;
+}
+body[data-app-theme="light"] .bastion-dialog form.bastion-form input:focus,
+body[data-app-theme="light"] .bastion-dialog form.bastion-form textarea:focus { border-color: var(--accent) !important; }
+@media (max-width: 600px) {
+  .bastion-dialog { padding: 20px; width: calc(100vw - 24px); }
+  .bastion-profile-picker { flex-wrap: wrap; }
+  .bastion-profile-field { flex-basis: 100%; }
+  .bastion-dialog #bastion-profile-form,
+  .bastion-dialog #bastion-login-form { grid-template-columns: minmax(0, 1fr); }
+  .bastion-dialog #bastion-login-form .bastion-actions button { width: 100%; }
+  .bastion-dialog .bastion-actions button { min-height: 44px; }
+  .bastion-dialog form.bastion-form input,
+  .bastion-dialog .zt-select-trigger,
+  .bastion-dialog .bastion-profile-field > select { height: 44px; }
+  .bastion-dialog .bastion-close { width: 44px; height: 44px; }
+  .bastion-dialog summary { min-height: 52px; }
+  .bastion-asset .bastion-actions { justify-content: flex-start; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bastion-dialog *, .bastion-dialog *::before { transition: none !important; }
+}
+
+/* Local / bastion catalogs share the sidebar, but keep separate hierarchies. */
+.asset-tree-topbar { padding: 8px; gap: 6px; }
+.asset-tree-topbar .vault-title-actions { gap: 4px; }
+.asset-tree-topbar .workspace-icon-btn { width: 26px; height: 26px; flex-basis: 26px; border-radius: 6px; }
+.asset-tree-topbar .search { flex: 0 0 auto; height: 28px; min-height: 28px; min-width: 0; padding: 4px 9px; line-height: 16px; border-radius: 6px; box-sizing: border-box; }
+.asset-source-switch {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid color-mix(in srgb, var(--text) 9%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+}
+.asset-source-switch button {
+  min-width: 0;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  transform: none;
+}
+.asset-source-switch button:hover { background: color-mix(in srgb, var(--text) 5%, transparent); color: var(--text); }
+.asset-source-switch button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); }
+.asset-source-switch button:focus-visible,
+.bastion-tree-toggle:focus-visible,
+.bastion-tree-connect:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.bastion-tree-toolbar { display: flex; align-items: center; gap: 6px; }
+.bastion-tree-toolbar .zt-select-wrap { flex: 1; min-width: 0; }
+.bastion-tree-toolbar .zt-select-trigger { height: 28px; min-height: 28px; padding: 4px 8px !important; box-sizing: border-box; font-size: 12px; }
+.bastion-tree-toolbar .workspace-icon-btn { flex: 0 0 auto; }
+.bastion-tree-status { padding: 20px 12px; display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; }
+.bastion-tree-status p { color: var(--muted); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.bastion-tree-status button { height: 32px; font-size: 12px; padding: 0 12px; border-radius: 6px; }
+#hosts-list.bastion-asset-tree { display: block; padding: 4px 0; margin: 0; }
+.bastion-asset-tree ul { list-style: none; padding: 0 0 0 14px; margin: 0; }
+.bastion-tree-item { list-style: none; margin: 0; padding: 0; }
+.bastion-tree-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 34px;
+  padding: 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+  transform: none;
+}
+.bastion-tree-toggle:hover,
+.bastion-tree-account:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.bastion-asset-tree svg { flex: 0 0 auto; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; color: var(--muted); }
+.bastion-tree-group > .bastion-tree-toggle > svg { color: var(--accent); }
+.bastion-tree-caret { flex: 0 0 10px; width: 10px; color: var(--muted); font-size: 10px; }
+.bastion-tree-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bastion-tree-count { flex: 0 0 auto; color: var(--muted); font-size: 11px; padding: 0 4px; font-variant-numeric: tabular-nums; }
+.bastion-tree-account { display: flex; align-items: center; gap: 7px; min-height: 34px; padding: 2px 4px 2px 6px; border-radius: 6px; font-size: 12px; color: var(--text); }
+.bastion-tree-account.selected { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.bastion-tree-account .bastion-tree-connect { width: 28px; height: 28px; min-width: 28px; padding: 5px; margin: 0; opacity: .8; }
+.bastion-tree-account .bastion-tree-connect:hover { opacity: 1; }

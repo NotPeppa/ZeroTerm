@@ -677,4 +677,5 @@ private fun authLabel(kind: AuthKind): String = when (kind) {
     AuthKind.PASSWORD -> stringResource(R.string.auth_password)
     AuthKind.PRIVATE_KEY -> stringResource(R.string.auth_private_key)
     AuthKind.AGENT -> stringResource(R.string.auth_agent)
+    AuthKind.BASTION -> stringResource(R.string.bastion_title)
 }

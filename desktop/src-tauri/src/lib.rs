@@ -1,4 +1,5 @@
 mod commands;
+mod bastion;
 mod connect;
 mod editor;
 mod file_dto;
@@ -95,6 +96,16 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::vault_status,
+            bastion::bastion_profiles,
+            bastion::bastion_save_profile,
+            bastion::bastion_delete_profile,
+            bastion::bastion_login,
+            bastion::bastion_logout,
+            bastion::bastion_assets,
+            bastion::bastion_catalog,
+            bastion::bastion_save_asset,
+            bastion::bastion_session_identity,
+            bastion::bastion_sftp_identity,
             commands::get_ai_config,
             commands::save_ai_profile,
             commands::delete_ai_profile,

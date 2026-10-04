@@ -14,7 +14,7 @@ if (start < 0 || end < 0) {
 
 const featureIds = ["snippets", "ai", "metrics", "services", "ports", "docker", "tmux", "sftp", "theme"];
 
-function createFixture(savedValue = null, activePanel = null) {
+function createFixture(savedValue = null, activePanel = null, activePane = null) {
   const values = new Map();
   if (savedValue !== null) values.set("sidebar.features", savedValue);
 
@@ -43,6 +43,7 @@ function createFixture(savedValue = null, activePanel = null) {
       setItem: (key, value) => values.set(key, String(value)),
     },
     getActiveTab: () => ({ id: "tab-1" }),
+    getActivePane: () => activePane,
     setTerminalSidePanel: (panel) => {
       closedPanels.push(panel);
       context.terminalActiveSidePanel = panel;
@@ -71,6 +72,11 @@ function run() {
     throw new Error("default settings were not reflected in the rail and settings controls");
   }
 
+  const managed = createFixture(null, null, {host: {authType: "bastion"}, bastionIdentity: {capabilities: ["shell", "sftp"]}});
+  managed.helpers.applyTerminalSidebarFeatureSettings();
+  if (!managed.toggles.metrics.hidden || !managed.toggles.docker.hidden || managed.toggles.sftp.hidden || managed.toggles.ai.hidden) {
+    throw new Error("managed connection capabilities must gate exec and SFTP features independently");
+  }
   const corrupt = createFixture("{not-json");
   assertAllEnabled(corrupt.helpers.getTerminalSidebarFeatures(), "corrupt configuration must default to all enabled");
 

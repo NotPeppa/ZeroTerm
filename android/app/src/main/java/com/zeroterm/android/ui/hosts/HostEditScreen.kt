@@ -101,6 +101,7 @@ class HostEditViewModel(
                             is HostAuthInput.Password -> AuthMode.Password
                             is HostAuthInput.PrivateKey -> AuthMode.PrivateKey
                             is HostAuthInput.Agent -> AuthMode.Agent
+                            is HostAuthInput.Bastion -> AuthMode.Agent
                         }
                         val pw = (d.auth as? HostAuthInput.Password)?.value.orEmpty()
                         val key = (d.auth as? HostAuthInput.PrivateKey)?.keyPem.orEmpty()

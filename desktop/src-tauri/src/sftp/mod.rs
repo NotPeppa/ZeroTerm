@@ -76,6 +76,10 @@ pub(crate) fn string_error(message: impl Into<String>) -> String {
 
 pub(crate) fn ssh_error(err: SshError) -> String {
     match err {
+        SshError::Managed(message) => {
+            let code = message.split(|c: char| c == ':' || c.is_whitespace()).next().unwrap_or("OTHER");
+            ipc_error(code, message.clone())
+        }
         SshError::Cancelled => ipc_error("CANCELLED", err.to_string()),
         SshError::ChannelClosed => ipc_error("CHANNEL_CLOSED", err.to_string()),
         SshError::Sftp {
@@ -253,9 +257,10 @@ where
 {
     let (host_id, channel_id) = lookup_sftp_channel_info(state, sftp_id)?;
     let sftp = lookup_sftp(state, sftp_id)?;
+    let allow_retry = sftp.managed_identity().is_none();
     match op(sftp).await {
         Ok(value) => Ok(value),
-        Err(err) if is_retryable_transfer_error(&err) => {
+        Err(err) if allow_retry && is_retryable_transfer_error(&err) => {
             warn!(
                 sftp_id,
                 host_id = %host_id,
@@ -389,7 +394,7 @@ pub async fn sftp_upload(
             match first {
                 Ok(bytes) => Ok(bytes),
                 Err(err)
-                    if !cancel_for_body.is_cancelled() && is_retryable_transfer_error(&err) =>
+                    if sftp.managed_identity().is_none() && !cancel_for_body.is_cancelled() && is_retryable_transfer_error(&err) =>
                 {
                     warn!(
                         source = %local,
@@ -491,7 +496,7 @@ pub async fn sftp_upload_bytes(
             match first {
                 Ok(bytes) => Ok(bytes),
                 Err(err)
-                    if !cancel_for_body.is_cancelled() && is_retryable_transfer_error(&err) =>
+                    if sftp.managed_identity().is_none() && !cancel_for_body.is_cancelled() && is_retryable_transfer_error(&err) =>
                 {
                     warn!(
                         destination = %remote,
@@ -717,7 +722,7 @@ pub async fn sftp_remove_dir(
     let sftp = lookup_sftp(&state, sftp_id)?;
     match sftp_remove_dir_recursive(&sftp, &path, Some((&app_handle, &state))).await {
         Ok(()) => Ok(()),
-        Err(err) if is_retryable_transfer_error(&err) => {
+        Err(err) if !is_managed_host(&state, &host_id) && is_retryable_transfer_error(&err) => {
             warn!(
                 sftp_id,
                 host_id = %host_id,
@@ -1001,4 +1006,10 @@ mod tests {
         assert!(fast_remote_remove_command("/").is_err());
         assert!(fast_remote_remove_command("relative/path").is_err());
     }
+}
+
+fn is_managed_host(state: &AppState, host_id: &str) -> bool {
+    state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner).as_ref()
+        .and_then(|app| app.find_host_by_id(host_id).ok().flatten())
+        .is_some_and(|h| matches!(h.auth, zeroterm_app::HostAuth::Bastion { .. }))
 }

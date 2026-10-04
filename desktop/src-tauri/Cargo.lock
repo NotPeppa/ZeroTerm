@@ -8725,13 +8725,19 @@ dependencies = [
 name = "zeroterm-app"
 version = "0.1.11"
 dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "chrono",
  "dirs 5.0.1",
  "keyring",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
  "tokio",
+ "tokio-util",
  "tracing",
+ "uuid",
  "zeroize",
  "zeroterm-ssh",
  "zeroterm-sync",
@@ -8786,6 +8792,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "zeroize",
  "zeroterm-app",
  "zeroterm-ssh",
  "zeroterm-sync",

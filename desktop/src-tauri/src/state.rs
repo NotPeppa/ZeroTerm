@@ -115,6 +115,7 @@ impl Default for AppState {
 /// when `AppState` drops the `control_tx` is dropped too — the task's
 /// `recv()` returns `None` and it falls through to graceful shutdown.
 pub struct SessionHandle {
+    pub bastion: Option<crate::bastion::ConnectionIdentity>,
     pub control_tx: mpsc::Sender<SessionCommand>,
     /// Human-readable list of forwards active for this session
     /// (`["L 8080:127.0.0.1:80", "D 1080"]`). The frontend reads this

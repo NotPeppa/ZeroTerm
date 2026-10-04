@@ -102,6 +102,7 @@ pub enum AuthKind {
     Password,
     PrivateKey,
     Agent,
+    Bastion,
 }
 
 /// Input for save/update host. When `id` is set, update; otherwise insert.
@@ -126,6 +127,7 @@ pub enum HostAuthInput {
         passphrase: Option<String>,
     },
     Agent,
+    Bastion { profile_id: String, asset_id: String, account_id: String },
 }
 
 /// Vault command snippet (kind `snippet`).
@@ -184,6 +186,7 @@ pub(crate) fn host_to_summary(h: zeroterm_app::Host) -> HostSummary {
             zeroterm_app::HostAuth::Password { .. } => AuthKind::Password,
             zeroterm_app::HostAuth::PrivateKey { .. } => AuthKind::PrivateKey,
             zeroterm_app::HostAuth::Agent => AuthKind::Agent,
+            zeroterm_app::HostAuth::Bastion { .. } => AuthKind::Bastion,
         },
         group_id: h.group_id,
     }
@@ -217,6 +220,7 @@ pub(crate) fn host_to_detail(h: zeroterm_app::Host) -> HostDetail {
                 passphrase: passphrase.clone(),
             },
             zeroterm_app::HostAuth::Agent => HostAuthInput::Agent,
+            zeroterm_app::HostAuth::Bastion { profile_id, asset_id, account_id } => HostAuthInput::Bastion { profile_id: profile_id.clone(), asset_id: asset_id.clone(), account_id: account_id.clone() },
         },
         group_id: h.group_id,
     }
@@ -239,6 +243,7 @@ pub(crate) fn host_input_to_host(input: HostInput) -> zeroterm_app::Host {
                 passphrase,
             },
             HostAuthInput::Agent => zeroterm_app::HostAuth::Agent,
+            HostAuthInput::Bastion { profile_id, asset_id, account_id } => zeroterm_app::HostAuth::Bastion { profile_id, asset_id, account_id },
         },
         os_type: None,
         // Forwards / ProxyJump: preserve on update via get+merge in facade;

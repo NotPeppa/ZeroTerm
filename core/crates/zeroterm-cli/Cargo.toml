@@ -10,6 +10,8 @@ name = "zeroterm"
 path = "src/main.rs"
 
 [dependencies]
+zeroize = { workspace = true }
+serde_json = { workspace = true }
 zeroterm-ssh = { path = "../zeroterm-ssh" }
 zeroterm-app = { path = "../zeroterm-app" }
 

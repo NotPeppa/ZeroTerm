@@ -2222,6 +2222,7 @@ pub async fn create_vault(
 
 #[tauri::command]
 pub async fn lock_vault(state: State<'_, AppState>) -> Result<(), String> {
+    if let Some(app) = state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner).as_ref() { app.bastions().clear(); }
     *state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = None;
     state.sftp_handles.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clear();
     state.sftp_pool.clear();
@@ -2515,6 +2516,7 @@ pub async fn list_hosts(state: State<'_, AppState>) -> Result<Vec<HostSummary>, 
                 HostAuth::Password { .. } => "password",
                 HostAuth::PrivateKey { .. } => "key",
                 HostAuth::Agent => "agent",
+                HostAuth::Bastion { .. } => "bastion",
             },
             os_type: h.os_type,
             group_id: h.group_id,
@@ -4009,6 +4011,7 @@ pub async fn get_host(state: State<'_, AppState>, id: String) -> Result<HostFull
         zeroterm_app::HostAuth::Password { .. } => "password",
         zeroterm_app::HostAuth::PrivateKey { .. } => "key",
         zeroterm_app::HostAuth::Agent => "agent",
+        zeroterm_app::HostAuth::Bastion { .. } => "bastion",
     };
 
     Ok(HostFull {
@@ -6279,6 +6282,7 @@ pub async fn connect_host(
 
     let pty = PtySize::new(cols.unwrap_or(80).max(1), rows.unwrap_or(24).max(1));
     let channel = session.open_shell(pty).await.map_err(|e| e.to_string())?;
+    let bastion = session.managed_identity().map(crate::bastion::ConnectionIdentity::from);
 
     let session_id = state.next_session_id.fetch_add(1, Ordering::SeqCst);
     let (control_tx, control_rx) = mpsc::channel::<SessionCommand>(64);
@@ -6300,6 +6304,7 @@ pub async fn connect_host(
     state.sessions.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(
         session_id,
         SessionHandle {
+            bastion,
             control_tx,
             forward_summaries,
             jump_summary,
@@ -6751,6 +6756,7 @@ pub async fn connect_quick_host(
 
     let pty = PtySize::new(cols.unwrap_or(80).max(1), rows.unwrap_or(24).max(1));
     let channel = session.open_shell(pty).await.map_err(|e| e.to_string())?;
+    let bastion = session.managed_identity().map(crate::bastion::ConnectionIdentity::from);
 
     let session_id = state.next_session_id.fetch_add(1, Ordering::SeqCst);
     let (control_tx, control_rx) = mpsc::channel::<SessionCommand>(64);
@@ -6771,6 +6777,7 @@ pub async fn connect_quick_host(
     state.sessions.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(
         session_id,
         SessionHandle {
+            bastion,
             control_tx,
             forward_summaries,
             jump_summary,

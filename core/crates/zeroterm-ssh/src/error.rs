@@ -195,6 +195,12 @@ impl std::fmt::Display for SftpErrorKind {
 
 #[derive(Debug, Error)]
 pub enum SshError {
+    #[error("{0}")]
+    Managed(String),
+
+    #[error("remote process exited with signal {0}")]
+    ExitSignal(String),
+
     #[error("authentication failed")]
     AuthFailed,
 

@@ -559,6 +559,7 @@ pub(crate) async fn download_remote_file_to_local(
     retry_host_id: Option<&str>,
     progress: ProgressMode<'_>,
 ) -> Result<u64, String> {
+    let retry_host_id = retry_host_id.filter(|_| source_sftp.managed_identity().is_none());
     if target.exists() && !overwrite {
         return Err(string_error(format!(
             "destination already exists: {}",

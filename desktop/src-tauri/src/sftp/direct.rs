@@ -579,6 +579,7 @@ async fn plan_uncached(
             }
             AuthMethod::Agent => has_agent_auth = true,
             AuthMethod::Password(_) => has_password_auth = true,
+            AuthMethod::Managed(_) => return Err(DirectUnavailable("managed assets require client-side SFTP relay".into())),
         }
     }
     if lent_keys.is_empty() && !has_agent_auth && !has_password_auth {
@@ -605,6 +606,9 @@ async fn plan_uncached(
     let (_src_host, src_cfg, src_jump) =
         build_connect_chain_for_host(state, app_handle, source_host_id)
             .map_err(DirectUnavailable)?;
+    if src_cfg.auth_methods.iter().any(|m| matches!(m, AuthMethod::Managed(_))) {
+        return Err(DirectUnavailable("managed assets require client-side SFTP relay".into()));
+    }
     let session = state
         .sftp_pool
         .acquire_session(source_host_id.to_string(), src_cfg, src_jump)
@@ -730,6 +734,9 @@ where
 {
     let (_src_host, src_cfg, src_jump) =
         build_connect_chain_for_host(state, app_handle, source_host_id)?;
+    if src_cfg.auth_methods.iter().any(|m| matches!(m, AuthMethod::Managed(_))) {
+        return Err("managed assets require client-side SFTP relay".into());
+    }
     let session = state
         .sftp_pool
         .acquire_session(source_host_id.to_string(), src_cfg, src_jump)

@@ -1066,6 +1066,7 @@ async fn stream_local_file_to_remote(
     retry_host_id: Option<&str>,
     progress: ProgressMode<'_>,
 ) -> Result<(), String> {
+    let retry_host_id = retry_host_id.filter(|_| target_sftp.managed_identity().is_none());
     let metadata = tokio::fs::metadata(&source)
         .await
         .map_err(|e| format!("stating {}: {e}", source.display()))?;
@@ -1570,6 +1571,9 @@ async fn stream_remote_file_to_remote(
     target_retry_host_id: Option<&str>,
     progress: ProgressMode<'_>,
 ) -> Result<(), String> {
+    let allow_retry = source_sftp.managed_identity().is_none() && target_sftp.managed_identity().is_none();
+    let source_retry_host_id = source_retry_host_id.filter(|_| allow_retry);
+    let target_retry_host_id = target_retry_host_id.filter(|_| allow_retry);
     match progress {
         ProgressMode::Standalone { app, state } => {
             if !skip_overwrite_check && !overwrite {

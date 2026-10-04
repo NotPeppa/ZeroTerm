@@ -200,13 +200,17 @@ pub fn is_upload_stall(err: &SshError) -> bool {
 
 /// Live SFTP channel. Drop closes the underlying SSH channel.
 pub struct Sftp {
+    pub(crate) managed: Option<crate::ManagedSession>,
     inner: SftpSession,
     tuning: SftpTuning,
 }
 
 impl Sftp {
+    pub fn managed_identity(&self) -> Option<&crate::ManagedSession> { self.managed.as_ref() }
+
     pub(crate) fn from_session(session: SftpSession, tuning: SftpTuning) -> Self {
         Self {
+            managed: None,
             inner: session,
             tuning,
         }

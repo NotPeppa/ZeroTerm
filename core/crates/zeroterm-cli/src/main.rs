@@ -101,6 +101,11 @@ struct Args {
 enum Command {
     /// List hosts saved in the vault.
     List,
+    /// Import a public bastion profile JSON, then log in and select an authorized asset.
+    Bastion {
+        #[arg(long)]
+        profile: Option<PathBuf>,
+    },
     /// Save a host to the vault. Creates the vault if missing.
     Add {
         name: String,
@@ -226,6 +231,7 @@ async fn main() -> Result<()> {
 
     match &args.command {
         Some(Command::List) => cmd_list(&args, &vault_path),
+        Some(Command::Bastion { profile }) => cmd_bastion(&args, &vault_path, profile.as_deref()).await,
         Some(Command::Add {
             name,
             target,
@@ -272,6 +278,7 @@ async fn connect_by_alias(vault_path: &Path, alias: &str, args: &Args) -> Result
         .ok_or_else(|| anyhow!("no host named '{}' in {}", alias, vault_path.display()))?;
     info!(name = %host.name, host = %host.host, port = host.port, "resolved alias");
 
+    login_bastion_host(&app, &host).await?;
     let cfg = app.connect_config(
         &host,
         build_host_key_policy(args)?,
@@ -308,6 +315,7 @@ async fn connect_via_picker(vault_path: &Path, args: &Args) -> Result<()> {
         .interact()?;
     let host = &hosts[selection];
 
+    login_bastion_host(&app, host).await?;
     let cfg = app.connect_config(
         host,
         build_host_key_policy(args)?,
@@ -454,6 +462,9 @@ async fn run_session(
         forwards.push(handle);
     }
 
+    if let Some(m) = session.managed_identity() {
+        eprintln!("{} · {} · {} · {}", m.asset_name, m.account, m.capabilities.join(", "), m.connection_id);
+    }
     let (cols, rows) = term_size().unwrap_or((80, 24));
     let channel = session
         .open_shell(PtySize::new(cols, rows))
@@ -801,6 +812,7 @@ async fn resolve_connect_config(
         let host = app
             .find_host_by_name(target)?
             .ok_or_else(|| anyhow!("no host named '{}' in {}", target, vault_path.display()))?;
+        login_bastion_host(&app, &host).await?;
         let cfg = app.connect_config(
             &host,
             build_host_key_policy(args)?,
@@ -834,6 +846,7 @@ fn cmd_list(args: &Args, vault_path: &Path) -> Result<()> {
             HostAuth::Password { .. } => "(password)",
             HostAuth::PrivateKey { .. } => "(key)",
             HostAuth::Agent => "(agent)",
+            HostAuth::Bastion { .. } => "(bastion)",
         };
         println!(
             "{:<width$}  {}@{}:{} {}",
@@ -1256,6 +1269,10 @@ async fn run_interactive(mut channel: zeroterm_ssh::ShellChannel) -> Result<u32>
                     exit_code = code;
                     debug!(code, "remote exited");
                 }
+                ChannelEvent::ExitSignal(signal) => {
+                    exit_code = 128;
+                    warn!(%signal, "remote process terminated");
+                }
                 ChannelEvent::Closed => {
                     debug!("channel closed");
                     break;
@@ -1348,4 +1365,91 @@ fn key_to_bytes(k: &KeyEvent) -> Option<Vec<u8>> {
         _ => return None,
     };
     Some(bytes)
+}
+
+async fn login_bastion_profile(app: &App, profile: zeroterm_app::BastionProfile) -> Result<()> {
+    let username: String = dialoguer::Input::new()
+        .with_prompt("Bastion username")
+        .interact_text()?;
+    let password = zeroize::Zeroizing::new(rpassword::prompt_password("Bastion password: ")?);
+    app.bastions()
+        .login(profile, &username, &password, "ZeroTerm CLI")
+        .await?;
+    Ok(())
+}
+async fn login_bastion_host(app: &App, host: &Host) -> Result<()> {
+    if let HostAuth::Bastion { profile_id, .. } = &host.auth {
+        let profile = app
+            .list_bastion_profiles()?
+            .into_iter()
+            .find(|p| &p.id == profile_id)
+            .ok_or_else(|| anyhow!("RESOURCE_NOT_FOUND: bastion profile"))?;
+        login_bastion_profile(app, profile).await?;
+    }
+    Ok(())
+}
+async fn cmd_bastion(args: &Args, vault_path: &Path, profile_path: Option<&Path>) -> Result<()> {
+    let app = open_app(args, vault_path, true)?;
+    if let Some(path) = profile_path {
+        let bytes = std::fs::read(path)?;
+        let mut profile: zeroterm_app::BastionProfile = serde_json::from_slice(&bytes)?;
+        profile.id.clear();
+        app.save_bastion_profile(&profile)?;
+    }
+    let profiles = app.list_bastion_profiles()?;
+    if profiles.is_empty() {
+        bail!("No bastion profiles. Use zeroterm bastion --profile <public-profile.json>");
+    }
+    let index = Select::new()
+        .with_prompt("Bastion")
+        .items(&profiles.iter().map(|p| &p.name).collect::<Vec<_>>())
+        .default(0)
+        .interact()?;
+    let profile = profiles[index].clone();
+    login_bastion_profile(&app, profile.clone()).await?;
+    let assets = app.bastions().assets(&profile.id).await?;
+    let accounts: Vec<_> = assets
+        .iter()
+        .flat_map(|a| a.accounts.iter().map(move |c| (a, c)))
+        .collect();
+    if accounts.is_empty() {
+        bail!("No authorized assets");
+    }
+    let index = Select::new()
+        .with_prompt("Asset/account")
+        .items(
+            &accounts
+                .iter()
+                .map(|(a, c)| {
+                    format!(
+                        "{} · {} · {}",
+                        a.name,
+                        c.username,
+                        c.capabilities.join(", ")
+                    )
+                })
+                .collect::<Vec<_>>(),
+        )
+        .default(0)
+        .interact()?;
+    let (asset, account) = accounts[index];
+    let id = app
+        .save_bastion_asset(&profile.id, &asset.id, &account.id)
+        .await?;
+    let host = app
+        .find_host_by_id(&id)?
+        .ok_or_else(|| anyhow!("RESOURCE_NOT_FOUND"))?;
+    if !account.capabilities.iter().any(|c| c == "shell") {
+        println!(
+            "Saved {}. Use zeroterm sftp for an SFTP-enabled account.",
+            host.name
+        );
+        return Ok(());
+    }
+    let cfg = app.connect_config(
+        &host,
+        build_host_key_policy(args)?,
+        Some(Duration::from_secs(15)),
+    );
+    run_session(cfg, args, &[], None).await
 }

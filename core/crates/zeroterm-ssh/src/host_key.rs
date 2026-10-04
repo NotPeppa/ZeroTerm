@@ -57,6 +57,8 @@ pub trait HostKeyPrompt: Send + Sync {
 pub enum HostKeyPolicy {
     /// Accept every key. **Demo / lab only.**
     AcceptAll,
+    /// Explicitly verified gateway fingerprint. Never prompts or replaces a changed key.
+    PinnedFingerprint(String),
 
     /// Strict OpenSSH-style: known + matching = accept; anything else = reject.
     /// No prompts, no writes.
@@ -75,6 +77,7 @@ impl std::fmt::Debug for HostKeyPolicy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::AcceptAll => f.write_str("HostKeyPolicy::AcceptAll"),
+            Self::PinnedFingerprint(fp) => f.debug_tuple("PinnedFingerprint").field(fp).finish(),
             Self::Strict(kh) => f.debug_tuple("HostKeyPolicy::Strict").field(kh).finish(),
             Self::Interactive { store, .. } => f
                 .debug_struct("HostKeyPolicy::Interactive")
@@ -95,6 +98,7 @@ impl HostKeyPolicy {
     ) -> std::io::Result<bool> {
         match self {
             HostKeyPolicy::AcceptAll => Ok(true),
+            HostKeyPolicy::PinnedFingerprint(fp) => Ok(key.fingerprint(russh::keys::HashAlg::Sha256).to_string() == *fp),
 
             HostKeyPolicy::Strict(store) => match store.check(host, port, key)? {
                 KnownHostStatus::Trusted => Ok(true),
@@ -170,6 +174,7 @@ impl HostKeyPolicy {
     ) -> std::io::Result<bool> {
         match self {
             HostKeyPolicy::AcceptAll => Ok(true),
+            HostKeyPolicy::PinnedFingerprint(_) => Ok(false),
             HostKeyPolicy::Strict(store) | HostKeyPolicy::Interactive { store, .. } => {
                 match store.check_certificate(host, port, certificate)? {
                     KnownHostCertificateStatus::Trusted => Ok(true),

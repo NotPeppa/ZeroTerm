@@ -43,6 +43,9 @@ function createFixture({ saved = null, isLocal = false, factory = true } = {}) {
 }
 
 function run() {
+  const managed = createFixture();
+  managed.pane.host = { authType: "bastion" };
+  if (managed.helpers.scheduleAutoReconnect(managed.pane) !== false || managed.timers.length) throw new Error("managed sessions require explicit new connections");
   const f = createFixture();
   const delays = [];
   for (let i = 0; i < 4; i += 1) {

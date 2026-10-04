@@ -37,6 +37,7 @@ function createFixture({ saved = null, metrics = SAMPLE, sessionId = "s1", hidde
     getActiveTab: () => context.termState.tabs[0],
     terminalSessionLayout: { hidden: false },
     t: (key) => key,
+    paneAllowsBastionFeature: () => true,
     metricTone: (v) => (v >= 95 ? "danger" : v >= 85 ? "warn" : "good"),
     formatMetricBytes: (b) => `${Number(b) || 0} B`,
     invoke: async (cmd, args) => {

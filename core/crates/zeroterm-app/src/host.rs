@@ -68,6 +68,7 @@ pub enum HostAuth {
         passphrase: Option<String>,
     },
     Agent,
+    Bastion { profile_id: String, asset_id: String, account_id: String },
 }
 
 impl std::fmt::Debug for HostAuth {
@@ -83,6 +84,7 @@ impl std::fmt::Debug for HostAuth {
                 )
                 .finish(),
             HostAuth::Agent => f.write_str("Agent"),
+            HostAuth::Bastion { profile_id, asset_id, account_id } => f.debug_struct("Bastion").field("profile_id",profile_id).field("asset_id",asset_id).field("account_id",account_id).finish(),
         }
     }
 }
@@ -98,7 +100,7 @@ impl Drop for HostAuth {
                 key_pem.zeroize();
                 passphrase.zeroize();
             }
-            Self::Agent => {}
+            Self::Agent | Self::Bastion { .. } => {}
         }
     }
 }
@@ -209,6 +211,8 @@ impl Host {
                 passphrase: passphrase.clone(),
             }],
             HostAuth::Agent => vec![AuthMethod::Agent],
+            // App::connect_config injects the in-memory control-plane adapter.
+            HostAuth::Bastion { .. } => vec![],
         }
     }
 }

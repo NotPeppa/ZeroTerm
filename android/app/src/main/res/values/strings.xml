@@ -592,4 +592,16 @@
     <string name="port_forward_stop">Stop</string>
     <string name="port_forward_delete_title">Delete port forward?</string>
     <string name="port_forward_delete_hint">This deletes the synced rule and stops it if it is running.</string>
+    <string name="bastion_title">Bastion</string>
+    <string name="bastion_hint">Verify server_id, SSH address and fingerprint with your administrator. Login stays in memory; log in again after locking the vault or restarting. The gateway can read and record sessions.</string>
+    <string name="bastion_new">New</string>
+    <string name="bastion_name">Name</string>
+    <string name="bastion_fingerprint">Verified SSH SHA256 fingerprint</string>
+    <string name="bastion_ca">Private TLS CA PEM (optional)</string>
+    <string name="bastion_username">Bastion username</string>
+    <string name="bastion_password">Bastion password</string>
+    <string name="bastion_login">Log in</string>
+    <string name="bastion_logout">Log out</string>
+    <string name="bastion_favorite">Save to hosts</string>
+    <string name="bastion_terminal">Terminal</string>
 </resources>

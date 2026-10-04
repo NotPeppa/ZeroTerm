@@ -65,6 +65,7 @@ pub async fn forward_local(
     target_host: String,
     target_port: u16,
 ) -> Result<ForwardHandle, SshError> {
+    session.require_unmanaged()?;
     let listener = TcpListener::bind((bind_addr, bind_port))
         .await
         .map_err(SshError::Io)?;
@@ -170,6 +171,7 @@ pub async fn forward_dynamic(
     bind_addr: &str,
     bind_port: u16,
 ) -> Result<ForwardHandle, SshError> {
+    session.require_unmanaged()?;
     let listener = TcpListener::bind((bind_addr, bind_port))
         .await
         .map_err(SshError::Io)?;
@@ -192,6 +194,7 @@ pub async fn forward_remote(
     target_host: String,
     target_port: u16,
 ) -> Result<ForwardHandle, SshError> {
+    session.require_unmanaged()?;
     let subscription = session
         .request_remote_forward(bind_addr, bind_port as u32)
         .await?;

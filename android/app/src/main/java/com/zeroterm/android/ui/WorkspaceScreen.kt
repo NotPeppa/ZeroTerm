@@ -68,6 +68,7 @@ import com.zeroterm.android.data.AutoSyncUiState
 import com.zeroterm.android.data.SettingsSnapshot
 import com.zeroterm.android.data.ThemeMode
 import com.zeroterm.android.ui.ai.AiScreen
+import com.zeroterm.android.ui.bastion.BastionScreen
 import com.zeroterm.android.ui.components.LocalChromeTransparency
 import com.zeroterm.android.ui.hosts.HostsScreen
 import com.zeroterm.android.ui.hosts.HostsViewModel
@@ -80,7 +81,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-private enum class WorkspacePage { Hosts, PortForwards, General, Terminal, Ai, Sync, About }
+private enum class WorkspacePage { Hosts, Bastion, PortForwards, General, Terminal, Ai, Sync, About }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -184,11 +185,12 @@ fun WorkspaceScreen(
                 repository = container.repository,
                 onOpenNavigation = openDrawer,
             )
+            WorkspacePage.Bastion -> BastionScreen(container.repository, onHostClick, onSftp, openDrawer)
             WorkspacePage.Hosts -> HostsScreen(
                 viewModel = hostsViewModel,
                 onHostClick = onHostClick,
                 onAddHost = onAddHost,
-                onEditHost = onEditHost,
+                onEditHost = { host -> if (host.authKind == com.zeroterm.ffi.AuthKind.BASTION) page = WorkspacePage.Bastion else onEditHost(host) },
                 onSftp = onSftp,
                 onQuickConnect = onQuickConnect,
                 onOpenNavigation = openDrawer,
@@ -378,6 +380,7 @@ private fun WorkspaceDrawerItem(
     onClick: () -> Unit,
 ) {
     val icon: ImageVector = when (page) {
+        WorkspacePage.Bastion -> Icons.Default.Lock
         WorkspacePage.Hosts -> Icons.Default.Computer
         WorkspacePage.PortForwards -> Icons.Default.SwapHoriz
         WorkspacePage.General -> Icons.Default.Settings
@@ -387,6 +390,7 @@ private fun WorkspaceDrawerItem(
         WorkspacePage.About -> Icons.Default.Info
     }
     val label = when (page) {
+        WorkspacePage.Bastion -> stringResource(R.string.bastion_title)
         WorkspacePage.Hosts -> stringResource(R.string.hosts_title)
         WorkspacePage.PortForwards -> stringResource(R.string.port_forward_title)
         WorkspacePage.General -> stringResource(R.string.settings_general)

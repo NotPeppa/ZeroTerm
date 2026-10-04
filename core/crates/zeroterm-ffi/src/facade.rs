@@ -302,8 +302,105 @@ impl ZeroTerm {
         Ok(())
     }
 
+    /// Public profile/asset JSON uses the same snake_case contract as the desktop.
+    pub fn bastion_profiles_json(&self) -> Result<String, FfiError> {
+        let app = self
+            .inner
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or(FfiError::VaultLocked)?;
+        serde_json::to_string(&app.list_bastion_profiles().map_err(other)?).map_err(other)
+    }
+    pub fn bastion_save_profile_json(&self, profile_json: String) -> Result<String, FfiError> {
+        let app = self
+            .inner
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or(FfiError::VaultLocked)?;
+        let profile = serde_json::from_str(&profile_json).map_err(|_| other("INVALID_ARGUMENT"))?;
+        app.save_bastion_profile(&profile).map_err(other)
+    }
+    pub fn bastion_delete_profile(&self, profile_id: String) -> Result<(), FfiError> {
+        let app = self
+            .inner
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or(FfiError::VaultLocked)?;
+        app.delete_bastion_profile(&profile_id).map_err(other)
+    }
+    pub async fn bastion_login(
+        &self,
+        profile_id: String,
+        username: String,
+        password: String,
+    ) -> Result<(), FfiError> {
+        let password = zeroize::Zeroizing::new(password);
+        let app = self
+            .inner
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or(FfiError::VaultLocked)?;
+        let profile = app
+            .list_bastion_profiles()
+            .map_err(other)?
+            .into_iter()
+            .find(|p| p.id == profile_id)
+            .ok_or_else(|| other("RESOURCE_NOT_FOUND"))?;
+        app.bastions()
+            .login(profile, &username, &password, "ZeroTerm Mobile")
+            .await
+            .map_err(other)
+    }
+    pub async fn bastion_logout(&self, profile_id: String) -> Result<(), FfiError> {
+        let app = self
+            .inner
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or(FfiError::VaultLocked)?;
+        app.bastions().logout(&profile_id).await.map_err(other)
+    }
+    pub async fn bastion_assets_json(&self, profile_id: String) -> Result<String, FfiError> {
+        let app = self
+            .inner
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or(FfiError::VaultLocked)?;
+        serde_json::to_string(&app.bastions().assets(&profile_id).await.map_err(other)?)
+            .map_err(other)
+    }
+    pub async fn bastion_save_asset(
+        &self,
+        profile_id: String,
+        asset_id: String,
+        account_id: String,
+    ) -> Result<String, FfiError> {
+        let app = self
+            .inner
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or(FfiError::VaultLocked)?;
+        app.save_bastion_asset(&profile_id, &asset_id, &account_id)
+            .await
+            .map_err(other)
+    }
+    pub fn bastion_session_identity_json(&self, session_id: u64) -> Result<String, FfiError> {
+        let (_, session) = self.session_transport(session_id)?;
+        match session.managed_identity() {
+            Some(m) => Ok(serde_json::json!({"connection_id":m.connection_id,"asset_name":m.asset_name,"account":m.account,"capabilities":m.capabilities}).to_string()),
+            None => Ok("null".into()),
+        }
+    }
+
     pub fn lock(&self) {
         let mut app = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(app) = app.as_ref() { app.bastions().clear(); }
         *app = None;
         self.cancel_port_forwards_where(|_| true);
         // Drop any live sync engines; re-join after next unlock.
@@ -828,6 +925,7 @@ impl ZeroTerm {
                     passphrase,
                 },
                 HostAuthInput::Agent => zeroterm_app::HostAuth::Agent,
+            HostAuthInput::Bastion { profile_id, asset_id, account_id } => zeroterm_app::HostAuth::Bastion { profile_id, asset_id, account_id },
             },
             os_type: None,
             forwards: Vec::new(),
@@ -1127,6 +1225,9 @@ async fn run_session_task(
                 ChannelEvent::Exit(code) => {
                     last_exit = Some(code);
                     debug!(session_id, code, "ffi: remote exited");
+                }
+                ChannelEvent::ExitSignal(signal) => {
+                    error_msg = Some(format!("remote process exited with signal {signal}"));
                 }
                 ChannelEvent::Closed => {
                     debug!(session_id, "ffi: channel closed");

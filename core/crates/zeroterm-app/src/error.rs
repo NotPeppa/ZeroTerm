@@ -2,6 +2,8 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum AppError {
+    #[error("invalid host: {0}")]
+    BadHost(String),
     #[error("vault error: {0}")]
     Vault(#[from] zeroterm_vault::VaultError),
 

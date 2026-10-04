@@ -154,8 +154,15 @@ fun TerminalScreen(
     var toolsPage by remember { mutableStateOf(TerminalSidebarFeature.Snippets) }
     val settingsSnap by (settings?.flow ?: kotlinx.coroutines.flow.flowOf(SettingsSnapshot()))
         .collectAsState(initial = SettingsSnapshot())
-    val enabledSidebarFeatures = remember(settingsSnap.hiddenTerminalSidebarFeatures) {
-        enabledTerminalSidebarFeatures(settingsSnap.hiddenTerminalSidebarFeatures)
+    val enabledSidebarFeatures = remember(settingsSnap.hiddenTerminalSidebarFeatures, active?.bastionIdentity) {
+        val caps = active?.bastionIdentity?.let { raw -> runCatching { org.json.JSONObject(raw).getJSONArray("capabilities").let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } }.getOrDefault(emptySet()) }
+        enabledTerminalSidebarFeatures(settingsSnap.hiddenTerminalSidebarFeatures).filter { feature ->
+            caps == null || when (feature) {
+                TerminalSidebarFeature.Sftp -> "sftp" in caps
+                TerminalSidebarFeature.Metrics, TerminalSidebarFeature.Services, TerminalSidebarFeature.Ports, TerminalSidebarFeature.Docker, TerminalSidebarFeature.Tmux -> "exec" in caps
+                else -> true
+            }
+        }
     }
     LaunchedEffect(enabledSidebarFeatures) {
         val next = resolveTerminalSidebarFeature(toolsPage, enabledSidebarFeatures)
@@ -677,7 +684,9 @@ private fun TerminalContent(
         topBar = {
             ZeroTopBar(
                 title = hostLabel,
-                subtitle = stringResource(R.string.terminal_connected),
+                subtitle = sessions.active.value?.bastionIdentity?.let { raw ->
+                    runCatching { org.json.JSONObject(raw).let { m -> "${m.getString("asset_name")} · ${m.getString("account")} · ${m.getJSONArray("capabilities")} · ${m.getString("connection_id")}" } }.getOrNull()
+                } ?: stringResource(R.string.terminal_connected),
                 navigationIcon = {
                     IconButton(onClick = {
                         onDisconnect()

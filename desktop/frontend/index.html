@@ -77,10 +77,15 @@
                         </button>
                       </div>
                     </header>
-                    <header class="surface-topbar">
+                    <header class="surface-topbar asset-tree-topbar">
                       <div class="vault-title-row">
-                        <div id="vault-local-title" class="vault-group-title">ZeroTerm</div>
+                        <div id="vault-local-title" class="vault-group-title" hidden>ZeroTerm</div>
+                        <div id="asset-source-switch" class="asset-source-switch" role="group" aria-label="资产来源">
+                          <button id="asset-source-local" type="button" aria-pressed="true">本地</button>
+                          <button id="asset-source-bastion" type="button" aria-pressed="false">堡垒机</button>
+                        </div>
                         <div class="vault-title-actions">
+                          <button id="bastion-button" type="button" class="workspace-icon-btn" aria-label="Bastion" title="堡垒机"><svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 5-8 9-8 9s-8-4-8-9V6z"></path><path d="M8 12l3 3 5-6"></path></svg></button>
                           <button id="add-host-button" type="button" class="workspace-icon-btn" aria-label="Add host">
                             <svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true">
                               <path d="M12 5v14"></path>
@@ -96,11 +101,16 @@
                           </button>
                         </div>
                       </div>
+                      <div id="bastion-tree-toolbar" class="bastion-tree-toolbar" hidden>
+                        <select id="bastion-tree-profile" aria-label="堡垒机连接"></select>
+                        <button id="bastion-tree-refresh" type="button" class="workspace-icon-btn" aria-label="刷新资产" title="刷新资产"><svg class="zt-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.6-2L20 8M4 16l2.3 3A7 7 0 0 0 17.9 17"/></svg></button>
+                      </div>
                       <input id="host-search" class="search" type="text" placeholder="搜索主机或分组..." autocomplete="off" />
                     </header>
 
                     <div id="vaults-content" class="vaults-main-content">
                       <div class="hosts-grid-wrap">
+                        <div id="bastion-tree-status" class="bastion-tree-status" role="status" aria-live="polite" hidden><p></p><button id="bastion-tree-login" type="button" hidden>登录堡垒机</button></div>
                         <ul id="hosts-list" class="host-cards"></ul>
                         <div id="hosts-empty" class="hosts-empty-state" hidden>
                           <div class="hosts-empty-icon-wrap" aria-hidden="true">

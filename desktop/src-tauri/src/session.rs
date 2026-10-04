@@ -102,6 +102,9 @@ pub async fn run(
                     last_exit = Some(code);
                     debug!(session_id, code, "remote exited");
                 }
+                ChannelEvent::ExitSignal(signal) => {
+                    error_msg = Some(format!("remote process exited with signal {signal}"));
+                }
                 ChannelEvent::Closed => {
                     debug!(session_id, "channel closed");
                     break;

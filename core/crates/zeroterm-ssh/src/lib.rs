@@ -28,7 +28,7 @@ pub use known_hosts::{KnownHostCertificateStatus, KnownHostStatus, KnownHosts};
 pub use russh::keys::{decode_secret_key, PrivateKey};
 pub use session::{
     current_http_proxy, set_global_http_proxy, AuthMethod, ChannelEvent, ConnectConfig, ExecStream,
-    PtySize, Session, ShellChannel,
+    PtySize, Session, ShellChannel, ManagedConnection, ManagedSession,
 };
 pub use sftp::{
     is_upload_stall, DirEntry, FileKind, FileMetadata, ProgressTick, Sftp, SftpTuning,

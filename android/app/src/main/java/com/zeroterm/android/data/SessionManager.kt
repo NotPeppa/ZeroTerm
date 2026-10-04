@@ -40,6 +40,7 @@ data class ActiveSession(
     val hostId: String,
     val hostLabel: String,
     val terminal: Terminal,
+    val bastionIdentity: String? = null,
     val tmuxClientOption: String = "@zeroterm_android_" + java.util.UUID.randomUUID().toString().replace("-", ""),
 )
 
@@ -204,7 +205,8 @@ class SessionManager(
                     runCatching { term.destroy() }
                     throw e
                 }
-                val active = ActiveSession(sessionId, hostId, hostLabel, term)
+                val identity = runCatching { zeroTerm.bastionSessionIdentityJson(sessionId) }.getOrNull()?.takeUnless { it == "null" }
+                val active = ActiveSession(sessionId, hostId, hostLabel, term, bastionIdentity = identity)
                 val earlyClose = synchronized(sessionStateLock) {
                     sessions[sessionId] = active
                     _active.value = active

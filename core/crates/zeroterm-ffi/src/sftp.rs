@@ -97,6 +97,14 @@ fn map_ssh(e: zeroterm_ssh::SshError) -> FfiError {
 
 #[uniffi::export(async_runtime = "tokio")]
 impl ZeroTerm {
+    pub fn bastion_sftp_identity_json(&self, sftp_id: u64) -> Result<String, FfiError> {
+        let sftp = self.lookup_sftp(sftp_id)?;
+        match sftp.managed_identity() {
+            Some(m) => Ok(serde_json::json!({"connection_id":m.connection_id,"asset_name":m.asset_name,"account":m.account,"capabilities":m.capabilities}).to_string()),
+            None => Ok("null".into()),
+        }
+    }
+
     /// Open a sibling SFTP channel on an authenticated terminal transport.
     /// Supports Quick Connect and retains ProxyJump transports without another
     /// login or host-key prompt. Closing SFTP leaves the terminal connected.
