@@ -354,6 +354,7 @@ ciphertext      = XChaCha20-Poly1305(record_key, nonce=24B, plaintext,
 - [RFC-001 — 整体架构](./RFC-001-architecture.md)
 - [RFC-002 — 多端同步设计](./RFC-002-sync-design.md)
 - [RFC-003 — Android 设计](./RFC-003-android.md)
+- [RFC-004 — 堡垒机设计与实施方案](./RFC-004-bastion-design.md) — Draft，API、SSH 代理、客户端改造与分阶段验收
 - [core/README.md](./core/README.md) — Rust 核心与 CLI 详解
 - [desktop/README.md](./desktop/README.md) — 桌面端架构与 IPC 契约
 - [android/README.md](./android/README.md) — Android 构建、功能状态与同步说明
