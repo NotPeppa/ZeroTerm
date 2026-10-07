@@ -228,9 +228,10 @@ export function installBastionTree({ invoke, refreshHosts, renderLocal, openLogi
       // Drop snapshots immediately on logout/profile edits; in-flight requests cannot restore them.
       epoch++; catalog = null; opening = false;
       state = ['logout','loginStart'].includes(type) ? 'login' : 'idle'; error = '';
+      if (type === 'login') { source = 'bastion'; search.value = ''; selected = ''; }
       if (source !== 'bastion') return;
       if (['logout','loginStart'].includes(type)) { render(); return; }
-      load({reloadProfiles:true, profileId});
+      return load({reloadProfiles:true, profileId});
     }
   };
 }

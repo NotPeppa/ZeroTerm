@@ -44,7 +44,8 @@ class ZeroTermRepository(
     val hostGroups: StateFlow<List<HostGroupRecord>> = _hostGroups.asStateFlow()
 
     suspend fun bastionProfiles(): Result<String> = withContext(Dispatchers.IO) { runCatching { zeroTerm.bastionProfilesJson() } }
-    suspend fun bastionSaveProfile(json: String): Result<String> = withContext(Dispatchers.IO) { runCatching { zeroTerm.bastionSaveProfileJson(json) } }
+    suspend fun bastionProbe(name: String, url: String, ca: String?): Result<String> = withContext(Dispatchers.IO) { runCatching { zeroTerm.bastionProbeJson(name, url, ca) } }
+    suspend fun bastionSaveProfile(json: String, password: String? = null): Result<String> = withContext(Dispatchers.IO) { runCatching { zeroTerm.bastionSaveProfileJson(json, password) } }
     suspend fun bastionDeleteProfile(id: String): Result<Unit> = withContext(Dispatchers.IO) { runCatching { zeroTerm.bastionDeleteProfile(id) } }
     suspend fun bastionLogin(id: String, username: String, password: String): Result<Unit> = withContext(Dispatchers.IO) { runCatching { zeroTerm.bastionLogin(id, username, password) } }
     suspend fun bastionLogout(id: String): Result<Unit> = withContext(Dispatchers.IO) { runCatching { zeroTerm.bastionLogout(id) } }

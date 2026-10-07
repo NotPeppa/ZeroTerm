@@ -35,13 +35,29 @@ pub fn bastion_profiles(state: State<'_, AppState>) -> Result<Vec<BastionProfile
         .list_bastion_profiles()
         .map_err(|e| e.to_string())
 }
+/// Reads `/info` over verified HTTPS; returns an unsaved profile for confirmation.
+#[tauri::command]
+pub async fn bastion_probe(
+    state: State<'_, AppState>,
+    name: String,
+    api_url: String,
+    ca_pem: Option<String>,
+) -> Result<BastionProfile, String> {
+    app(&state)?
+        .bastions()
+        .probe(&name, &api_url, ca_pem)
+        .await
+        .map_err(|e| e.to_string())
+}
 #[tauri::command]
 pub fn bastion_save_profile(
     state: State<'_, AppState>,
     profile: BastionProfile,
+    password: Option<String>,
 ) -> Result<String, String> {
+    let password = password.map(zeroize::Zeroizing::new);
     app(&state)?
-        .save_bastion_profile(&profile)
+        .save_bastion_connection(&profile, password.as_ref().map(|p| p.as_str()))
         .map_err(|e| e.to_string())
 }
 #[tauri::command]
@@ -62,14 +78,7 @@ pub async fn bastion_login(
 ) -> Result<(), String> {
     let password = zeroize::Zeroizing::new(password);
     let app = app(&state)?;
-    let profile = app
-        .list_bastion_profiles()
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .find(|p| p.id == profile_id)
-        .ok_or("RESOURCE_NOT_FOUND")?;
-    app.bastions()
-        .login(profile, &username, &password, "ZeroTerm Desktop")
+    app.login_bastion(&profile_id, &username, &password, "ZeroTerm Desktop")
         .await
         .map_err(|e| e.to_string())
 }

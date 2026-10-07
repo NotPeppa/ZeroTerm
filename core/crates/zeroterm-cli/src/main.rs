@@ -127,6 +127,8 @@ enum Command {
         #[command(subcommand)]
         action: SftpAction,
     },
+    /// Execute a command through a saved alias or direct SSH target.
+    Exec { target: String, command: String },
     /// Manage saved port forwards and ProxyJump on a host.
     Forward {
         #[command(subcommand)]
@@ -231,7 +233,9 @@ async fn main() -> Result<()> {
 
     match &args.command {
         Some(Command::List) => cmd_list(&args, &vault_path),
-        Some(Command::Bastion { profile }) => cmd_bastion(&args, &vault_path, profile.as_deref()).await,
+        Some(Command::Bastion { profile }) => {
+            cmd_bastion(&args, &vault_path, profile.as_deref()).await
+        }
         Some(Command::Add {
             name,
             target,
@@ -241,6 +245,9 @@ async fn main() -> Result<()> {
         Some(Command::Remove { name }) => cmd_remove(&args, &vault_path, name),
         Some(Command::Forget) => cmd_forget(&vault_path),
         Some(Command::Sftp { action }) => cmd_sftp(&args, &vault_path, action).await,
+        Some(Command::Exec { target, command }) => {
+            cmd_exec(&args, &vault_path, target, command).await
+        }
         Some(Command::Forward { action }) => cmd_forward(&args, &vault_path, action),
         None => match &args.target {
             Some(t) if t.contains('@') => connect_direct(&args, t).await,
@@ -348,21 +355,47 @@ fn resolve_saved_jump(app: &App, host: &Host, args: &Args) -> Result<Option<Conn
     Ok(Some(cfg))
 }
 
-async fn run_session(
+fn validate_managed_options(
+    managed: bool,
+    args: &Args,
+    saved_forwards: bool,
+    saved_jump: bool,
+) -> Result<()> {
+    if managed
+        && (args.jump.is_some()
+            || saved_jump
+            || saved_forwards
+            || !args.local_forward.is_empty()
+            || !args.dynamic_forward.is_empty()
+            || args.agent
+            || !args.identities.is_empty())
+    {
+        bail!("CHANNEL_PERMISSION_DENIED: managed connections do not support forwarding, ProxyJump or authentication overrides");
+    }
+    Ok(())
+}
+
+async fn connect_session(
     cfg: ConnectConfig,
     args: &Args,
-    saved_forwards: &[zeroterm_app::ForwardSpec],
     saved_jump_cfg: Option<ConnectConfig>,
-) -> Result<()> {
+) -> Result<(Option<Session>, Session)> {
+    validate_managed_options(
+        cfg.auth_methods
+            .iter()
+            .any(|m| matches!(m, AuthMethod::Managed(_))),
+        args,
+        false,
+        saved_jump_cfg.is_some(),
+    )?;
     info!(host = %cfg.host, port = cfg.port, "connecting");
-
     // Effective ProxyJump: CLI flag wins over the host's saved jump host.
     let jump_cfg = if let Some(jump_spec) = args.jump.as_deref() {
         let jump_target = parse_target(jump_spec, None)?;
         Some(ConnectConfig {
-            host: jump_target.host.clone(),
+            host: jump_target.host,
             port: jump_target.port,
-            username: jump_target.user.clone(),
+            username: jump_target.user,
             auth_methods: cfg.auth_methods.clone(),
             connect_timeout: cfg.connect_timeout,
             host_key_policy: cfg.host_key_policy.clone(),
@@ -370,25 +403,50 @@ async fn run_session(
     } else {
         saved_jump_cfg
     };
-
-    let (jump_session, session) = match jump_cfg {
+    match jump_cfg {
         Some(jcfg) => {
-            info!(host = %jcfg.host, port = jcfg.port, "connecting (jump)");
             let j = Session::connect(jcfg)
                 .await
                 .context("failed to connect to jump host")?;
-            info!("authenticated to jump host");
             let t = Session::connect_via(cfg, &j)
                 .await
                 .context("failed to connect to target via jump")?;
-            (Some(j), t)
+            Ok((Some(j), t))
         }
-        None => (
+        None => Ok((
             None,
             Session::connect(cfg).await.context("failed to connect")?,
-        ),
-    };
-    let mut session = session;
+        )),
+    }
+}
+
+fn show_managed_identity(session: &Session) {
+    if let Some(m) = session.managed_identity() {
+        eprintln!(
+            "{} · {} · {} · {}",
+            m.asset_name,
+            m.account,
+            m.capabilities.join(", "),
+            m.connection_id
+        );
+    }
+}
+
+async fn run_session(
+    cfg: ConnectConfig,
+    args: &Args,
+    saved_forwards: &[zeroterm_app::ForwardSpec],
+    saved_jump_cfg: Option<ConnectConfig>,
+) -> Result<()> {
+    validate_managed_options(
+        cfg.auth_methods
+            .iter()
+            .any(|m| matches!(m, AuthMethod::Managed(_))),
+        args,
+        !saved_forwards.is_empty(),
+        saved_jump_cfg.is_some(),
+    )?;
+    let (jump_session, mut session) = connect_session(cfg, args, saved_jump_cfg).await?;
     info!("authenticated");
 
     let mut forwards: Vec<zeroterm_ssh::ForwardHandle> = Vec::new();
@@ -462,9 +520,7 @@ async fn run_session(
         forwards.push(handle);
     }
 
-    if let Some(m) = session.managed_identity() {
-        eprintln!("{} · {} · {} · {}", m.asset_name, m.account, m.capabilities.join(", "), m.connection_id);
-    }
+    show_managed_identity(&session);
     let (cols, rows) = term_size().unwrap_or((80, 24));
     let channel = session
         .open_shell(PtySize::new(cols, rows))
@@ -550,35 +606,8 @@ async fn cmd_sftp(args: &Args, vault_path: &Path, action: &SftpAction) -> Result
     let target = sftp_target(action);
     let (cfg, saved_jump) = resolve_connect_config(args, vault_path, target).await?;
 
-    // Effective ProxyJump: CLI flag wins over saved alias.
-    let jump_cfg = if let Some(jump_spec) = args.jump.as_deref() {
-        let jt = parse_target(jump_spec, None)?;
-        Some(ConnectConfig {
-            host: jt.host,
-            port: jt.port,
-            username: jt.user,
-            auth_methods: cfg.auth_methods.clone(),
-            connect_timeout: cfg.connect_timeout,
-            host_key_policy: cfg.host_key_policy.clone(),
-        })
-    } else {
-        saved_jump
-    };
-
-    info!(host = %cfg.host, port = cfg.port, "connecting (sftp)");
-    let (jump_session, session) = match jump_cfg {
-        Some(jcfg) => {
-            let j = Session::connect(jcfg).await.context("jump connect")?;
-            let t = Session::connect_via(cfg, &j)
-                .await
-                .context("target via jump")?;
-            (Some(j), t)
-        }
-        None => (
-            None,
-            Session::connect(cfg).await.context("failed to connect")?,
-        ),
-    };
+    let (jump_session, session) = connect_session(cfg, args, saved_jump).await?;
+    show_managed_identity(&session);
     let sftp = session.sftp().await.context("open sftp subsystem")?;
 
     let result = match action {
@@ -597,6 +626,29 @@ async fn cmd_sftp(args: &Args, vault_path: &Path, action: &SftpAction) -> Result
         let _ = j.disconnect().await;
     }
     result
+}
+
+async fn cmd_exec(args: &Args, vault_path: &Path, target: &str, command: &str) -> Result<()> {
+    if command.len() > 64 * 1024 || command.contains('\0') {
+        bail!("INVALID_ARGUMENT: command exceeds 64 KiB or contains NUL");
+    }
+    let (cfg, saved_jump) = resolve_connect_config(args, vault_path, target).await?;
+    let (jump_session, session) = connect_session(cfg, args, saved_jump).await?;
+    show_managed_identity(&session);
+    let result = session.exec(command).await;
+    let _ = session.disconnect().await;
+    if let Some(j) = jump_session {
+        let _ = j.disconnect().await;
+    }
+    let (code, out, err) = result.context("exec")?;
+    stdout().write_all(&out)?;
+    std::io::stderr().write_all(&err)?;
+    stdout().flush()?;
+    std::io::stderr().flush()?;
+    if code != 0 {
+        std::process::exit(code.min(255) as i32);
+    }
+    Ok(())
 }
 
 fn cmd_forget(vault_path: &Path) -> Result<()> {
@@ -1368,8 +1420,13 @@ fn key_to_bytes(k: &KeyEvent) -> Option<Vec<u8>> {
 }
 
 async fn login_bastion_profile(app: &App, profile: zeroterm_app::BastionProfile) -> Result<()> {
+    if profile.has_password {
+        app.login_bastion(&profile.id, &profile.username, "", "ZeroTerm CLI").await?;
+        return Ok(());
+    }
     let username: String = dialoguer::Input::new()
         .with_prompt("Bastion username")
+        .with_initial_text(&profile.username)
         .interact_text()?;
     let password = zeroize::Zeroizing::new(rpassword::prompt_password("Bastion password: ")?);
     app.bastions()
@@ -1388,6 +1445,47 @@ async fn login_bastion_host(app: &App, host: &Host) -> Result<()> {
     }
     Ok(())
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn managed_cli_rejects_escape_options_without_connecting() {
+        let args = Args::try_parse_from(["zeroterm", "exec", "target", "printf hello"]).unwrap();
+        assert!(
+            matches!(&args.command, Some(Command::Exec { target, command }) if target == "target" && command == "printf hello")
+        );
+        validate_managed_options(true, &args, false, false).unwrap();
+        assert!(validate_managed_options(true, &args, true, false).is_err());
+        assert!(validate_managed_options(true, &args, false, true).is_err());
+        for flag in [
+            vec!["-J", "alice@jump"],
+            vec!["-L", "8080:localhost:80"],
+            vec!["-D", "8080"],
+            vec!["-A"],
+            vec!["-i", "private-key"],
+        ] {
+            let mut argv = vec!["zeroterm"];
+            argv.extend(flag);
+            argv.push("target");
+            let args = Args::try_parse_from(argv).unwrap();
+            assert!(validate_managed_options(true, &args, false, false).is_err());
+            validate_managed_options(false, &args, false, false).unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn exec_rejects_invalid_commands_before_vault_or_network_access() {
+        let args = Args::try_parse_from(["zeroterm", "exec", "target", "probe"]).unwrap();
+        for command in ["a\0b".to_owned(), "x".repeat(64 * 1024 + 1)] {
+            let error = cmd_exec(&args, Path::new("unused.vault"), "target", &command)
+                .await
+                .unwrap_err();
+            assert!(error.to_string().starts_with("INVALID_ARGUMENT"));
+        }
+    }
+}
+
 async fn cmd_bastion(args: &Args, vault_path: &Path, profile_path: Option<&Path>) -> Result<()> {
     let app = open_app(args, vault_path, true)?;
     if let Some(path) = profile_path {

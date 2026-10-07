@@ -978,6 +978,8 @@ impl Session {
             handle.channel_open_session().await?
         };
         channel.exec(true, command).await?;
+        // This buffered API has no stdin writer; close input, not the output stream.
+        channel.eof().await?;
 
         let mut code = 0;
         let mut signal = None;

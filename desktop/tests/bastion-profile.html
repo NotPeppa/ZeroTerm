@@ -1,0 +1,228 @@
+<!doctype html>
+<!-- Serve desktop/ with python -m http.server; open /tests/bastion-profile.html. -->
+<html lang="en">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bastion profile regression check</title>
+<link rel="stylesheet" href="../frontend/styles.css">
+<body data-app-theme="dark">
+<button id="bastion-button">Bastion</button>
+<button id="lock-button">Lock</button>
+<aside>
+  <div id="asset-source-switch"><button id="asset-source-local"></button><button id="asset-source-bastion"></button></div>
+  <input id="host-search">
+  <button id="add-host-button">Add host</button><button id="add-group-button">Add group</button>
+  <div id="bastion-tree-toolbar" hidden><select id="bastion-tree-profile"></select><button id="bastion-tree-refresh">Refresh</button></div>
+  <div id="bastion-tree-status" hidden><p></p><button id="bastion-tree-login"></button></div>
+  <ul id="hosts-list"></ul><p id="hosts-empty">No local hosts</p>
+</aside>
+<pre id="result">Running…</pre>
+<script type="module">
+import { installBastion } from '../frontend/bastion.js';
+import { installBastionTree } from '../frontend/bastion-tree.js';
+const calls = [], profiles = [], passwords = new Map(), loggedIn = new Set();
+const hosts = [], opened = [];
+const catalog = {groups:[{id:'production', name:'Production'}, {id:'apps', name:'Applications', parent_id:'production'}], assets:[
+  {id:'app-01', name:'App 01', group_id:'apps', accounts:[{id:'deploy', username:'deploy', capabilities:['shell','sftp']}, {id:'admin', username:'admin', capabilities:['shell']}]},
+  {id:'files-01', name:'Files 01', group_id:'production', accounts:[{id:'files', username:'files', capabilities:['sftp']}]},
+  {id:'other-01', name:'Other 01', accounts:[{id:'root', username:'root', capabilities:['shell']}]},
+]};
+let failure = null, loginFailure = null, catalogFailure = null;
+const invoke = async (command, args) => {
+    calls.push({command, args: structuredClone(args)});
+    if (command === 'bastion_profiles') return structuredClone(profiles);
+    if (command === 'bastion_probe') {
+      if (failure) throw failure;
+      return {id:'', name:'bastion.test', api_url:args.apiUrl, ca_pem:args.caPem,
+        server_id:'test-server', ssh_host:'gateway.test', ssh_port:2222,
+        ssh_host_key_sha256:'SHA256:V7VLKpTCA0oXCfOoEXmUW01yqozapS/EuSnoPQwWBq4'};
+    }
+    if (command === 'bastion_save_profile') {
+      if (args.password !== null) passwords.set('profile', args.password);
+      profiles.splice(0, profiles.length, {...args.profile, id:'profile', has_password:Boolean(passwords.get('profile'))});
+      loggedIn.delete('profile');
+      return 'profile';
+    }
+    if (command === 'bastion_login') {
+      if (loginFailure) throw loginFailure;
+      assert(args.username && (args.password || passwords.get(args.profileId)), 'Login needs an account and password');
+      loggedIn.add(args.profileId);
+      return;
+    }
+    if (command === 'bastion_catalog') {
+      if (!loggedIn.has(args.profileId)) throw 'UNAUTHENTICATED';
+      if (catalogFailure) throw catalogFailure;
+      return structuredClone(catalog);
+    }
+    if (command === 'bastion_save_asset') {
+      const host = {id:args.assetId + ':' + args.accountId, authType:'bastion'};
+      hosts.push(host);
+      return host.id;
+    }
+    if (command === 'list_hosts') return structuredClone(hosts);
+    if (command === 'bastion_logout') { loggedIn.delete(args.profileId); return; }
+    throw new Error(`Unexpected command: ${command}`);
+};
+let bastionTree;
+const bastionUi = installBastion({invoke, onChange: change => bastionTree.change(change)});
+bastionTree = installBastionTree({invoke, syncCustomSelect: () => {}, refreshHosts: async () => {},
+  renderLocal: () => document.querySelector('#hosts-list').replaceChildren(), openLogin: id => bastionUi.open(id),
+  openTerminal: async host => opened.push({type:'terminal', host}), openFiles: async host => opened.push({type:'files', host})});
+const q = selector => document.querySelector(selector);
+const assert = (condition, reason) => { if (!condition) throw new Error(reason); };
+async function settle() {
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const deadline = performance.now() + 3000;
+  while (q('.bastion-dialog').getAttribute('aria-busy') === 'true' || q('#bastion-tree-profile').disabled || q('#hosts-list [disabled]')) {
+    if (performance.now() > deadline) throw new Error('Operation did not complete');
+    await new Promise(resolve => setTimeout(resolve, 0));
+  }
+}
+async function reopen() { q('#bastion-button').click(); await settle(); }
+function expandTree() {
+  let row;
+  while ((row = q('#hosts-list .bastion-tree-toggle[aria-expanded="false"]'))) row.click();
+}
+function input(name, value) {
+  const field = q(`#bastion-profile-form [name="${name}"]`);
+  field.value = value;
+  field.dispatchEvent(new Event('input', {bubbles:true}));
+}
+async function submit(saveOnly = false) {
+  q('#bastion-profile-form').requestSubmit(q(saveOnly ? '[data-action="save"]' : '[data-role="submit"]'));
+  await settle();
+  assert(!q('#bastion-login-form'), 'Address and account use one form');
+  assert(!q('[name="username"]').disabled && !q('[name="password"]').disabled, 'New connections accept accounts before saving');
+}
+try {
+  q('#bastion-button').click();
+  await settle();
+  assert(!q('#bastion-assets') && !q('.bastion-catalog'), 'Configuration has no duplicate authorized-assets list');
+  assert(!q('#bastion-overlay [data-action="refresh"]'), 'Asset refresh lives in the tree');
+  assert(q('.bastion-advanced').open === false, 'Private CA starts collapsed');
+  assert(!['server_id', 'ssh_host', 'ssh_port', 'ssh_host_key_sha256'].some(name =>
+    q('#bastion-profile-form').elements.namedItem(name)), 'Discovered identity fields must stay read-only');
+  input('api_url', 'https://bastion.test');
+  input('username', 'alice');
+  input('password', 'test-password');
+  await submit();
+  assert(!q('#bastion-trust').hidden && profiles.length === 0, 'Discovery requires explicit confirmation');
+  assert(!calls.some(c => c.command === 'bastion_login'), 'Password is never sent before identity confirmation');
+  q('[data-action="cancel-probe"]').click();
+  assert(q('#bastion-trust').hidden && profiles.length === 0, 'Cancellation must not save trust');
+  assert(document.activeElement === q('[data-role="submit"]'), 'Cancellation keeps focus inside the dialog');
+  await submit();
+  input('api_url', 'https://other.test');
+  assert(q('#bastion-trust').hidden, 'Changing URL discards the old discovery');
+  input('api_url', 'https://bastion.test');
+  await submit();
+  input('ca_pem', 'test-ca');
+  assert(q('#bastion-trust').hidden, 'Changing CA discards the old discovery');
+  failure = 'API_UNREACHABLE';
+  await submit();
+  assert(q('#bastion-message').dataset.state === 'error' && profiles.length === 0, 'Failed discovery must not save');
+  failure = null;
+  await submit();
+  input('name', 'Production');
+  input('username', 'bob');
+  assert(!q('#bastion-trust').hidden, 'Account edits preserve the reviewed identity');
+  input('username', 'alice');
+  await submit();
+  assert(profiles[0].name === 'Production' && profiles[0].ca_pem === 'test-ca', 'Confirmation saves the reviewed identity');
+  assert(profiles[0].username === 'alice' && profiles[0].has_password, 'Account is saved with the connection');
+  assert(calls.find(c => c.command === 'bastion_save_profile').args.password === 'test-password', 'Password is saved separately from public metadata');
+  assert(loggedIn.has('profile'), 'Confirmation saves and logs in together');
+  assert(q('#bastion-overlay').hidden && q('#asset-source-bastion').getAttribute('aria-pressed') === 'true', 'Login closes configuration and switches to the asset tree');
+  assert(q('#bastion-tree-profile').value === 'profile', 'Login selects its connection in the tree');
+  assert(q('#host-search').value === '', 'All assets appear without a stale search filter');
+  assert(document.querySelectorAll('#hosts-list .bastion-tree-asset').length === 3, 'The complete authorized catalog is in the tree');
+  assert(!calls.some(c => c.command === 'bastion_save_asset' || c.command === 'bastion_assets'), 'Listing assets needs no import or duplicate fetch');
+  expandTree();
+  assert(document.querySelectorAll('#hosts-list .bastion-tree-account').length === 4, 'All target accounts appear under their assets');
+  const filesRow = q('[data-bastion-node="asset:files-01"]').closest('li');
+  assert(filesRow.querySelectorAll('.bastion-tree-connect').length === 1, 'SFTP-only account offers only files');
+  filesRow.querySelector('.bastion-tree-connect').click();
+  await settle();
+  assert(opened[0]?.type === 'files' && opened[0].host.id === 'files-01:files', 'Assets can be opened directly from the tree');
+  assert(q('[name="password"]').value === '' && !q('[name="password"]').required, 'Saved passwords are not returned to the form');
+  await reopen();
+  const pinned = JSON.stringify({...profiles[0], name:''});
+  const probes = calls.filter(c => c.command === 'bastion_probe').length;
+  input('name', 'Renamed');
+  await submit(true);
+  assert(JSON.stringify({...profiles[0], name:''}) === pinned, 'Renaming preserves every trust field');
+  assert(calls.filter(c => c.command === 'bastion_probe').length === probes, 'Renaming needs no discovery');
+  assert(calls.filter(c => c.command === 'bastion_save_profile').at(-1).args.password === null, 'Editing keeps the saved password');
+  await submit();
+  assert(calls.filter(c => c.command === 'bastion_login').at(-1).args.password === '', 'Subsequent login uses Vault without exposing its password');
+  const logins = calls.filter(c => c.command === 'bastion_login').length;
+  const catalogs = calls.filter(c => c.command === 'bastion_catalog').length;
+  await reopen();
+  assert(q('[name="username"]').value === 'alice' && q('[name="password"]').value === '', 'Reopening restores the account without the password');
+  assert(document.querySelectorAll('#hosts-list .bastion-tree-asset').length === 3, 'Reopening configuration preserves the active asset tree');
+  assert(calls.filter(c => c.command === 'bastion_catalog').length === catalogs, 'Reopening configuration makes no asset request');
+  assert(calls.filter(c => c.command === 'bastion_login').length === logins, 'Reopening does not create a new login');
+  input('username', 'bob');
+  assert(q('[name="password"]').required, 'Another username cannot use the saved password');
+  input('username', 'alice');
+  q('[data-action="logout"]').click();
+  await settle();
+  assert(!q('#hosts-list').childElementCount && !q('#bastion-tree-login').hidden, 'Logout clears the asset tree');
+  q('[data-action="close"]').click();
+  q('#asset-source-local').click();
+  q('#host-search').value = 'old local search';
+  await reopen();
+  input('password', 'one-time-password');
+  q('[name="remember_password"]').checked = false;
+  q('[name="remember_password"]').dispatchEvent(new Event('input', {bubbles:true}));
+  await submit();
+  assert(!profiles[0].has_password && passwords.get('profile') === '', 'Unchecking password storage clears the saved password');
+  assert(loggedIn.has('profile') && q('[name="password"]').value === '', 'One-time password still logs in and is cleared');
+  assert(q('#host-search').value === '' && document.querySelectorAll('#hosts-list .bastion-tree-asset').length === 3, 'Login from local view shows all authorized assets');
+  await reopen();
+  input('password', 'replacement-password');
+  loginFailure = 'INVALID_CREDENTIALS';
+  await submit();
+  assert(q('#bastion-message').dataset.state === 'error' && q('[name="password"]').value === '', 'Failed login reports an error and clears the input');
+  assert(!q('#bastion-overlay').hidden && !q('#hosts-list').childElementCount, 'Failed login keeps configuration open and clears stale assets');
+  loginFailure = null;
+  input('password', 'replacement-password');
+  catalogFailure = 'API_UNREACHABLE';
+  await submit();
+  assert(q('#bastion-overlay').hidden && q('#bastion-tree-status p').textContent.includes('API_UNREACHABLE'), 'Catalog errors appear in the asset tree after successful login');
+  catalogFailure = null;
+  q('#bastion-tree-login').click();
+  await settle();
+  assert(document.querySelectorAll('#hosts-list .bastion-tree-asset').length === 3, 'Tree retry reloads all authorized assets');
+  q('#bastion-tree-refresh').click();
+  await settle();
+  assert(document.querySelectorAll('#hosts-list .bastion-tree-asset').length === 3, 'Tree refresh reloads all authorized assets');
+  profiles.push({...profiles[0], id:'another', name:'Another connection'});
+  loggedIn.add('another');
+  await bastionTree.change({type:'login', profileId:'another'});
+  assert(q('#bastion-tree-profile').value === 'another' && calls.filter(c => c.command === 'bastion_catalog').at(-1).args.profileId === 'another', 'Logging in to another connection selects and loads that connection');
+  q('#bastion-tree-profile').value = 'profile';
+  q('#bastion-tree-profile').dispatchEvent(new Event('change'));
+  await settle();
+  assert(calls.filter(c => c.command === 'bastion_catalog').at(-1).args.profileId === 'profile', 'Picker changes load the selected catalog');
+  await reopen();
+  q('#lock-button').click();
+  assert(q('#bastion-overlay').hidden && !q('#hosts-list').childElementCount, 'Vault lock closes configuration and clears the tree');
+  q('[data-action="close"]').click();
+  q('#result').textContent = 'Passed: unified account form, trust confirmation, saved password, full asset tree after login, direct files connection, no duplicate list or import, reopen, logout/lock, login failure, tree refresh and retry.';
+  const preview = new URLSearchParams(location.search);
+  if (preview.has('preview')) {
+    document.documentElement.lang = 'zh';
+    document.body.dataset.appTheme = preview.get('theme') || 'dark';
+    profiles[0].has_password = true;
+    loggedIn.add('profile');
+    q('#bastion-button').click();
+    await settle();
+  }
+} catch (error) {
+  q('[data-action="close"]').click();
+  q('#result').textContent = `FAILED: ${error.message}`;
+  console.error(error);
+}
+</script>
+</html>

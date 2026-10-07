@@ -14,7 +14,7 @@ use std::{
 };
 use tokio::sync::Mutex as AsyncMutex;
 use tokio_util::sync::CancellationToken;
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 use zeroterm_ssh::{
     AuthMethod, ConnectConfig, HostKeyPolicy, ManagedConnection, ManagedSession, SshError,
 };
@@ -22,7 +22,7 @@ use zeroterm_ssh::{
 const KIND: &str = "bastion_profile";
 const MAX_RESPONSE: usize = 1024 * 1024;
 
-/// Portable public configuration; never includes passwords, login tokens or tickets.
+/// Connection metadata returned to clients; passwords, tokens and tickets are omitted.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BastionProfile {
     #[serde(default)]
@@ -36,6 +36,24 @@ pub struct BastionProfile {
     /// Optional public CA PEM for a private TLS certificate authority.
     #[serde(default)]
     pub ca_pem: Option<String>,
+    #[serde(default)]
+    pub username: String,
+    #[serde(default, skip_deserializing)]
+    pub has_password: bool,
+}
+
+/// Configuration and optional login password share one encrypted Vault record.
+#[derive(Serialize, Deserialize)]
+struct StoredBastionProfile {
+    #[serde(flatten)]
+    profile: BastionProfile,
+    #[serde(default)]
+    password: String,
+}
+impl Drop for StoredBastionProfile {
+    fn drop(&mut self) {
+        self.password.zeroize();
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -83,6 +101,72 @@ struct Info {
     ssh_protocol_version: Option<u32>,
     #[serde(default)]
     minimum_client_protocol_version: Option<u32>,
+    #[serde(default)]
+    production_ready: Option<bool>,
+    #[serde(default)]
+    features: Option<Features>,
+    #[serde(default)]
+    recording: Option<Recording>,
+    #[serde(default)]
+    gateway: Option<InfoGateway>,
+}
+/// SSH entry advertised by `/info`; trusted only because the response arrived
+/// over the same verified HTTPS channel that later issues tickets.
+#[derive(Deserialize)]
+struct InfoGateway {
+    host: String,
+    port: u16,
+    public_key: String,
+}
+#[derive(Deserialize)]
+struct Features {
+    #[serde(default)]
+    ssh_terminal: bool,
+    #[serde(default)]
+    ssh_exec: bool,
+    #[serde(default)]
+    ssh_sftp: bool,
+}
+#[derive(Deserialize)]
+struct Recording {
+    required: bool,
+    format_version: u32,
+    #[serde(default)]
+    available: Option<bool>,
+}
+impl Info {
+    fn validate(&self) -> Result<(), BastionError> {
+        if self.protocol_version != 1
+            || self.ssh_protocol_version != Some(1)
+            || self.minimum_client_protocol_version.is_none_or(|v| v > 1)
+            || self.production_ready.is_none()
+            || self.features.is_none()
+        {
+            return Err(error("CLIENT_PROTOCOL_UNSUPPORTED"));
+        }
+        if !self
+            .recording
+            .as_ref()
+            .is_some_and(|r| r.required && r.format_version == 1)
+        {
+            return Err(error("RECORDING_REQUIRED"));
+        }
+        Ok(())
+    }
+    fn supports(&self, capability: &str) -> bool {
+        self.features.as_ref().is_some_and(|f| match capability {
+            "shell" => {
+                f.ssh_terminal
+                    && self
+                        .recording
+                        .as_ref()
+                        .is_some_and(|r| r.available != Some(false))
+            }
+            "exec" => f.ssh_exec,
+            "sftp" => f.ssh_sftp,
+            _ => false,
+        })
+    }
 }
 #[derive(Deserialize)]
 struct Tokens {
@@ -159,17 +243,43 @@ fn validate_caps(caps: &[String]) -> Result<(), BastionError> {
     }
     Ok(())
 }
+/// HTTPS origin only: no credentials, query, fragment or path. Returns the host.
+fn validate_api_url(api_url: &str) -> Result<String, BastionError> {
+    let url = Url::parse(api_url).map_err(|_| error("INVALID_ARGUMENT"))?;
+    if url.scheme() != "https"
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || !matches!(url.path(), "" | "/")
+    {
+        return Err(error("INVALID_ARGUMENT"));
+    }
+    url.host_str()
+        .map(str::to_owned)
+        .ok_or_else(|| error("INVALID_ARGUMENT"))
+}
+fn http_client(ca_pem: Option<&str>) -> Result<Client, BastionError> {
+    let mut builder = Client::builder()
+        .https_only(true)
+        .retry(reqwest::retry::never())
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(20));
+    if let Some(pem) = ca_pem {
+        builder = builder.add_root_certificate(
+            reqwest::Certificate::from_pem(pem.as_bytes())
+                .map_err(|_| error("INVALID_ARGUMENT"))?,
+        );
+    }
+    if let Some(proxy) = zeroterm_ssh::current_http_proxy() {
+        builder = builder.proxy(reqwest::Proxy::all(proxy).map_err(|_| error("INVALID_ARGUMENT"))?);
+    }
+    builder.build().map_err(local_error)
+}
 impl BastionProfile {
     pub fn validate(&self) -> Result<(), BastionError> {
-        let url = Url::parse(&self.api_url).map_err(|_| error("INVALID_ARGUMENT"))?;
-        if url.scheme() != "https"
-            || url.host_str().is_none()
-            || !url.username().is_empty()
-            || url.password().is_some()
-            || url.query().is_some()
-            || url.fragment().is_some()
-            || !matches!(url.path(), "" | "/")
-            || self.name.trim().is_empty()
+        validate_api_url(&self.api_url)?;
+        if self.name.trim().is_empty()
             || self.server_id.is_empty()
             || self.ssh_port == 0
             || self.ssh_host.is_empty()
@@ -344,37 +454,13 @@ impl BastionManager {
     ) -> Result<(), BastionError> {
         let epoch = self.epoch.load(Ordering::SeqCst);
         profile.validate()?;
-        let mut builder = Client::builder()
-            .https_only(true)
-            .retry(reqwest::retry::never())
-            .redirect(reqwest::redirect::Policy::none())
-            .timeout(Duration::from_secs(20));
-        if let Some(pem) = &profile.ca_pem {
-            builder = builder.add_root_certificate(
-                reqwest::Certificate::from_pem(pem.as_bytes())
-                    .map_err(|_| error("INVALID_ARGUMENT"))?,
-            );
-        }
-        if let Some(proxy) = zeroterm_ssh::current_http_proxy() {
-            builder =
-                builder.proxy(reqwest::Proxy::all(proxy).map_err(|_| error("INVALID_ARGUMENT"))?);
-        }
         let login = Arc::new(Login {
             profile: profile.clone(),
-            http: builder.build().map_err(local_error)?,
+            http: http_client(profile.ca_pem.as_deref())?,
             tokens: AsyncMutex::new(None),
             cancelled: CancellationToken::new(),
         });
-        let info: Info = decode(login.raw(Method::GET, "info", None, None).await?)?;
-        if info.server_id != profile.server_id {
-            return Err(error("SERVER_ID_CHANGED"));
-        }
-        if info.protocol_version != 1
-            || info.ssh_protocol_version.unwrap_or(1) != 1
-            || info.minimum_client_protocol_version.unwrap_or(1) > 1
-        {
-            return Err(error("CLIENT_PROTOCOL_UNSUPPORTED"));
-        }
+        self.discover(&login).await?;
         let tokens: Tokens = decode(login.raw(Method::POST, "auth/login", Some(&serde_json::json!({"username":username,"password":password,"device_label":device_label,"client_type":"zeroterm"})), None).await?)?;
         if tokens.access_token.is_empty() || tokens.refresh_token.is_empty() {
             return Err(error("CLIENT_PROTOCOL_UNSUPPORTED"));
@@ -392,6 +478,60 @@ impl BastionManager {
             old.cancelled.cancel();
         }
         Ok(())
+    }
+    /// Reads `/info` over strictly verified HTTPS and returns an unsaved profile
+    /// with server_id, SSH entry and host-key fingerprint filled in. The caller
+    /// shows these to the user for confirmation before saving; saved values are
+    /// then pinned and any later change is rejected (`SERVER_ID_CHANGED`, host key).
+    pub async fn probe(
+        &self,
+        name: &str,
+        api_url: &str,
+        ca_pem: Option<String>,
+    ) -> Result<BastionProfile, BastionError> {
+        let host = validate_api_url(api_url.trim())?;
+        let api_url = api_url.trim().trim_end_matches('/').to_owned();
+        let ca_pem = ca_pem.filter(|pem| !pem.trim().is_empty());
+        let login = Login {
+            profile: BastionProfile {
+                id: String::new(),
+                name: String::new(),
+                api_url: api_url.clone(),
+                server_id: String::new(),
+                ssh_host: String::new(),
+                ssh_port: 0,
+                ssh_host_key_sha256: String::new(),
+                ca_pem: ca_pem.clone(),
+                username: String::new(),
+                has_password: false,
+            },
+            http: http_client(ca_pem.as_deref())?,
+            tokens: AsyncMutex::new(None),
+            cancelled: CancellationToken::new(),
+        };
+        let info: Info = decode(login.raw(Method::GET, "info", None, None).await?)?;
+        info.validate()?;
+        let gateway = info
+            .gateway
+            .ok_or_else(|| error("CLIENT_PROTOCOL_UNSUPPORTED"))?;
+        let profile = BastionProfile {
+            id: String::new(),
+            name: Some(name.trim())
+                .filter(|n| !n.is_empty())
+                .unwrap_or(&host)
+                .to_owned(),
+            api_url,
+            server_id: info.server_id,
+            ssh_host: gateway.host,
+            ssh_port: gateway.port,
+            ssh_host_key_sha256: zeroterm_ssh::openssh_fingerprint(&gateway.public_key)
+                .ok_or_else(|| error("CLIENT_PROTOCOL_UNSUPPORTED"))?,
+            ca_pem,
+            username: String::new(),
+            has_password: false,
+        };
+        profile.validate()?;
+        Ok(profile)
     }
     fn forget(&self, profile_id: &str) -> Option<Arc<Login>> {
         let mut logins = self
@@ -450,11 +590,39 @@ impl BastionManager {
         *tokens = None;
         result
     }
+    async fn discover(&self, login: &Login) -> Result<Info, BastionError> {
+        let info: Info = decode(login.raw(Method::GET, "info", None, None).await?)?;
+        if info.server_id != login.profile.server_id {
+            self.forget(&login.profile.id);
+            return Err(error("SERVER_ID_CHANGED"));
+        }
+        info.validate()?;
+        let gateway = info
+            .gateway
+            .as_ref()
+            .ok_or_else(|| error("CLIENT_PROTOCOL_UNSUPPORTED"))?;
+        let fingerprint = zeroterm_ssh::openssh_fingerprint(&gateway.public_key)
+            .ok_or_else(|| error("CLIENT_PROTOCOL_UNSUPPORTED"))?;
+        let changed =
+            if gateway.host != login.profile.ssh_host || gateway.port != login.profile.ssh_port {
+                Some("GATEWAY_ADDRESS_CHANGED")
+            } else if fingerprint != login.profile.ssh_host_key_sha256 {
+                Some("GATEWAY_HOST_KEY_CHANGED")
+            } else {
+                None
+            };
+        if let Some(code) = changed {
+            self.forget(&login.profile.id);
+            return Err(error(code));
+        }
+        Ok(info)
+    }
     pub async fn assets(&self, profile_id: &str) -> Result<Vec<BastionAsset>, BastionError> {
         Ok(self.catalog(profile_id).await?.assets)
     }
     pub async fn catalog(&self, profile_id: &str) -> Result<BastionCatalog, BastionError> {
         let login = self.login_for(profile_id)?;
+        let info = self.discover(&login).await?;
         let mut items = Vec::new();
         let mut groups = std::collections::BTreeMap::new();
         let mut cursor: Option<String> = None;
@@ -466,14 +634,17 @@ impl BastionManager {
                 url.query_pairs_mut().append_pair("cursor", cursor);
             }
             let path = format!("assets?{}", url.query().unwrap_or(""));
-            let page: AssetPage = decode(login.request(Method::GET, &path, None).await?)?;
-            for asset in &page.items {
+            let mut page: AssetPage = decode(login.request(Method::GET, &path, None).await?)?;
+            for asset in &mut page.items {
                 validate_id(&asset.id)?;
-                for account in &asset.accounts {
+                for account in &mut asset.accounts {
                     validate_id(&account.id)?;
                     validate_caps(&account.capabilities)?;
+                    account.capabilities.retain(|c| info.supports(c));
                 }
+                asset.accounts.retain(|a| !a.capabilities.is_empty());
             }
+            page.items.retain(|a| !a.accounts.is_empty());
             for group in page.groups {
                 if group.id.is_empty() || group.name.is_empty() {
                     return Err(error("CLIENT_PROTOCOL_UNSUPPORTED"));
@@ -525,6 +696,7 @@ impl ManagedConnection for TicketProvider {
                 .get("failure")
                 .and_then(|v| v.get("code"))
                 .and_then(|v| v.as_str())
+                .filter(|s| s.len() <= 80 && s.bytes().all(|c| c.is_ascii_uppercase() || c == b'_'))
                 .unwrap_or("AUTH_OR_GATEWAY_FAILED");
             Ok::<_, BastionError>(error(code).to_string())
         }
@@ -537,17 +709,7 @@ impl TicketProvider {
         validate_id(&self.asset_id)?;
         validate_id(&self.account_id)?;
         let login = self.manager.login_for(&self.profile_id)?;
-        let info: Info = decode(login.raw(Method::GET, "info", None, None).await?)?;
-        if info.server_id != login.profile.server_id {
-            self.manager.forget(&self.profile_id);
-            return Err(error("SERVER_ID_CHANGED"));
-        }
-        if info.protocol_version != 1
-            || info.ssh_protocol_version.unwrap_or(1) != 1
-            || info.minimum_client_protocol_version.unwrap_or(1) > 1
-        {
-            return Err(error("CLIENT_PROTOCOL_UNSUPPORTED"));
-        }
+        let info = self.manager.discover(&login).await?;
         // Read current authorization for every new transport. No cached grant can
         // expand an existing connection or survive a login change.
         let asset: BastionAsset = decode(
@@ -564,15 +726,24 @@ impl TicketProvider {
             .find(|a| a.id == self.account_id)
             .ok_or_else(|| error("PERMISSION_DENIED"))?;
         validate_caps(&account.capabilities)?;
-        let purpose = if account.capabilities.iter().any(|c| c == "shell") {
+        let capabilities: Vec<_> = account
+            .capabilities
+            .iter()
+            .filter(|c| info.supports(c))
+            .cloned()
+            .collect();
+        if capabilities.is_empty() {
+            return Err(error("CHANNEL_PERMISSION_DENIED"));
+        }
+        let purpose = if capabilities.iter().any(|c| c == "shell") {
             "terminal"
-        } else if account.capabilities.iter().any(|c| c == "sftp") {
+        } else if capabilities.iter().any(|c| c == "sftp") {
             "sftp"
         } else {
             "server_tool"
         };
-        let mut ticket: Ticket = decode(login.request(Method::POST, "integrations/zeroterm/connection-tickets", Some(&serde_json::json!({"asset_id":self.asset_id,"account_id":self.account_id,"capabilities":account.capabilities,"purpose":purpose}))).await?)?;
-        validate_ticket(&ticket, &login.profile, &account.capabilities)?;
+        let mut ticket: Ticket = decode(login.request(Method::POST, "integrations/zeroterm/connection-tickets", Some(&serde_json::json!({"asset_id":self.asset_id,"account_id":self.account_id,"capabilities":capabilities,"purpose":purpose}))).await?)?;
+        validate_ticket(&ticket, &login.profile, &capabilities)?;
         let cfg = ConnectConfig {
             host: ticket.gateway.host.clone(),
             port: ticket.gateway.port,
@@ -641,33 +812,84 @@ impl App {
             .map_err(local_error)?
             .into_iter()
             .map(|(id, bytes)| {
-                let mut profile: BastionProfile =
+                let stored: StoredBastionProfile =
                     serde_json::from_slice(&bytes).map_err(local_error)?;
+                let mut profile = stored.profile.clone();
                 profile.id = id;
+                profile.has_password = !stored.password.is_empty();
                 Ok(profile)
             })
             .collect()
     }
     pub fn save_bastion_profile(&self, profile: &BastionProfile) -> Result<String, BastionError> {
+        self.save_bastion_connection(profile, None)
+    }
+    fn stored_bastion_profile(&self, id: &str) -> Result<StoredBastionProfile, BastionError> {
+        let (_, bytes) = self.vault.list(KIND).map_err(local_error)?
+            .into_iter().find(|(record_id, _)| record_id == id)
+            .ok_or_else(|| error("RESOURCE_NOT_FOUND"))?;
+        let mut stored: StoredBastionProfile = serde_json::from_slice(&bytes).map_err(local_error)?;
+        stored.profile.id = id.to_owned();
+        Ok(stored)
+    }
+    /// None keeps an existing password for the same account and identity; Some("") clears it.
+    pub fn save_bastion_connection(
+        &self,
+        profile: &BastionProfile,
+        password: Option<&str>,
+    ) -> Result<String, BastionError> {
         profile.validate()?;
-        let bytes = serde_json::to_vec(profile).map_err(local_error)?;
+        let mut stored = StoredBastionProfile { profile: profile.clone(), password: String::new() };
+        if !profile.id.is_empty() {
+            let old = self.stored_bastion_profile(&profile.id)?;
+            // Never reuse a password when its account or trusted endpoint changes.
+            if old.profile.username == profile.username
+                && old.profile.api_url == profile.api_url
+                && old.profile.server_id == profile.server_id
+                && old.profile.ssh_host == profile.ssh_host
+                && old.profile.ssh_port == profile.ssh_port
+                && old.profile.ssh_host_key_sha256 == profile.ssh_host_key_sha256
+                && old.profile.ca_pem == profile.ca_pem
+            {
+                stored.password = old.password.clone();
+            }
+        }
+        if let Some(password) = password {
+            stored.password.zeroize();
+            stored.password = password.to_owned();
+        }
+        if !stored.password.is_empty() && profile.username.trim().is_empty() {
+            return Err(error("INVALID_ARGUMENT"));
+        }
+        let bytes = Zeroizing::new(serde_json::to_vec(&stored).map_err(local_error)?);
         if profile.id.is_empty() {
             self.vault.insert(KIND, &bytes).map_err(local_error)
         } else {
-            if !self
-                .list_bastion_profiles()?
-                .iter()
-                .any(|p| p.id == profile.id)
-            {
-                return Err(error("RESOURCE_NOT_FOUND"));
-            }
-            // Updating trust configuration ends every existing login for that profile.
+            // Updating connection or account settings ends the old login.
             self.bastions.forget(&profile.id);
             self.vault
                 .update(&profile.id, &bytes)
                 .map_err(local_error)?;
             Ok(profile.id.clone())
         }
+    }
+    pub async fn login_bastion(
+        &self,
+        profile_id: &str,
+        username: &str,
+        password: &str,
+        device_label: &str,
+    ) -> Result<(), BastionError> {
+        let stored = self.stored_bastion_profile(profile_id)?;
+        let password = if password.is_empty() && stored.profile.username == username {
+            stored.password.as_str()
+        } else {
+            password
+        };
+        if username.trim().is_empty() || password.is_empty() {
+            return Err(error("INVALID_ARGUMENT"));
+        }
+        self.bastions.login(stored.profile.clone(), username, password, device_label).await
     }
     pub fn delete_bastion_profile(&self, id: &str) -> Result<(), BastionError> {
         if !self.list_bastion_profiles()?.iter().any(|p| p.id == id) {
@@ -749,13 +971,21 @@ mod tests {
     const ACCOUNT: &str = "22222222-2222-4222-8222-222222222222";
     #[derive(Default)]
     struct Mock {
+        logins: AtomicUsize,
         refreshes: AtomicUsize,
         tickets: AtomicUsize,
         reject_refresh: AtomicBool,
         grouped_assets: AtomicBool,
         expired: AtomicBool,
         changed_identity: AtomicBool,
+        changed_gateway: AtomicUsize,
+        disable_shell: AtomicBool,
+        disable_sftp: AtomicBool,
+        recording_unavailable: AtomicBool,
+        optional_recording: AtomicBool,
+        failure_secret: AtomicBool,
         pause_login: AtomicBool,
+        check_saved_credentials: AtomicBool,
         login_started: tokio::sync::Notify,
         continue_login: tokio::sync::Notify,
     }
@@ -837,9 +1067,23 @@ mod tests {
                     };
                     let mut status = 200;
                     let value = if path == "/api/v1/info" {
-                        json!({"server_id":if state.changed_identity.load(Ordering::SeqCst) {"other"} else {"test"},"protocol_version":1,"ssh_protocol_version":1})
+                        let mut info = json!({"server_id":if state.changed_identity.load(Ordering::SeqCst) {"other"} else {"test"},"protocol_version":1,"ssh_protocol_version":1,"minimum_client_protocol_version":1,"production_ready":false,"features":{"ssh_terminal":!state.disable_shell.load(Ordering::SeqCst),"ssh_exec":true,"ssh_sftp":!state.disable_sftp.load(Ordering::SeqCst),"web_terminal":false,"web_exec":false,"web_sftp":false},"recording":{"required":!state.optional_recording.load(Ordering::SeqCst),"format_version":1,"available":!state.recording_unavailable.load(Ordering::SeqCst)},"gateway":{"id":"main","host":"gateway.test","port":2222,"public_key":GATEWAY_KEY}});
+                        match state.changed_gateway.load(Ordering::SeqCst) {
+                            1 => info["gateway"]["host"] = json!("other.test"),
+                            2 => info["gateway"]["port"] = json!(22),
+                            3 => info["gateway"]["public_key"] = json!("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB"),
+                            4 => info["gateway"] = json!(null),
+                            5 => info["gateway"]["public_key"] = json!("invalid-key"),
+                            _ => {}
+                        }
+                        info
                     } else if path == "/api/v1/auth/login" {
+                        state.logins.fetch_add(1, Ordering::SeqCst);
                         assert_eq!(body["client_type"], "zeroterm");
+                        if state.check_saved_credentials.load(Ordering::SeqCst) {
+                            assert_eq!(body["username"], "alice");
+                            assert_eq!(body["password"], "vault-password-marker");
+                        }
                         if state.pause_login.load(Ordering::SeqCst) {
                             state.login_started.notify_one();
                             state.continue_login.notified().await;
@@ -884,7 +1128,10 @@ mod tests {
                                 assert_eq!(body["account_id"], ACCOUNT);
                                 let n = state.tickets.fetch_add(1, Ordering::SeqCst) + 1;
                                 let id = format!("33333333-3333-4333-8333-{n:012}");
-                                json!({"protocol_version":1,"ticket_id":id,"ticket_secret":base64::engine::general_purpose::URL_SAFE_NO_PAD.encode([(n+40) as u8;32]),"connection_id":format!("44444444-4444-4444-8444-{n:012}"),"gateway":{"host":"gateway.test","port":2222,"username":format!("zt1:{id}")},"capabilities":["shell","sftp"],"expires_at":(Utc::now()+chrono::Duration::seconds(30)).to_rfc3339()})
+                                json!({"protocol_version":1,"ticket_id":id,"ticket_secret":base64::engine::general_purpose::URL_SAFE_NO_PAD.encode([(n+40) as u8;32]),"connection_id":format!("44444444-4444-4444-8444-{n:012}"),"gateway":{"host":"gateway.test","port":2222,"username":format!("zt1:{id}")},"capabilities":body["capabilities"],"expires_at":(Utc::now()+chrono::Duration::seconds(30)).to_rfc3339()})
+                            }
+                            "/api/v1/connections/44444444-4444-4444-8444-000000000001" => {
+                                json!({"failure":{"code":if state.failure_secret.load(Ordering::SeqCst) {"ticket-secret-marker"} else {"AUTH_OR_GATEWAY_FAILED"}}})
                             }
                             _ => {
                                 status = 404;
@@ -911,8 +1158,10 @@ mod tests {
                 server_id: "test".into(),
                 ssh_host: "gateway.test".into(),
                 ssh_port: 2222,
-                ssh_host_key_sha256: format!("SHA256:{}", STANDARD_NO_PAD.encode([1u8; 32])),
+                ssh_host_key_sha256: GATEWAY_FINGERPRINT.into(),
                 ca_pem: Some(cert.pem()),
+                username: String::new(),
+                has_password: false,
             },
             state,
             task,
@@ -939,6 +1188,92 @@ mod tests {
         }
     }
 
+    #[test]
+    fn discovery_requires_explicit_native_features_and_required_recording() {
+        let make = || json!({"server_id":"test","protocol_version":1,"ssh_protocol_version":1,"minimum_client_protocol_version":1,"production_ready":false,"features":{"ssh_terminal":true,"ssh_exec":true,"ssh_sftp":true,"web_terminal":false},"recording":{"required":true,"format_version":1}});
+        let info: Info = decode(make()).unwrap();
+        info.validate().unwrap();
+        assert!(info.supports("shell"));
+        assert!(info.supports("exec"));
+        assert!(info.supports("sftp"));
+        assert!(!info.supports("forward"));
+        for field in [
+            "features",
+            "production_ready",
+            "ssh_protocol_version",
+            "minimum_client_protocol_version",
+        ] {
+            let mut value = make();
+            value.as_object_mut().unwrap().remove(field);
+            assert!(decode::<Info>(value).unwrap().validate().is_err());
+        }
+        let mut value = make();
+        value["features"] = json!({"web_terminal":true,"web_exec":true,"web_sftp":true});
+        let info: Info = decode(value).unwrap();
+        info.validate().unwrap();
+        assert!(!info.supports("shell") && !info.supports("exec") && !info.supports("sftp"));
+        for recording in [
+            json!(null),
+            json!({"required":false,"format_version":1}),
+            json!({"required":true,"format_version":2}),
+        ] {
+            let mut value = make();
+            value["recording"] = recording;
+            assert_eq!(
+                decode::<Info>(value).unwrap().validate().unwrap_err().code,
+                "RECORDING_REQUIRED"
+            );
+        }
+    }
+    #[tokio::test]
+    async fn catalog_and_fresh_tickets_honor_feature_and_recording_availability() {
+        let s = server().await;
+        let m = Arc::new(BastionManager::default());
+        login(&m, &s).await;
+        let p = provider(m.clone());
+        s.state.disable_shell.store(true, Ordering::SeqCst);
+        assert_eq!(
+            m.assets("profile").await.unwrap()[0].accounts[0].capabilities,
+            vec!["sftp"]
+        );
+        assert_eq!(p.prepare().await.unwrap().1.capabilities, vec!["sftp"]);
+        s.state.disable_shell.store(false, Ordering::SeqCst);
+        s.state.recording_unavailable.store(true, Ordering::SeqCst);
+        assert_eq!(p.prepare().await.unwrap().1.capabilities, vec!["sftp"]);
+        s.state.disable_sftp.store(true, Ordering::SeqCst);
+        assert!(m.assets("profile").await.unwrap().is_empty());
+        assert!(p
+            .prepare()
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("CHANNEL_PERMISSION_DENIED"));
+        assert_eq!(s.state.tickets.load(Ordering::SeqCst), 2);
+        s.state.optional_recording.store(true, Ordering::SeqCst);
+        assert_eq!(
+            m.assets("profile").await.unwrap_err().code,
+            "RECORDING_REQUIRED"
+        );
+        assert!(p
+            .prepare()
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("RECORDING_REQUIRED"));
+        assert_eq!(s.state.tickets.load(Ordering::SeqCst), 2);
+    }
+    #[tokio::test]
+    async fn connection_failure_never_surfaces_arbitrary_response_text() {
+        let s = server().await;
+        let m = Arc::new(BastionManager::default());
+        login(&m, &s).await;
+        s.state.failure_secret.store(true, Ordering::SeqCst);
+        let failure = provider(m)
+            .failure("44444444-4444-4444-8444-000000000001")
+            .await;
+        assert!(failure.contains("AUTH_OR_GATEWAY_FAILED"));
+        assert!(!failure.contains("ticket-secret-marker"));
+    }
     #[tokio::test]
     async fn catalog_merges_groups_across_pages_and_supports_legacy_ungrouped_assets() {
         let s = server().await;
@@ -1054,6 +1389,83 @@ mod tests {
         assert!(metadata.cancelled.is_cancelled());
         assert_eq!(s.state.tickets.load(Ordering::SeqCst), 1);
     }
+    // Throwaway key; FINGERPRINT is `ssh-keygen -lf -E sha256` of the same line.
+    const GATEWAY_KEY: &str = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMkUewCugYJx6+EHYnQImqhx0CBpNFSgEqWhdpd9ncgJ probe-test";
+    const GATEWAY_FINGERPRINT: &str = "SHA256:V7VLKpTCA0oXCfOoEXmUW01yqozapS/EuSnoPQwWBq4";
+    #[tokio::test]
+    async fn probe_fills_pins_from_verified_info_and_requires_tls() {
+        let s = server().await;
+        let m = BastionManager::default();
+        let probed = m
+            .probe(
+                "",
+                &format!("{}/", s.profile.api_url),
+                s.profile.ca_pem.clone(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(probed.name, "localhost");
+        assert_eq!(probed.api_url, s.profile.api_url);
+        assert_eq!(probed.server_id, "test");
+        assert_eq!(
+            (probed.ssh_host.as_str(), probed.ssh_port),
+            ("gateway.test", 2222)
+        );
+        assert_eq!(probed.ssh_host_key_sha256, GATEWAY_FINGERPRINT);
+        assert!(probed.id.is_empty());
+        assert_eq!(s.state.logins.load(Ordering::SeqCst), 0);
+        assert_eq!(s.state.tickets.load(Ordering::SeqCst), 0);
+        assert!(m.probe("Named", &s.profile.api_url, None).await.is_err());
+        assert!(m.probe("x", "http://localhost", None).await.is_err());
+        assert!(m
+            .probe(
+                "x",
+                &format!("{}///", s.profile.api_url),
+                s.profile.ca_pem.clone()
+            )
+            .await
+            .is_err());
+        for change in [4, 5] {
+            s.state.changed_gateway.store(change, Ordering::SeqCst);
+            assert_eq!(
+                m.probe("", &s.profile.api_url, s.profile.ca_pem.clone())
+                    .await
+                    .unwrap_err()
+                    .code,
+                "CLIENT_PROTOCOL_UNSUPPORTED"
+            );
+        }
+    }
+    #[tokio::test]
+    async fn changed_gateway_blocks_login_and_cancels_existing_connections_without_repinning() {
+        for (change, code) in [
+            (1, "GATEWAY_ADDRESS_CHANGED"),
+            (2, "GATEWAY_ADDRESS_CHANGED"),
+            (3, "GATEWAY_HOST_KEY_CHANGED"),
+        ] {
+            let s = server().await;
+            let m = Arc::new(BastionManager::default());
+            login(&m, &s).await;
+            let (_, metadata) = provider(m.clone()).prepare().await.unwrap();
+            s.state.changed_gateway.store(change, Ordering::SeqCst);
+            assert_eq!(m.assets("profile").await.unwrap_err().code, code);
+            assert!(metadata.cancelled.is_cancelled());
+            assert_eq!(
+                m.assets("profile").await.unwrap_err().code,
+                "UNAUTHENTICATED"
+            );
+            assert_eq!(
+                m.login(s.profile.clone(), "alice", "secret", "Tests")
+                    .await
+                    .unwrap_err()
+                    .code,
+                code
+            );
+            assert_eq!(s.state.logins.load(Ordering::SeqCst), 1);
+            assert_eq!(s.state.tickets.load(Ordering::SeqCst), 1);
+            assert_eq!(s.profile.ssh_host_key_sha256, GATEWAY_FINGERPRINT);
+        }
+    }
     #[tokio::test]
     async fn tls_verification_is_required() {
         let s = server().await;
@@ -1064,6 +1476,71 @@ mod tests {
             .await
             .is_err());
     }
+    #[tokio::test]
+    async fn saved_account_survives_reopen_without_exposing_or_reusing_password_for_changed_identity() {
+        let s = server().await;
+        s.state.check_saved_credentials.store(true, Ordering::SeqCst);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("vault.db");
+        let app = App::create(&path, "master-password").unwrap();
+        let mut profile = s.profile.clone();
+        profile.id.clear();
+        profile.username = "alice".into();
+        profile.id = app.save_bastion_connection(&profile, Some("vault-password-marker")).unwrap();
+        drop(app);
+
+        let app = App::open(&path, "master-password").unwrap();
+        let listed = app.list_bastion_profiles().unwrap();
+        assert!(listed[0].has_password);
+        assert_eq!(listed[0].username, "alice");
+        let public = serde_json::to_string(&listed).unwrap();
+        assert!(!public.contains("vault-password-marker"));
+        assert!(serde_json::to_value(&listed[0]).unwrap().get("password").is_none());
+        app.login_bastion(&profile.id, "alice", "", "Tests").await.unwrap();
+        assert_eq!(s.state.logins.load(Ordering::SeqCst), 1);
+        // The private password and transient login tokens never appear on disk as plaintext.
+        let disk = std::fs::read(&path).unwrap();
+        for secret in ["vault-password-marker", "access-secret-marker", "refresh-secret-marker"] {
+            assert!(!disk.windows(secret.len()).any(|w| w == secret.as_bytes()));
+        }
+        assert!(app.login_bastion(&profile.id, "bob", "", "Tests").await.is_err());
+        app.bastions.clear();
+        assert!(app.bastions.assets(&profile.id).await.is_err());
+        assert!(app.list_bastion_profiles().unwrap()[0].has_password);
+
+        profile.name = "Renamed".into();
+        app.save_bastion_profile(&profile).unwrap();
+        assert!(app.list_bastion_profiles().unwrap()[0].has_password);
+        s.state.changed_identity.store(true, Ordering::SeqCst);
+        assert!(app.login_bastion(&profile.id, "alice", "", "Tests").await.is_err());
+        assert_eq!(s.state.logins.load(Ordering::SeqCst), 1);
+        s.state.changed_identity.store(false, Ordering::SeqCst);
+
+        profile.api_url = "https://other.test".into();
+        app.save_bastion_profile(&profile).unwrap();
+        assert!(!app.list_bastion_profiles().unwrap()[0].has_password);
+        profile.api_url = s.profile.api_url.clone();
+        app.save_bastion_connection(&profile, Some("vault-password-marker")).unwrap();
+        profile.username = "bob".into();
+        app.save_bastion_profile(&profile).unwrap();
+        assert!(!app.list_bastion_profiles().unwrap()[0].has_password);
+        profile.username = "alice".into();
+        app.save_bastion_connection(&profile, Some("vault-password-marker")).unwrap();
+        app.save_bastion_connection(&profile, Some("")).unwrap();
+        assert!(!app.list_bastion_profiles().unwrap()[0].has_password);
+        assert!(app.login_bastion(&profile.id, "alice", "", "Tests").await.is_err());
+        app.delete_bastion_profile(&profile.id).unwrap();
+        assert!(app.list_bastion_profiles().unwrap().is_empty());
+
+        // Profiles written by older versions contain neither account nor password.
+        let mut legacy = serde_json::to_value(&s.profile).unwrap();
+        for key in ["username", "has_password"] { legacy.as_object_mut().unwrap().remove(key); }
+        app.vault.insert(KIND, &serde_json::to_vec(&legacy).unwrap()).unwrap();
+        let listed = app.list_bastion_profiles().unwrap();
+        assert_eq!(listed[0].username, "");
+        assert!(!listed[0].has_password);
+    }
+
     #[test]
     fn profile_rejects_insecure_urls_and_unverified_fingerprints() {
         let mut p = BastionProfile {
@@ -1075,6 +1552,8 @@ mod tests {
             ssh_port: 2222,
             ssh_host_key_sha256: format!("SHA256:{}", STANDARD_NO_PAD.encode([1u8; 32])),
             ca_pem: None,
+            username: String::new(),
+            has_password: false,
         };
         p.validate().unwrap();
         for url in [
@@ -1101,6 +1580,8 @@ mod tests {
             ssh_port: 2222,
             ssh_host_key_sha256: String::new(),
             ca_pem: None,
+            username: String::new(),
+            has_password: false,
         };
         let make = || Ticket {
             protocol_version: 1,

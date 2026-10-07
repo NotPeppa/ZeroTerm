@@ -8,6 +8,14 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use russh::keys::PublicKeyBase64;
+
+/// SHA256 fingerprint of an OpenSSH public key line, in exactly the form that
+/// [`HostKeyPolicy::PinnedFingerprint`] compares against.
+pub fn openssh_fingerprint(public_key: &str) -> Option<String> {
+    russh::keys::PublicKey::from_openssh(public_key.trim())
+        .ok()
+        .map(|key| key.fingerprint(russh::keys::HashAlg::Sha256).to_string())
+}
 use russh::keys::{Certificate, PublicKey};
 
 use crate::known_hosts::{KnownHostCertificateStatus, KnownHostStatus, KnownHosts};

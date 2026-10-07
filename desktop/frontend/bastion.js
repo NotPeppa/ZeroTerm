@@ -1,5 +1,5 @@
-// Only public metadata crosses IPC. Login tokens and SSH tickets remain in Rust.
-export function installBastion({ invoke, refreshHosts, openTerminal, openFiles, syncCustomSelect, onChange }) {
+// Saved passwords never return over IPC. Login tokens and SSH tickets remain in Rust.
+export function installBastion({ invoke, syncCustomSelect, onChange }) {
   const button = document.getElementById('bastion-button');
   const overlay = document.createElement('div');
   overlay.id = 'bastion-overlay';
@@ -19,29 +19,22 @@ export function installBastion({ invoke, refreshHosts, openTerminal, openFiles, 
       <summary><span data-label="config"></span><span id="bastion-endpoint"></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></summary>
       <form id="bastion-profile-form" class="bastion-form">
         <p class="bastion-wide bastion-help" data-label="configHint"></p>
-        <label><span data-label="name"></span><input type="text" name="name" required autocomplete="off"></label>
         <label><span>HTTPS URL</span><input type="url" name="api_url" required placeholder="https://bastion.example.com" autocomplete="off"></label>
-        <label><span>server_id</span><input type="text" name="server_id" required autocomplete="off"></label>
-        <label><span>SSH Host</span><input type="text" name="ssh_host" required autocomplete="off"></label>
-        <label><span>SSH Port</span><input type="number" name="ssh_port" min="1" max="65535" required value="2222"></label>
-        <label><span data-label="fingerprint"></span><input type="text" name="ssh_host_key_sha256" required placeholder="SHA256:…" autocomplete="off"></label>
-        <label class="bastion-wide"><span data-label="ca"></span><textarea name="ca_pem" rows="2" placeholder="-----BEGIN CERTIFICATE-----" autocomplete="off" spellcheck="false"></textarea></label>
-        <div class="dialog-actions bastion-actions bastion-wide"><button type="submit" class="primary" data-label="save"></button></div>
-      </form>
-    </details>
-    <section class="bastion-section bastion-login" aria-labelledby="bastion-login-title">
-      <h4 id="bastion-login-title" data-label="account"></h4>
-      <p id="bastion-login-hint" class="bastion-help" data-label="saveFirst"></p>
-      <form id="bastion-login-form" class="bastion-form">
+        <label><span data-label="name"></span><input type="text" name="name" autocomplete="off" data-placeholder="namePlaceholder"></label>
         <label><span data-label="username"></span><input type="text" name="username" autocomplete="username" required></label>
         <label><span data-label="password"></span><input type="password" name="password" autocomplete="off" required></label>
-        <div class="dialog-actions bastion-actions"><button type="submit" class="primary" data-label="login"></button></div>
+        <label class="bastion-wide bastion-remember"><input type="checkbox" name="remember_password" checked><span data-label="rememberPassword"></span></label>
+        <details class="bastion-wide bastion-advanced"><summary data-label="advanced"></summary>
+          <label><span data-label="ca"></span><textarea name="ca_pem" rows="3" placeholder="-----BEGIN CERTIFICATE-----" autocomplete="off" spellcheck="false"></textarea></label>
+        </details>
+        <div id="bastion-trust" class="bastion-wide bastion-trust" aria-live="polite" hidden>
+          <p class="bastion-trust-title" data-role="trust-title"></p>
+          <dl><dt>server_id</dt><dd data-field="server_id"></dd><dt data-label="sshEntry"></dt><dd data-field="ssh_entry"></dd><dt data-label="fingerprint"></dt><dd data-field="ssh_host_key_sha256"></dd></dl>
+          <p class="bastion-help" data-role="trust-note"></p>
+        </div>
+        <div class="dialog-actions bastion-actions bastion-wide"><button type="button" data-action="cancel-probe" data-label="cancel" hidden></button><button type="button" data-action="logout" data-label="logout" hidden></button><button type="submit" name="save_only" formnovalidate data-action="save" data-label="save" hidden></button><button type="submit" class="primary" data-role="submit"></button></div>
       </form>
-    </section>
-    <section class="bastion-section bastion-catalog" aria-labelledby="bastion-assets-title">
-      <header class="bastion-assets-header"><h4 id="bastion-assets-title" data-label="assets"></h4><div class="dialog-actions bastion-actions"><button type="button" data-action="refresh" data-label="refresh"></button><button type="button" data-action="logout" data-label="logout"></button></div></header>
-      <div id="bastion-assets" class="bastion-assets"></div>
-    </section>
+    </details>
     <p id="bastion-message" role="status" aria-live="polite" hidden></p>
     <p class="bastion-security" data-label="hint"></p>
     </div>
@@ -49,20 +42,22 @@ export function installBastion({ invoke, refreshHosts, openTerminal, openFiles, 
   document.body.append(overlay);
   const q = selector => overlay.querySelector(selector);
   const profileForm = q('#bastion-profile-form');
-  const loginForm = q('#bastion-login-form');
   const select = q('#bastion-profiles');
   const message = q('#bastion-message');
-  const assetsEl = q('#bastion-assets');
   let profiles = [], busy = false, previousFocus = null;
   let requestedProfileId;
+  // Unsaved profile read from /info, shown for confirmation before it is pinned.
+  let pending = null;
   const words = {
-    en: { title:'Bastion', subtitle:'Manage connections and authorized assets', close:'Close', connection:'Bastion connection', choose:'Select or create a connection', new:'New connection', delete:'Delete', config:'Connection configuration', configHint:'Verify the server ID, SSH address and fingerprint with your administrator.', name:'Name', fingerprint:'Verified SSH SHA256 fingerprint', ca:'Private TLS CA PEM (optional)', save:'Save configuration', account:'Account login', username:'Username', password:'Password', login:'Log in', logout:'Log out', refresh:'Refresh', assets:'Authorized assets', favorite:'Save to hosts', terminal:'Terminal', files:'Files', empty:'No authorized assets', waiting:'Log in to view available assets', saveFirst:'Save the connection configuration before logging in.', saved:'Saved', loading:'Loading…', saving:'Saving configuration…', loggingIn:'Logging in…', loggingOut:'Logging out…', deleting:'Deleting connection…', opening:'Opening connection…', hint:'Login stays in memory; log in again after locking the vault or restarting. The gateway can read and record target sessions.' },
-    zh: { title:'堡垒机', subtitle:'管理连接配置与授权资产', close:'关闭', connection:'堡垒机连接', choose:'选择或新建连接', new:'新增连接', delete:'删除', config:'连接配置', configHint:'请向管理员核验 server_id、SSH 地址和指纹。', name:'名称', fingerprint:'已核验的 SSH SHA256 指纹', ca:'私有 TLS CA PEM（可选）', save:'保存配置', account:'账户登录', username:'用户名', password:'密码', login:'登录', logout:'注销', refresh:'刷新', assets:'授权资产', favorite:'加入主机列表', terminal:'终端', files:'文件', empty:'暂无授权资产', waiting:'登录后查看可用资产', saveFirst:'保存连接配置后，即可登录并获取授权资产。', saved:'已保存', loading:'正在加载…', saving:'正在保存配置…', loggingIn:'正在登录…', loggingOut:'正在注销…', deleting:'正在删除连接…', opening:'正在打开连接…', hint:'登录状态仅保存在内存，锁定 Vault 或重启后需重新登录。网关可读取并录制目标会话。' }
+    en: { title:'Bastion', subtitle:'Manage connections and accounts', close:'Close', connection:'Bastion connection', choose:'Select or create a connection', new:'New connection', delete:'Delete', config:'Connection configuration', configHint:'Enter the address and account together. Verify the bastion identity, then confirm to save and log in.', name:'Name (optional)', namePlaceholder:'Defaults to the host name', advanced:'Advanced: private certificate authority', fingerprint:'SSH host-key fingerprint', sshEntry:'SSH entry', ca:'Private TLS CA PEM (only for a self-signed or internal CA)', save:'Save', probe:'Read and verify', confirmLogin:'Confirm and log in', saveLogin:'Save and log in', rememberPassword:'Save password in encrypted Vault', savedPassword:'Saved password; leave empty to keep it', cancel:'Cancel', probing:'Reading bastion identity…', trustPending:'Confirm the bastion identity', trustSaved:'Pinned bastion identity', trustNote:'Read from the bastion over verified HTTPS. Compare with your administrator if unsure; once saved, any later change is refused.', trustSavedNote:'Connections are refused if the bastion reports a different server ID, SSH entry or host key.', identityChanged:'The bastion identity has changed. Connection refused; saved trust was preserved. Verify the change with your administrator.', trustChanged:'Differs from the saved values. Confirm the reason with your administrator before saving.', username:'Username', password:'Password', logout:'Log out', saveFirst:'Select a bastion connection.', saved:'Saved', loading:'Loading…', saving:'Saving configuration…', loggingIn:'Logging in…', loggingOut:'Logging out…', deleting:'Deleting connection…', hint:'Saved accounts are available after unlocking Vault. The gateway can read and record target sessions.' },
+    zh: { title:'堡垒机', subtitle:'管理连接配置与账户', close:'关闭', connection:'堡垒机连接', choose:'选择或新建连接', new:'新增连接', delete:'删除', config:'连接配置', configHint:'填写地址与账户，核验堡垒机身份后，确认即可保存并登录。', name:'名称（可选）', namePlaceholder:'默认使用主机名', advanced:'高级：私有证书颁发机构', fingerprint:'SSH 主机密钥指纹', sshEntry:'SSH 入口', ca:'私有 TLS CA PEM（仅自签或内网证书需要）', save:'保存', probe:'读取并核验', confirmLogin:'确认并登录', saveLogin:'保存并登录', rememberPassword:'将密码保存到加密 Vault', savedPassword:'密码已保存，留空继续使用', cancel:'取消', probing:'正在读取堡垒机身份…', trustPending:'请确认堡垒机身份', trustSaved:'已固定的堡垒机身份', trustNote:'以上信息通过已校验证书的 HTTPS 读取；如有疑问请与管理员核对。保存后若发生变化将拒绝连接。', trustSavedNote:'如果堡垒机返回的 server_id、SSH 入口或主机密钥与此不同，连接会被拒绝。', identityChanged:'堡垒机身份已变化，已拒绝连接并保留原有信任配置。请与管理员核实变更。', trustChanged:'与已保存的值不同，请先向管理员确认原因再保存。', username:'用户名', password:'密码', logout:'注销', saveFirst:'请选择堡垒机连接。', saved:'已保存', loading:'正在加载…', saving:'正在保存配置…', loggingIn:'正在登录…', loggingOut:'正在注销…', deleting:'正在删除连接…', hint:'解锁 Vault 后可使用已保存的账户登录。网关可读取并录制目标会话。' }
   };
   const w = key => words[document.documentElement.lang.startsWith('zh') ? 'zh' : 'en'][key] || key;
   function translate() {
     q('#bastion-title').textContent = w('title');
     overlay.querySelectorAll('[data-label]').forEach(el => el.textContent = w(el.dataset.label));
+    overlay.querySelectorAll('[data-placeholder]').forEach(el => el.placeholder = w(el.dataset.placeholder));
+    renderTrust();
     q('[data-action="close"]').setAttribute('aria-label', w('close'));
     q('[data-action="close"]').title = w('close');
     button.title = w('title');
@@ -73,22 +68,15 @@ export function installBastion({ invoke, refreshHosts, openTerminal, openFiles, 
     message.hidden = !text;
     message.dataset.state = state;
   }
-  function showEmpty(key = 'waiting') {
-    const empty = document.createElement('div');
-    empty.className = 'bastion-empty';
-    empty.textContent = w(key);
-    assetsEl.replaceChildren(empty);
-  }
   function syncControls() {
     overlay.querySelectorAll('button, input, select, textarea').forEach(el => el.disabled = busy);
     const needsProfile = busy || !select.value;
     q('[data-action="delete"]').disabled = needsProfile;
     q('[data-action="logout"]').disabled = needsProfile;
-    q('[data-action="refresh"]').disabled = needsProfile;
-    loginForm.querySelectorAll('input, button').forEach(el => el.disabled = needsProfile);
-    loginForm.hidden = !select.value;
-    q('.bastion-catalog').hidden = !select.value;
-    q('#bastion-login-hint').hidden = Boolean(select.value);
+    q('[data-action="logout"]').hidden = !select.value;
+    const useSaved = canUsePassword();
+    profileForm.elements.password.required = !useSaved;
+    profileForm.elements.password.placeholder = useSaved ? w('savedPassword') : '';
     q('.bastion-dialog').setAttribute('aria-busy', String(busy));
     const trigger = q('.zt-select-trigger');
     if (trigger) {
@@ -101,16 +89,51 @@ export function installBastion({ invoke, refreshHosts, openTerminal, openFiles, 
     syncCustomSelect?.(select.id);
     syncControls();
   }
-  function fillProfile() {
-    const p = profiles.find(p => p.id === select.value);
-    profileForm.reset();
-    q('#bastion-config').open = !p;
-    q('#bastion-endpoint').textContent = p ? `${p.ssh_host}:${p.ssh_port}` : '';
-    for (const name of ['name','api_url','server_id','ssh_host','ssh_port','ssh_host_key_sha256','ca_pem']) {
-      profileForm.elements[name].value = p?.[name] ?? (name === 'ssh_port' ? 2222 : '');
+  const currentProfile = () => profiles.find(p => p.id === select.value);
+  const sshEntry = p => `${p.ssh_host.includes(':') ? `[${p.ssh_host}]` : p.ssh_host}:${p.ssh_port}`;
+  const trimUrl = url => url.trim().replace(/\/+$/, '');
+  const caValue = () => profileForm.elements.ca_pem.value.trim() ? profileForm.elements.ca_pem.value : null;
+  // Same URL and CA as the saved profile: its pinned identity still applies.
+  const sameTrust = p => Boolean(p) && trimUrl(profileForm.elements.api_url.value) === trimUrl(p.api_url) && (caValue()?.trim() ?? null) === (p.ca_pem?.trim() || null);
+  const canUsePassword = () => {
+    const p = currentProfile();
+    return sameTrust(p) && p.has_password && p.username === profileForm.elements.username.value.trim() && profileForm.elements.remember_password.checked;
+  };
+  function renderTrust() {
+    const saved = currentProfile(), shown = pending ?? (sameTrust(saved) ? saved : null);
+    const card = q('#bastion-trust');
+    card.hidden = !shown;
+    q('[data-action="cancel-probe"]').hidden = !pending;
+    const submit = q('[data-role="submit"]');
+    submit.textContent = w(pending ? 'confirmLogin' : sameTrust(saved) ? 'saveLogin' : 'probe');
+    // Saving without logging in is useful for editing an existing connection.
+    q('[data-action="save"]').hidden = Boolean(pending) || !sameTrust(saved);
+    if (!shown) return;
+    const values = { server_id: shown.server_id, ssh_entry: sshEntry(shown), ssh_host_key_sha256: shown.ssh_host_key_sha256 };
+    const before = saved && { server_id: saved.server_id, ssh_entry: sshEntry(saved), ssh_host_key_sha256: saved.ssh_host_key_sha256 };
+    let changed = false;
+    for (const [field, value] of Object.entries(values)) {
+      const dd = card.querySelector(`[data-field="${field}"]`);
+      dd.textContent = value;
+      dd.title = value;
+      const differs = Boolean(pending && before && before[field] !== value);
+      dd.classList.toggle('changed', differs);
+      changed ||= differs;
     }
-    showEmpty();
-    loginForm.reset();
+    card.dataset.state = changed ? 'changed' : pending ? 'pending' : 'saved';
+    q('[data-role="trust-title"]').textContent = w(pending ? 'trustPending' : 'trustSaved');
+    q('[data-role="trust-note"]').textContent = w(changed ? 'trustChanged' : pending ? 'trustNote' : 'trustSavedNote');
+  }
+  function fillProfile() {
+    const p = currentProfile();
+    pending = null;
+    profileForm.reset();
+    q('#bastion-config').open = true;
+    q('#bastion-endpoint').textContent = p ? sshEntry(p) : '';
+    for (const name of ['name','api_url','ca_pem','username']) profileForm.elements[name].value = p?.[name] ?? '';
+    profileForm.elements.remember_password.checked = p ? Boolean(p.has_password || !p.username) : true;
+    q('.bastion-advanced').open = Boolean(p?.ca_pem);
+    renderTrust();
     setMessage();
     syncPicker();
   }
@@ -133,57 +156,18 @@ export function installBastion({ invoke, refreshHosts, openTerminal, openFiles, 
       await action();
       if (message.dataset.state === 'loading') setMessage();
     } catch (e) {
-      setMessage(String(e), 'error');
+      const detail = String(e);
+      setMessage(/SERVER_ID_CHANGED|GATEWAY_ADDRESS_CHANGED|GATEWAY_HOST_KEY_CHANGED/.test(detail) ? `${w('identityChanged')} ${detail}` : detail, 'error');
     } finally {
       busy = false;
       syncControls();
     }
   }
   const currentId = () => { if (!select.value) throw new Error(w('saveFirst')); return select.value; };
-  async function saveAsset(asset, account) {
-    const id = await invoke('bastion_save_asset', {profileId:currentId(),assetId:asset.id,accountId:account.id});
-    await refreshHosts();
-    const hosts = await invoke('list_hosts');
-    return hosts.find(h => h.id === id);
-  }
-  async function loadAssets() {
-    const assets = await invoke('bastion_assets', {profileId:currentId()});
-    assetsEl.replaceChildren();
-    for (const asset of assets) for (const account of asset.accounts) {
-      const row = document.createElement('div');
-      row.className = 'bastion-asset';
-      const identity = document.createElement('div');
-      identity.className = 'bastion-asset-identity';
-      const name = document.createElement('strong');
-      name.textContent = asset.name;
-      const accountInfo = document.createElement('span');
-      accountInfo.textContent = `${account.username} · ${account.capabilities.join(' / ')}`;
-      identity.append(name, accountInfo);
-      const actions = document.createElement('div');
-      actions.className = 'dialog-actions bastion-actions';
-      for (const [labelKey, allowed, action] of [
-        ['favorite',true,async () => { setMessage(w('saved'), 'success'); }],
-        ['terminal',account.capabilities.includes('shell'),async host => { close(); await openTerminal(host); }],
-        ['files',account.capabilities.includes('sftp'),async host => { close(); await openFiles(host); }]
-      ]) {
-        if (!allowed) continue;
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.textContent = w(labelKey);
-        b.addEventListener('click', () => run(async () => action(await saveAsset(asset, account)), 'opening'));
-        actions.append(b);
-      }
-      row.append(identity, actions);
-      assetsEl.append(row);
-    }
-    if (!assetsEl.childElementCount) showEmpty('empty');
-    setMessage();
-  }
   function close() {
     select.closest('.zt-select-wrap')?.dispatchEvent(new CustomEvent('zt-select-close'));
     overlay.hidden = true;
-    loginForm.elements.password.value = '';
-    assetsEl.replaceChildren();
+    profileForm.elements.password.value = '';
     previousFocus?.focus();
   }
   button.addEventListener('click', async () => {
@@ -201,7 +185,20 @@ export function installBastion({ invoke, refreshHosts, openTerminal, openFiles, 
   q('[data-action="new"]').addEventListener('click', () => {
     select.value = '';
     fillProfile();
-    profileForm.elements.name.focus();
+    profileForm.elements.api_url.focus();
+  });
+  q('[data-action="cancel-probe"]').addEventListener('click', () => {
+    pending = null;
+    renderTrust();
+    syncControls();
+    setMessage();
+    q('[data-role="submit"]').focus();
+  });
+  // A changed URL or CA invalidates an identity read with the previous values.
+  profileForm.addEventListener('input', e => {
+    if (pending && ['api_url', 'ca_pem'].includes(e.target.name)) pending = null;
+    renderTrust();
+    syncControls();
   });
   q('[data-action="delete"]').addEventListener('click', () => run(async () => {
     const profileId = currentId();
@@ -213,37 +210,37 @@ export function installBastion({ invoke, refreshHosts, openTerminal, openFiles, 
     const profileId = currentId();
     await invoke('bastion_logout', {profileId});
     onChange?.({type:'logout', profileId});
-    showEmpty();
     setMessage();
   }, 'loggingOut'));
-  q('[data-action="refresh"]').addEventListener('click', () => run(async () => {
-    await loadAssets();
-    onChange?.({type:'catalog', profileId:currentId()});
-  }));
-  profileForm.addEventListener('submit', e => {
-    e.preventDefault();
-    const values = Object.fromEntries(new FormData(profileForm));
-    values.id = select.value;
-    values.ssh_port = Number(values.ssh_port);
-    values.ca_pem ||= null;
+  function saveProfile(profile, login) {
+    const username = profileForm.elements.username.value.trim();
+    const password = profileForm.elements.password.value;
+    const storedPassword = profileForm.elements.remember_password.checked ? password || null : '';
     run(async () => {
-      const id = await invoke('bastion_save_profile', {profile:values});
+      const id = await invoke('bastion_save_profile', {profile:{...profile, username}, password:storedPassword});
+      profileForm.elements.password.value = '';
+      pending = null;
       onChange?.({type:'profile', profileId:id});
       await loadProfiles(id);
+      if (login) {
+        onChange?.({type:'loginStart', profileId:id});
+        await invoke('bastion_login', {profileId:id, username, password});
+        await onChange?.({type:'login', profileId:id});
+        close();
+      }
       setMessage(w('saved'), 'success');
-    }, 'saving').then(() => { if (!overlay.hidden && select.value) loginForm.elements.username.focus(); });
-  });
-  loginForm.addEventListener('submit', e => {
+    }, login ? 'loggingIn' : 'saving');
+  }
+  profileForm.addEventListener('submit', e => {
     e.preventDefault();
-    const username = loginForm.elements.username.value, password = loginForm.elements.password.value;
-    loginForm.elements.password.value = '';
+    const login = e.submitter?.name !== 'save_only';
+    const name = profileForm.elements.name.value.trim(), saved = currentProfile();
+    if (pending) return saveProfile({...pending, id: select.value, name: name || new URL(pending.api_url).hostname}, login);
+    if (sameTrust(saved)) return saveProfile({...saved, name: name || new URL(saved.api_url).hostname}, login);
     run(async () => {
-      const profileId = currentId();
-      onChange?.({type:'loginStart', profileId});
-      await invoke('bastion_login', {profileId,username,password});
-      onChange?.({type:'login', profileId});
-      await loadAssets();
-    }, 'loggingIn');
+      pending = await invoke('bastion_probe', {name, apiUrl: profileForm.elements.api_url.value, caPem: caValue()});
+      renderTrust();
+    }, 'probing').then(() => { if (pending) q('[data-role="submit"]').focus(); });
   });
   overlay.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
@@ -262,7 +259,7 @@ export function installBastion({ invoke, refreshHosts, openTerminal, openFiles, 
       else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
     }
   }, true);
-  // Vault lock removes login state in Rust. Clear any displayed asset snapshot too.
+  // Vault lock removes login state in Rust and clears the password input.
   document.getElementById('lock-button').addEventListener('click', close);
   return { open: profileId => { requestedProfileId = profileId; button.click(); } };
 }

@@ -14996,7 +14996,6 @@ body[data-app-theme="light"] .settings-terminal-sidebar-feature:hover {
 .bastion-dialog .bastion-actions .bastion-delete:not(.primary) { color: var(--danger) !important; }
 .bastion-dialog .bastion-actions .bastion-delete:hover:not(:disabled) { border-color: var(--danger) !important; background: color-mix(in srgb, var(--danger) 10%, transparent) !important; }
 .bastion-section { border-top: 1px solid var(--bastion-border); }
-.bastion-dialog h4 { margin: 0; color: var(--text); font-size: 13px; font-weight: 600; line-height: 20px; }
 .bastion-dialog summary { display: flex; align-items: center; gap: 12px; min-height: 48px; font-size: 13px; font-weight: 600; cursor: pointer; list-style: none; }
 .bastion-dialog summary::-webkit-details-marker { display: none; }
 .bastion-dialog summary svg { margin-left: auto; width: 14px; height: 14px; flex-shrink: 0; color: var(--muted); transition: transform .15s ease; }
@@ -15004,6 +15003,19 @@ body[data-app-theme="light"] .settings-terminal-sidebar-feature:hover {
 #bastion-endpoint { margin-left: auto; min-width: 0; color: var(--muted); font-size: 12px; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #bastion-endpoint:empty { display: none; }
 #bastion-endpoint:not(:empty) + svg { margin-left: 0; }
+.bastion-dialog .bastion-advanced summary { min-height: 0; padding: 2px 0; color: var(--muted); font-size: 12px; font-weight: 500; }
+.bastion-dialog .bastion-advanced summary::before { content: '›'; display: inline-block; width: 10px; transition: transform .15s ease; }
+.bastion-dialog .bastion-advanced[open] summary::before { transform: rotate(90deg); }
+.bastion-dialog .bastion-advanced label { display: grid; margin-top: 10px; }
+.bastion-trust { padding: 12px 14px; border: 1px solid var(--bastion-border); border-radius: 8px; background: var(--bastion-field); }
+.bastion-trust[data-state="pending"] { border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+.bastion-trust[data-state="changed"] { border-color: var(--danger); }
+.bastion-trust-title { margin: 0 0 10px; color: var(--text); font-size: 12px; font-weight: 600; }
+.bastion-trust dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; margin: 0 0 10px; font-size: 12px; }
+.bastion-trust dt { color: var(--muted); }
+.bastion-trust dd { margin: 0; min-width: 0; overflow-wrap: anywhere; color: var(--text); font-family: var(--mono, ui-monospace, Consolas, monospace); user-select: text; }
+.bastion-trust dd.changed { color: var(--danger); }
+.bastion-trust[data-state="changed"] [data-role="trust-note"] { color: var(--danger); }
 .bastion-dialog #bastion-profile-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px 16px; padding: 0 0 20px; }
 .bastion-dialog .bastion-help { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .bastion-dialog .bastion-form label { min-width: 0; gap: 8px; color: var(--muted); }
@@ -15040,16 +15052,8 @@ body[data-app-theme="light"] .settings-terminal-sidebar-feature:hover {
 .bastion-dialog .zt-select-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .bastion-dialog input:disabled { opacity: .45; cursor: not-allowed; }
 .bastion-wide { grid-column: 1 / -1; }
-.bastion-login { padding: 20px 0; }
-.bastion-dialog #bastion-login-hint { margin-top: 6px; }
-.bastion-dialog #bastion-login-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: 12px; margin-top: 14px; }
-.bastion-assets-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 0 12px; }
-.bastion-empty { display: grid; place-items: center; min-height: 76px; padding: 12px; box-sizing: border-box; border: 1px dashed var(--bastion-border); border-radius: 8px; color: var(--muted); font-size: 12px; }
-.bastion-asset { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px 0; border-top: 1px solid var(--bastion-border); }
-.bastion-asset:first-child { border-top: 0; }
-.bastion-asset-identity { flex: 1; min-width: 160px; display: flex; flex-direction: column; gap: 5px; overflow-wrap: anywhere; }
-.bastion-asset-identity strong { font-size: 13px; font-weight: 600; }
-.bastion-asset-identity span { color: var(--muted); font-size: 12px; }
+.bastion-dialog .bastion-form .bastion-remember { display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 8px; font-size: 12px; }
+.bastion-dialog .bastion-form .bastion-remember input { width: 16px; height: 16px; padding: 0; flex-shrink: 0; accent-color: var(--accent); }
 .bastion-dialog #bastion-message { margin: 16px 0 0; padding: 10px 12px; border-radius: 8px; background: var(--bastion-field); font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
 .bastion-dialog #bastion-message[data-state="error"] { color: var(--danger) !important; }
 .bastion-dialog #bastion-message[data-state="success"] { color: var(--ok) !important; }
@@ -15066,18 +15070,17 @@ body[data-app-theme="light"] .bastion-dialog form.bastion-form input:focus,
 body[data-app-theme="light"] .bastion-dialog form.bastion-form textarea:focus { border-color: var(--accent) !important; }
 @media (max-width: 600px) {
   .bastion-dialog { padding: 20px; width: calc(100vw - 24px); }
+  .bastion-trust dl { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .bastion-trust dd { margin-bottom: 6px; }
   .bastion-profile-picker { flex-wrap: wrap; }
   .bastion-profile-field { flex-basis: 100%; }
-  .bastion-dialog #bastion-profile-form,
-  .bastion-dialog #bastion-login-form { grid-template-columns: minmax(0, 1fr); }
-  .bastion-dialog #bastion-login-form .bastion-actions button { width: 100%; }
+  .bastion-dialog #bastion-profile-form { grid-template-columns: minmax(0, 1fr); }
   .bastion-dialog .bastion-actions button { min-height: 44px; }
   .bastion-dialog form.bastion-form input,
   .bastion-dialog .zt-select-trigger,
   .bastion-dialog .bastion-profile-field > select { height: 44px; }
   .bastion-dialog .bastion-close { width: 44px; height: 44px; }
   .bastion-dialog summary { min-height: 52px; }
-  .bastion-asset .bastion-actions { justify-content: flex-start; }
 }
 @media (prefers-reduced-motion: reduce) {
   .bastion-dialog *, .bastion-dialog *::before { transition: none !important; }

@@ -28,6 +28,7 @@ desktop/dist/
 
 # Android
 android/.gradle/
+android/.kotlin/
 android/local.properties
 android/**/build/
 android/app/src/main/jniLibs/

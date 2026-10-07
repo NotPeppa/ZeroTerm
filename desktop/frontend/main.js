@@ -22287,5 +22287,5 @@ function openSettingsPage() {
   setWorkspaceMode("settings");
 }
 
-const bastionUi = installBastion({ invoke, refreshHosts: () => refreshHostsCacheFromVault(), openTerminal: openHostInTerminal, openFiles: assignHostToSftpPane, syncCustomSelect, onChange: change => bastionTree?.change(change) });
+const bastionUi = installBastion({ invoke, syncCustomSelect, onChange: change => bastionTree?.change(change) });
 bastionTree = installBastionTree({ invoke, refreshHosts: () => refreshHostsCacheFromVault(), renderLocal: renderHosts, openLogin: profileId => bastionUi.open(profileId), openTerminal: openHostInTerminal, openFiles: async host => { setWorkspaceMode("sftp"); await assignHostToSftpPane(host); }, syncCustomSelect });

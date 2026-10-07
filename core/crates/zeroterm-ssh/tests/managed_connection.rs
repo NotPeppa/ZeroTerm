@@ -58,6 +58,7 @@ fn config(provider: Arc<Provider>) -> ConnectConfig {
 #[derive(Clone)]
 struct Gateway {
     passwords: Arc<AtomicUsize>,
+    wait_for_eof: Option<ChannelId>,
 }
 impl server::Server for Gateway {
     type Handler = Self;
@@ -98,6 +99,10 @@ impl server::Handler for Gateway {
         s: &mut server::Session,
     ) -> Result<(), Self::Error> {
         s.channel_success(ch)?;
+        if command == b"stdin-eof" {
+            self.wait_for_eof = Some(ch);
+            return Ok(());
+        }
         s.data(ch, b"target stdout".to_vec())?;
         s.extended_data(ch, 1, b"target stderr".to_vec())?;
         // EOF only ends the data stream. Exit metadata may follow it.
@@ -108,6 +113,21 @@ impl server::Handler for Gateway {
             s.exit_status_request(ch, 7)?;
         }
         s.close(ch)?;
+        Ok(())
+    }
+    async fn channel_eof(
+        &mut self,
+        ch: ChannelId,
+        s: &mut server::Session,
+    ) -> Result<(), Self::Error> {
+        if self.wait_for_eof == Some(ch) {
+            self.wait_for_eof = None;
+            s.data(ch, vec![0, 255, 10])?;
+            s.extended_data(ch, 1, vec![128, 0])?;
+            s.eof(ch)?;
+            s.exit_status_request(ch, 9)?;
+            s.close(ch)?;
+        }
         Ok(())
     }
     async fn pty_request(
@@ -165,6 +185,7 @@ async fn gateway(caps: &[&str]) -> (Arc<Provider>, Arc<AtomicUsize>, tokio::task
     let passwords = Arc::new(AtomicUsize::new(0));
     let state = Gateway {
         passwords: passwords.clone(),
+        wait_for_eof: None,
     };
     let task = tokio::spawn(async move {
         let mut gateway = state;
@@ -190,6 +211,13 @@ async fn reconnect_resolves_fresh_credentials_exec_drains_eof_and_logout_closes_
     assert_eq!(
         first.exec("probe").await.unwrap(),
         (7, b"target stdout".to_vec(), b"target stderr".to_vec())
+    );
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(3), first.exec("stdin-eof"))
+            .await
+            .unwrap()
+            .unwrap(),
+        (9, vec![0, 255, 10], vec![128, 0])
     );
     assert!(
         matches!(first.exec("signal").await,Err(SshError::ExitSignal(signal)) if signal == "TERM")

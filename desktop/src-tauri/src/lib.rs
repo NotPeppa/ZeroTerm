@@ -97,6 +97,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::vault_status,
             bastion::bastion_profiles,
+            bastion::bastion_probe,
             bastion::bastion_save_profile,
             bastion::bastion_delete_profile,
             bastion::bastion_login,

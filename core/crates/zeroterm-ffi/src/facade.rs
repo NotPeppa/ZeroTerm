@@ -312,7 +312,28 @@ impl ZeroTerm {
             .ok_or(FfiError::VaultLocked)?;
         serde_json::to_string(&app.list_bastion_profiles().map_err(other)?).map_err(other)
     }
-    pub fn bastion_save_profile_json(&self, profile_json: String) -> Result<String, FfiError> {
+    /// Verified HTTPS discovery only; the caller confirms this public identity before saving.
+    pub async fn bastion_probe_json(
+        &self,
+        name: String,
+        api_url: String,
+        ca_pem: Option<String>,
+    ) -> Result<String, FfiError> {
+        let app = self
+            .inner
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or(FfiError::VaultLocked)?;
+        let profile = app
+            .bastions()
+            .probe(&name, &api_url, ca_pem)
+            .await
+            .map_err(other)?;
+        serde_json::to_string(&profile).map_err(other)
+    }
+    pub fn bastion_save_profile_json(&self, profile_json: String, password: Option<String>) -> Result<String, FfiError> {
+        let password = password.map(zeroize::Zeroizing::new);
         let app = self
             .inner
             .lock()
@@ -320,7 +341,7 @@ impl ZeroTerm {
             .clone()
             .ok_or(FfiError::VaultLocked)?;
         let profile = serde_json::from_str(&profile_json).map_err(|_| other("INVALID_ARGUMENT"))?;
-        app.save_bastion_profile(&profile).map_err(other)
+        app.save_bastion_connection(&profile, password.as_ref().map(|p| p.as_str())).map_err(other)
     }
     pub fn bastion_delete_profile(&self, profile_id: String) -> Result<(), FfiError> {
         let app = self
@@ -344,14 +365,7 @@ impl ZeroTerm {
             .unwrap()
             .clone()
             .ok_or(FfiError::VaultLocked)?;
-        let profile = app
-            .list_bastion_profiles()
-            .map_err(other)?
-            .into_iter()
-            .find(|p| p.id == profile_id)
-            .ok_or_else(|| other("RESOURCE_NOT_FOUND"))?;
-        app.bastions()
-            .login(profile, &username, &password, "ZeroTerm Mobile")
+        app.login_bastion(&profile_id, &username, &password, "ZeroTerm Mobile")
             .await
             .map_err(other)
     }
