@@ -4,6 +4,9 @@
 
 ## 使用
 
+**前提：堡垒机要先开启 ZeroTerm 原生 SSH 入口。** 它默认关闭，由堡垒机管理员按 zeroterm-terminal 的 README “3.4 开启 ZeroTerm 客户端接入”启用（下载 `deploy/compose.native-ssh.yaml`、在 `.env` 设置 `COMPOSE_FILE`、放行 2222 端口、重启）。没开启时“读取并核验”会提示“该堡垒机未开启 ZeroTerm 原生 SSH 入口”（`NATIVE_ENTRY_UNAVAILABLE`），这个错误码由客户端读取 `/api/v1/info` 后生成，所以 `request_id` 为空。管理员可以用 `curl -s https://堡垒机域名/api/v1/info` 检查：响应里有 `"native"` 且 `"available": true` 才表示已开启。
+
+
 桌面主机列表顶部的盾牌按钮打开堡垒机配置；Android 从工作区侧栏进入“堡垒机”。先解锁 Vault，两端使用相同的添加流程：
 
 - HTTPS origin，例如 `https://bastion.example.com`，不带 `/api/v1`、查询参数或用户名密码。

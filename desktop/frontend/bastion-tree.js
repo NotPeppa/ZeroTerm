@@ -3,7 +3,7 @@ export const accountLabel = account => String(account.label || '').trim() || acc
 // Server-side codes with a dedicated explanation; the raw code stays visible for support.
 export function explainBastionError(detail, lang) {
   const zh = String(lang || '').startsWith('zh');
-  if (/NATIVE_ENTRY_UNAVAILABLE/.test(detail)) return `${zh ? '该堡垒机未开启 ZeroTerm 原生 SSH 入口' : 'This bastion has not enabled the ZeroTerm native SSH entry'} (${detail})`;
+  if (/NATIVE_ENTRY_UNAVAILABLE/.test(detail)) return `${zh ? '该堡垒机未开启 ZeroTerm 原生 SSH 入口，请联系堡垒机管理员按部署文档“开启 ZeroTerm 客户端接入”启用' : 'This bastion has not enabled the ZeroTerm native SSH entry; ask its administrator to enable it (see "Enable ZeroTerm client access" in the bastion deployment guide)'} (${detail})`;
   // RFC-006 grants are all-or-nothing; a refused channel means the server has not opened it yet.
   const refused = /CHANNEL_PERMISSION_DENIED:?\s*(shell|exec|sftp)/.exec(detail);
   if (refused) {
