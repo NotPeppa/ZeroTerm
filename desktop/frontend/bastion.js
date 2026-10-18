@@ -1,3 +1,5 @@
+import { explainBastionError } from './bastion-tree.js';
+
 // Saved passwords never return over IPC. Login tokens and SSH tickets remain in Rust.
 export function installBastion({ invoke, syncCustomSelect, onChange }) {
   const button = document.getElementById('bastion-button');
@@ -156,7 +158,7 @@ export function installBastion({ invoke, syncCustomSelect, onChange }) {
       await action();
       if (message.dataset.state === 'loading') setMessage();
     } catch (e) {
-      const detail = String(e);
+      const detail = explainBastionError(String(e), document.documentElement.lang);
       setMessage(/SERVER_ID_CHANGED|GATEWAY_ADDRESS_CHANGED|GATEWAY_HOST_KEY_CHANGED/.test(detail) ? `${w('identityChanged')} ${detail}` : detail, 'error');
     } finally {
       busy = false;

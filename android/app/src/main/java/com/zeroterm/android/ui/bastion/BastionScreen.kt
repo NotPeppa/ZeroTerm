@@ -44,6 +44,7 @@ fun BastionScreen(repository: ZeroTermRepository, onTerminal: (HostSummary) -> U
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
     val identityChangedMessage = stringResource(R.string.bastion_identity_changed)
+    val nativeUnavailableMessage = stringResource(R.string.bastion_native_unavailable)
     val saved = profiles.firstOrNull { it.optString("id") == selectedId }
     val sameTrust = saved != null && url.trim().trimEnd('/') == saved.optString("api_url").trim().trimEnd('/') &&
         ca.trim() == (if (saved.isNull("ca_pem")) "" else saved.optString("ca_pem").trim())
@@ -67,8 +68,11 @@ fun BastionScreen(repository: ZeroTermRepository, onTerminal: (HostSummary) -> U
             try { action() } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 val detail = e.message.orEmpty()
-                message = if (listOf("SERVER_ID_CHANGED", "GATEWAY_ADDRESS_CHANGED", "GATEWAY_HOST_KEY_CHANGED").any { it in detail })
-                    "$identityChangedMessage\n$detail" else detail
+                message = when {
+                    listOf("SERVER_ID_CHANGED", "GATEWAY_ADDRESS_CHANGED", "GATEWAY_HOST_KEY_CHANGED").any { it in detail } -> "$identityChangedMessage\n$detail"
+                    "NATIVE_ENTRY_UNAVAILABLE" in detail -> "$nativeUnavailableMessage\n$detail"
+                    else -> detail
+                }
             }
             finally { busy = false }
         }
@@ -181,7 +185,10 @@ fun BastionScreen(repository: ZeroTermRepository, onTerminal: (HostSummary) -> U
             assets.forEach { asset -> jsonObjects(asset.getJSONArray("accounts")).forEach { account ->
                 val caps = account.getJSONArray("capabilities").let { a -> (0 until a.length()).map { a.getString(it) } }
                 Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp)) {
-                    Text("${asset.getString("name")} · ${account.getString("username")}")
+                    // RFC-006: show the account label; the target username stays visible when it differs.
+                    val accountUser = account.getString("username")
+                    val accountLabel = account.optString("label").trim().ifEmpty { accountUser }
+                    Text("${asset.getString("name")} · $accountLabel" + if (accountLabel != accountUser) " ($accountUser)" else "")
                     Text(caps.joinToString(", "), style = MaterialTheme.typography.bodySmall)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         TextButton(onClick = { run { saveAsset(asset,account) } }, enabled = !busy) { Text(stringResource(R.string.bastion_favorite)) }

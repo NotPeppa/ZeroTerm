@@ -1,3 +1,22 @@
+// RFC-006 accounts carry a display label; the target username is the fallback.
+export const accountLabel = account => String(account.label || '').trim() || account.username;
+// Server-side codes with a dedicated explanation; the raw code stays visible for support.
+export function explainBastionError(detail, lang) {
+  const zh = String(lang || '').startsWith('zh');
+  if (/NATIVE_ENTRY_UNAVAILABLE/.test(detail)) return `${zh ? '该堡垒机未开启 ZeroTerm 原生 SSH 入口' : 'This bastion has not enabled the ZeroTerm native SSH entry'} (${detail})`;
+  // RFC-006 grants are all-or-nothing; a refused channel means the server has not opened it yet.
+  const refused = /CHANNEL_PERMISSION_DENIED:?\s*(shell|exec|sftp)/.exec(detail);
+  if (refused) {
+    const text = {
+      shell: zh ? '该堡垒机暂未开放终端' : 'This bastion has not opened terminal access',
+      exec: zh ? '该堡垒机暂未开放服务器工具（exec）' : 'This bastion has not opened server tools (exec)',
+      sftp: zh ? '该堡垒机暂未开放文件传输' : 'This bastion has not opened file transfer',
+    }[refused[1]];
+    return `${text} (${detail})`;
+  }
+  if (/CHANNEL_PERMISSION_DENIED/.test(detail)) return `${zh ? '该堡垒机暂未开放此账号的原生 SSH 能力' : 'This bastion has not opened native SSH access for this account'} (${detail})`;
+  return detail;
+}
 // The remote hierarchy comes from the authorized catalog, never from local host groups or tags.
 export function buildBastionTree(catalog, query = '') {
   const groups = new Map();
@@ -29,7 +48,7 @@ export function buildBastionTree(catalog, query = '') {
   }
   function assetNode(asset, inheritedMatch = false) {
     const fullMatch = inheritedMatch || !needle || matches(`${asset.name} ${(asset.tags || []).join(' ')}`);
-    const accounts = fullMatch ? asset.accounts : asset.accounts.filter(a => matches(`${a.username} ${a.capabilities.join(' ')}`));
+    const accounts = fullMatch ? asset.accounts : asset.accounts.filter(a => matches(`${a.label || ''} ${a.username} ${a.capabilities.join(' ')}`));
     if (!accounts.length) return null;
     return { kind: 'asset', key: `asset:${asset.id}`, asset, accounts };
   }
@@ -132,12 +151,12 @@ export function installBastionTree({ invoke, refreshHosts, renderLocal, openLogi
         const item = document.createElement('li'); item.className = 'bastion-tree-account';
         const key = `${picker.value}:${node.asset.id}:${account.id}`;
         if (selected === key) item.classList.add('selected');
-        const identity = document.createElement('span'); identity.className = 'bastion-tree-name'; identity.textContent = account.username; identity.title = `${account.username} · ${account.capabilities.join(' / ')}`;
+        const identity = document.createElement('span'); identity.className = 'bastion-tree-name'; const name = accountLabel(account); identity.textContent = name; identity.title = `${name === account.username ? name : `${name} (${account.username})`} · ${account.capabilities.join(' / ')}`;
         item.append(icon(icons.account), identity);
         for (const [cap, labelKey, action] of [['shell','terminal',openTerminal], ['sftp','files',openFiles]]) {
           if (!account.capabilities.includes(cap)) continue;
           const control = document.createElement('button'); control.type = 'button'; control.className = 'workspace-icon-btn bastion-tree-connect';
-          control.title = `${w(labelKey)} · ${account.username}`; control.setAttribute('aria-label', control.title); control.disabled = opening;
+          control.title = `${w(labelKey)} · ${accountLabel(account)}`; control.setAttribute('aria-label', control.title); control.disabled = opening;
           control.append(icon(icons[labelKey]));
           control.addEventListener('click', () => connect(node.asset, account, action)); item.append(control);
         }
@@ -166,7 +185,7 @@ export function installBastionTree({ invoke, refreshHosts, renderLocal, openLogi
       if (!host) throw new Error('RESOURCE_NOT_FOUND');
       await action(host);
     } catch (e) {
-      if (epoch === requestEpoch) { error = String(e); status.hidden = false; status.querySelector('p').textContent = error; }
+      if (epoch === requestEpoch) { error = explainBastionError(String(e), document.documentElement.lang); status.hidden = false; status.querySelector('p').textContent = error; }
     } finally { if (epoch === requestEpoch) { opening = false; if (source === 'bastion') render(); } }
   }
   async function load({ reloadProfiles = false, profileId = picker.value } = {}) {
@@ -186,7 +205,7 @@ export function installBastionTree({ invoke, refreshHosts, renderLocal, openLogi
       catalog = result; state = 'ready'; error = '';
     } catch (e) {
       if (epoch !== requestEpoch) return;
-      error = String(e);
+      error = explainBastionError(String(e), document.documentElement.lang);
       state = /UNAUTHENTICATED|SESSION_EXPIRED|SESSION_REVOKED|LOGIN_SESSION_REVOKED/.test(error) ? 'login' : 'error';
     } finally { if (epoch === requestEpoch) render(); }
   }

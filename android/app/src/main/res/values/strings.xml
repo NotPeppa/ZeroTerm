@@ -606,6 +606,8 @@
     <string name="bastion_trust_changed">Differs from the saved identity. Confirm the reason with your administrator before saving.</string>
     <string name="bastion_identity_changed">The bastion identity has changed. Connection refused; saved trust was preserved. Verify the change with your administrator.</string>
     <string name="bastion_ssh_entry">SSH entry</string>
+    <string name="bastion_native_unavailable">This bastion has not enabled the ZeroTerm native SSH entry.</string>
+    <string name="bastion_sftp_not_open">This bastion has not opened file transfer yet.</string>
     <string name="bastion_save_first">Confirm and save the connection before logging in.</string>
     <string name="bastion_new">New</string>
     <string name="bastion_name">Name (optional)</string>

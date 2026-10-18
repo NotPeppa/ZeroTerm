@@ -370,8 +370,10 @@ fun SftpBrowserScreen(
                 }
             }
             error?.let {
+                // RFC-006: a refused bastion channel means the server has not opened it yet.
+                val sftpNotOpen = stringResource(R.string.bastion_sftp_not_open)
                 Text(
-                    it,
+                    if ("CHANNEL_PERMISSION_DENIED" in it && "sftp" in it) "$sftpNotOpen\n$it" else it,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(16.dp),
                 )

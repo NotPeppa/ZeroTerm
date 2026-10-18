@@ -102,6 +102,12 @@ impl Drop for AuthMethod {
     }
 }
 
+/// RFC-006 §14.3: the gateway rejects longer exec commands.
+const MANAGED_EXEC_MAX_COMMAND: usize = 64 * 1024;
+/// Packet ceiling for managed SFTP channels when the target does not advertise
+/// `limits@openssh.com`; leaves headroom under the gateway's 256 KiB packet cap.
+const MANAGED_SFTP_MAX_PACKET: u32 = 128 * 1024;
+
 /// A control-plane adapter; no ticket is retained in a reusable ConnectConfig.
 #[async_trait::async_trait]
 pub trait ManagedConnection: Send + Sync {
@@ -817,6 +823,19 @@ impl Session {
         Ok(())
     }
 
+    /// A refused channel request. The bastion gateway answers refused `exec`/`subsystem`
+    /// requests with channel failure (RFC-006 §14.1); surface that as a stable code.
+    fn channel_request_refused(&self, capability: &str) -> SshError {
+        if self.managed.is_some() {
+            SshError::Managed(format!("CHANNEL_PERMISSION_DENIED: {capability}"))
+        } else {
+            SshError::Io(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                format!("server refused the {capability} request"),
+            ))
+        }
+    }
+
     pub(crate) fn handle_clone(&self) -> SharedHandle {
         Arc::clone(&self.handle)
     }
@@ -937,18 +956,40 @@ impl Session {
         tuning: crate::sftp::SftpTuning,
     ) -> Result<crate::sftp::Sftp, SshError> {
         self.require_capability("sftp")?;
-        let channel = {
+        let mut channel = {
             let handle = self.handle.lock().await;
             handle.channel_open_session().await?
         };
         channel.request_subsystem(true, "sftp").await?;
+        if self.managed.is_some() {
+            // The bastion gateway always replies; a refusal leaves the channel open, so
+            // waiting here avoids a 120 s SFTP init timeout. Direct servers keep the old
+            // behaviour because some embedded servers never answer subsystem requests.
+            loop {
+                match channel.wait().await {
+                    Some(ChannelMsg::Success) => break,
+                    Some(ChannelMsg::Failure) => {
+                        let _ = channel.close().await;
+                        return Err(self.channel_request_refused("sftp"));
+                    }
+                    Some(ChannelMsg::Close) | None => return Err(SshError::ChannelClosed),
+                    Some(_) => {}
+                }
+            }
+        }
         let session = russh_sftp::client::SftpSession::new_with_config(
             channel.into_stream(),
             russh_sftp::client::Config {
                 // Only binds servers that don't advertise
                 // `limits@openssh.com`; the ones that do hand us their own
                 // read/write lengths, which russh-sftp prefers over this.
-                max_packet_len: tuning.max_packet_len,
+                // The bastion gateway caps one SFTP packet at 256 KiB
+                // (RFC-006 §14.4); keep managed requests well below it.
+                max_packet_len: if self.managed.is_some() {
+                    tuning.max_packet_len.min(MANAGED_SFTP_MAX_PACKET)
+                } else {
+                    tuning.max_packet_len
+                },
                 max_concurrent_writes: tuning.max_concurrent_writes,
                 // Per-request timeout. 30s was too aggressive for slow
                 // servers and large directory listings — a timed-out
@@ -973,6 +1014,14 @@ impl Session {
     /// Execute a non-interactive command and collect stdout/stderr.
     pub async fn exec(&self, command: &str) -> Result<(u32, Vec<u8>, Vec<u8>), SshError> {
         self.require_capability("exec")?;
+        if self.managed.is_some()
+            && (command.len() > MANAGED_EXEC_MAX_COMMAND || command.contains('\0'))
+        {
+            // RFC-006 §14.3: the gateway rejects these; fail before opening a channel.
+            return Err(SshError::Managed(
+                "INVALID_ARGUMENT: command exceeds 64 KiB or contains NUL".into(),
+            ));
+        }
         let mut channel = {
             let handle = self.handle.lock().await;
             handle.channel_open_session().await?
@@ -987,6 +1036,12 @@ impl Session {
         let mut stderr = Vec::new();
         while let Some(msg) = channel.wait().await {
             match msg {
+                // The only want_reply request on this channel is `exec`. A refusal does
+                // not close the channel, so stop waiting instead of hanging.
+                ChannelMsg::Failure => {
+                    let _ = channel.close().await;
+                    return Err(self.channel_request_refused("exec"));
+                }
                 ChannelMsg::Data { data } => stdout.extend_from_slice(&data),
                 ChannelMsg::ExtendedData { data, ext: 1 } => stderr.extend_from_slice(&data),
                 ChannelMsg::ExitStatus { exit_status } => code = exit_status,

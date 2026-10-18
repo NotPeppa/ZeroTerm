@@ -23,7 +23,7 @@ import { installBastionTree } from '../frontend/bastion-tree.js';
 const calls = [], profiles = [], passwords = new Map(), loggedIn = new Set();
 const hosts = [], opened = [];
 const catalog = {groups:[{id:'production', name:'Production'}, {id:'apps', name:'Applications', parent_id:'production'}], assets:[
-  {id:'app-01', name:'App 01', group_id:'apps', accounts:[{id:'deploy', username:'deploy', capabilities:['shell','sftp']}, {id:'admin', username:'admin', capabilities:['shell']}]},
+  {id:'app-01', name:'App 01', group_id:'apps', accounts:[{id:'deploy', label:'Deploy (prod)', username:'deploy', domain:null, credential_kind:'password', capabilities:['shell','sftp']}, {id:'admin', username:'admin', capabilities:['shell']}]},
   {id:'files-01', name:'Files 01', group_id:'production', accounts:[{id:'files', username:'files', capabilities:['sftp']}]},
   {id:'other-01', name:'Other 01', accounts:[{id:'root', username:'root', capabilities:['shell']}]},
 ]};
@@ -121,6 +121,9 @@ try {
   failure = 'API_UNREACHABLE';
   await submit();
   assert(q('#bastion-message').dataset.state === 'error' && profiles.length === 0, 'Failed discovery must not save');
+  failure = 'NATIVE_ENTRY_UNAVAILABLE (request_id: )';
+  await submit();
+  assert(/原生 SSH 入口|native SSH entry/.test(q('#bastion-message').textContent) && q('#bastion-message').textContent.includes('NATIVE_ENTRY_UNAVAILABLE') && profiles.length === 0, 'A bastion without the native entry is explained and not saved');
   failure = null;
   await submit();
   input('name', 'Production');
@@ -139,6 +142,7 @@ try {
   assert(!calls.some(c => c.command === 'bastion_save_asset' || c.command === 'bastion_assets'), 'Listing assets needs no import or duplicate fetch');
   expandTree();
   assert(document.querySelectorAll('#hosts-list .bastion-tree-account').length === 4, 'All target accounts appear under their assets');
+  assert([...document.querySelectorAll('#hosts-list .bastion-tree-account .bastion-tree-name')].some(el => el.textContent === 'Deploy (prod)' && el.title.includes('(deploy)')), 'Accounts show their label and keep the target username visible');
   const filesRow = q('[data-bastion-node="asset:files-01"]').closest('li');
   assert(filesRow.querySelectorAll('.bastion-tree-connect').length === 1, 'SFTP-only account offers only files');
   filesRow.querySelector('.bastion-tree-connect').click();
@@ -209,7 +213,7 @@ try {
   q('#lock-button').click();
   assert(q('#bastion-overlay').hidden && !q('#hosts-list').childElementCount, 'Vault lock closes configuration and clears the tree');
   q('[data-action="close"]').click();
-  q('#result').textContent = 'Passed: unified account form, trust confirmation, saved password, full asset tree after login, direct files connection, no duplicate list or import, reopen, logout/lock, login failure, tree refresh and retry.';
+  q('#result').textContent = 'Passed: unified account form, trust confirmation, native-entry error, account labels, saved password, full asset tree after login, direct files connection, no duplicate list or import, reopen, logout/lock, login failure, tree refresh and retry.';
   const preview = new URLSearchParams(location.search);
   if (preview.has('preview')) {
     document.documentElement.lang = 'zh';

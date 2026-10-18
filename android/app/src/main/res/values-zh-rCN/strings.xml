@@ -606,6 +606,8 @@
     <string name="bastion_trust_changed">与已保存的身份不同，请先向管理员确认原因再保存。</string>
     <string name="bastion_identity_changed">堡垒机身份已变化，已拒绝连接并保留原有信任配置。请与管理员核实变更。</string>
     <string name="bastion_ssh_entry">SSH 入口</string>
+    <string name="bastion_native_unavailable">该堡垒机未开启 ZeroTerm 原生 SSH 入口</string>
+    <string name="bastion_sftp_not_open">该堡垒机暂未开放文件传输</string>
     <string name="bastion_save_first">请先确认并保存连接配置，再登录。</string>
     <string name="bastion_new">新增</string>
     <string name="bastion_name">名称（可选）</string>

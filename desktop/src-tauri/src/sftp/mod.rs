@@ -675,11 +675,7 @@ async fn try_fast_remote_remove_dir(
     host_id: &str,
     path: &str,
 ) -> Result<(), String> {
-    let (_host, cfg, jump_cfg) = build_connect_chain_for_host(state, app_handle, host_id)?;
-    let session = state
-        .sftp_pool
-        .acquire_session(host_id.to_string(), cfg, jump_cfg)
-        .await?;
+    let session = crate::connect::acquire_exec_session(state, app_handle, host_id).await?;
     let (_normalized, command) = fast_remote_remove_command(path)?;
     let (code, stdout, stderr) = session.exec(&command).await.map_err(ssh_error)?;
     if code == 0 {

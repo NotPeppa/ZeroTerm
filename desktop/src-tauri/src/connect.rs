@@ -54,6 +54,32 @@ pub(crate) fn build_connect_chain_for_host(
     Ok((host, cfg, jump_cfg))
 }
 
+/// Session for a short remote command. A live bastion terminal on the same host lends its managed
+/// connection (one ticket carries shell + exec channels); otherwise the pooled shared session is used.
+/// SFTP never takes this path: transfers stay on the pool's separate connection.
+pub(crate) async fn acquire_exec_session(
+    state: &AppState,
+    app_handle: &AppHandle,
+    host_id: &str,
+) -> Result<Arc<Session>, String> {
+    if let Some(session) = terminal_exec_route(state, host_id) {
+        return Ok(Arc::new(session));
+    }
+    let (_host, cfg, jump_cfg) = build_connect_chain_for_host(state, app_handle, host_id)?;
+    state
+        .sftp_pool
+        .acquire_session(host_id.to_string(), cfg, jump_cfg)
+        .await
+}
+
+fn terminal_exec_route(state: &AppState, host_id: &str) -> Option<Session> {
+    let sessions = state.sessions.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    sessions.values().find_map(|handle| match &handle.exec_route {
+        Some((id, session)) if id == host_id && !session.is_closed() => Some(session.clone()),
+        _ => None,
+    })
+}
+
 pub(crate) async fn connect_host_sessions(
     cfg: ConnectConfig,
     jump_cfg: Option<ConnectConfig>,

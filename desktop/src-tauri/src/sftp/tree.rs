@@ -1905,7 +1905,12 @@ pub(crate) async fn copy_remote_tree_to_remote(
         CopyNodeKind::Dir => {
             ensure_remote_dir_exists(target_sftp, target).await?;
 
-            if let (Some(source_host_id), Some(target_host_id), Some((app_handle, state))) = (
+            // Bastion assets never use the server-to-server path; their directory copies
+            // relay through local SFTP channels like their single-file copies.
+            let managed = source_sftp.managed_identity().is_some()
+                || target_sftp.managed_identity().is_some();
+            if let (false, Some(source_host_id), Some(target_host_id), Some((app_handle, state))) = (
+                managed,
                 source_host_id.as_deref(),
                 target_host_id.as_deref(),
                 progress_ctx,

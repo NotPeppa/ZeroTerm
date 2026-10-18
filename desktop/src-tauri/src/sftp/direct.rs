@@ -234,12 +234,28 @@ impl DirectProbeCache {
     }
 }
 
+/// Bastion (managed) assets never take part in server-to-server copies: the gateway
+/// forbids agent forwarding, and installing keys on a bastion target would create
+/// credentials outside the bastion's grant and audit (RFC-006 §1). Copies involving
+/// them relay through this machine's SFTP channels instead.
+pub(crate) const MANAGED_RELAY_ONLY: &str =
+    "CHANNEL_PERMISSION_DENIED: bastion assets use the local SFTP relay; keys are never installed on bastion targets";
+
+pub(crate) fn is_managed(cfg: &zeroterm_ssh::ConnectConfig) -> bool {
+    cfg.auth_methods.iter().any(|m| matches!(m, AuthMethod::Managed(_)))
+}
+
 async fn install_ephemeral_authorization(
     state: &AppState,
     target_host_id: &str,
     target_cfg: zeroterm_ssh::ConnectConfig,
     target_jump: Option<zeroterm_ssh::ConnectConfig>,
 ) -> Result<(LentIdentities, EphemeralAuthorization), DirectUnavailable> {
+    // Checked here as well as in the planner so no future caller can reach a target's
+    // authorized_keys through a bastion session, even now that exec is granted.
+    if is_managed(&target_cfg) {
+        return Err(DirectUnavailable(MANAGED_RELAY_ONLY.into()));
+    }
     let (identity, public_key) =
         zeroterm_ssh::generate_ephemeral_ed25519_identity().map_err(DirectUnavailable)?;
     let marker = format!("zeroterm-transfer-{}", uuid::Uuid::new_v4());
@@ -338,6 +354,9 @@ async fn remove_ephemeral_authorization(
 ) -> Result<(), String> {
     let (_host, cfg, jump) =
         build_connect_chain_for_host(state, app_handle, &authorization.target_host_id)?;
+    if is_managed(&cfg) {
+        return Err(MANAGED_RELAY_ONLY.into());
+    }
     let session = state
         .sftp_pool
         .acquire_session(authorization.target_host_id.clone(), cfg, jump)
@@ -579,7 +598,7 @@ async fn plan_uncached(
             }
             AuthMethod::Agent => has_agent_auth = true,
             AuthMethod::Password(_) => has_password_auth = true,
-            AuthMethod::Managed(_) => return Err(DirectUnavailable("managed assets require client-side SFTP relay".into())),
+            AuthMethod::Managed(_) => return Err(DirectUnavailable(MANAGED_RELAY_ONLY.into())),
         }
     }
     if lent_keys.is_empty() && !has_agent_auth && !has_password_auth {
@@ -606,8 +625,8 @@ async fn plan_uncached(
     let (_src_host, src_cfg, src_jump) =
         build_connect_chain_for_host(state, app_handle, source_host_id)
             .map_err(DirectUnavailable)?;
-    if src_cfg.auth_methods.iter().any(|m| matches!(m, AuthMethod::Managed(_))) {
-        return Err(DirectUnavailable("managed assets require client-side SFTP relay".into()));
+    if is_managed(&src_cfg) {
+        return Err(DirectUnavailable(MANAGED_RELAY_ONLY.into()));
     }
     let session = state
         .sftp_pool
@@ -734,8 +753,8 @@ where
 {
     let (_src_host, src_cfg, src_jump) =
         build_connect_chain_for_host(state, app_handle, source_host_id)?;
-    if src_cfg.auth_methods.iter().any(|m| matches!(m, AuthMethod::Managed(_))) {
-        return Err("managed assets require client-side SFTP relay".into());
+    if is_managed(&src_cfg) {
+        return Err(MANAGED_RELAY_ONLY.into());
     }
     let session = state
         .sftp_pool
@@ -1143,6 +1162,46 @@ pub(crate) async fn cleanup_direct_temp_file(sftp: &zeroterm_ssh::Sftp, path: &s
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct NeverPrepared;
+    #[async_trait::async_trait]
+    impl zeroterm_ssh::ManagedConnection for NeverPrepared {
+        async fn prepare(
+            &self,
+        ) -> Result<(zeroterm_ssh::ConnectConfig, zeroterm_ssh::ManagedSession), zeroterm_ssh::SshError>
+        {
+            panic!("a managed target must be refused before any connection is prepared")
+        }
+        async fn failure(&self, _: &str) -> String {
+            String::new()
+        }
+    }
+
+    fn cfg(auth: AuthMethod) -> zeroterm_ssh::ConnectConfig {
+        zeroterm_ssh::ConnectConfig {
+            host: "gateway.test".into(),
+            port: 2222,
+            username: "deploy".into(),
+            auth_methods: vec![auth],
+            connect_timeout: None,
+            host_key_policy: zeroterm_ssh::HostKeyPolicy::AcceptAll,
+        }
+    }
+
+    #[tokio::test]
+    async fn temporary_keys_are_never_installed_on_bastion_targets() {
+        let managed = cfg(AuthMethod::Managed(Arc::new(NeverPrepared)));
+        assert!(is_managed(&managed));
+        assert!(!is_managed(&cfg(AuthMethod::Password("pw".into()))));
+        // The guard returns before touching the pool, so a bare state suffices.
+        let state = AppState::default();
+        let err = install_ephemeral_authorization(&state, "bastion-fav", managed, None)
+            .await
+            .err()
+            .expect("managed target must be refused");
+        assert_eq!(err.0, MANAGED_RELAY_ONLY);
+        assert!(err.0.starts_with("CHANNEL_PERMISSION_DENIED"));
+    }
 
     #[test]
     fn sh_quote_wraps_plain_values() {

@@ -1474,6 +1474,16 @@ mod tests {
         }
     }
 
+    #[test]
+    fn bastion_picker_points_shell_less_accounts_at_exec_and_sftp() {
+        let caps = |c: &[&str]| c.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let hint = no_shell_hint("A · deploy", &caps(&["exec", "sftp"]));
+        assert!(hint.contains("zeroterm exec 'A · deploy'") && hint.contains("zeroterm sftp ls 'A · deploy'"));
+        let hint = no_shell_hint("A", &caps(&["exec"]));
+        assert!(hint.contains("zeroterm exec") && !hint.contains("sftp"));
+        assert!(no_shell_hint("A", &[]).contains("not opened"));
+    }
+
     #[tokio::test]
     async fn exec_rejects_invalid_commands_before_vault_or_network_access() {
         let args = Args::try_parse_from(["zeroterm", "exec", "target", "probe"]).unwrap();
@@ -1483,6 +1493,23 @@ mod tests {
                 .unwrap_err();
             assert!(error.to_string().starts_with("INVALID_ARGUMENT"));
         }
+    }
+}
+
+/// Shown after saving a bastion favorite whose account has no shell: point at the
+/// commands the server currently opens for it (RFC-006 §14).
+fn no_shell_hint(name: &str, capabilities: &[String]) -> String {
+    let mut commands = Vec::new();
+    if capabilities.iter().any(|c| c == "exec") {
+        commands.push(format!("zeroterm exec '{name}' <command>"));
+    }
+    if capabilities.iter().any(|c| c == "sftp") {
+        commands.push(format!("zeroterm sftp ls '{name}' <path>"));
+    }
+    if commands.is_empty() {
+        format!("Saved {name}. The bastion has not opened native access for this account.")
+    } else {
+        format!("Saved {name}. Use {}.", commands.join(" or "))
     }
 }
 
@@ -1522,7 +1549,7 @@ async fn cmd_bastion(args: &Args, vault_path: &Path, profile_path: Option<&Path>
                     format!(
                         "{} · {} · {}",
                         a.name,
-                        c.username,
+                        c.display_name(),
                         c.capabilities.join(", ")
                     )
                 })
@@ -1538,10 +1565,7 @@ async fn cmd_bastion(args: &Args, vault_path: &Path, profile_path: Option<&Path>
         .find_host_by_id(&id)?
         .ok_or_else(|| anyhow!("RESOURCE_NOT_FOUND"))?;
     if !account.capabilities.iter().any(|c| c == "shell") {
-        println!(
-            "Saved {}. Use zeroterm sftp for an SFTP-enabled account.",
-            host.name
-        );
+        println!("{}", no_shell_hint(&host.name, &account.capabilities));
         return Ok(());
     }
     let cfg = app.connect_config(

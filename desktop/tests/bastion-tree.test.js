@@ -47,3 +47,59 @@ test('cycles, missing parents and unknown group references never drop or duplica
   assert.deepEqual(allAssets(tree).sort(), ['four','one','three','two']);
   assert.equal(tree.find(n=>n.key==='ungrouped').count,1);
 });
+
+test('RFC-006 account labels are displayed and searchable; username remains the fallback', async () => {
+  const { buildBastionTree, accountLabel } = await modulePromise;
+  const labelled = { id:'l', label:'Deploy (prod)', username:'deploy', domain:null, credential_kind:'password', capabilities:['shell'] };
+  assert.equal(accountLabel(labelled), 'Deploy (prod)');
+  assert.equal(accountLabel({ ...labelled, label:' ' }), 'deploy');
+  assert.equal(accountLabel(account('x', 'root')), 'root');
+  const catalog = { groups:[], assets:[asset('app-01', null, [labelled, account('o', 'ops')])] };
+  assert.deepEqual(buildBastionTree(catalog, '(prod)')[0].children[0].accounts.map(a => a.id), ['l']);
+  assert.deepEqual(buildBastionTree(catalog, 'deploy')[0].children[0].accounts.map(a => a.id), ['l']);
+});
+
+test('servers without a native SSH entry get an explicit message that keeps the code', async () => {
+  const { explainBastionError } = await modulePromise;
+  const zh = explainBastionError('NATIVE_ENTRY_UNAVAILABLE (request_id: )', 'zh-CN');
+  assert.match(zh, /该堡垒机未开启 ZeroTerm 原生 SSH 入口/);
+  assert.match(zh, /NATIVE_ENTRY_UNAVAILABLE/);
+  assert.match(explainBastionError('NATIVE_ENTRY_UNAVAILABLE', 'en'), /native SSH entry/);
+  assert.equal(explainBastionError('PERMISSION_DENIED (request_id: x)', 'zh'), 'PERMISSION_DENIED (request_id: x)');
+});
+
+test('refused native capabilities get an explicit message that keeps the code', async () => {
+  const { explainBastionError } = await modulePromise;
+  assert.equal(explainBastionError('CHANNEL_PERMISSION_DENIED: sftp', 'zh-CN'), '该堡垒机暂未开放文件传输 (CHANNEL_PERMISSION_DENIED: sftp)');
+  assert.match(explainBastionError('{"code":"CHANNEL_PERMISSION_DENIED","message":"CHANNEL_PERMISSION_DENIED: exec"}', 'en'), /not opened server tools \(exec\)/);
+  assert.match(explainBastionError('CHANNEL_PERMISSION_DENIED: shell', 'en'), /terminal access/);
+  assert.match(explainBastionError('CHANNEL_PERMISSION_DENIED (request_id: r1)', 'zh'), /暂未开放此账号的原生 SSH 能力.*request_id: r1/);
+  assert.match(explainBastionError('CHANNEL_PERMISSION_DENIED: sftp', undefined), /file transfer/);
+});
+
+// RFC-006 grants are all-or-nothing, so bastion favorites need no capability snapshot to be
+// offered by the SFTP pane pickers; the ticket decides at open time.
+test('SFTP host pickers list bastion favorites alongside local hosts', () => {
+  const main = fs.readFileSync(path.join(__dirname, '../frontend/main.js'), 'utf8');
+  const start = main.indexOf('function syncSftpHostOptions');
+  const end = main.indexOf('\nfunction ensureDefaultSftpPaneState', start);
+  assert.ok(start > 0 && end > start, 'syncSftpHostOptions not found');
+  const element = () => ({ children: [], dataset: {}, appendChild(child) { this.children.push(child); }, set innerHTML(_) { this.children = []; } });
+  const pane = { key: 'right', hostId: '', hostSelect: element() };
+  const vm = require('node:vm');
+  const context = {
+    sftpPanes: { right: pane },
+    hostsCache: [
+      { id: 'plain', name: 'web-01', user: 'root', host: 'web', port: 22, authType: 'password' },
+      { id: 'fav', name: 'Target A · Deploy', user: 'deploy', host: 'gateway', port: 2222, authType: 'bastion' },
+    ],
+    LOCAL_HOST_ID: 'local',
+    isTerminalSideSftpPane: () => false,
+    t: key => key,
+    syncCustomSelect: () => {},
+    document: { createElement: element },
+  };
+  vm.runInNewContext(`${main.slice(start, end)}\nsyncSftpHostOptions();`, context);
+  assert.deepEqual(pane.hostSelect.children.map(o => o.value), ['', 'local', 'plain', 'fav']);
+  assert.ok(!/authType\s*!==\s*"bastion"/.test(main.slice(main.indexOf('function buildCustomSelect'), main.indexOf('function buildCustomSelect') + 6000)), 'the custom host menu must not filter bastion favorites');
+});

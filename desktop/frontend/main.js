@@ -1,5 +1,5 @@
 import { installBastion } from "./bastion.js";
-import { installBastionTree } from "./bastion-tree.js";
+import { installBastionTree, explainBastionError } from "./bastion-tree.js";
 // ZeroTerm desktop frontend (vanilla JS, no build step)
 
 const { invoke } = window.__TAURI__.core;
@@ -4275,10 +4275,21 @@ async function renderMetricsPanel(options = {}) {
   }
 }
 
+// Every remote sample through a bastion is an audited exec, so bastion panes poll less often and
+// nothing polls while the window is hidden.
+const BASTION_METRICS_PANEL_INTERVAL_MS = 15000;
+const BASTION_METRICS_HEADER_INTERVAL_MS = 60000;
+let metricsPanelLastSample = 0;
+
 function startMetricsAutoRefresh() {
   if (metricsRefreshTimer) clearInterval(metricsRefreshTimer);
+  metricsPanelLastSample = Date.now();
   metricsRefreshTimer = setInterval(() => {
-    if (terminalActiveSidePanel === "metrics") renderMetricsPanel({ silent: true });
+    if (terminalActiveSidePanel !== "metrics" || document.hidden) return;
+    const bastion = getActivePane()?.host?.authType === "bastion";
+    if (bastion && Date.now() - metricsPanelLastSample < BASTION_METRICS_PANEL_INTERVAL_MS - 500) return;
+    metricsPanelLastSample = Date.now();
+    renderMetricsPanel({ silent: true });
   }, 5000);
 }
 
@@ -4322,6 +4333,10 @@ async function refreshPaneHeaderMetrics() {
 async function samplePaneHeaderMetrics(tab) {
   for (const pane of tab.panes) {
     if (!pane.metricsEl || !pane.sessionId || !paneAllowsBastionFeature(pane, "metrics")) continue;
+    if (pane.host?.authType === "bastion") {
+      if (Date.now() - (pane.metricsLastSampleAt || 0) < BASTION_METRICS_HEADER_INTERVAL_MS - 500) continue;
+      pane.metricsLastSampleAt = Date.now();
+    }
     try {
       const m = await invoke("collect_system_metrics", { hostId: pane.host?.id || null });
       if (!pane.metricsEl || !pane.sessionId || !paneAllowsBastionFeature(pane, "metrics")) continue;
@@ -19736,7 +19751,8 @@ async function connectSftpPaneNow(pane, host) {
     await navigateSftpPane(pane, "/", { source: "system" });
   } catch (e) {
     const err = normalizeSftpError(e);
-    pane.statusEl.textContent = t("sftp.error.connect_failed", { error: err.message });
+    const message = host.authType === "bastion" ? explainBastionError(err.message, document.documentElement.lang) : err.message;
+    pane.statusEl.textContent = t("sftp.error.connect_failed", { error: message });
   }
   updateSftpConnectButtons();
 }

@@ -626,6 +626,9 @@ private fun HostCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                // Bastion favorites store no capability snapshot. RFC-006 grants are
+                // all-or-nothing, so a fresh ticket decides at open time and a refusal
+                // is explained in the SFTP browser.
                 IconButton(onClick = onSftp) {
                     Icon(
                         Icons.Default.FolderOpen,

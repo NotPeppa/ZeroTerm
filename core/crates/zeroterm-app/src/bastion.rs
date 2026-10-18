@@ -1,4 +1,4 @@
-//! RFC-004 ZeroTerm control plane. Tokens and SSH tickets live only in memory.
+//! ZeroTerm native SSH entry (zeroterm-terminal RFC-006). Tokens and SSH tickets live only in memory.
 use crate::{App, Host, HostAuth};
 use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
 use chrono::{DateTime, Utc};
@@ -56,11 +56,27 @@ impl Drop for StoredBastionProfile {
     }
 }
 
+/// RFC-006 account. `label` is for display; `username` is the target account name.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BastionAccount {
     pub id: String,
+    #[serde(default)]
+    pub label: String,
     pub username: String,
+    #[serde(default)]
+    pub domain: Option<String>,
+    #[serde(default)]
+    pub credential_kind: String,
     pub capabilities: Vec<String>,
+}
+impl BastionAccount {
+    pub fn display_name(&self) -> &str {
+        if self.label.trim().is_empty() {
+            &self.username
+        } else {
+            &self.label
+        }
+    }
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BastionAsset {
@@ -93,39 +109,45 @@ struct AssetPage {
     groups: Vec<BastionAssetGroup>,
     next_cursor: Option<String>,
 }
+/// `GET /api/v1/info` (RFC-006 §6). The top-level `protocol_version` belongs to the
+/// browser family and is ignored; ZeroTerm reads only the `native` block.
 #[derive(Deserialize)]
 struct Info {
     server_id: String,
-    protocol_version: u32,
-    #[serde(default)]
-    ssh_protocol_version: Option<u32>,
-    #[serde(default)]
-    minimum_client_protocol_version: Option<u32>,
     #[serde(default)]
     production_ready: Option<bool>,
     #[serde(default)]
-    features: Option<Features>,
-    #[serde(default)]
     recording: Option<Recording>,
     #[serde(default)]
+    native: Option<Native>,
+}
+/// Absent when the server has no native SSH listener.
+#[derive(Deserialize)]
+struct Native {
+    protocol_version: u32,
+    minimum_client_protocol_version: u32,
+    available: bool,
     gateway: Option<InfoGateway>,
+    features: NativeFeatures,
 }
 /// SSH entry advertised by `/info`; trusted only because the response arrived
 /// over the same verified HTTPS channel that later issues tickets.
 #[derive(Deserialize)]
 struct InfoGateway {
+    #[allow(dead_code)]
+    id: String,
     host: String,
     port: u16,
     public_key: String,
 }
 #[derive(Deserialize)]
-struct Features {
+struct NativeFeatures {
     #[serde(default)]
-    ssh_terminal: bool,
+    shell: bool,
     #[serde(default)]
-    ssh_exec: bool,
+    exec: bool,
     #[serde(default)]
-    ssh_sftp: bool,
+    sftp: bool,
 }
 #[derive(Deserialize)]
 struct Recording {
@@ -136,35 +158,48 @@ struct Recording {
 }
 impl Info {
     fn validate(&self) -> Result<(), BastionError> {
-        if self.protocol_version != 1
-            || self.ssh_protocol_version != Some(1)
-            || self.minimum_client_protocol_version.is_none_or(|v| v > 1)
-            || self.production_ready.is_none()
-            || self.features.is_none()
-        {
+        if self.production_ready.is_none() {
+            return Err(error("CLIENT_PROTOCOL_UNSUPPORTED"));
+        }
+        let native = self
+            .native
+            .as_ref()
+            .ok_or_else(|| error("NATIVE_ENTRY_UNAVAILABLE"))?;
+        if native.protocol_version != 1 || native.minimum_client_protocol_version > 1 {
             return Err(error("CLIENT_PROTOCOL_UNSUPPORTED"));
         }
         if !self
             .recording
             .as_ref()
-            .is_some_and(|r| r.required && r.format_version == 1)
+            .is_some_and(|r| r.required && r.format_version == 2)
         {
             return Err(error("RECORDING_REQUIRED"));
         }
         Ok(())
     }
+    /// Validated native SSH entry used for fingerprint pinning.
+    fn gateway(&self) -> Result<&InfoGateway, BastionError> {
+        self.validate()?;
+        self.native
+            .as_ref()
+            .and_then(|n| n.gateway.as_ref())
+            .ok_or_else(|| error("CLIENT_PROTOCOL_UNSUPPORTED"))
+    }
     fn supports(&self, capability: &str) -> bool {
-        self.features.as_ref().is_some_and(|f| match capability {
-            "shell" => {
-                f.ssh_terminal
-                    && self
-                        .recording
-                        .as_ref()
-                        .is_some_and(|r| r.available != Some(false))
-            }
-            "exec" => f.ssh_exec,
-            "sftp" => f.ssh_sftp,
-            _ => false,
+        self.native.as_ref().is_some_and(|n| {
+            n.available
+                && match capability {
+                    "shell" => {
+                        n.features.shell
+                            && self
+                                .recording
+                                .as_ref()
+                                .is_some_and(|r| r.available != Some(false))
+                    }
+                    "exec" => n.features.exec,
+                    "sftp" => n.features.sftp,
+                    _ => false,
+                }
         })
     }
 }
@@ -173,6 +208,30 @@ struct Tokens {
     access_token: String,
     refresh_token: String,
     access_expires_at: DateTime<Utc>,
+    /// Local time this response arrived. Expiry is the server's decision; locally only the lifetime
+    /// the server granted (its `access_expires_at` minus its `Date`) is used, so a skewed client clock
+    /// never rejects valid tokens.
+    #[serde(skip, default = "Utc::now")]
+    received_at: DateTime<Utc>,
+    #[serde(skip)]
+    lifetime: Option<chrono::Duration>,
+}
+impl Tokens {
+    /// Refresh this long before the server-granted lifetime runs out.
+    const MARGIN: i64 = 15;
+    fn due(&self) -> bool {
+        match self.lifetime {
+            Some(lifetime) => Utc::now() >= self.received_at + lifetime - chrono::Duration::seconds(Self::MARGIN),
+            // Without a server Date header fall back to the server's absolute expiry.
+            None => self.access_expires_at <= Utc::now() + chrono::Duration::seconds(Self::MARGIN),
+        }
+    }
+    fn expired(&self) -> bool {
+        match self.lifetime {
+            Some(lifetime) => Utc::now() >= self.received_at + lifetime,
+            None => self.access_expires_at <= Utc::now(),
+        }
+    }
 }
 impl Drop for Tokens {
     fn drop(&mut self) {
@@ -195,6 +254,8 @@ struct Ticket {
     connection_id: String,
     gateway: Gateway,
     capabilities: Vec<String>,
+    /// Required in the contract but only the gateway enforces it; a skewed local clock must not.
+    #[allow(dead_code)]
     expires_at: DateTime<Utc>,
 }
 impl Drop for Ticket {
@@ -227,6 +288,14 @@ fn validate_id(id: &str) -> Result<(), BastionError> {
     uuid::Uuid::parse_str(id)
         .map(|_| ())
         .map_err(|_| error("INVALID_ARGUMENT"))
+}
+/// Accounts report `[]` while the native gateway is unavailable (RFC-006 §5).
+fn validate_account_caps(caps: &[String]) -> Result<(), BastionError> {
+    if caps.is_empty() {
+        Ok(())
+    } else {
+        validate_caps(caps)
+    }
 }
 fn validate_caps(caps: &[String]) -> Result<(), BastionError> {
     if caps.is_empty() || caps.len() > 3 {
@@ -315,9 +384,12 @@ struct Login {
     cancelled: CancellationToken,
 }
 impl Login {
+    /// `info` is the shared, unauthenticated discovery route; every other call uses the
+    /// Bearer-only `/api/v1/native/` prefix (RFC-006 §3.1), never browser routes.
     fn url(&self, path: &str) -> String {
+        let prefix = if path == "info" { "" } else { "native/" };
         format!(
-            "{}/api/v1/{path}",
+            "{}/api/v1/{prefix}{path}",
             self.profile.api_url.trim_end_matches('/')
         )
     }
@@ -337,6 +409,12 @@ impl Login {
         }
         let mut response = req.send().await.map_err(|_| error("API_UNREACHABLE"))?;
         let status = response.status();
+        let server_date = response
+            .headers()
+            .get(reqwest::header::DATE)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| DateTime::parse_from_rfc2822(v).ok())
+            .map(|v| v.with_timezone(&Utc));
         let request_id = response
             .headers()
             .get("x-request-id")
@@ -365,7 +443,13 @@ impl Login {
         if bytes.is_empty() {
             return Ok(serde_json::Value::Null);
         }
-        serde_json::from_slice(&bytes).map_err(|_| error("CLIENT_PROTOCOL_UNSUPPORTED"))
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&bytes).map_err(|_| error("CLIENT_PROTOCOL_UNSUPPORTED"))?;
+        let token_response = matches!(path, "auth/login" | "auth/refresh");
+        if let (true, Some(date), Some(object)) = (token_response, server_date, value.as_object_mut()) {
+            object.insert(SERVER_DATE.into(), serde_json::json!(date.to_rfc3339()));
+        }
+        Ok(value)
     }
     async fn request(
         &self,
@@ -378,7 +462,7 @@ impl Login {
             return Err(error("LOGIN_SESSION_REVOKED"));
         }
         let tokens = guard.as_ref().ok_or_else(|| error("UNAUTHENTICATED"))?;
-        if tokens.access_expires_at <= Utc::now() + chrono::Duration::seconds(15) {
+        if tokens.due() {
             let refresh = self
                 .raw(
                     Method::POST,
@@ -387,7 +471,7 @@ impl Login {
                     None,
                 )
                 .await;
-            match refresh.and_then(decode::<Tokens>) {
+            match refresh.and_then(decode_tokens) {
                 Ok(tokens) => *guard = Some(tokens),
                 Err(e) => {
                     *guard = None;
@@ -415,6 +499,21 @@ impl Login {
         }
         result
     }
+}
+/// Response key `raw` adds to login/refresh responses with the server's HTTP `Date`.
+const SERVER_DATE: &str = "_server_date";
+/// Token lifetime is measured on the server clock: `access_expires_at - Date`, applied from local receipt.
+fn decode_tokens(mut value: serde_json::Value) -> Result<Tokens, BastionError> {
+    let date = value
+        .as_object_mut()
+        .and_then(|o| o.remove(SERVER_DATE))
+        .and_then(|v| v.as_str().and_then(|s| DateTime::parse_from_rfc3339(s).ok()))
+        .map(|v| v.with_timezone(&Utc));
+    let mut tokens: Tokens = decode(value)?;
+    tokens.lifetime = date
+        .map(|date| tokens.access_expires_at - date)
+        .filter(|lifetime| *lifetime > chrono::Duration::zero());
+    Ok(tokens)
 }
 fn decode<T: serde::de::DeserializeOwned>(value: serde_json::Value) -> Result<T, BastionError> {
     serde_json::from_value(value).map_err(|_| error("CLIENT_PROTOCOL_UNSUPPORTED"))
@@ -461,7 +560,7 @@ impl BastionManager {
             cancelled: CancellationToken::new(),
         });
         self.discover(&login).await?;
-        let tokens: Tokens = decode(login.raw(Method::POST, "auth/login", Some(&serde_json::json!({"username":username,"password":password,"device_label":device_label,"client_type":"zeroterm"})), None).await?)?;
+        let tokens = decode_tokens(login.raw(Method::POST, "auth/login", Some(&serde_json::json!({"username":username,"password":password,"device_label":device_label})), None).await?)?;
         if tokens.access_token.is_empty() || tokens.refresh_token.is_empty() {
             return Err(error("CLIENT_PROTOCOL_UNSUPPORTED"));
         }
@@ -510,10 +609,7 @@ impl BastionManager {
             cancelled: CancellationToken::new(),
         };
         let info: Info = decode(login.raw(Method::GET, "info", None, None).await?)?;
-        info.validate()?;
-        let gateway = info
-            .gateway
-            .ok_or_else(|| error("CLIENT_PROTOCOL_UNSUPPORTED"))?;
+        let gateway = info.gateway()?;
         let profile = BastionProfile {
             id: String::new(),
             name: Some(name.trim())
@@ -521,8 +617,8 @@ impl BastionManager {
                 .unwrap_or(&host)
                 .to_owned(),
             api_url,
-            server_id: info.server_id,
-            ssh_host: gateway.host,
+            server_id: info.server_id.clone(),
+            ssh_host: gateway.host.clone(),
             ssh_port: gateway.port,
             ssh_host_key_sha256: zeroterm_ssh::openssh_fingerprint(&gateway.public_key)
                 .ok_or_else(|| error("CLIENT_PROTOCOL_UNSUPPORTED"))?,
@@ -555,7 +651,7 @@ impl BastionManager {
         let mut tokens = login.tokens.lock().await;
         if let Some(current) = tokens
             .as_ref()
-            .filter(|t| t.access_expires_at <= Utc::now())
+            .filter(|t| t.expired())
         {
             let result = login
                 .raw(
@@ -565,7 +661,7 @@ impl BastionManager {
                     None,
                 )
                 .await
-                .and_then(decode::<Tokens>);
+                .and_then(decode_tokens);
             match result {
                 Ok(refreshed) => *tokens = Some(refreshed),
                 Err(e) => {
@@ -596,11 +692,7 @@ impl BastionManager {
             self.forget(&login.profile.id);
             return Err(error("SERVER_ID_CHANGED"));
         }
-        info.validate()?;
-        let gateway = info
-            .gateway
-            .as_ref()
-            .ok_or_else(|| error("CLIENT_PROTOCOL_UNSUPPORTED"))?;
+        let gateway = info.gateway()?;
         let fingerprint = zeroterm_ssh::openssh_fingerprint(&gateway.public_key)
             .ok_or_else(|| error("CLIENT_PROTOCOL_UNSUPPORTED"))?;
         let changed =
@@ -639,7 +731,7 @@ impl BastionManager {
                 validate_id(&asset.id)?;
                 for account in &mut asset.accounts {
                     validate_id(&account.id)?;
-                    validate_caps(&account.capabilities)?;
+                    validate_account_caps(&account.capabilities)?;
                     account.capabilities.retain(|c| info.supports(c));
                 }
                 asset.accounts.retain(|a| !a.capabilities.is_empty());
@@ -725,7 +817,7 @@ impl TicketProvider {
             .iter()
             .find(|a| a.id == self.account_id)
             .ok_or_else(|| error("PERMISSION_DENIED"))?;
-        validate_caps(&account.capabilities)?;
+        validate_account_caps(&account.capabilities)?;
         let capabilities: Vec<_> = account
             .capabilities
             .iter()
@@ -735,14 +827,7 @@ impl TicketProvider {
         if capabilities.is_empty() {
             return Err(error("CHANNEL_PERMISSION_DENIED"));
         }
-        let purpose = if capabilities.iter().any(|c| c == "shell") {
-            "terminal"
-        } else if capabilities.iter().any(|c| c == "sftp") {
-            "sftp"
-        } else {
-            "server_tool"
-        };
-        let mut ticket: Ticket = decode(login.request(Method::POST, "integrations/zeroterm/connection-tickets", Some(&serde_json::json!({"asset_id":self.asset_id,"account_id":self.account_id,"capabilities":capabilities,"purpose":purpose}))).await?)?;
+        let mut ticket: Ticket = decode(login.request(Method::POST, "connection-tickets", Some(&serde_json::json!({"asset_id":self.asset_id,"account_id":self.account_id,"capabilities":capabilities}))).await?)?;
         validate_ticket(&ticket, &login.profile, &capabilities)?;
         let cfg = ConnectConfig {
             host: ticket.gateway.host.clone(),
@@ -761,7 +846,7 @@ impl TicketProvider {
             ManagedSession {
                 connection_id: ticket.connection_id.clone(),
                 asset_name: asset.name,
-                account: account.username.clone(),
+                account: account.display_name().to_owned(),
                 capabilities: ticket.capabilities.clone(),
                 cancelled: login.cancelled.clone(),
             },
@@ -786,9 +871,6 @@ fn validate_ticket(
         || ticket.capabilities.iter().any(|c| !caps.contains(c))
     {
         return Err(error("CLIENT_PROTOCOL_UNSUPPORTED"));
-    }
-    if ticket.expires_at <= Utc::now() {
-        return Err(error("SESSION_TICKET_EXPIRED"));
     }
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     if URL_SAFE_NO_PAD
@@ -924,7 +1006,7 @@ impl App {
         let existing = self.list_hosts().map_err(local_error)?.into_iter().find(|h| matches!(&h.auth, HostAuth::Bastion { profile_id: p, asset_id: a, account_id: c } if p == profile_id && a == asset_id && c == account_id));
         let host = Host {
             id: existing.as_ref().map(|h| h.id.clone()).unwrap_or_default(),
-            name: format!("{} · {}", asset.name, account.username),
+            name: format!("{} · {}", asset.name, account.display_name()),
             host: profile.ssh_host,
             port: profile.ssh_port,
             user: account.username.clone(),
@@ -980,7 +1062,17 @@ mod tests {
         changed_identity: AtomicBool,
         changed_gateway: AtomicUsize,
         disable_shell: AtomicBool,
+        // N2/N3 servers open exec and sftp; rollouts may open exec before sftp.
+        disable_exec: AtomicBool,
         disable_sftp: AtomicBool,
+        // What `/native/assets` reports for the account; None = ["shell","exec","sftp"].
+        account_caps: Mutex<Option<serde_json::Value>>,
+        // Simulates a server that does not echo the requested capability set.
+        ticket_drops_caps: AtomicBool,
+        native_unavailable: AtomicBool,
+        no_native: AtomicBool,
+        login_body: Mutex<serde_json::Value>,
+        ticket_body: Mutex<serde_json::Value>,
         recording_unavailable: AtomicBool,
         optional_recording: AtomicBool,
         failure_secret: AtomicBool,
@@ -1067,19 +1159,24 @@ mod tests {
                     };
                     let mut status = 200;
                     let value = if path == "/api/v1/info" {
-                        let mut info = json!({"server_id":if state.changed_identity.load(Ordering::SeqCst) {"other"} else {"test"},"protocol_version":1,"ssh_protocol_version":1,"minimum_client_protocol_version":1,"production_ready":false,"features":{"ssh_terminal":!state.disable_shell.load(Ordering::SeqCst),"ssh_exec":true,"ssh_sftp":!state.disable_sftp.load(Ordering::SeqCst),"web_terminal":false,"web_exec":false,"web_sftp":false},"recording":{"required":!state.optional_recording.load(Ordering::SeqCst),"format_version":1,"available":!state.recording_unavailable.load(Ordering::SeqCst)},"gateway":{"id":"main","host":"gateway.test","port":2222,"public_key":GATEWAY_KEY}});
+                        let available = !state.native_unavailable.load(Ordering::SeqCst);
+                        // Browser-family fields stay as served by schema 2; ZeroTerm must ignore them.
+                        let mut info = json!({"schema_version":2,"server_id":if state.changed_identity.load(Ordering::SeqCst) {"other"} else {"test"},"protocol_version":2,"stream_protocol":"bastion.guac.v1","production_ready":false,"features":{"web_ssh":true,"web_rdp":false,"web_vnc":false,"recording_replay":true,"device_sessions":true},"recording":{"required":!state.optional_recording.load(Ordering::SeqCst),"format_version":2,"available":!state.recording_unavailable.load(Ordering::SeqCst)},"native":{"protocol_version":1,"minimum_client_protocol_version":1,"available":available,"gateway":{"id":"main","host":"gateway.test","port":2222,"public_key":GATEWAY_KEY},"features":{"shell":available && !state.disable_shell.load(Ordering::SeqCst),"exec":available && !state.disable_exec.load(Ordering::SeqCst),"sftp":available && !state.disable_sftp.load(Ordering::SeqCst)}}});
                         match state.changed_gateway.load(Ordering::SeqCst) {
-                            1 => info["gateway"]["host"] = json!("other.test"),
-                            2 => info["gateway"]["port"] = json!(22),
-                            3 => info["gateway"]["public_key"] = json!("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB"),
-                            4 => info["gateway"] = json!(null),
-                            5 => info["gateway"]["public_key"] = json!("invalid-key"),
+                            1 => info["native"]["gateway"]["host"] = json!("other.test"),
+                            2 => info["native"]["gateway"]["port"] = json!(22),
+                            3 => info["native"]["gateway"]["public_key"] = json!("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB"),
+                            4 => info["native"]["gateway"] = json!(null),
+                            5 => info["native"]["gateway"]["public_key"] = json!("invalid-key"),
                             _ => {}
                         }
+                        if state.no_native.load(Ordering::SeqCst) {
+                            info.as_object_mut().unwrap().remove("native");
+                        }
                         info
-                    } else if path == "/api/v1/auth/login" {
+                    } else if path == "/api/v1/native/auth/login" {
                         state.logins.fetch_add(1, Ordering::SeqCst);
-                        assert_eq!(body["client_type"], "zeroterm");
+                        *state.login_body.lock().unwrap() = body.clone();
                         if state.check_saved_credentials.load(Ordering::SeqCst) {
                             assert_eq!(body["username"], "alice");
                             assert_eq!(body["password"], "vault-password-marker");
@@ -1089,7 +1186,7 @@ mod tests {
                             state.continue_login.notified().await;
                         }
                         tokens(state.expired.load(Ordering::SeqCst))
-                    } else if path == "/api/v1/auth/refresh" {
+                    } else if path == "/api/v1/native/auth/refresh" {
                         state.refreshes.fetch_add(1, Ordering::SeqCst);
                         if state.reject_refresh.load(Ordering::SeqCst) {
                             status = 401;
@@ -1102,35 +1199,34 @@ mod tests {
                             .to_ascii_lowercase()
                             .contains("authorization: bearer access-secret-marker"));
                         match path {
-                            "/api/v1/auth/logout" => {
+                            "/api/v1/native/auth/logout" => {
                                 status = 204;
                                 json!(null)
                             }
-                            "/api/v1/assets?limit=200" => {
+                            "/api/v1/native/assets?limit=200" => {
                                 if state.grouped_assets.load(Ordering::SeqCst) {
-                                    let mut item = asset();
+                                    let mut item = asset(&state);
                                     item["group_id"] = json!("apps");
                                     json!({"items":[item],"groups":[{"id":"apps","name":"Applications","parent_id":"production","sort_order":2}],"next_cursor":"opaque+/cursor"})
                                 } else {
-                                    json!({"items":[asset()],"next_cursor":"opaque+/cursor"})
+                                    json!({"items":[asset(&state)],"next_cursor":"opaque+/cursor"})
                                 }
                             }
-                            "/api/v1/assets?limit=200&cursor=opaque%2B%2Fcursor" => {
+                            "/api/v1/native/assets?limit=200&cursor=opaque%2B%2Fcursor" => {
                                 if state.grouped_assets.load(Ordering::SeqCst) {
                                     json!({"items":[],"groups":[{"id":"production","name":"Production"},{"id":"apps","name":"Applications","parent_id":"production","sort_order":2}],"next_cursor":null})
                                 } else {
                                     json!({"items":[],"next_cursor":null})
                                 }
                             }
-                            "/api/v1/assets/11111111-1111-4111-8111-111111111111" => asset(),
-                            "/api/v1/integrations/zeroterm/connection-tickets" => {
-                                assert_eq!(body["asset_id"], ASSET);
-                                assert_eq!(body["account_id"], ACCOUNT);
+                            "/api/v1/native/assets/11111111-1111-4111-8111-111111111111" => asset(&state),
+                            "/api/v1/native/connection-tickets" => {
+                                *state.ticket_body.lock().unwrap() = body.clone();
                                 let n = state.tickets.fetch_add(1, Ordering::SeqCst) + 1;
                                 let id = format!("33333333-3333-4333-8333-{n:012}");
-                                json!({"protocol_version":1,"ticket_id":id,"ticket_secret":base64::engine::general_purpose::URL_SAFE_NO_PAD.encode([(n+40) as u8;32]),"connection_id":format!("44444444-4444-4444-8444-{n:012}"),"gateway":{"host":"gateway.test","port":2222,"username":format!("zt1:{id}")},"capabilities":body["capabilities"],"expires_at":(Utc::now()+chrono::Duration::seconds(30)).to_rfc3339()})
+                                json!({"protocol_version":1,"ticket_id":id,"ticket_secret":base64::engine::general_purpose::URL_SAFE_NO_PAD.encode([(n+40) as u8;32]),"connection_id":format!("44444444-4444-4444-8444-{n:012}"),"gateway":{"host":"gateway.test","port":2222,"username":format!("zt1:{id}")},"capabilities":if state.ticket_drops_caps.load(Ordering::SeqCst) {json!(["shell"])} else {body["capabilities"].clone()},"expires_at":(Utc::now()+chrono::Duration::seconds(30)).to_rfc3339()})
                             }
-                            "/api/v1/connections/44444444-4444-4444-8444-000000000001" => {
+                            "/api/v1/native/connections/44444444-4444-4444-8444-000000000001" => {
                                 json!({"failure":{"code":if state.failure_secret.load(Ordering::SeqCst) {"ticket-secret-marker"} else {"AUTH_OR_GATEWAY_FAILED"}}})
                             }
                             _ => {
@@ -1170,8 +1266,11 @@ mod tests {
     fn tokens(expired: bool) -> serde_json::Value {
         json!({"access_token":"access-secret-marker","refresh_token":"refresh-secret-marker","access_expires_at":(Utc::now()+chrono::Duration::seconds(if expired {-1} else {600})).to_rfc3339()})
     }
-    fn asset() -> serde_json::Value {
-        json!({"id":ASSET,"name":"Target A","accounts":[{"id":ACCOUNT,"username":"deploy","capabilities":["shell","sftp"]}]})
+    // RFC-006 §14.1: an authorized account lists every open native capability. Tests
+    // override this to prove the client still intersects with `/info.native.features`.
+    fn asset(state: &Mock) -> serde_json::Value {
+        let caps = state.account_caps.lock().unwrap().clone().unwrap_or_else(|| json!(["shell","exec","sftp"]));
+        json!({"id":ASSET,"name":"Target A","protocol":"ssh","tags":[],"group_id":null,"group_name":null,"revision":1,"accounts":[{"id":ACCOUNT,"label":"Deploy (prod)","username":"deploy","domain":null,"credential_kind":"password","capabilities":caps}]})
     }
     async fn login(manager: &BastionManager, s: &Server) {
         manager
@@ -1188,36 +1287,75 @@ mod tests {
         }
     }
 
+    fn info_json() -> serde_json::Value {
+        json!({"schema_version":2,"server_id":"test","protocol_version":2,"stream_protocol":"bastion.guac.v1","production_ready":false,"features":{"web_ssh":true,"web_rdp":true,"web_vnc":true,"recording_replay":true,"device_sessions":true},"recording":{"required":true,"available":true,"format_version":2},"native":{"protocol_version":1,"minimum_client_protocol_version":1,"available":true,"gateway":{"id":"main","host":"gateway.test","port":2222,"public_key":GATEWAY_KEY},"features":{"shell":true,"exec":true,"sftp":true}}})
+    }
     #[test]
-    fn discovery_requires_explicit_native_features_and_required_recording() {
-        let make = || json!({"server_id":"test","protocol_version":1,"ssh_protocol_version":1,"minimum_client_protocol_version":1,"production_ready":false,"features":{"ssh_terminal":true,"ssh_exec":true,"ssh_sftp":true,"web_terminal":false},"recording":{"required":true,"format_version":1}});
-        let info: Info = decode(make()).unwrap();
+    fn discovery_reads_only_the_native_block_and_requires_recording_v2() {
+        let info: Info = decode(info_json()).unwrap();
         info.validate().unwrap();
-        assert!(info.supports("shell"));
-        assert!(info.supports("exec"));
-        assert!(info.supports("sftp"));
+        assert_eq!(info.gateway().unwrap().port, 2222);
+        assert!(info.supports("shell") && info.supports("exec") && info.supports("sftp"));
         assert!(!info.supports("forward"));
-        for field in [
-            "features",
-            "production_ready",
-            "ssh_protocol_version",
-            "minimum_client_protocol_version",
-        ] {
-            let mut value = make();
-            value.as_object_mut().unwrap().remove(field);
-            assert!(decode::<Info>(value).unwrap().validate().is_err());
+        // Top-level protocol_version is the browser family (2 today); it is not a native gate.
+        for top in [json!(1), json!(3), json!(null)] {
+            let mut value = info_json();
+            value["protocol_version"] = top;
+            decode::<Info>(value).unwrap().validate().unwrap();
         }
-        let mut value = make();
-        value["features"] = json!({"web_terminal":true,"web_exec":true,"web_sftp":true});
+        let mut value = info_json();
+        value.as_object_mut().unwrap().remove("native");
+        assert_eq!(
+            decode::<Info>(value).unwrap().validate().unwrap_err().code,
+            "NATIVE_ENTRY_UNAVAILABLE"
+        );
+        let mut value = info_json();
+        value.as_object_mut().unwrap().remove("production_ready");
+        assert_eq!(
+            decode::<Info>(value).unwrap().validate().unwrap_err().code,
+            "CLIENT_PROTOCOL_UNSUPPORTED"
+        );
+        for (field, v) in [
+            ("protocol_version", json!(2)),
+            ("protocol_version", json!(0)),
+            ("minimum_client_protocol_version", json!(2)),
+        ] {
+            let mut value = info_json();
+            value["native"][field] = v;
+            assert_eq!(
+                decode::<Info>(value).unwrap().validate().unwrap_err().code,
+                "CLIENT_PROTOCOL_UNSUPPORTED"
+            );
+        }
+        // Required native fields: a malformed block is a protocol error, never a downgrade.
+        for field in ["protocol_version", "minimum_client_protocol_version", "available", "features"] {
+            let mut value = info_json();
+            value["native"].as_object_mut().unwrap().remove(field);
+            assert_eq!(decode::<Info>(value).err().unwrap().code, "CLIENT_PROTOCOL_UNSUPPORTED");
+        }
+        // Browser features never enable native capabilities.
+        let mut value = info_json();
+        value["native"]["features"] = json!({});
         let info: Info = decode(value).unwrap();
         info.validate().unwrap();
         assert!(!info.supports("shell") && !info.supports("exec") && !info.supports("sftp"));
+        // available=false disables everything even if a feature flag is left true.
+        let mut value = info_json();
+        value["native"]["available"] = json!(false);
+        let info: Info = decode(value).unwrap();
+        info.validate().unwrap();
+        assert!(!info.supports("shell") && !info.supports("exec") && !info.supports("sftp"));
+        let mut value = info_json();
+        value["recording"]["available"] = json!(false);
+        let info: Info = decode(value).unwrap();
+        assert!(!info.supports("shell") && info.supports("sftp"));
         for recording in [
             json!(null),
-            json!({"required":false,"format_version":1}),
-            json!({"required":true,"format_version":2}),
+            json!({"required":false,"format_version":2}),
+            json!({"required":true,"format_version":1}),
+            json!({"required":true,"format_version":3}),
         ] {
-            let mut value = make();
+            let mut value = info_json();
             value["recording"] = recording;
             assert_eq!(
                 decode::<Info>(value).unwrap().validate().unwrap_err().code,
@@ -1225,21 +1363,89 @@ mod tests {
             );
         }
     }
+    #[test]
+    fn account_label_is_displayed_and_falls_back_to_username() {
+        let mut account: BastionAccount = decode(json!({"id":ACCOUNT,"label":"Deploy (prod)","username":"deploy","domain":null,"credential_kind":"password","capabilities":["shell"]})).unwrap();
+        assert_eq!(account.display_name(), "Deploy (prod)");
+        assert_eq!(account.username, "deploy");
+        account.label = " ".into();
+        assert_eq!(account.display_name(), "deploy");
+        let legacy: BastionAccount = decode(json!({"id":ACCOUNT,"username":"root","capabilities":["shell"]})).unwrap();
+        assert_eq!(legacy.display_name(), "root");
+    }
+    #[tokio::test]
+    async fn native_login_and_ticket_requests_use_rfc006_bodies() {
+        let s = server().await;
+        let m = Arc::new(BastionManager::default());
+        login(&m, &s).await;
+        let body = s.state.login_body.lock().unwrap().clone();
+        let mut keys: Vec<_> = body.as_object().unwrap().keys().cloned().collect();
+        keys.sort();
+        assert_eq!(keys, ["device_label", "password", "username"]);
+        assert!(body.get("client_type").is_none());
+        assert_eq!(body["device_label"], "Tests");
+        let (_, meta) = provider(m.clone()).prepare().await.unwrap();
+        let body = s.state.ticket_body.lock().unwrap().clone();
+        let mut keys: Vec<_> = body.as_object().unwrap().keys().cloned().collect();
+        keys.sort();
+        assert_eq!(keys, ["account_id", "asset_id", "capabilities"]);
+        assert!(body.get("purpose").is_none());
+        assert_eq!(body["asset_id"], ASSET);
+        assert_eq!(body["account_id"], ACCOUNT);
+        // N2/N3: one ticket requests every open capability so the connection can carry
+        // shell, exec and sftp channels together (RFC-006 §14.2).
+        assert_eq!(body["capabilities"], json!(["shell", "exec", "sftp"]));
+        assert_eq!(meta.capabilities, vec!["shell", "exec", "sftp"]);
+        assert_eq!(meta.account, "Deploy (prod)");
+        let catalog = m.catalog("profile").await.unwrap();
+        let account = &catalog.assets[0].accounts[0];
+        assert_eq!((account.label.as_str(), account.username.as_str()), ("Deploy (prod)", "deploy"));
+        assert_eq!(account.capabilities, vec!["shell", "exec", "sftp"]);
+    }
+    #[tokio::test]
+    async fn server_without_native_entry_is_rejected_before_credentials_are_sent() {
+        let s = server().await;
+        s.state.no_native.store(true, Ordering::SeqCst);
+        let m = BastionManager::default();
+        assert_eq!(
+            m.probe("", &s.profile.api_url, s.profile.ca_pem.clone())
+                .await
+                .unwrap_err()
+                .code,
+            "NATIVE_ENTRY_UNAVAILABLE"
+        );
+        assert_eq!(
+            m.login(s.profile.clone(), "alice", "secret", "Tests")
+                .await
+                .unwrap_err()
+                .code,
+            "NATIVE_ENTRY_UNAVAILABLE"
+        );
+        assert_eq!(s.state.logins.load(Ordering::SeqCst), 0);
+    }
     #[tokio::test]
     async fn catalog_and_fresh_tickets_honor_feature_and_recording_availability() {
         let s = server().await;
         let m = Arc::new(BastionManager::default());
         login(&m, &s).await;
         let p = provider(m.clone());
+        let caps = |m: &Arc<BastionManager>| {
+            let m = m.clone();
+            async move { m.assets("profile").await.unwrap()[0].accounts[0].capabilities.clone() }
+        };
+        // Rollout: exec opens before sftp. The client honors the advertised set only.
+        s.state.disable_sftp.store(true, Ordering::SeqCst);
+        assert_eq!(caps(&m).await, vec!["shell", "exec"]);
+        assert_eq!(p.prepare().await.unwrap().1.capabilities, vec!["shell", "exec"]);
         s.state.disable_shell.store(true, Ordering::SeqCst);
-        assert_eq!(
-            m.assets("profile").await.unwrap()[0].accounts[0].capabilities,
-            vec!["sftp"]
-        );
-        assert_eq!(p.prepare().await.unwrap().1.capabilities, vec!["sftp"]);
+        s.state.disable_sftp.store(false, Ordering::SeqCst);
+        assert_eq!(caps(&m).await, vec!["exec", "sftp"]);
+        assert_eq!(p.prepare().await.unwrap().1.capabilities, vec!["exec", "sftp"]);
         s.state.disable_shell.store(false, Ordering::SeqCst);
+        // Recording only gates the shell; exec is audited and sftp is not recorded.
         s.state.recording_unavailable.store(true, Ordering::SeqCst);
-        assert_eq!(p.prepare().await.unwrap().1.capabilities, vec!["sftp"]);
+        assert_eq!(p.prepare().await.unwrap().1.capabilities, vec!["exec", "sftp"]);
+        s.state.disable_exec.store(true, Ordering::SeqCst);
         s.state.disable_sftp.store(true, Ordering::SeqCst);
         assert!(m.assets("profile").await.unwrap().is_empty());
         assert!(p
@@ -1248,7 +1454,20 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("CHANNEL_PERMISSION_DENIED"));
-        assert_eq!(s.state.tickets.load(Ordering::SeqCst), 2);
+        assert_eq!(s.state.tickets.load(Ordering::SeqCst), 3);
+        // An enabled but unavailable native gateway offers nothing.
+        s.state.recording_unavailable.store(false, Ordering::SeqCst);
+        s.state.disable_exec.store(false, Ordering::SeqCst);
+        s.state.disable_sftp.store(false, Ordering::SeqCst);
+        s.state.native_unavailable.store(true, Ordering::SeqCst);
+        assert!(m.assets("profile").await.unwrap().is_empty());
+        assert!(p
+            .prepare()
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("CHANNEL_PERMISSION_DENIED"));
+        s.state.native_unavailable.store(false, Ordering::SeqCst);
         s.state.optional_recording.store(true, Ordering::SeqCst);
         assert_eq!(
             m.assets("profile").await.unwrap_err().code,
@@ -1260,7 +1479,33 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("RECORDING_REQUIRED"));
-        assert_eq!(s.state.tickets.load(Ordering::SeqCst), 2);
+        assert_eq!(s.state.tickets.load(Ordering::SeqCst), 3);
+    }
+    #[tokio::test]
+    async fn ticket_requests_advertised_features_intersected_with_the_account() {
+        let s = server().await;
+        let m = Arc::new(BastionManager::default());
+        login(&m, &s).await;
+        let p = provider(m.clone());
+        let requested = |s: &Server| s.state.ticket_body.lock().unwrap()["capabilities"].clone();
+        // A stale catalog row lists fewer capabilities than the server advertises.
+        *s.state.account_caps.lock().unwrap() = Some(json!(["shell", "sftp"]));
+        assert_eq!(p.prepare().await.unwrap().1.capabilities, vec!["shell", "sftp"]);
+        assert_eq!(requested(&s), json!(["shell", "sftp"]));
+        // An account that over-reports is cut back to `/info.native.features`.
+        *s.state.account_caps.lock().unwrap() = Some(json!(["shell", "exec", "sftp"]));
+        s.state.disable_exec.store(true, Ordering::SeqCst);
+        assert_eq!(p.prepare().await.unwrap().1.capabilities, vec!["shell", "sftp"]);
+        assert_eq!(requested(&s), json!(["shell", "sftp"]));
+        s.state.disable_exec.store(false, Ordering::SeqCst);
+        // Unknown capabilities from the catalog are a protocol error, never a guess.
+        *s.state.account_caps.lock().unwrap() = Some(json!(["shell", "forward"]));
+        assert!(p.prepare().await.unwrap_err().to_string().contains("UNKNOWN_CAPABILITY"));
+        *s.state.account_caps.lock().unwrap() = None;
+        // The ticket must echo the requested set exactly (RFC-006 §14.1).
+        s.state.ticket_drops_caps.store(true, Ordering::SeqCst);
+        assert!(p.prepare().await.unwrap_err().to_string().contains("CLIENT_PROTOCOL_UNSUPPORTED"));
+        assert_eq!(s.state.tickets.load(Ordering::SeqCst), 3);
     }
     #[tokio::test]
     async fn connection_failure_never_surfaces_arbitrary_response_text() {
@@ -1310,8 +1555,9 @@ mod tests {
         assert_ne!(first.username, second.username);
         assert_ne!(a.connection_id, b.connection_id);
         assert_eq!(a.asset_name, "Target A");
-        assert_eq!(a.account, "deploy");
-        assert_eq!(a.capabilities, vec!["shell", "sftp"]);
+        assert_eq!(a.account, "Deploy (prod)");
+        assert_eq!(first.username, format!("zt1:{}", "33333333-3333-4333-8333-000000000001"));
+        assert_eq!(a.capabilities, vec!["shell", "exec", "sftp"]);
         assert!(matches!(
             first.host_key_policy,
             HostKeyPolicy::PinnedFingerprint(_)
@@ -1498,6 +1744,11 @@ mod tests {
         assert!(serde_json::to_value(&listed[0]).unwrap().get("password").is_none());
         app.login_bastion(&profile.id, "alice", "", "Tests").await.unwrap();
         assert_eq!(s.state.logins.load(Ordering::SeqCst), 1);
+        // Favorites show the account label but connect as the target username.
+        let host_id = app.save_bastion_asset(&profile.id, ASSET, ACCOUNT).await.unwrap();
+        let host = app.find_host_by_id(&host_id).unwrap().unwrap();
+        assert_eq!(host.name, "Target A · Deploy (prod)");
+        assert_eq!(host.user, "deploy");
         // The private password and transient login tokens never appear on disk as plaintext.
         let disk = std::fs::read(&path).unwrap();
         for secret in ["vault-password-marker", "access-secret-marker", "refresh-secret-marker"] {
@@ -1610,11 +1861,39 @@ mod tests {
         let mut t = make();
         t.capabilities = vec!["forward".into()];
         assert!(validate_ticket(&t, &p, &caps).is_err());
+        // N2/N3: any order of the exact requested set is accepted; subsets and duplicates are not.
+        let all: Vec<String> = vec!["shell".into(), "exec".into(), "sftp".into()];
         let mut t = make();
-        t.expires_at = Utc::now() - chrono::Duration::seconds(1);
-        assert_eq!(
-            validate_ticket(&t, &p, &caps).unwrap_err().code,
-            "SESSION_TICKET_EXPIRED"
-        );
+        t.capabilities = vec!["sftp".into(), "shell".into(), "exec".into()];
+        validate_ticket(&t, &p, &all).unwrap();
+        t.capabilities = vec!["shell".into(), "exec".into()];
+        assert!(validate_ticket(&t, &p, &all).is_err());
+        t.capabilities = vec!["shell".into(), "exec".into(), "exec".into()];
+        assert!(validate_ticket(&t, &p, &all).is_err());
+        let mut t = make();
+        // Ticket expiry is the gateway's decision: a client clock running ahead must not reject it.
+        t.expires_at = Utc::now() - chrono::Duration::seconds(120);
+        assert!(validate_ticket(&t, &p, &caps).is_ok());
+    }
+    #[test]
+    fn token_lifetime_follows_the_server_clock_not_the_local_one() {
+        let token = |expires: DateTime<Utc>, date: Option<DateTime<Utc>>| {
+            let mut v = json!({"access_token":"a","refresh_token":"r","access_expires_at":expires.to_rfc3339()});
+            if let Some(date) = date {
+                v[SERVER_DATE] = json!(date.to_rfc3339());
+            }
+            decode_tokens(v).unwrap()
+        };
+        // Server clock one hour behind the client: 10-minute token is still fresh locally.
+        let behind = Utc::now() - chrono::Duration::hours(1);
+        let t = token(behind + chrono::Duration::minutes(10), Some(behind));
+        assert!(!t.due() && !t.expired());
+        // Server clock one hour ahead: the same token is not treated as long-lived.
+        let ahead = Utc::now() + chrono::Duration::hours(1);
+        let t = token(ahead + chrono::Duration::seconds(10), Some(ahead));
+        assert!(t.due() && !t.expired());
+        // Without a Date header the absolute expiry is used.
+        let t = token(Utc::now() - chrono::Duration::seconds(1), None);
+        assert!(t.due() && t.expired());
     }
 }

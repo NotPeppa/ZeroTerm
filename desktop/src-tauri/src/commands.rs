@@ -35,7 +35,7 @@ use zeroterm_app::{App, HostAuth, SyncBackend, SyncProfile};
 use zeroterm_ssh::{HostKeyPolicy, KnownHosts, PtySize, Session};
 
 use crate::connect::{
-    build_connect_chain_for_host, connect_host_sessions,
+    acquire_exec_session, build_connect_chain_for_host, connect_host_sessions,
 };
 use crate::editor::{
     decode_editor_text, normalize_text_edit_limit, RemoteTextFileDto, HARD_TEXT_EDIT_MAX_BYTES,
@@ -4392,11 +4392,7 @@ pub async fn collect_system_metrics(
     if host_id.is_empty() || host_id.starts_with("local-") {
         return local_metrics().await;
     }
-    let (_host, cfg, jump_cfg) = build_connect_chain_for_host(&state, &app_handle, &host_id)?;
-    let session = state
-        .sftp_pool
-        .acquire_session(host_id, cfg, jump_cfg)
-        .await?;
+    let session = acquire_exec_session(&state, &app_handle, &host_id).await?;
     let (_code, stdout, stderr) = session
         .exec(METRICS_SCRIPT)
         .await
@@ -4676,11 +4672,7 @@ pub async fn list_tmux_sessions(
             return Ok(parse_tmux_state(&String::from_utf8_lossy(&output.stdout)));
         }
     }
-    let (_host, cfg, jump_cfg) = build_connect_chain_for_host(&state, &app_handle, &host_id)?;
-    let session = state
-        .sftp_pool
-        .acquire_session(host_id, cfg, jump_cfg)
-        .await?;
+    let session = acquire_exec_session(&state, &app_handle, &host_id).await?;
     let (_code, stdout, stderr) = session
         .exec(TMUX_LIST_SCRIPT)
         .await
@@ -4786,11 +4778,7 @@ pub async fn list_system_services(
         return Ok(services);
     }
 
-    let (_host, cfg, jump_cfg) = build_connect_chain_for_host(&state, &app_handle, &host_id)?;
-    let session = state
-        .sftp_pool
-        .acquire_session(host_id, cfg, jump_cfg)
-        .await?;
+    let session = acquire_exec_session(&state, &app_handle, &host_id).await?;
     let command = "LC_ALL=C SYSTEMD_COLORS=0 systemctl list-units --type=service --all --no-legend --no-pager --plain";
     let (code, stdout, stderr) = session.exec(command).await.map_err(|e| e.to_string())?;
     if code != 0 {
@@ -4865,11 +4853,7 @@ pub async fn system_service_action(
         return Ok(());
     }
 
-    let (_host, cfg, jump_cfg) = build_connect_chain_for_host(&state, &app_handle, &host_id)?;
-    let session = state
-        .sftp_pool
-        .acquire_session(host_id, cfg, jump_cfg)
-        .await?;
+    let session = acquire_exec_session(&state, &app_handle, &host_id).await?;
     let command = format!(
         "systemctl{} --no-ask-password {} {}",
         if scope == "user" { " --user" } else { "" },
@@ -4923,12 +4907,7 @@ pub async fn system_service_file(
             output.stderr,
         )
     } else {
-        let (_host, cfg, jump_cfg) =
-            build_connect_chain_for_host(&state, &app_handle, &host_id)?;
-        let session = state
-            .sftp_pool
-            .acquire_session(host_id, cfg, jump_cfg)
-            .await?;
+        let session = acquire_exec_session(&state, &app_handle, &host_id).await?;
         let command = format!(
             "systemctl{} --no-pager cat {}",
             if scope == "user" { " --user" } else { "" },
@@ -4988,11 +4967,7 @@ pub async fn system_service_logs(
             output.stderr,
         )
     } else {
-        let (_host, cfg, jump_cfg) = build_connect_chain_for_host(&state, &app_handle, &host_id)?;
-        let session = state
-            .sftp_pool
-            .acquire_session(host_id, cfg, jump_cfg)
-            .await?;
+        let session = acquire_exec_session(&state, &app_handle, &host_id).await?;
         let command = format!(
             "journalctl{} --no-pager --output=short-iso --lines=300 --unit {}",
             if scope == "user" { " --user" } else { "" },
@@ -5676,11 +5651,7 @@ pub async fn list_listening_ports(
         }
     }
 
-    let (_host, cfg, jump_cfg) = build_connect_chain_for_host(&state, &app_handle, &host_id)?;
-    let session = state
-        .sftp_pool
-        .acquire_session(host_id, cfg, jump_cfg)
-        .await?;
+    let session = acquire_exec_session(&state, &app_handle, &host_id).await?;
     let (_code, stdout, stderr) = session
         .exec(LINUX_PORTS_SCRIPT)
         .await
@@ -5745,11 +5716,7 @@ pub async fn detect_firewall_status(
         }
     }
 
-    let (_host, cfg, jump_cfg) = build_connect_chain_for_host(&state, &app_handle, &host_id)?;
-    let session = state
-        .sftp_pool
-        .acquire_session(host_id, cfg, jump_cfg)
-        .await?;
+    let session = acquire_exec_session(&state, &app_handle, &host_id).await?;
     let (_code, stdout, _stderr) = session
         .exec(LINUX_FIREWALL_SCRIPT)
         .await
@@ -5860,11 +5827,7 @@ pub async fn kill_port_process(
         }
     }
 
-    let (_host, cfg, jump_cfg) = build_connect_chain_for_host(&state, &app_handle, &host_id)?;
-    let session = state
-        .sftp_pool
-        .acquire_session(host_id, cfg, jump_cfg)
-        .await?;
+    let session = acquire_exec_session(&state, &app_handle, &host_id).await?;
     let pid_list = pids
         .iter()
         .map(u32::to_string)
@@ -6027,11 +5990,7 @@ pub async fn docker_exec(
             stderr: String::from_utf8_lossy(&output.stderr).to_string(),
         });
     }
-    let (_host, cfg, jump_cfg) = build_connect_chain_for_host(&state, &app_handle, &host_id)?;
-    let session = state
-        .sftp_pool
-        .acquire_session(host_id, cfg, jump_cfg)
-        .await?;
+    let session = acquire_exec_session(&state, &app_handle, &host_id).await?;
     let mut cmd = String::from("docker");
     for a in &args {
         cmd.push(' ');
@@ -6283,6 +6242,10 @@ pub async fn connect_host(
     let pty = PtySize::new(cols.unwrap_or(80).max(1), rows.unwrap_or(24).max(1));
     let channel = session.open_shell(pty).await.map_err(|e| e.to_string())?;
     let bastion = session.managed_identity().map(crate::bastion::ConnectionIdentity::from);
+    let exec_route = bastion
+        .as_ref()
+        .filter(|identity| identity.capabilities.iter().any(|c| c == "exec"))
+        .map(|_| (host_id.clone(), session.clone()));
 
     let session_id = state.next_session_id.fetch_add(1, Ordering::SeqCst);
     let (control_tx, control_rx) = mpsc::channel::<SessionCommand>(64);
@@ -6308,6 +6271,7 @@ pub async fn connect_host(
             control_tx,
             forward_summaries,
             jump_summary,
+            exec_route,
         },
     );
 
@@ -6781,6 +6745,7 @@ pub async fn connect_quick_host(
             control_tx,
             forward_summaries,
             jump_summary,
+            exec_route: None,
         },
     );
 
