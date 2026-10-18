@@ -63,9 +63,9 @@ ZeroTerm 是一款面向开发者和运维的严肃终端工具。SSH/SFTP 协�
 ### 堡垒机客户端
 
 - 桌面盾牌入口、Android 工作区“堡垒机”和 CLI 接入独立自托管堡垒机。
-- HTTPS 登录与授权资产目录；每次 SSH 连接申请一次性票据，终端/SFTP/exec 复用共享核心。
+- 按 zeroterm-terminal 的 RFC-006 原生 SSH 入口（`docs/RFC-006-native-ssh-entry.md`）接入：HTTPS `/api/v1/native/` 登录与授权资产目录，每次 SSH 连接申请一次性 `zt1:` 票据。
 - 登录状态仅在内存中，网关指纹严格校验；资产收藏不保存目标凭据或连接票据。
-- 当前客户端采用 RFC 的专用集成端点，服务端仍需补齐该路由后联调。使用方式、协议差异和验证边界见 [堡垒机客户端接入](./docs/bastion-client.md)。
+- 终端（N1）、exec/服务器工具（N2）与 SFTP（N3）按服务端 `/info` 声明开放；一张票据的 SSH 连接同时承载终端、exec 与 SFTP 通道，未开放的能力隐藏入口或明确提示。堡垒机资产不使用跨主机直传，也不经堡垒机安装密钥。服务端原生入口与客户端同期开发，尚未真实联调。使用方式、协议和验证边界见 [堡垒机客户端接入](./docs/bastion-client.md)。
 
 ### Vault、凭据与安全
 
@@ -137,7 +137,7 @@ ZeroTerm 是一款面向开发者和运维的严肃终端工具。SSH/SFTP 协�
 1. **Rust 核心不写两遍** —— SSH 协议栈、加密、同步引擎是全部平台共享的，通过 `uniffi`（Swift/Kotlin）和 Tauri command（桌面）暴露。
 2. **桌面用 Tauri 2 + xterm.js** —— 包体小、性能好；Windows 使用 xterm.js 默认渲染路径，macOS 使用 Canvas renderer 改善 Retina 与透明背景上的字形清晰度。前端刻意使用原生 HTML/CSS/JS，IPC 契约不依赖任何 JS 框架。
 3. **移动端坚持原生** —— 输入法、外接键盘、手势、后台保活和网络切换重连需要原生能力。Android 已用 Compose + Canvas 实现，并通过 uniffi 复用 Rust 核心；iOS 仍在规划中。
-4. **原生 SSH 客户端** —— 本项目提供桌面、移动与 CLI。独立 Web 堡垒机由 zeroterm-terminal 提供；本项目可通过其 HTTPS/SSH 集成入口接入，网关能处理明文会话。
+4. **原生 SSH 客户端** —— 本项目提供桌面、移动与 CLI。独立 Web 堡垒机由 zeroterm-terminal 提供；本项目通过其 RFC-006 原生 SSH 入口（HTTPS 控制面 + 标准 SSH 网关）接入，网关能处理明文会话。
 
 完整架构与 FFI 表面见 [RFC-001](./RFC-001-architecture.md)。
 
@@ -362,7 +362,7 @@ ciphertext      = XChaCha20-Poly1305(record_key, nonce=24B, plaintext,
 - [RFC-002 — 多端同步设计](./RFC-002-sync-design.md)
 - [RFC-003 — Android 设计](./RFC-003-android.md)
 - [堡垒机客户端接入](./docs/bastion-client.md) — 桌面/Android/CLI 入口、协议、服务端契约差异与验证边界
-- [RFC-004 — 堡垒机历史设计稿](./RFC-004-bastion-design.md) — 当前服务端设计见 zeroterm-terminal 的 RFC-004
+- [RFC-004 — 堡垒机历史设计稿](./RFC-004-bastion-design.md) — 当前客户端契约见 zeroterm-terminal 的 RFC-006（原生 SSH 入口）
 - [core/README.md](./core/README.md) — Rust 核心与 CLI 详解
 - [desktop/README.md](./desktop/README.md) — 桌面端架构与 IPC 契约
 - [android/README.md](./android/README.md) — Android 构建、功能状态与同步说明
