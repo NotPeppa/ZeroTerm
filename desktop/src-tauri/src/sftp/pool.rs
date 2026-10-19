@@ -85,8 +85,7 @@ impl SftpPool {
         jump_cfg: Option<ConnectConfig>,
     ) -> Result<Arc<Session>, String> {
         let host = self.upsert_host(host_id, cfg, jump_cfg);
-        // Every caller of the shared session runs remote commands on it.
-        host.connect_session_for("exec").await
+        host.connect_session().await
     }
 
     pub(crate) async fn open_panel_channel(
@@ -355,7 +354,7 @@ impl SftpPool {
         let mut attempts = 0usize;
         loop {
             attempts += 1;
-            let session = host.connect_session_for("sftp").await?;
+            let session = host.connect_session().await?;
             let tuning = host.upload_tuning();
             let opened = match tokio::time::timeout(SFTP_OPEN_TIMEOUT, session.sftp_tuned(tuning))
                 .await
@@ -427,7 +426,6 @@ impl HostPool {
                 session: None,
                 jump_session: None,
                 connecting: false,
-                capability_refreshed: false,
                 channels: HashMap::new(),
             }),
         }
@@ -460,37 +458,6 @@ impl HostPool {
         self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner).channels.iter().find_map(
             |(&channel_id, entry)| matches!(entry, ChannelEntry::Ready { .. }).then_some(channel_id),
         )
-    }
-
-    /// [`Self::connect_session`] for an operation that needs `capability`.
-    ///
-    /// A bastion session keeps the capability set its ticket was issued with, while
-    /// the server may open exec/sftp later (RFC-006 §14.1). When the pooled session
-    /// lacks the capability, reconnect once with a fresh ticket; at most one such
-    /// refresh happens per pooled session, so periodic callers (metrics every 10 s)
-    /// never turn into one ticket per call. Plain hosts are unaffected.
-    async fn connect_session_for(&self, capability: &str) -> Result<Arc<Session>, String> {
-        let session = self.connect_session().await?;
-        let Some(identity) = session.managed_identity() else {
-            return Ok(session);
-        };
-        if identity.capabilities.iter().any(|c| c == capability) {
-            return Ok(session);
-        }
-        {
-            let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-            let current = state.session.as_ref().is_some_and(|s| Arc::ptr_eq(s, &session));
-            if state.capability_refreshed || !current {
-                // Already refreshed (or replaced concurrently): let the capability
-                // check on the returned session report CHANNEL_PERMISSION_DENIED.
-                return Ok(state.session.clone().unwrap_or(session));
-            }
-            state.session = None;
-            state.jump_session = None;
-        }
-        let refreshed = self.connect_session().await?;
-        self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner).capability_refreshed = true;
-        Ok(refreshed)
     }
 
     async fn connect_session(&self) -> Result<Arc<Session>, String> {
@@ -542,7 +509,6 @@ impl HostPool {
             Ok((session, jump_session)) => {
                 state.session = Some(session.clone());
                 state.jump_session = jump_session;
-                state.capability_refreshed = false;
                 Ok(session)
             }
             Err(err) => Err(err),
@@ -625,8 +591,6 @@ struct HostState {
     session: Option<Arc<Session>>,
     jump_session: Option<Arc<Session>>,
     connecting: bool,
-    /// Set after a reconnect made only to pick up newly opened bastion capabilities.
-    capability_refreshed: bool,
     channels: HashMap<u64, ChannelEntry>,
 }
 

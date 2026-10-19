@@ -82,7 +82,6 @@ fun SftpBrowserScreen(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val path by sftp.path.collectAsState()
-    val bastionIdentity by sftp.bastionIdentity.collectAsState()
     val entries by sftp.entries.collectAsState()
     val busy by sftp.busy.collectAsState()
     val error by sftp.error.collectAsState()
@@ -304,7 +303,7 @@ fun SftpBrowserScreen(
             } else {
             ZeroTopBar(
                 title = hostLabel,
-                subtitle = bastionIdentity?.let { raw -> org.json.JSONObject(raw).let { m -> "${m.getString("asset_name")} · ${m.getString("account")} · ${m.getJSONArray("capabilities")} · ${m.getString("connection_id")}" } } ?: path,
+                subtitle = path,
                 navigationIcon = {
                     IconButton(onClick = {
                         if (path != "/") {
@@ -370,10 +369,8 @@ fun SftpBrowserScreen(
                 }
             }
             error?.let {
-                // RFC-006: a refused bastion channel means the server has not opened it yet.
-                val sftpNotOpen = stringResource(R.string.bastion_sftp_not_open)
                 Text(
-                    if ("CHANNEL_PERMISSION_DENIED" in it && "sftp" in it) "$sftpNotOpen\n$it" else it,
+                    it,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(16.dp),
                 )

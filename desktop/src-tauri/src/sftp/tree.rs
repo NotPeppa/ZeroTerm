@@ -1066,7 +1066,6 @@ async fn stream_local_file_to_remote(
     retry_host_id: Option<&str>,
     progress: ProgressMode<'_>,
 ) -> Result<(), String> {
-    let retry_host_id = retry_host_id.filter(|_| target_sftp.managed_identity().is_none());
     let metadata = tokio::fs::metadata(&source)
         .await
         .map_err(|e| format!("stating {}: {e}", source.display()))?;
@@ -1571,9 +1570,6 @@ async fn stream_remote_file_to_remote(
     target_retry_host_id: Option<&str>,
     progress: ProgressMode<'_>,
 ) -> Result<(), String> {
-    let allow_retry = source_sftp.managed_identity().is_none() && target_sftp.managed_identity().is_none();
-    let source_retry_host_id = source_retry_host_id.filter(|_| allow_retry);
-    let target_retry_host_id = target_retry_host_id.filter(|_| allow_retry);
     match progress {
         ProgressMode::Standalone { app, state } => {
             if !skip_overwrite_check && !overwrite {
@@ -1905,12 +1901,7 @@ pub(crate) async fn copy_remote_tree_to_remote(
         CopyNodeKind::Dir => {
             ensure_remote_dir_exists(target_sftp, target).await?;
 
-            // Bastion assets never use the server-to-server path; their directory copies
-            // relay through local SFTP channels like their single-file copies.
-            let managed = source_sftp.managed_identity().is_some()
-                || target_sftp.managed_identity().is_some();
-            if let (false, Some(source_host_id), Some(target_host_id), Some((app_handle, state))) = (
-                managed,
+            if let (Some(source_host_id), Some(target_host_id), Some((app_handle, state))) = (
                 source_host_id.as_deref(),
                 target_host_id.as_deref(),
                 progress_ctx,

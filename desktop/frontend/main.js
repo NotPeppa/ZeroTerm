@@ -1,5 +1,3 @@
-import { installBastion } from "./bastion.js";
-import { installBastionTree, explainBastionError } from "./bastion-tree.js";
 // ZeroTerm desktop frontend (vanilla JS, no build step)
 
 const { invoke } = window.__TAURI__.core;
@@ -2566,7 +2564,6 @@ function authTypeLabel(kind) {
   if (kind === "password") return t("host_editor.auth.password");
   if (kind === "key") return t("host_editor.auth.key");
   if (kind === "agent") return t("host_editor.auth.agent");
-  if (kind === "bastion") return document.documentElement.lang.startsWith("zh") ? "堡垒机" : "Bastion";
   return kind;
 }
 
@@ -4275,21 +4272,10 @@ async function renderMetricsPanel(options = {}) {
   }
 }
 
-// Every remote sample through a bastion is an audited exec, so bastion panes poll less often and
-// nothing polls while the window is hidden.
-const BASTION_METRICS_PANEL_INTERVAL_MS = 15000;
-const BASTION_METRICS_HEADER_INTERVAL_MS = 60000;
-let metricsPanelLastSample = 0;
-
 function startMetricsAutoRefresh() {
   if (metricsRefreshTimer) clearInterval(metricsRefreshTimer);
-  metricsPanelLastSample = Date.now();
   metricsRefreshTimer = setInterval(() => {
-    if (terminalActiveSidePanel !== "metrics" || document.hidden) return;
-    const bastion = getActivePane()?.host?.authType === "bastion";
-    if (bastion && Date.now() - metricsPanelLastSample < BASTION_METRICS_PANEL_INTERVAL_MS - 500) return;
-    metricsPanelLastSample = Date.now();
-    renderMetricsPanel({ silent: true });
+    if (terminalActiveSidePanel === "metrics") renderMetricsPanel({ silent: true });
   }, 5000);
 }
 
@@ -4332,14 +4318,10 @@ async function refreshPaneHeaderMetrics() {
 
 async function samplePaneHeaderMetrics(tab) {
   for (const pane of tab.panes) {
-    if (!pane.metricsEl || !pane.sessionId || !paneAllowsBastionFeature(pane, "metrics")) continue;
-    if (pane.host?.authType === "bastion") {
-      if (Date.now() - (pane.metricsLastSampleAt || 0) < BASTION_METRICS_HEADER_INTERVAL_MS - 500) continue;
-      pane.metricsLastSampleAt = Date.now();
-    }
+    if (!pane.metricsEl || !pane.sessionId) continue;
     try {
       const m = await invoke("collect_system_metrics", { hostId: pane.host?.id || null });
-      if (!pane.metricsEl || !pane.sessionId || !paneAllowsBastionFeature(pane, "metrics")) continue;
+      if (!pane.metricsEl || !pane.sessionId) continue;
       const cpu = Number(m.cpuUsage) || 0;
       const ram = m.memoryTotal > 0 ? (m.memoryUsed / m.memoryTotal) * 100 : 0;
       const disks = Array.isArray(m.disks) ? m.disks : [];
@@ -5684,16 +5666,8 @@ function getTerminalSidebarFeatures() {
   );
 }
 
-function paneAllowsBastionFeature(pane, featureId) {
-  if (pane?.host?.authType !== "bastion") return true;
-  const caps = pane.bastionIdentity?.capabilities || [];
-  if (featureId === "sftp") return caps.includes("sftp");
-  if (["metrics", "services", "ports", "docker", "tmux"].includes(featureId)) return caps.includes("exec");
-  return true;
-}
-
 function isTerminalSidebarFeatureEnabled(featureId) {
-  if (!TERMINAL_SIDEBAR_FEATURE_IDS.includes(featureId) || !paneAllowsBastionFeature(getActivePane(), featureId)) return false;
+  if (!TERMINAL_SIDEBAR_FEATURE_IDS.includes(featureId)) return false;
   return getTerminalSidebarFeatures()[featureId];
 }
 
@@ -5722,7 +5696,7 @@ function applyTerminalSidebarFeatureSettings() {
   const features = getTerminalSidebarFeatures();
   for (const featureId of TERMINAL_SIDEBAR_FEATURE_IDS) {
     const toggle = TERMINAL_SIDEBAR_FEATURE_TOGGLES[featureId];
-    if (toggle) toggle.hidden = !features[featureId] || !paneAllowsBastionFeature(getActivePane(), featureId);
+    if (toggle) toggle.hidden = !features[featureId];
   }
   for (const [paneKey, panel] of terminalSidePanelByPane.entries()) {
     if (panel && features[panel] === false) terminalSidePanelByPane.set(paneKey, null);
@@ -8628,7 +8602,6 @@ const quickConnectError = document.getElementById("quick-connect-error");
 let quickConnectKeyPem = null;
 
 let hostsCache = [];
-let bastionTree = null;
 let workspaceMode = "vaults";
 let textInputResolver = null;
 let confirmResolver = null;
@@ -13956,7 +13929,6 @@ function applyI18n() {
   }
 
   updateSftpConnectButtons();
-  bastionTree?.translate();
 }
 
 hostSearch.addEventListener("input", () => renderHosts());
@@ -15306,16 +15278,15 @@ async function moveHostToGroup(hostId, groupId) {
 }
 
 function renderHosts() {
-  if (bastionTree?.render()) return;
   hostsList.innerHTML = "";
 
   const q = hostSearch.value.trim().toLowerCase();
   const searching = q.length > 0;
   const rows = q
-    ? hostsCache.filter((h) => h.authType !== "bastion" &&
+    ? hostsCache.filter((h) =>
       `${h.name} ${h.user} ${h.host} ${h.port}`.toLowerCase().includes(q)
     )
-    : hostsCache.filter((h) => h.authType !== "bastion");
+    : hostsCache;
 
   if (rows.length === 0) {
     hostsEmpty.hidden = false;
@@ -15847,10 +15818,6 @@ function renderTerminalWorkspace() {
   terminalSessionLayout?.classList.toggle("no-terminal-sidebar", !hasTerminalTab);
   if (terminalSidebarRail) {
     terminalSidebarRail.hidden = !hasTerminalTab || !hasEnabledTerminalSidebarFeatures();
-    for (const featureId of TERMINAL_SIDEBAR_FEATURE_IDS) {
-      const toggle = TERMINAL_SIDEBAR_FEATURE_TOGGLES[featureId];
-      if (toggle) toggle.hidden = !isTerminalSidebarFeatureEnabled(featureId);
-    }
   }
   if (!tab) {
     terminalWorkspace.className = "terminal-workspace layout-single";
@@ -17616,7 +17583,6 @@ function resetAutoReconnect(pane) {
 // text alone. The attempt counter is cleared only by a successful connect, so
 // a flapping link cannot retry forever.
 function scheduleAutoReconnect(pane) {
-  if (pane.host?.authType === "bastion") return false;
   if (!pane || pane.isLocal || !pane.reconnectFactory) return false;
   if (!isTerminalAutoReconnectEnabled()) return false;
   cancelAutoReconnect(pane);
@@ -17692,14 +17658,6 @@ async function connectPaneSession(pane) {
     try {
       const info = await invoke("session_info", { sessionId });
       const bits = [];
-      if (pane.host?.authType === "bastion") {
-        const identity = await invoke("bastion_session_identity", { sessionId });
-        if (identity) {
-          pane.bastionIdentity = identity;
-          applyTerminalSidebarFeatureSettings();
-          bits.push(`${identity.asset_name} · ${identity.account} · ${identity.capabilities.join(", ")} · ${identity.connection_id}`);
-        }
-      }
       if (info.jump) bits.push(t("terminal.via", { jump: info.jump }));
       if (info.forwards.length > 0) bits.push(info.forwards.join(", "));
       if (bits.length > 0) {
@@ -18291,10 +18249,6 @@ document.getElementById("host-edit-cancel").addEventListener("click", closeHostE
 hostForm.addEventListener("submit", saveHostForm);
 
 async function openHostEditor(id = null, defaultGroupId = "") {
-  if (id) {
-    const host = await invoke("get_host", { id });
-    if (host.authType === "bastion") { bastionUi.open(); return; }
-  }
   editingHostId = id;
   hostError.hidden = true;
   hostError.textContent = "";
@@ -19738,21 +19692,10 @@ async function connectSftpPaneNow(pane, host) {
     pane.hostSelect.title = `${host.user}@${host.host}:${host.port}`;
     pane.path = "/";
     pane.statusEl.textContent = t("sftp.status.connected", { name: host.name });
-    if (host.authType === "bastion") {
-      const identity = await invoke("bastion_sftp_identity", { sftpId: pane.sftpId });
-      if (identity) {
-        const label = document.createElement("div");
-        label.className = "bastion-connection-info";
-        label.textContent = `${identity.asset_name} · ${identity.account} · ${identity.capabilities.join(", ")} · ${identity.connection_id}`;
-        pane.statusEl.parentElement.append(label);
-        pane.bastionIdentityEl = label;
-      }
-    }
     await navigateSftpPane(pane, "/", { source: "system" });
   } catch (e) {
     const err = normalizeSftpError(e);
-    const message = host.authType === "bastion" ? explainBastionError(err.message, document.documentElement.lang) : err.message;
-    pane.statusEl.textContent = t("sftp.error.connect_failed", { error: message });
+    pane.statusEl.textContent = t("sftp.error.connect_failed", { error: err.message });
   }
   updateSftpConnectButtons();
 }
@@ -19813,8 +19756,6 @@ async function connectTerminalSftpToActivePane() {
 }
 
 async function disconnectSftpPane(pane) {
-  pane.bastionIdentityEl?.remove();
-  pane.bastionIdentityEl = null;
   if (pane.sftpId !== null) {
     try {
       await invoke("sftp_close", { sftpId: pane.sftpId });
@@ -22302,6 +22243,3 @@ refreshVaultStatus();
 function openSettingsPage() {
   setWorkspaceMode("settings");
 }
-
-const bastionUi = installBastion({ invoke, syncCustomSelect, onChange: change => bastionTree?.change(change) });
-bastionTree = installBastionTree({ invoke, refreshHosts: () => refreshHostsCacheFromVault(), renderLocal: renderHosts, openLogin: profileId => bastionUi.open(profileId), openTerminal: openHostInTerminal, openFiles: async host => { setWorkspaceMode("sftp"); await assignHostToSftpPane(host); }, syncCustomSelect });

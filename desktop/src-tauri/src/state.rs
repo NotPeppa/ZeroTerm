@@ -115,18 +115,12 @@ impl Default for AppState {
 /// when `AppState` drops the `control_tx` is dropped too — the task's
 /// `recv()` returns `None` and it falls through to graceful shutdown.
 pub struct SessionHandle {
-    pub bastion: Option<crate::bastion::ConnectionIdentity>,
     pub control_tx: mpsc::Sender<SessionCommand>,
     /// Human-readable list of forwards active for this session
     /// (`["L 8080:127.0.0.1:80", "D 1080"]`). The frontend reads this
     /// when displaying the host header.
     pub forward_summaries: Vec<String>,
     pub jump_summary: Option<String>,
-    /// Bastion terminals only: the vault host and a handle to the same managed connection, so server
-    /// tools run their exec channels on the terminal's connection instead of opening another one
-    /// (RFC-006 §14.2; per-user connection limits are small). SFTP keeps its own pooled connection
-    /// so bulk transfers never queue behind or in front of interactive terminal traffic.
-    pub exec_route: Option<(String, zeroterm_ssh::Session)>,
 }
 
 #[derive(Debug)]

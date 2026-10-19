@@ -20,9 +20,7 @@ mod sftp;
 
 pub use error::{SftpErrorKind, SshError};
 pub use forward::{forward_dynamic, forward_local, forward_remote, ForwardHandle};
-pub use host_key::{
-    openssh_fingerprint, HostKeyInfo, HostKeyPolicy, HostKeyPrompt, MismatchAction,
-};
+pub use host_key::{HostKeyInfo, HostKeyPolicy, HostKeyPrompt, MismatchAction};
 pub use known_hosts::{KnownHostCertificateStatus, KnownHostStatus, KnownHosts};
 // Re-exported so callers can decode vault-stored key material into the
 // identities accepted by `Session::exec_forwarding_agent_with_identities`
@@ -30,7 +28,7 @@ pub use known_hosts::{KnownHostCertificateStatus, KnownHostStatus, KnownHosts};
 pub use russh::keys::{decode_secret_key, PrivateKey};
 pub use session::{
     current_http_proxy, set_global_http_proxy, AuthMethod, ChannelEvent, ConnectConfig, ExecStream,
-    PtySize, Session, ShellChannel, ManagedConnection, ManagedSession,
+    PtySize, Session, ShellChannel,
 };
 pub use sftp::{
     is_upload_stall, DirEntry, FileKind, FileMetadata, ProgressTick, Sftp, SftpTuning,
