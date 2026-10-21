@@ -246,5 +246,6 @@ pub(crate) fn host_input_to_host(input: HostInput) -> zeroterm_app::Host {
         forwards: Vec::new(),
         proxy_jump_host_id: None,
         group_id: input.group_id,
+        warpgate: None,
     }
 }

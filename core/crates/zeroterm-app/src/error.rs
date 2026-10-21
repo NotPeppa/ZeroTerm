@@ -44,6 +44,9 @@ pub enum AppError {
     #[error("no sync profile with id '{0}'")]
     SyncProfileNotFound(String),
 
+    #[error("Warpgate: {0}")]
+    Warpgate(String),
+
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 }

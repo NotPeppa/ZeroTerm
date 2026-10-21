@@ -871,6 +871,7 @@ fn cmd_add(
         forwards: Vec::new(),
         proxy_jump_host_id: None,
         group_id: None,
+        warpgate: None,
     };
 
     let id = app.save_host(&host)?;

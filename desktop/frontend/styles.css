@@ -14934,3 +14934,11 @@ body[data-app-theme="light"] .settings-terminal-sidebar-feature:hover {
   background: rgba(37, 99, 235, 0.06);
 }
 
+
+/* Warpgate gateway profiles (warpgate.js) */
+.warpgate-list { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 8px; }
+.warpgate-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; border: 1px solid var(--stroke); border-radius: 8px; }
+.warpgate-list li > div:first-child { display: grid; min-width: 0; }
+.warpgate-list li > div:first-child span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.warpgate-list li > div:last-child { display: flex; gap: 6px; flex-shrink: 0; }
+.warpgate-form label > .tiny { display: block; margin-top: 4px; word-break: break-all; }

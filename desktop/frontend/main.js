@@ -1,3 +1,4 @@
+import { installWarpgate } from "./warpgate.js";
 // ZeroTerm desktop frontend (vanilla JS, no build step)
 
 const { invoke } = window.__TAURI__.core;
@@ -8602,6 +8603,7 @@ const quickConnectError = document.getElementById("quick-connect-error");
 let quickConnectKeyPem = null;
 
 let hostsCache = [];
+let warpgateUi = null;
 let workspaceMode = "vaults";
 let textInputResolver = null;
 let confirmResolver = null;
@@ -13929,6 +13931,7 @@ function applyI18n() {
   }
 
   updateSftpConnectButtons();
+  warpgateUi?.translate();
 }
 
 hostSearch.addEventListener("input", () => renderHosts());
@@ -14065,6 +14068,15 @@ document.getElementById("lock-button").addEventListener("click", async () => {
 });
 
 document.getElementById("add-host-button").addEventListener("click", () => openHostEditor());
+warpgateUi = installWarpgate({
+  invoke,
+  confirm: openConfirmDialog,
+  syncCustomSelect,
+  onSynced: async () => {
+    await reloadHostGroupsFromVault();
+    await refreshHostsCacheFromVault({ silent: true });
+  },
+});
 hostsEmptyAdd?.addEventListener("click", () => openHostEditor());
 hostsMenuConnect?.addEventListener("click", () => {
   const host = hostsCache.find((h) => h.id === hostsContextHostId);
@@ -15262,6 +15274,9 @@ async function enterHosts() {
     if (hostsEmptyAdd) hostsEmptyAdd.hidden = true;
     return;
   }
+  // Pull current Warpgate targets in the background; hosts already shown
+  // from the vault stay usable while it runs.
+  warpgateUi?.syncAll();
 }
 
 async function moveHostToGroup(hostId, groupId) {

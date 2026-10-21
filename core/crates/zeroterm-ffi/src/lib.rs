@@ -295,6 +295,7 @@ mod tests {
                     forwards: Vec::new(),
                     proxy_jump_host_id: None,
                     group_id: None,
+                    warpgate: None,
                 })
                 .unwrap();
             let target_id = app
@@ -309,6 +310,7 @@ mod tests {
                     forwards: Vec::new(),
                     proxy_jump_host_id: Some(jump_id),
                     group_id: None,
+                    warpgate: None,
                 })
                 .unwrap();
             app.find_host_by_id(&target_id).unwrap().unwrap()

@@ -2488,6 +2488,8 @@ pub struct HostSummary {
     pub auth_type: &'static str,
     pub os_type: Option<String>,
     pub group_id: Option<String>,
+    /// Mirrored from a Warpgate target; refreshed (and overwritten) by sync.
+    pub warpgate: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -2516,6 +2518,7 @@ pub async fn list_hosts(state: State<'_, AppState>) -> Result<Vec<HostSummary>, 
                 HostAuth::PrivateKey { .. } => "key",
                 HostAuth::Agent => "agent",
             },
+            warpgate: h.warpgate.is_some(),
             os_type: h.os_type,
             group_id: h.group_id,
         })
@@ -3362,6 +3365,51 @@ impl ForwardSpecIO {
     }
 }
 
+impl HostAuthInput {
+    fn into_app(self) -> zeroterm_app::HostAuth {
+        match self {
+            HostAuthInput::Password { value } => zeroterm_app::HostAuth::Password { value },
+            HostAuthInput::PrivateKey {
+                key_pem,
+                passphrase,
+            } => zeroterm_app::HostAuth::PrivateKey {
+                key_pem: key_pem.unwrap_or_default(),
+                passphrase,
+            },
+            HostAuthInput::Agent => zeroterm_app::HostAuth::Agent,
+        }
+    }
+}
+
+/// On edit, an empty password / key of the same auth type means "keep the
+/// saved one" — the frontend never receives secrets to send back.
+fn keep_saved_secret(new: &mut zeroterm_app::HostAuth, existing: &zeroterm_app::HostAuth) {
+    match (new, existing) {
+        (
+            zeroterm_app::HostAuth::Password { value },
+            zeroterm_app::HostAuth::Password {
+                value: existing_value,
+            },
+        ) if value.is_empty() => value.clone_from(existing_value),
+        (
+            zeroterm_app::HostAuth::PrivateKey {
+                key_pem,
+                passphrase,
+            },
+            zeroterm_app::HostAuth::PrivateKey {
+                key_pem: existing_key,
+                passphrase: existing_passphrase,
+            },
+        ) if key_pem.trim().is_empty() => {
+            key_pem.clone_from(existing_key);
+            if passphrase.as_deref().unwrap_or_default().is_empty() {
+                passphrase.clone_from(existing_passphrase);
+            }
+        }
+        _ => {}
+    }
+}
+
 impl HostInput {
     fn into_app_host(self, id: String) -> zeroterm_app::Host {
         zeroterm_app::Host {
@@ -3370,21 +3418,12 @@ impl HostInput {
             host: self.host,
             port: self.port,
             user: self.user,
-            auth: match self.auth {
-                HostAuthInput::Password { value } => zeroterm_app::HostAuth::Password { value },
-                HostAuthInput::PrivateKey {
-                    key_pem,
-                    passphrase,
-                } => zeroterm_app::HostAuth::PrivateKey {
-                    key_pem: key_pem.unwrap_or_default(),
-                    passphrase,
-                },
-                HostAuthInput::Agent => zeroterm_app::HostAuth::Agent,
-            },
+            auth: self.auth.into_app(),
             os_type: self.os_type.and_then(|v| normalize_os_type(&v)),
             forwards: Vec::new(),
             proxy_jump_host_id: self.proxy_jump_host_id.filter(|s| !s.is_empty()),
             group_id: self.group_id.filter(|s| !s.is_empty()),
+            warpgate: None,
         }
     }
 }
@@ -3493,37 +3532,17 @@ pub async fn update_host(
         .ok_or_else(|| format!("no host with id {id}"))?;
 
     let mut new_host = input.into_app_host(id);
+    // Keep Warpgate-mirrored hosts linked to their target across edits.
+    new_host.warpgate.clone_from(&existing.warpgate);
     if new_host.os_type.is_none() {
         new_host.os_type = existing.os_type;
     }
-    match (&mut new_host.auth, &existing.auth) {
-        (
-            zeroterm_app::HostAuth::Password { value },
-            zeroterm_app::HostAuth::Password {
-                value: existing_value,
-            },
-        ) if value.is_empty() => value.clone_from(existing_value),
-        (
-            zeroterm_app::HostAuth::PrivateKey {
-                key_pem,
-                passphrase,
-            },
-            zeroterm_app::HostAuth::PrivateKey {
-                key_pem: existing_key,
-                passphrase: existing_passphrase,
-            },
-        ) if key_pem.trim().is_empty() => {
-            key_pem.clone_from(existing_key);
-            if passphrase.as_deref().unwrap_or_default().is_empty() {
-                passphrase.clone_from(existing_passphrase);
-            }
-        }
-        (zeroterm_app::HostAuth::Password { value }, _) if value.is_empty() => {
+    keep_saved_secret(&mut new_host.auth, &existing.auth);
+    match &new_host.auth {
+        zeroterm_app::HostAuth::Password { value } if value.is_empty() => {
             return Err("password is required".to_string());
         }
-        (zeroterm_app::HostAuth::PrivateKey { key_pem, .. }, _)
-            if key_pem.trim().is_empty() =>
-        {
+        zeroterm_app::HostAuth::PrivateKey { key_pem, .. } if key_pem.trim().is_empty() => {
             return Err("private key is required".to_string());
         }
         _ => {}
@@ -3566,6 +3585,120 @@ pub async fn delete_host(
         let _ = app_handle.emit("port-forward:changed", ());
     }
     Ok(())
+}
+
+// ---- Warpgate target directory -------------------------------------------
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WarpgateProfileDto {
+    pub id: String,
+    pub name: String,
+    pub api_url: String,
+    pub ssh_host: String,
+    pub ssh_port: u16,
+    pub username: String,
+    /// "password" / "key" / "agent"; the secret itself never leaves Rust.
+    pub auth_type: &'static str,
+    pub tls_cert_sha256: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WarpgateProfileInput {
+    pub name: String,
+    pub api_url: String,
+    /// Empty or missing on edit keeps the saved token. Never sent back.
+    #[serde(default)]
+    pub token: Option<String>,
+    pub ssh_host: String,
+    pub ssh_port: u16,
+    pub username: String,
+    /// Empty password / key on edit keeps the saved one.
+    pub auth: HostAuthInput,
+    #[serde(default)]
+    pub tls_cert_sha256: Option<String>,
+}
+
+#[tauri::command]
+pub async fn list_warpgate_profiles(
+    state: State<'_, AppState>,
+) -> Result<Vec<WarpgateProfileDto>, String> {
+    let (app, _) = clone_app_and_sync(&state)?;
+    Ok(app
+        .list_warpgate_profiles()
+        .map_err(|e| e.to_string())?
+        .iter()
+        .map(|p| WarpgateProfileDto {
+            id: p.id.clone(),
+            name: p.name.clone(),
+            api_url: p.api_url.clone(),
+            ssh_host: p.ssh_host.clone(),
+            ssh_port: p.ssh_port,
+            username: p.username.clone(),
+            auth_type: match p.auth {
+                HostAuth::Password { .. } => "password",
+                HostAuth::PrivateKey { .. } => "key",
+                HostAuth::Agent => "agent",
+            },
+            tls_cert_sha256: p.tls_cert_sha256.clone(),
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub async fn save_warpgate_profile(
+    state: State<'_, AppState>,
+    id: Option<String>,
+    input: WarpgateProfileInput,
+) -> Result<String, String> {
+    let (app, _) = clone_app_and_sync(&state)?;
+    let existing = match id.as_deref().filter(|s| !s.is_empty()) {
+        Some(id) => Some(
+            app.find_warpgate_profile(id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("no Warpgate profile with id {id}"))?,
+        ),
+        None => None,
+    };
+    let token = match input.token.filter(|t| !t.trim().is_empty()) {
+        Some(t) => t.trim().to_string(),
+        None => existing.as_ref().map(|p| p.token.clone()).unwrap_or_default(),
+    };
+    let mut auth = input.auth.into_app();
+    if let Some(p) = &existing {
+        keep_saved_secret(&mut auth, &p.auth);
+    }
+    let profile = zeroterm_app::WarpgateProfile {
+        id: existing.as_ref().map(|p| p.id.clone()).unwrap_or_default(),
+        name: input.name.trim().to_string(),
+        api_url: input.api_url.trim().to_string(),
+        token,
+        ssh_host: input.ssh_host.trim().to_string(),
+        ssh_port: input.ssh_port,
+        username: input.username.trim().to_string(),
+        auth,
+        tls_cert_sha256: input.tls_cert_sha256.filter(|s| !s.trim().is_empty()),
+        group_id: existing.and_then(|p| p.group_id.clone()),
+    };
+    app.save_warpgate_profile(&profile).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_warpgate_profile(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let (app, manager) = clone_app_and_sync(&state)?;
+    app.delete_warpgate_profile(&id).map_err(|e| e.to_string())?;
+    manager.schedule_debounced_sync_for_all(app);
+    Ok(())
+}
+
+/// Mirror the gateway's current SSH targets into saved hosts.
+#[tauri::command]
+pub async fn sync_warpgate(state: State<'_, AppState>, id: String) -> Result<usize, String> {
+    let (app, manager) = clone_app_and_sync(&state)?;
+    let count = app.sync_warpgate(&id).await.map_err(|e| e.to_string())?;
+    manager.schedule_debounced_sync_for_all(app);
+    Ok(count)
 }
 
 // ---- host group CRUD -----------------------------------------------------

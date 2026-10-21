@@ -8726,9 +8726,13 @@ name = "zeroterm-app"
 version = "0.1.11"
 dependencies = [
  "dirs 5.0.1",
+ "hex",
  "keyring",
+ "reqwest 0.12.28",
+ "rustls",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "thiserror 1.0.69",
  "tokio",
  "tracing",

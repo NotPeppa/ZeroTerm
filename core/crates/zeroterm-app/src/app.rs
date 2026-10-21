@@ -577,6 +577,7 @@ mod tests {
             forwards: Vec::new(),
             proxy_jump_host_id: None,
             group_id: None,
+            warpgate: None,
         }
     }
 

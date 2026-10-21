@@ -28,6 +28,16 @@ zeroize = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 
+# Warpgate target directory (warpgate.rs). Same versions the FFI/desktop
+# crates already resolve; rustls is direct only for the pinned-cert verifier.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+sha2 = { workspace = true }
+hex = { workspace = true }
+
 [dev-dependencies]
+# Local TLS server for the Warpgate certificate-pinning test.
+rcgen = "0.13"
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
 tempfile = { workspace = true }
 anyhow = { workspace = true }

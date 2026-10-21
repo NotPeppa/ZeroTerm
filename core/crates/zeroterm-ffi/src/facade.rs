@@ -657,6 +657,7 @@ impl ZeroTerm {
                 h.id = existing.id;
                 h.forwards = existing.forwards;
                 h.proxy_jump_host_id = existing.proxy_jump_host_id;
+                h.warpgate = existing.warpgate;
                 h.os_type = existing.os_type;
                 app.update_host(&h).map_err(map_app_error)?;
                 return Ok(h.id);
@@ -833,6 +834,7 @@ impl ZeroTerm {
             forwards: Vec::new(),
             proxy_jump_host_id: None,
             group_id: None,
+            warpgate: None,
         };
         self.spawn_session(&ephemeral, cols, rows, listener, host_key_prompt)
             .await

@@ -42,6 +42,11 @@ pub struct Host {
     /// rewriting the vault — see [`crate::host_group::HostGroup`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group_id: Option<String>,
+
+    /// Set when this host mirrors a Warpgate target; such hosts are
+    /// created, updated and deleted by [`crate::App::sync_warpgate`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warpgate: Option<crate::WarpgateRef>,
 }
 
 fn default_port() -> u16 {
