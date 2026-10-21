@@ -66,6 +66,7 @@ body.has-app-bg[data-app-theme="light"] {
 }
 
 .service-file-body,
+.update-dialog-notes,
 .docker-logs-body {
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
@@ -85,6 +86,7 @@ body.has-app-bg[data-app-theme="light"] {
   .zt-select-menu,
   .custom-select-menu,
   .service-file-body,
+  .update-dialog-notes,
   .docker-logs-body {
     scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track) !important;
   }
@@ -102,6 +104,7 @@ body.has-app-bg[data-app-theme="light"] {
   .zt-select-menu::-webkit-scrollbar-track,
   .custom-select-menu::-webkit-scrollbar-track,
   .service-file-body::-webkit-scrollbar-track,
+  .update-dialog-notes::-webkit-scrollbar-track,
   .docker-logs-body::-webkit-scrollbar-track {
     background: var(--scrollbar-track) !important;
   }
@@ -119,6 +122,7 @@ body.has-app-bg[data-app-theme="light"] {
   .zt-select-menu::-webkit-scrollbar-thumb,
   .custom-select-menu::-webkit-scrollbar-thumb,
   .service-file-body::-webkit-scrollbar-thumb,
+  .update-dialog-notes::-webkit-scrollbar-thumb,
   .docker-logs-body::-webkit-scrollbar-thumb {
     background: var(--scrollbar-thumb) !important;
     background-clip: padding-box !important;
@@ -137,24 +141,28 @@ body.has-app-bg[data-app-theme="light"] {
   .zt-select-menu::-webkit-scrollbar-thumb:hover,
   .custom-select-menu::-webkit-scrollbar-thumb:hover,
   .service-file-body::-webkit-scrollbar-thumb:hover,
+  .update-dialog-notes::-webkit-scrollbar-thumb:hover,
   .docker-logs-body::-webkit-scrollbar-thumb:hover {
     background: var(--scrollbar-thumb-hover) !important;
     background-clip: padding-box !important;
   }
 
   .service-file-body::-webkit-scrollbar,
+  .update-dialog-notes::-webkit-scrollbar,
   .docker-logs-body::-webkit-scrollbar {
     width: 8px;
     height: 8px;
   }
 
   .service-file-body::-webkit-scrollbar-thumb,
+  .update-dialog-notes::-webkit-scrollbar-thumb,
   .docker-logs-body::-webkit-scrollbar-thumb {
     border: 2px solid transparent;
     border-radius: 999px;
   }
 
   .service-file-body::-webkit-scrollbar-corner,
+  .update-dialog-notes::-webkit-scrollbar-corner,
   .docker-logs-body::-webkit-scrollbar-corner {
     background: transparent;
   }
@@ -7653,6 +7661,36 @@ body[data-app-theme="light"] .docker-logs-cmd {
   width: min(520px, calc(100vw - 32px));
 }
 
+.update-dialog-progress {
+  margin-top: 12px;
+}
+
+.update-dialog-progress progress {
+  display: block;
+  width: 100%;
+  height: 8px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  background: var(--panel-3);
+  accent-color: var(--accent);
+}
+
+.update-dialog-progress progress::-webkit-progress-bar {
+  background: var(--panel-3);
+  border-radius: 999px;
+}
+
+.update-dialog-progress progress::-webkit-progress-value {
+  background: var(--accent);
+  border-radius: 999px;
+}
+
+.update-dialog-progress progress::-moz-progress-bar {
+  background: var(--accent);
+  border-radius: 999px;
+}
+
 .update-dialog-notes {
   max-height: 320px;
   overflow: auto;
@@ -12893,6 +12931,7 @@ fieldset.advanced legend {
   border-radius: 14px;
   padding: 16px 20px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
@@ -12990,14 +13029,27 @@ fieldset.advanced legend {
 
 .settings-about-update-card .settings-update-actions {
   margin-top: 0 !important;
+  flex-wrap: wrap;
 }
 
-.settings-about-update-card #settings-update-install {
+.settings-about-update-card .settings-update-actions button {
   height: 32px !important;
   border-radius: 8px !important;
   font-size: 12px !important;
   font-weight: 600 !important;
   padding: 0 14px !important;
+}
+
+.settings-about-update-card #settings-update-check {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--stroke);
+  box-shadow: none;
+}
+
+.settings-about-update-card #settings-update-check:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-color: var(--accent);
 }
 
 /* Ubuntu Icon Outline Design Override - Replaces solid block glyph with custom premium line-art SVG mask */

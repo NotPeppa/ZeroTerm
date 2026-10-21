@@ -515,7 +515,7 @@ impl TransferSink {
         // TAURI-5.
         let bytes_done = self
             .bytes_done
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |cur| {
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |cur| {
                 Some(cur.saturating_sub(delta))
             })
             .map(|prev| prev.saturating_sub(delta))

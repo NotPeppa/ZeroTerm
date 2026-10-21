@@ -2441,8 +2441,19 @@ pub async fn check_for_update(app_handle: AppHandle) -> Result<UpdateInfo, Strin
     }
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateProgress {
+    phase: &'static str,
+    downloaded: u64,
+    total: Option<u64>,
+}
+
 #[tauri::command]
-pub async fn install_update(app_handle: AppHandle) -> Result<String, String> {
+pub async fn install_update(
+    app_handle: AppHandle,
+    on_progress: tauri::ipc::Channel<UpdateProgress>,
+) -> Result<String, String> {
     let updater = app_handle
         .updater()
         .map_err(|e| format!("updater init failed: {e}"))?;
@@ -2454,21 +2465,49 @@ pub async fn install_update(app_handle: AppHandle) -> Result<String, String> {
         return Ok("already_latest".to_string());
     };
 
-    update
-        .download_and_install(|_, _| {}, || {})
-        .await
-        .map_err(|e| {
-            // Common case: the release manifest on the server has a
-            // placeholder / malformed `signature` field, which the
-            // updater fails to base64-decode. Surface a friendly
-            // message instead of the raw "Invalid symbol …" string.
-            let msg = e.to_string();
-            if msg.contains("Invalid symbol") || msg.to_lowercase().contains("base64") {
-                "update_signature_invalid".to_string()
-            } else {
-                format!("install update failed: {msg}")
-            }
-        })?;
+    let mut downloaded = 0_u64;
+    let mut total = None;
+    let mut last_emit = std::time::Instant::now();
+    let result = async {
+        let bytes = update
+            .download(
+                |chunk, content_length| {
+                    let first_chunk = downloaded == 0;
+                    downloaded = downloaded.saturating_add(chunk as u64);
+                    total = content_length;
+                    if first_chunk || last_emit.elapsed() >= Duration::from_millis(100) {
+                        let _ = on_progress.send(UpdateProgress {
+                            phase: "downloading",
+                            downloaded,
+                            total,
+                        });
+                        last_emit = std::time::Instant::now();
+                    }
+                },
+                || {},
+            )
+            .await?;
+        // download() verifies the signature before returning the package.
+        let _ = on_progress.send(UpdateProgress {
+            phase: "installing",
+            downloaded,
+            total,
+        });
+        update.install(bytes)
+    }
+    .await;
+    result.map_err(|e| {
+        // Common case: the release manifest on the server has a
+        // placeholder / malformed `signature` field, which the
+        // updater fails to base64-decode. Surface a friendly
+        // message instead of the raw "Invalid symbol …" string.
+        let msg = e.to_string();
+        if msg.contains("Invalid symbol") || msg.to_lowercase().contains("base64") {
+            "update_signature_invalid".to_string()
+        } else {
+            format!("install update failed: {msg}")
+        }
+    })?;
 
     app_handle.restart();
 }

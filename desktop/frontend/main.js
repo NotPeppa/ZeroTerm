@@ -1220,6 +1220,10 @@ const I18N = {
     "settings.data.item.remembered_password.desc": "The cached Vault unlock password in the system keychain.",
     "settings.data.status.cleared_selected": "Cleared: {items}",
     "settings.update.status.installing": "Installing update...",
+    "settings.update.status.preparing": "Preparing download...",
+    "settings.update.status.downloading_short": "Downloading...",
+    "settings.update.status.downloading": "Downloading: {percent}% ({downloaded} / {total})",
+    "settings.update.status.downloading_unknown": "Downloading: {downloaded}",
     "settings.sync.backend.local_folder": "Local Folder",
     "settings.sync.label.path": "Sync Folder",
     "settings.sync.placeholder.enc_password": "sync passphrase",
@@ -1321,7 +1325,9 @@ const I18N = {
     "settings.about.tagline": "Next-gen, blazing-fast, modern cross-platform SSH terminal.",
     "settings.update.install": "Update",
     "settings.update.title": "System Update",
-    "settings.update.checking": "Checking for updates or already up to date...",
+    "settings.update.check": "Check for updates",
+    "settings.update.checking": "Checking for updates...",
+    "settings.update.check_failed": "Could not check for updates: {error}",
     "settings.update.signature_invalid": "Update unavailable: the release server's signature isn't ready yet. Try again later.",
     "settings.update.latest": "You are on the latest version ({version}).",
     "settings.update.available": "Update available: {current} -> {latest}",
@@ -2312,6 +2318,10 @@ const I18N = {
     "settings.data.item.remembered_password.desc": "系统钥匙串中缓存的 Vault 解锁密码。",
     "settings.data.status.cleared_selected": "已清空：{items}",
     "settings.update.status.installing": "正在安装更新...",
+    "settings.update.status.preparing": "正在准备下载...",
+    "settings.update.status.downloading_short": "正在下载...",
+    "settings.update.status.downloading": "正在下载：{percent}%（{downloaded} / {total}）",
+    "settings.update.status.downloading_unknown": "正在下载：{downloaded}",
     "settings.sync.backend.local_folder": "本地文件夹",
     "settings.sync.label.path": "同步文件夹",
     "settings.sync.placeholder.enc_password": "同步密码",
@@ -2413,7 +2423,9 @@ const I18N = {
     "settings.about.tagline": "下一代极速、现代的跨平台 SSH 终端工具",
     "settings.update.install": "更新",
     "settings.update.title": "系统升级",
-    "settings.update.checking": "正在检查更新或已经是最新版本...",
+    "settings.update.check": "检查更新",
+    "settings.update.checking": "正在检查更新...",
+    "settings.update.check_failed": "检查更新失败：{error}",
     "settings.update.signature_invalid": "暂时无法更新：发布服务器还没准备好签名，请稍后再试。",
     "settings.update.latest": "当前已是最新版本（{version}）",
     "settings.update.available": "发现新版本：{current} -> {latest}",
@@ -8492,12 +8504,17 @@ const settingsAboutTitle = document.getElementById("settings-about-title");
 const settingsAboutVersionLabel = document.getElementById("settings-about-version-label");
 const settingsAboutVersionValue = document.getElementById("settings-about-version-value");
 const settingsUpdateInstall = document.getElementById("settings-update-install");
+const settingsUpdateCheck = document.getElementById("settings-update-check");
 const settingsUpdateStatus = document.getElementById("settings-update-status");
 const updateDialogOverlay = document.getElementById("update-dialog-overlay");
 const updateDialogVersion = document.getElementById("update-dialog-version");
 const updateDialogNotes = document.getElementById("update-dialog-notes");
 const updateDialogCancel = document.getElementById("update-dialog-cancel");
 const updateDialogConfirm = document.getElementById("update-dialog-confirm");
+const updateDialogProgress = document.getElementById("update-dialog-progress");
+const updateDialogProgressStatus = document.getElementById("update-dialog-progress-status");
+const updateDialogProgressBar = document.getElementById("update-dialog-progress-bar");
+let updateInstallInProgress = false;
 let latestUpdateInfo = null;
 const settingsTerminalTheme = document.getElementById("settings-terminal-theme");
 const settingsTerminalSubtabTheme = document.getElementById("settings-terminal-subtab-theme");
@@ -12329,7 +12346,17 @@ async function loadAppVersion() {
   return appVersionCache;
 }
 
+let updateCheckInProgress = false;
+
 async function refreshUpdateStatus() {
+  if (updateCheckInProgress || updateInstallInProgress) return;
+  updateCheckInProgress = true;
+  if (settingsUpdateCheck) {
+    settingsUpdateCheck.disabled = true;
+    settingsUpdateCheck.textContent = t("settings.update.checking");
+  }
+  if (settingsUpdateInstall) settingsUpdateInstall.disabled = true;
+  if (settingsUpdateStatus) settingsUpdateStatus.textContent = t("settings.update.checking");
   try {
     const info = await invoke("check_for_update");
     latestUpdateInfo = info;
@@ -12349,7 +12376,13 @@ async function refreshUpdateStatus() {
   } catch (e) {
     latestUpdateInfo = null;
     if (settingsUpdateInstall) settingsUpdateInstall.disabled = true;
-    if (settingsUpdateStatus) settingsUpdateStatus.textContent = t("settings.update.failed", { error: String(e) });
+    if (settingsUpdateStatus) settingsUpdateStatus.textContent = t("settings.update.check_failed", { error: String(e) });
+  } finally {
+    updateCheckInProgress = false;
+    if (settingsUpdateCheck) {
+      settingsUpdateCheck.disabled = false;
+      settingsUpdateCheck.textContent = t("settings.update.check");
+    }
   }
 }
 
@@ -13743,6 +13776,7 @@ function applyI18n() {
   setText("settings-about-tagline", "settings.about.tagline");
   setText("settings-update-title", "settings.update.title");
   setText("settings-update-install", "settings.update.install");
+  setText("settings-update-check", updateCheckInProgress ? "settings.update.checking" : "settings.update.check");
   setText("update-dialog-title", "settings.update.dialog.title");
   setText("update-dialog-cancel", "settings.update.dialog.cancel");
   setText("update-dialog-confirm", "settings.update.dialog.confirm");
@@ -14365,7 +14399,8 @@ settingsDataClearConfirm?.addEventListener("click", async () => {
   });
 });
 function openUpdateDialog() {
-  if (!updateDialogOverlay) return;
+  if (!updateDialogOverlay || updateInstallInProgress) return;
+  if (updateDialogProgress) updateDialogProgress.hidden = true;
   const info = latestUpdateInfo;
   if (updateDialogVersion) {
     updateDialogVersion.textContent = info?.version
@@ -14386,8 +14421,39 @@ function openUpdateDialog() {
 }
 
 function closeUpdateDialog() {
+  if (updateInstallInProgress) return;
   if (updateDialogOverlay) updateDialogOverlay.hidden = true;
 }
+
+function renderUpdateProgress({ phase, downloaded = 0, total = null }) {
+  const hasTotal = Number.isFinite(total) && total > 0;
+  const percent = hasTotal ? Math.min(100, Math.max(0, Math.floor(downloaded / total * 100))) : null;
+  const message = phase === "installing"
+    ? t("settings.update.status.installing")
+    : phase === "preparing"
+      ? t("settings.update.status.preparing")
+      : t(hasTotal ? "settings.update.status.downloading" : "settings.update.status.downloading_unknown", {
+        percent, downloaded: formatSize(downloaded), total: hasTotal ? formatSize(total) : "",
+      });
+  if (updateDialogProgress) updateDialogProgress.hidden = false;
+  if (updateDialogProgressStatus) updateDialogProgressStatus.textContent = message;
+  if (settingsUpdateStatus) settingsUpdateStatus.textContent = message;
+  if (updateInstallInProgress && updateDialogConfirm) {
+    updateDialogConfirm.textContent = t(phase === "installing"
+      ? "settings.update.status.installing"
+      : phase === "preparing" ? "settings.update.status.preparing" : "settings.update.status.downloading_short");
+  }
+  if (updateDialogProgressBar) {
+    updateDialogProgressBar.hidden = false;
+    if (phase === "installing") updateDialogProgressBar.value = 100;
+    else if (phase === "preparing" || !hasTotal) updateDialogProgressBar.removeAttribute("value");
+    else updateDialogProgressBar.value = percent;
+  }
+}
+
+settingsUpdateCheck?.addEventListener("click", () => {
+  refreshUpdateStatus().catch(() => {});
+});
 
 settingsUpdateInstall?.addEventListener("click", () => {
   openUpdateDialog();
@@ -14405,10 +14471,24 @@ document.addEventListener("keydown", (ev) => {
 });
 
 updateDialogConfirm?.addEventListener("click", async () => {
-  await runSyncButtonAction(updateDialogConfirm, t("settings.update.status.installing"), async () => {
+  if (updateInstallInProgress) return;
+  updateInstallInProgress = true;
+  if (updateDialogCancel) updateDialogCancel.disabled = true;
+  if (settingsUpdateCheck) settingsUpdateCheck.disabled = true;
+  if (settingsUpdateInstall) settingsUpdateInstall.disabled = true;
+  await runSyncButtonAction(updateDialogConfirm, t("settings.update.status.preparing"), async () => {
     try {
-      if (settingsUpdateStatus) settingsUpdateStatus.textContent = t("settings.update.status.installing");
-      await invoke("install_update");
+      renderUpdateProgress({ phase: "preparing" });
+      const onProgress = new window.__TAURI__.core.Channel();
+      onProgress.onmessage = renderUpdateProgress;
+      const result = await invoke("install_update", { onProgress });
+      if (result === "already_latest") {
+        latestUpdateInfo = null;
+        if (updateDialogProgress) updateDialogProgress.hidden = true;
+        if (updateDialogProgressStatus) updateDialogProgressStatus.textContent = "";
+        if (settingsUpdateStatus) settingsUpdateStatus.textContent = t("settings.update.latest", { version: await loadAppVersion() });
+        if (updateDialogOverlay) updateDialogOverlay.hidden = true;
+      }
     } catch (e) {
       // The Rust side maps the common "release manifest signature is a
       // placeholder" base64 decode error to this sentinel — translate it
@@ -14418,8 +14498,15 @@ updateDialogConfirm?.addEventListener("click", async () => {
         ? t("settings.update.signature_invalid")
         : t("settings.update.failed", { error: raw });
       if (settingsUpdateStatus) settingsUpdateStatus.textContent = friendly;
+      if (updateDialogProgress) updateDialogProgress.hidden = false;
+      if (updateDialogProgressStatus) updateDialogProgressStatus.textContent = friendly;
+      if (updateDialogProgressBar) updateDialogProgressBar.hidden = true;
       showToast(friendly, "error", 4200);
-      closeUpdateDialog();
+    } finally {
+      updateInstallInProgress = false;
+      if (updateDialogCancel) updateDialogCancel.disabled = false;
+      if (settingsUpdateCheck) settingsUpdateCheck.disabled = updateCheckInProgress;
+      if (settingsUpdateInstall) settingsUpdateInstall.disabled = updateCheckInProgress || !latestUpdateInfo?.available;
     }
   });
 });

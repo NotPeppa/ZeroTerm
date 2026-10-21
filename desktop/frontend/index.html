@@ -1375,11 +1375,12 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
                                   </div>
                                   <div class="update-status-info">
                                     <div id="settings-update-title" class="update-status-title">系统升级</div>
-                                    <p id="settings-update-status" class="update-status-text">正在检查更新或已经是最新版本...</p>
+                                    <p id="settings-update-status" class="update-status-text" role="status" aria-live="polite">正在检查更新...</p>
                                   </div>
                                 </div>
                                 <div class="settings-update-actions">
-                                  <button id="settings-update-install" type="button" class="primary">安装并重启</button>
+                                  <button id="settings-update-check" type="button">检查更新</button>
+                                  <button id="settings-update-install" type="button" class="primary" disabled>安装并重启</button>
                                 </div>
                               </div>
                             </div>
@@ -1718,6 +1719,10 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
           <h3 id="update-dialog-title">更新内容</h3>
           <p id="update-dialog-version" class="muted tiny"></p>
           <div id="update-dialog-notes" class="update-dialog-notes"></div>
+          <div id="update-dialog-progress" class="update-dialog-progress" hidden>
+            <p id="update-dialog-progress-status" class="tiny" role="status" aria-live="polite"></p>
+            <progress id="update-dialog-progress-bar" max="100" aria-labelledby="update-dialog-progress-status"></progress>
+          </div>
           <div class="dialog-actions">
             <button id="update-dialog-cancel" type="button">取消</button>
             <button id="update-dialog-confirm" type="button" class="primary">更新</button>
