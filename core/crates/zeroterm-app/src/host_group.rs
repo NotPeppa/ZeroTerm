@@ -24,4 +24,9 @@ pub struct HostGroup {
     /// Stable per-parent ordering. UI sorts ascending; ties broken by name.
     #[serde(default)]
     pub sort_order: i32,
+
+    /// Id of the Warpgate profile whose targets this group holds. Such
+    /// groups are device-local and managed by [`crate::App::sync_warpgate`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warpgate_profile: Option<String>,
 }

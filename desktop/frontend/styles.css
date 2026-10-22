@@ -4346,6 +4346,17 @@ body.has-app-bg[data-app-theme="light"] .search::placeholder {
   height: 28px;
 }
 
+/* With the ZeroTerm / Warpgate tabs, keep the action icons right next to
+   them instead of pushed to the far edge. */
+.vault-title-row.has-source-tabs {
+  justify-content: flex-start;
+  gap: 0;
+}
+
+.vault-title-row.has-source-tabs .vault-title-actions {
+  gap: 0;
+}
+
 .hosts-grid-wrap {
   flex: 1;
   overflow: auto;
@@ -8829,6 +8840,12 @@ body[data-app-theme="light"] .sftp-pin-menu-remove:hover {
   transition: all 0.25s ease;
 }
 
+/* Confirmations open on top of other dialogs (e.g. deleting a gateway
+   from the Warpgate dialog). */
+#confirm-overlay {
+  z-index: 110;
+}
+
 .overlay-window-drag-region {
   position: absolute;
   top: 0;
@@ -10950,6 +10967,22 @@ body[data-app-theme="light"] .settings-sync-method-row .zt-select-trigger:hover 
   color: #ffffff;
   font-weight: 600;
   box-shadow: 0 4px 12px rgba(37, 109, 204, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+/* ZeroTerm / Warpgate switch; takes the sidebar title's place, compact. */
+.hosts-source-tabs {
+  margin-bottom: 0;
+  padding: 2px;
+  border-radius: 9px;
+  flex-shrink: 0;
+}
+
+.hosts-source-tabs .settings-subtab {
+  white-space: nowrap;
+  padding: 3px 10px;
+  font-size: 12px;
+  line-height: 1.2;
+  border-radius: 7px;
 }
 
 .settings-terminal-title {
@@ -14994,3 +15027,5 @@ body[data-app-theme="light"] .settings-terminal-sidebar-feature:hover {
 .warpgate-list li > div:first-child span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .warpgate-list li > div:last-child { display: flex; gap: 6px; flex-shrink: 0; }
 .warpgate-form label > .tiny { display: block; margin-top: 4px; word-break: break-all; }
+.warpgate-list li.active { border-color: var(--accent); }
+.warpgate-active-badge { align-self: center; font-size: 12px; color: var(--accent); white-space: nowrap; }

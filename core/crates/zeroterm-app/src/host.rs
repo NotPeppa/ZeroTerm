@@ -44,7 +44,8 @@ pub struct Host {
     pub group_id: Option<String>,
 
     /// Set when this host mirrors a Warpgate target; such hosts are
-    /// created, updated and deleted by [`crate::App::sync_warpgate`].
+    /// device-local and created, updated and deleted by
+    /// [`crate::App::sync_warpgate`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub warpgate: Option<crate::WarpgateRef>,
 }

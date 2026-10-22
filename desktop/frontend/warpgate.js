@@ -1,8 +1,11 @@
-// Warpgate target directory. Each gateway profile mirrors its SSH targets
-// into ordinary saved hosts (see core/crates/zeroterm-app/src/warpgate.rs),
-// so this module only manages profiles and triggers a refresh. The API token
-// and the Warpgate password / key stay in Rust; they are write-only from here.
-export function installWarpgate({ invoke, confirm, syncCustomSelect, onSynced }) {
+// Warpgate target directory. Gateway profiles sync across devices; each
+// device mirrors the gateway's SSH targets into its own local hosts (see
+// core/crates/zeroterm-app/src/warpgate.rs), so this module only manages
+// profiles and triggers a refresh. The API token and the Warpgate password
+// / key stay in Rust; they are write-only from here.
+export function installWarpgate({ invoke, confirm, syncCustomSelect, onSynced, onActiveChanged }) {
+  // The hosts sidebar shows one gateway at a time; this remembers which.
+  const ACTIVE_KEY = "zeroterm.warpgate.active";
   const words = {
     en: {
       title: "Warpgate", subtitle: "Load SSH targets from a Warpgate gateway. Target addresses and credentials stay on the gateway.",
@@ -16,6 +19,7 @@ export function installWarpgate({ invoke, confirm, syncCustomSelect, onSynced })
       pin: "TLS certificate SHA-256 (self-signed only)", pinHint: "openssl s_client -connect HOST:8888 </dev/null | openssl x509 -noout -fingerprint -sha256",
       save: "Save and refresh", cancel: "Cancel", synced: "{name}: {count} targets", failed: "{name}: {error}",
       deleteTitle: "Delete gateway?", deleteMessage: "Removes \"{name}\" and every host loaded from it.",
+      show: "Show", showing: "Showing",
     },
     zh: {
       title: "Warpgate", subtitle: "从 Warpgate 网关读取 SSH 目标。目标地址和凭据只保存在网关上。",
@@ -29,6 +33,7 @@ export function installWarpgate({ invoke, confirm, syncCustomSelect, onSynced })
       pin: "TLS 证书 SHA-256 指纹（仅自签证书需要）", pinHint: "openssl s_client -connect 主机:8888 </dev/null | openssl x509 -noout -fingerprint -sha256",
       save: "保存并刷新", cancel: "取消", synced: "{name}：{count} 个目标", failed: "{name}：{error}",
       deleteTitle: "删除网关？", deleteMessage: "将移除“{name}”以及从它读取的全部主机。",
+      show: "显示", showing: "当前显示",
     },
   };
   const w = (key, vars = {}) => {
@@ -78,7 +83,9 @@ export function installWarpgate({ invoke, confirm, syncCustomSelect, onSynced })
       <button type="button" data-action="close" data-w="close"></button>
     </div>
   </div>`;
-  document.body.append(overlay);
+  // Inside #root (its own stacking context) like the app's other dialogs,
+  // so the shared confirm dialog can stack above this one.
+  (document.getElementById("root") ?? document.body).append(overlay);
   const q = (s) => overlay.querySelector(s);
   const list = q(".warpgate-list");
   const form = q(".warpgate-form");
@@ -117,11 +124,31 @@ export function installWarpgate({ invoke, confirm, syncCustomSelect, onSynced })
     if (!keyPem) keyStatus.textContent = w(keepsSaved && type === "key" ? "savedKey" : "noKey");
   }
 
+  // Saved choice if that gateway still exists, else the first one.
+  function activeId() {
+    const saved = localStorage.getItem(ACTIVE_KEY);
+    if (!profiles.length || profiles.some((p) => p.id === saved)) return saved;
+    return profiles[0].id;
+  }
+
+  function setActive(id) {
+    localStorage.setItem(ACTIVE_KEY, id);
+    render();
+    onActiveChanged?.();
+  }
+
   async function load() {
     profiles = await invoke("list_warpgate_profiles");
+    render();
+  }
+
+  function render() {
+    const active = activeId();
     list.replaceChildren(
       ...profiles.map((p) => {
         const li = document.createElement("li");
+        const isActive = profiles.length > 1 && p.id === active;
+        li.classList.toggle("active", isActive);
         const label = document.createElement("div");
         const name = document.createElement("strong");
         const url = document.createElement("span");
@@ -130,6 +157,22 @@ export function installWarpgate({ invoke, confirm, syncCustomSelect, onSynced })
         url.textContent = `${p.apiUrl} · ${p.username}@${p.sshHost}:${p.sshPort}`;
         label.append(name, url);
         const actions = document.createElement("div");
+        // Switching only means something with more than one gateway.
+        if (profiles.length > 1) {
+          if (isActive) {
+            const badge = document.createElement("span");
+            badge.className = "warpgate-active-badge";
+            badge.textContent = w("showing");
+            actions.append(badge);
+          } else {
+            const b = document.createElement("button");
+            b.type = "button";
+            b.className = "small primary";
+            b.textContent = w("show");
+            b.addEventListener("click", () => setActive(p.id));
+            actions.append(b);
+          }
+        }
         for (const action of ["refresh", "edit", "delete"]) {
           const b = document.createElement("button");
           b.type = "button";
@@ -142,7 +185,7 @@ export function installWarpgate({ invoke, confirm, syncCustomSelect, onSynced })
         return li;
       }),
     );
-    q(".warpgate-empty").hidden = profiles.length > 0;
+    q(".warpgate-empty").hidden = !form.hidden || profiles.length > 0;
   }
 
   async function sync(p, { silent = false } = {}) {
@@ -173,16 +216,23 @@ export function installWarpgate({ invoke, confirm, syncCustomSelect, onSynced })
     syncCustomSelect?.("warpgate-auth-type");
     syncAuthBlocks();
     form.hidden = false;
-    q(".warpgate-list-actions").hidden = true;
+    setListShown(false);
     setStatus("");
     f.name.focus();
   }
 
   function closeForm() {
     form.hidden = true;
-    q(".warpgate-list-actions").hidden = false;
+    setListShown(true);
     editing = null;
     keyPem = null;
+  }
+
+  // The form replaces the gateway list while adding or editing.
+  function setListShown(shown) {
+    list.hidden = !shown;
+    q(".warpgate-empty").hidden = !shown || profiles.length > 0;
+    q(".warpgate-list-actions").hidden = !shown;
   }
 
   function authInput() {
@@ -243,7 +293,10 @@ export function installWarpgate({ invoke, confirm, syncCustomSelect, onSynced })
         },
       });
       const name = f.name.value;
+      const isNew = !editing;
       closeForm();
+      // A newly added gateway is what the user wants to see next.
+      if (isNew) localStorage.setItem(ACTIVE_KEY, id);
       await load();
       await handlers.refresh(profiles.find((p) => p.id === id) ?? { id, name });
     } catch (e) {
@@ -285,14 +338,26 @@ export function installWarpgate({ invoke, confirm, syncCustomSelect, onSynced })
   });
   translate();
 
+  // Concurrent refreshes of one profile could each create its root group.
+  let syncAllRun = null;
+  async function runSyncAll() {
+    const all = await invoke("list_warpgate_profiles").catch(() => null);
+    if (!all) return;
+    profiles = all;
+    if (!all.length) return;
+    for (const p of all) await sync(p, { silent: true });
+    await onSynced();
+  }
+
   return {
     translate,
-    /// Refresh every gateway quietly, e.g. right after the vault unlocks.
-    async syncAll() {
-      const all = await invoke("list_warpgate_profiles").catch(() => []);
-      if (!all.length) return;
-      for (const p of all) await sync(p, { silent: true });
-      await onSynced();
+    /// Id of the gateway the hosts sidebar shows.
+    activeId,
+    /// Refresh every gateway quietly, e.g. right after the vault unlocks
+    /// or a cloud sync pulls a profile from another device.
+    syncAll() {
+      syncAllRun ??= runSyncAll().finally(() => (syncAllRun = null));
+      return syncAllRun;
     },
   };
 }

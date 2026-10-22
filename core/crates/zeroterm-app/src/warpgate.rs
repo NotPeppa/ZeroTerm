@@ -5,6 +5,11 @@
 //! the response) and mirror each SSH target as an ordinary saved [`Host`]
 //! that logs in to the gateway as `<warpgate user>:<target name>`. Terminal,
 //! SFTP and exec-based tools then run on the normal host code paths.
+//!
+//! The profile syncs across devices; the mirrored hosts and groups do not.
+//! Each device rebuilds its mirror from the gateway, so the list is as
+//! current as the last refresh on that device and never duplicated by
+//! two devices refreshing concurrently.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -17,14 +22,19 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
 
+use crate::app::HOST_KIND;
 use crate::{App, AppError, Host, HostAuth, HostGroup};
 
-const WARPGATE_PROFILE_KIND: &str = "warpgate_profile";
+/// Synced (see `is_syncable_kind` in zeroterm-sync).
+pub(crate) const WARPGATE_PROFILE_KIND: &str = "warpgate_profile";
+/// Device-local mirrors. Not synced.
+pub(crate) const WARPGATE_HOST_KIND: &str = "warpgate_host";
+pub(crate) const WARPGATE_GROUP_KIND: &str = "warpgate_group";
 
-/// A Warpgate gateway. Stored in the local vault only (the kind is not
-/// synced), so the API token and the Warpgate login never leave this
-/// device. The SSH login (address, port, username, credential) is copied
-/// into every mirrored target.
+/// A Warpgate gateway. Synced end-to-end encrypted like saved hosts, so
+/// a gateway configured once is usable on every device; the API token and
+/// the Warpgate credential travel with it. The SSH login (address, port,
+/// username, credential) is copied into every mirrored target.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct WarpgateProfile {
     #[serde(skip)]
@@ -45,9 +55,10 @@ pub struct WarpgateProfile {
     /// for Warpgate's default self-signed certificate.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tls_cert_sha256: Option<String>,
-    /// Root host group holding the mirrored targets; created on first sync.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub group_id: Option<String>,
+    /// Root group of the synced mirror written by pre-release builds.
+    /// [`App::sync_warpgate`] deletes that mirror and clears this.
+    #[serde(default, rename = "group_id", skip_serializing_if = "Option::is_none")]
+    pub legacy_group_id: Option<String>,
 }
 
 impl std::fmt::Debug for WarpgateProfile {
@@ -344,48 +355,61 @@ impl App {
         }
     }
 
-    /// Delete the profile together with its mirrored hosts and groups.
+    /// Delete the profile together with this device's mirrored hosts and
+    /// groups. Other devices drop theirs when the deletion syncs to them
+    /// (see [`App::prune_warpgate_mirrors`]).
     pub fn delete_warpgate_profile(&self, id: &str) -> Result<(), AppError> {
-        for h in self.list_hosts()? {
-            if h.warpgate.as_ref().is_some_and(|w| w.profile_id == id) {
-                self.delete_host(&h.id)?;
-            }
-        }
-        if let Some(root) = self.find_warpgate_profile(id)?.and_then(|p| p.group_id.clone()) {
-            for g in self.list_host_groups()? {
-                if g.id == root || g.parent_id.as_deref() == Some(root.as_str()) {
-                    self.delete_host_group(&g.id)?;
-                }
-            }
-        }
         self.vault.delete(id)?;
+        self.prune_warpgate_mirrors()?;
         Ok(())
     }
 
-    /// Mirror the gateway's current SSH targets into saved hosts: create
-    /// new ones, update existing ones, delete revoked ones. Returns the
-    /// number of targets.
+    /// Delete mirrored hosts and groups whose profile no longer exists,
+    /// e.g. after another device deleted it. Returns how many went.
+    pub fn prune_warpgate_mirrors(&self) -> Result<usize, AppError> {
+        let live: Vec<String> = self.list_warpgate_profiles()?.into_iter().map(|p| p.id.clone()).collect();
+        let is_gone = |pid: &str| !live.iter().any(|id| id == pid);
+        let mut removed = 0;
+        for h in self.list_hosts_of_kind(WARPGATE_HOST_KIND)? {
+            if h.warpgate.as_ref().is_none_or(|w| is_gone(&w.profile_id)) {
+                self.delete_host(&h.id)?;
+                removed += 1;
+            }
+        }
+        for g in self.list_host_groups()? {
+            if g.warpgate_profile.as_deref().is_some_and(is_gone) {
+                self.delete_host_group(&g.id)?;
+                removed += 1;
+            }
+        }
+        Ok(removed)
+    }
+
+    /// Mirror the gateway's current SSH targets into this device's hosts:
+    /// create new ones, update existing ones, delete revoked ones. Returns
+    /// the number of targets.
     pub async fn sync_warpgate(&self, profile_id: &str) -> Result<usize, AppError> {
         let mut profile = self
             .find_warpgate_profile(profile_id)?
             .ok_or_else(|| err("no such Warpgate profile"))?;
+        self.drop_legacy_mirror(&mut profile)?;
         let gateway = profile.gateway_host();
         let targets = fetch_ssh_targets(&profile).await?;
 
-        let groups = self.list_host_groups()?;
-        let root = match profile.group_id.clone().filter(|id| groups.iter().any(|g| &g.id == id)) {
-            Some(id) => id,
-            None => {
-                let id = self.save_host_group(&HostGroup {
-                    id: String::new(),
-                    name: profile.name.clone(),
-                    parent_id: None,
-                    sort_order: 0,
-                })?;
-                profile.group_id = Some(id.clone());
-                self.save_warpgate_profile(&profile)?;
-                id
-            }
+        let groups: Vec<HostGroup> = self
+            .list_host_groups()?
+            .into_iter()
+            .filter(|g| g.warpgate_profile.as_deref() == Some(profile_id))
+            .collect();
+        let root = match groups.iter().find(|g| g.parent_id.is_none()) {
+            Some(g) => g.id.clone(),
+            None => self.save_host_group(&HostGroup {
+                id: String::new(),
+                name: profile.name.clone(),
+                parent_id: None,
+                sort_order: 0,
+                warpgate_profile: Some(profile_id.to_string()),
+            })?,
         };
         let mut subgroups: HashMap<String, String> = groups
             .iter()
@@ -393,11 +417,9 @@ impl App {
             .map(|g| (g.name.clone(), g.id.clone()))
             .collect();
 
-        // Two devices syncing before they see each other's writes can leave
-        // duplicates for one target; keep one and delete the rest.
         let mut existing = HashMap::new();
         let mut duplicates = Vec::new();
-        for h in self.list_hosts()? {
+        for h in self.list_hosts_of_kind(WARPGATE_HOST_KIND)? {
             let Some(target_id) = h
                 .warpgate
                 .as_ref()
@@ -421,6 +443,7 @@ impl App {
                 name: name.to_string(),
                 parent_id: Some(root.clone()),
                 sort_order: 0,
+                warpgate_profile: Some(profile_id.to_string()),
             })?;
             subgroups.insert(name.to_string(), id.clone());
             Ok(id)
@@ -436,6 +459,27 @@ impl App {
             self.delete_host(id)?;
         }
         Ok(hosts.len())
+    }
+
+    /// Pre-release builds stored mirrors as synced `host` / `host_group`
+    /// records. Delete them (the deletion syncs, cleaning other devices
+    /// too); the caller rebuilds the mirror device-locally.
+    fn drop_legacy_mirror(&self, profile: &mut WarpgateProfile) -> Result<(), AppError> {
+        for h in self.list_hosts_of_kind(HOST_KIND)? {
+            if h.warpgate.as_ref().is_some_and(|w| w.profile_id == profile.id) {
+                self.delete_host(&h.id)?;
+            }
+        }
+        if let Some(root) = profile.legacy_group_id.take() {
+            for g in self.list_host_groups()? {
+                let in_tree = g.id == root || g.parent_id.as_deref() == Some(root.as_str());
+                if in_tree && g.warpgate_profile.is_none() {
+                    self.delete_host_group(&g.id)?;
+                }
+            }
+            self.save_warpgate_profile(profile)?;
+        }
+        Ok(())
     }
 }
 
@@ -529,7 +573,7 @@ mod tests {
             username: "admin".into(),
             auth: HostAuth::Password { value: "pw".into() },
             tls_cert_sha256: Some("00".repeat(32)),
-            group_id: None,
+            legacy_group_id: None,
         };
         assert!(http_client(&p).is_ok());
         p.tls_cert_sha256 = None;
@@ -590,7 +634,7 @@ mod tests {
             username: "admin".into(),
             auth: HostAuth::Password { value: "pw".into() },
             tls_cert_sha256: Some(pin),
-            group_id: None,
+            legacy_group_id: None,
         };
         let targets = fetch_ssh_targets(&p).await.unwrap();
         assert_eq!(targets.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(), ["prod-01"]);
@@ -604,31 +648,52 @@ mod tests {
         assert!(fetch_ssh_targets(&p).await.is_err(), "self-signed must fail without a pin");
     }
 
-    #[tokio::test]
-    async fn sync_creates_updates_and_removes_mirrored_hosts() {
-        let dir = tempfile::tempdir().unwrap();
+    fn test_app(dir: &std::path::Path) -> App {
         let vault = zeroterm_vault::Vault::create_with_params(
-            dir.path().join("v.sqlite"),
+            dir.join("v.sqlite"),
             "pw",
             zeroterm_vault::Argon2Params { m_cost: 19 * 1024, t_cost: 2, p_cost: 1 },
         )
         .unwrap();
-        let app = App { vault };
+        App { vault }
+    }
+
+    fn lab_profile(url: String, pin: String) -> WarpgateProfile {
+        WarpgateProfile {
+            id: String::new(),
+            name: "Lab".into(),
+            api_url: url,
+            token: "secret".into(),
+            ssh_host: "gateway.lan".into(),
+            ssh_port: 2222,
+            username: "admin".into(),
+            auth: HostAuth::Password { value: "pw".into() },
+            tls_cert_sha256: Some(pin),
+            legacy_group_id: None,
+        }
+    }
+
+    /// Kinds of the live records the sync engine would push.
+    fn synced_kinds(app: &App) -> Vec<String> {
+        let mut kinds: Vec<String> = app
+            .vault
+            .list_dirty()
+            .unwrap()
+            .into_iter()
+            .filter(|r| !r.deleted)
+            .map(|r| r.kind)
+            .filter(|k| matches!(k.as_str(), "host" | "host_group" | "snippet" | "warpgate_profile"))
+            .collect();
+        kinds.sort();
+        kinds
+    }
+
+    #[tokio::test]
+    async fn sync_creates_updates_and_removes_mirrored_hosts() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = test_app(dir.path());
         let (url, pin) = fake_warpgate().await;
-        let profile_id = app
-            .save_warpgate_profile(&WarpgateProfile {
-                id: String::new(),
-                name: "Lab".into(),
-                api_url: url,
-                token: "secret".into(),
-                ssh_host: "gateway.lan".into(),
-                ssh_port: 2222,
-                username: "admin".into(),
-                auth: HostAuth::Password { value: "pw".into() },
-                tls_cert_sha256: Some(pin),
-                group_id: None,
-            })
-            .unwrap();
+        let profile_id = app.save_warpgate_profile(&lab_profile(url, pin)).unwrap();
 
         assert_eq!(app.sync_warpgate(&profile_id).await.unwrap(), 1);
         assert_eq!(app.sync_warpgate(&profile_id).await.unwrap(), 1, "second sync must not duplicate");
@@ -636,12 +701,77 @@ mod tests {
         assert_eq!(mirrored.len(), 1);
         assert_eq!(mirrored[0].user, "admin:prod-01");
         assert_eq!((mirrored[0].host.as_str(), mirrored[0].port), ("gateway.lan", 2222));
-        let root = app.find_warpgate_profile(&profile_id).unwrap().unwrap().group_id.clone().unwrap();
+        let groups = app.list_host_groups().unwrap();
+        assert_eq!(groups.len(), 1, "second sync must not duplicate the root group");
+        let root = groups[0].id.clone();
+        assert_eq!(groups[0].warpgate_profile.as_deref(), Some(profile_id.as_str()));
         assert_eq!(mirrored[0].group_id.as_deref(), Some(root.as_str()));
+
+        // Only the profile leaves the device; the mirror stays local.
+        assert_eq!(synced_kinds(&app), ["warpgate_profile"]);
+
+        // Renaming the group in the UI keeps it a local Warpgate group.
+        app.update_host_group(&HostGroup { name: "Renamed".into(), warpgate_profile: None, ..groups[0].clone() })
+            .unwrap();
+        let g = app.find_host_group_by_id(&root).unwrap().unwrap();
+        assert_eq!((g.name.as_str(), g.warpgate_profile.as_deref()), ("Renamed", Some(profile_id.as_str())));
 
         app.delete_warpgate_profile(&profile_id).unwrap();
         assert!(app.list_hosts().unwrap().is_empty());
         assert!(app.find_host_group_by_id(&root).unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn mirror_of_a_profile_deleted_elsewhere_is_pruned() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = test_app(dir.path());
+        let (url, pin) = fake_warpgate().await;
+        let profile_id = app.save_warpgate_profile(&lab_profile(url, pin)).unwrap();
+        app.sync_warpgate(&profile_id).await.unwrap();
+        let manual = app.save_host(&gateway()).unwrap();
+
+        // What applying a remote tombstone does: the profile vanishes
+        // while this device's mirror stays.
+        app.vault.delete(&profile_id).unwrap();
+        assert_eq!(app.prune_warpgate_mirrors().unwrap(), 2, "one host + its root group");
+        let left: Vec<_> = app.list_hosts().unwrap().into_iter().map(|h| h.id.clone()).collect();
+        assert_eq!(left, [manual]);
+        assert!(app.list_host_groups().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn refresh_replaces_a_pre_release_synced_mirror() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = test_app(dir.path());
+        let (url, pin) = fake_warpgate().await;
+        let mut profile = lab_profile(url, pin);
+
+        // Layout written by the first Warpgate build: plain synced
+        // host_group/host records, root id stored on the profile.
+        let old_root = app
+            .save_host_group(&HostGroup { id: String::new(), name: "Lab".into(), parent_id: None, sort_order: 0, warpgate_profile: None })
+            .unwrap();
+        let old_sub = app
+            .save_host_group(&HostGroup { id: String::new(), name: "Prod".into(), parent_id: Some(old_root.clone()), sort_order: 0, warpgate_profile: None })
+            .unwrap();
+        profile.legacy_group_id = Some(old_root.clone());
+        let profile_id = app.save_warpgate_profile(&profile).unwrap();
+        let mut old_host = gateway();
+        old_host.group_id = Some(old_sub.clone());
+        old_host.warpgate = Some(WarpgateRef { profile_id: profile_id.clone(), target_id: "t1".into() });
+        let json = serde_json::to_vec(&old_host).unwrap();
+        let old_host_id = app.vault.insert(HOST_KIND, &json).unwrap();
+
+        assert_eq!(app.sync_warpgate(&profile_id).await.unwrap(), 1);
+
+        for id in [&old_root, &old_sub] {
+            assert!(app.find_host_group_by_id(id).unwrap().is_none());
+        }
+        assert!(app.find_host_by_id(&old_host_id).unwrap().is_none());
+        assert!(app.find_warpgate_profile(&profile_id).unwrap().unwrap().legacy_group_id.is_none());
+        let hosts = app.list_hosts().unwrap();
+        assert_eq!(hosts.len(), 1);
+        assert_eq!(synced_kinds(&app), ["warpgate_profile"]);
     }
 
     #[test]

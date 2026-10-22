@@ -612,6 +612,7 @@ impl ZeroTerm {
             name: input.name.trim().to_string(),
             parent_id: input.parent_id.filter(|id| !id.is_empty()),
             sort_order: input.sort_order,
+            warpgate_profile: None,
         };
         if input.id.as_deref().is_some_and(|id| !id.is_empty()) {
             app.update_host_group(&group).map_err(map_app_error)?;

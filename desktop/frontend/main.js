@@ -508,6 +508,10 @@ const I18N = {
     "hosts.empty.title": "No saved hosts yet",
     "hosts.empty.default": "Click the button below to add your first host.",
     "hosts.empty.search.desc": "Try another keyword or clear the search filter.",
+    "hosts.source.local": "ZeroTerm",
+    "hosts.source.warpgate": "Warpgate",
+    "hosts.empty.warpgate": "No Warpgate targets",
+    "hosts.empty.warpgate.desc": "Refresh the gateway from the Warpgate button above.",
     "select.search.placeholder": "Type to filter...",
     "select.search.empty": "No matches",
     "hosts.button.connect": "Connect",
@@ -1609,6 +1613,10 @@ const I18N = {
     "hosts.empty.title": "还没有保存的主机",
     "hosts.empty.default": "点击下面的按钮添加第一台主机。",
     "hosts.empty.search.desc": "试试其他关键词，或清空搜索条件。",
+    "hosts.source.local": "ZeroTerm",
+    "hosts.source.warpgate": "Warpgate",
+    "hosts.empty.warpgate": "没有 Warpgate 目标",
+    "hosts.empty.warpgate.desc": "点上方的 Warpgate 按钮刷新网关。",
     "select.search.placeholder": "输入以筛选...",
     "select.search.empty": "没有匹配项",
     "hosts.button.connect": "连接",
@@ -2888,6 +2896,9 @@ const hostsEmptyTitle = document.getElementById("hosts-empty-title");
 const hostsEmptyDesc = document.getElementById("hosts-empty-desc");
 const hostsEmptyAdd = document.getElementById("hosts-empty-add");
 const hostSearch = document.getElementById("host-search");
+const hostsSourceTabs = document.getElementById("hosts-source-tabs");
+const hostsSourceLocal = document.getElementById("hosts-source-local");
+const hostsSourceWarpgate = document.getElementById("hosts-source-warpgate");
 const hostsContextMenu = document.getElementById("hosts-context-menu");
 const hostsMenuConnect = document.getElementById("hosts-menu-connect");
 const hostsMenuEdit = document.getElementById("hosts-menu-edit");
@@ -8632,6 +8643,8 @@ let workspaceSidebarCollapsed = false;
 let selectedVaultHostId = null;
 let vaultSidebarWidth = 320;
 let hostGroups = [];
+/// Which half of the hosts sidebar is shown: "local" or "warpgate".
+let hostsSource = "local";
 let groupExpandedState = {};
 let groupStateInitialized = false;
 let draggingHostId = null;
@@ -10142,6 +10155,7 @@ async function reloadHostGroupsFromVault() {
           name: String(g.name || ""),
           parentId: g.parentId ? String(g.parentId) : "",
           sortOrder: Number.isFinite(g.sortOrder) ? Number(g.sortOrder) : 0,
+          warpgate: g.warpgate ? String(g.warpgate) : "",
         }))
       : [];
   } catch (e) {
@@ -10525,6 +10539,9 @@ async function refreshAllSyncedViewsFromVault() {
   } catch (e) {
     console.warn("post-sync snippets refresh failed", e);
   }
+  // Warpgate profiles sync but their hosts don't: a pulled profile has
+  // no hosts here until this device fetches them from the gateway.
+  warpgateUi?.syncAll();
 }
 
 async function warnIfMalformedSyncedHosts() {
@@ -13478,6 +13495,8 @@ function applyI18n() {
   setText("hosts-empty-title", "hosts.empty.title");
   setText("hosts-empty-desc", "hosts.empty.default");
   setText("hosts-empty-add", "hosts.new_host");
+  setText("hosts-source-local", "hosts.source.local");
+  setText("hosts-source-warpgate", "hosts.source.warpgate");
 
   setPlaceholder("sftp-left-path-input", "sftp.path.placeholder");
   setPlaceholder("sftp-right-path-input", "sftp.path.placeholder");
@@ -13969,6 +13988,12 @@ function applyI18n() {
 }
 
 hostSearch.addEventListener("input", () => renderHosts());
+for (const btn of [hostsSourceLocal, hostsSourceWarpgate]) {
+  btn?.addEventListener("click", () => {
+    hostsSource = btn.dataset.source;
+    renderHosts();
+  });
+}
 buildCustomSelect(document.getElementById("hf-auth-type"));
 buildCustomSelect(document.getElementById("qc-auth-type"));
 buildCustomSelect(document.getElementById("hf-group"));
@@ -14109,6 +14134,10 @@ warpgateUi = installWarpgate({
   onSynced: async () => {
     await reloadHostGroupsFromVault();
     await refreshHostsCacheFromVault({ silent: true });
+  },
+  onActiveChanged: () => {
+    hostsSource = "warpgate";
+    renderHosts();
   },
 });
 hostsEmptyAdd?.addEventListener("click", () => openHostEditor());
@@ -15382,19 +15411,50 @@ async function moveHostToGroup(hostId, groupId) {
 function renderHosts() {
   hostsList.innerHTML = "";
 
+  // Local / Warpgate split. The tabs only show once a gateway has
+  // mirrored something; until then everything is "local".
+  const hasWarpgate = hostGroups.some((g) => g.warpgate) || hostsCache.some((h) => h.warpgate);
+  if (!hasWarpgate) hostsSource = "local";
+  const showingWarpgate = hostsSource === "warpgate";
+  if (hostsSourceTabs) hostsSourceTabs.hidden = !hasWarpgate;
+  // The tabs replace the plain "ZeroTerm" title when shown.
+  const vaultLocalTitle = document.getElementById("vault-local-title");
+  if (vaultLocalTitle) vaultLocalTitle.hidden = hasWarpgate;
+  vaultLocalTitle?.parentElement?.classList.toggle("has-source-tabs", hasWarpgate);
+  for (const btn of [hostsSourceLocal, hostsSourceWarpgate]) {
+    const active = btn?.dataset.source === hostsSource;
+    btn?.classList.toggle("active", active);
+    btn?.setAttribute("aria-selected", String(active));
+  }
+  // Warpgate hosts and groups come from the gateway; nothing to add here.
+  for (const id of ["add-host-button", "add-group-button"]) {
+    const btn = document.getElementById(id);
+    if (btn) btn.hidden = showingWarpgate;
+  }
+  // Gateway management belongs to the Warpgate tab. Without tabs (nothing
+  // mirrored yet) keep it visible, or the first gateway couldn't be added.
+  const warpgateButton = document.getElementById("warpgate-button");
+  if (warpgateButton) warpgateButton.hidden = hasWarpgate && !showingWarpgate;
+  // The Warpgate tab shows one gateway, picked in the Warpgate dialog.
+  const activeGateway = warpgateUi?.activeId() ?? null;
+  const inSource = (profileId) =>
+    showingWarpgate ? !!profileId && (!activeGateway || profileId === activeGateway) : !profileId;
+  const visibleGroups = hostGroups.filter((g) => inSource(g.warpgate));
+  const sourceHosts = hostsCache.filter((h) => inSource(h.warpgate));
+
   const q = hostSearch.value.trim().toLowerCase();
   const searching = q.length > 0;
   const rows = q
-    ? hostsCache.filter((h) =>
+    ? sourceHosts.filter((h) =>
       `${h.name} ${h.user} ${h.host} ${h.port}`.toLowerCase().includes(q)
     )
-    : hostsCache;
+    : sourceHosts;
 
   if (rows.length === 0) {
     hostsEmpty.hidden = false;
-    if (hostsEmptyTitle) hostsEmptyTitle.textContent = q ? t("hosts.empty.search") : t("hosts.empty.title");
-    if (hostsEmptyDesc) hostsEmptyDesc.textContent = q ? t("hosts.empty.search.desc") : t("hosts.empty.default");
-    if (hostsEmptyAdd) hostsEmptyAdd.hidden = !!q;
+    if (hostsEmptyTitle) hostsEmptyTitle.textContent = q ? t("hosts.empty.search") : t(showingWarpgate ? "hosts.empty.warpgate" : "hosts.empty.title");
+    if (hostsEmptyDesc) hostsEmptyDesc.textContent = q ? t("hosts.empty.search.desc") : t(showingWarpgate ? "hosts.empty.warpgate.desc" : "hosts.empty.default");
+    if (hostsEmptyAdd) hostsEmptyAdd.hidden = !!q || showingWarpgate;
   } else {
     hostsEmpty.hidden = true;
   }
@@ -15532,7 +15592,7 @@ function renderHosts() {
   }
 
   const groupedRows = new Map();
-  for (const g of hostGroups) groupedRows.set(g.id, []);
+  for (const g of visibleGroups) groupedRows.set(g.id, []);
   const ungroupedRows = [];
 
   for (const host of rows) {
@@ -15545,6 +15605,18 @@ function renderHosts() {
       // may still have that group alive and re-introduce it.
       ungroupedRows.push(host);
     }
+  }
+
+  // Hosts in a group and all its subgroups, so a parent's count isn't
+  // 0 when every host sits in a child (e.g. Warpgate root → target groups).
+  function countHostsInTree(groupId, seen = new Set()) {
+    if (seen.has(groupId)) return 0;
+    seen.add(groupId);
+    let total = (groupedRows.get(groupId) || []).length;
+    for (const child of visibleGroups) {
+      if ((child.parentId || "") === groupId) total += countHostsInTree(child.id, seen);
+    }
+    return total;
   }
 
   function renderGroupNode(group, depth) {
@@ -15563,7 +15635,7 @@ function renderHosts() {
     name.textContent = group.name;
     const count = document.createElement("span");
     count.className = "group-count";
-    count.textContent = String(items.length);
+    count.textContent = String(countHostsInTree(group.id));
     left.append(caret, name);
     row.append(left, count);
     row.addEventListener("click", () => {
@@ -15595,16 +15667,26 @@ function renderHosts() {
     hostsList.appendChild(row);
 
     if (!expanded) return;
-    const children = hostGroups.filter((g) => (g.parentId || "") === group.id);
+    const children = visibleGroups.filter((g) => (g.parentId || "") === group.id);
     for (const child of children) renderGroupNode(child, depth + 1);
     for (const host of items) {
       renderHostItem(host, true);
     }
   }
 
-  if (hostGroups.length > 0) {
-    const roots = hostGroups.filter((g) => !g.parentId);
-    for (const group of roots) renderGroupNode(group, 0);
+  if (visibleGroups.length > 0) {
+    const roots = visibleGroups.filter((g) => !g.parentId);
+    if (showingWarpgate && roots.length === 1) {
+      // The gateway's root group only repeats its name; show its
+      // contents directly.
+      const [root] = roots;
+      for (const child of visibleGroups.filter((g) => (g.parentId || "") === root.id)) {
+        renderGroupNode(child, 0);
+      }
+      for (const host of groupedRows.get(root.id) || []) renderHostItem(host, false);
+    } else {
+      for (const group of roots) renderGroupNode(group, 0);
+    }
   }
 
   for (const host of ungroupedRows) {

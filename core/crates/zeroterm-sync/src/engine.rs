@@ -2230,7 +2230,7 @@ fn now_ms() -> i64 {
 }
 
 fn is_syncable_kind(kind: &str) -> bool {
-    matches!(kind, "host" | "host_group" | "snippet")
+    matches!(kind, "host" | "host_group" | "snippet" | "warpgate_profile")
 }
 
 // Suppress dead-code warning for the LocalRecord import — the file uses

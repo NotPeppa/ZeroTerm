@@ -17,8 +17,9 @@ use crate::host::Host;
 use crate::host_group::HostGroup;
 use crate::port_forward::PortForwardRule;
 use crate::snippet::Snippet;
+use crate::warpgate::{WARPGATE_GROUP_KIND, WARPGATE_HOST_KIND};
 
-const HOST_KIND: &str = "host";
+pub(crate) const HOST_KIND: &str = "host";
 const HOST_GROUP_KIND: &str = "host_group";
 const PORT_FORWARD_KIND: &str = "port_forward";
 const SNIPPET_KIND: &str = "snippet";
@@ -131,7 +132,15 @@ impl App {
     // -- host CRUD ----------------------------------------------------------
 
     pub fn list_hosts(&self) -> Result<Vec<Host>, AppError> {
-        let records = self.vault.list(HOST_KIND)?;
+        let mut hosts = self.list_hosts_of_kind(HOST_KIND)?;
+        hosts.extend(self.list_hosts_of_kind(WARPGATE_HOST_KIND)?);
+        // Sort by name for stable display.
+        hosts.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(hosts)
+    }
+
+    pub(crate) fn list_hosts_of_kind(&self, kind: &str) -> Result<Vec<Host>, AppError> {
+        let records = self.vault.list(kind)?;
         let mut hosts = Vec::with_capacity(records.len());
         for (id, plaintext) in records {
             match serde_json::from_slice::<Host>(&plaintext) {
@@ -144,13 +153,12 @@ impl App {
                 }
             }
         }
-        // Sort by name for stable display.
-        hosts.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(hosts)
     }
 
     pub fn host_diagnostics(&self) -> Result<HostDiagnostics, AppError> {
-        let records = self.vault.list(HOST_KIND)?;
+        let mut records = self.vault.list(HOST_KIND)?;
+        records.extend(self.vault.list(WARPGATE_HOST_KIND)?);
         let mut parsed_hosts = 0usize;
         let mut malformed_hosts = 0usize;
         for (id, plaintext) in records.iter() {
@@ -186,10 +194,12 @@ impl App {
         }
     }
 
-    /// Save a new host.
+    /// Save a new host. Warpgate mirrors are stored under a kind that
+    /// never syncs.
     pub fn save_host(&self, host: &Host) -> Result<String, AppError> {
         let json = serde_json::to_vec(host).map_err(AppError::BadHostRecord)?;
-        Ok(self.vault.insert(HOST_KIND, &json)?)
+        let kind = if host.warpgate.is_some() { WARPGATE_HOST_KIND } else { HOST_KIND };
+        Ok(self.vault.insert(kind, &json)?)
     }
 
     /// Replace an existing host by id.
@@ -290,7 +300,8 @@ impl App {
     // -- host group CRUD ----------------------------------------------------
 
     pub fn list_host_groups(&self) -> Result<Vec<HostGroup>, AppError> {
-        let records = self.vault.list(HOST_GROUP_KIND)?;
+        let mut records = self.vault.list(HOST_GROUP_KIND)?;
+        records.extend(self.vault.list(WARPGATE_GROUP_KIND)?);
         let mut groups = Vec::with_capacity(records.len());
         for (id, plaintext) in records {
             match serde_json::from_slice::<HostGroup>(&plaintext) {
@@ -342,7 +353,8 @@ impl App {
             return Err(AppError::BadHostGroup("name cannot be empty".into()));
         }
         let json = serde_json::to_vec(group).map_err(AppError::BadHostRecord)?;
-        Ok(self.vault.insert(HOST_GROUP_KIND, &json)?)
+        let kind = if group.warpgate_profile.is_some() { WARPGATE_GROUP_KIND } else { HOST_GROUP_KIND };
+        Ok(self.vault.insert(kind, &json)?)
     }
 
     /// Replace an existing host group by id. Rejects self-parenting,
@@ -390,7 +402,14 @@ impl App {
                 }
             }
         }
-        let json = serde_json::to_vec(group).map_err(AppError::BadHostRecord)?;
+        // UI edits (rename / move) don't carry the Warpgate link; keep it.
+        let mut group = group.clone();
+        if group.warpgate_profile.is_none() {
+            group.warpgate_profile = self
+                .find_host_group_by_id(&group.id)?
+                .and_then(|g| g.warpgate_profile);
+        }
+        let json = serde_json::to_vec(&group).map_err(AppError::BadHostRecord)?;
         self.vault.update(&group.id, &json)?;
         Ok(())
     }

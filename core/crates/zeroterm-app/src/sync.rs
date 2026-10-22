@@ -639,6 +639,7 @@ impl App {
         let engine = self.engine_for_profile(&profile).await?;
         let report = engine.join_repo_with_report(passphrase).await?;
         manager.insert(profile_id, engine).await;
+        self.prune_mirrors_after_pull(report.deletes_applied);
         Ok(SyncJoinOutcome {
             repo_vault_id: report.vault_id,
             events_pulled: report.events_pulled,
@@ -660,7 +661,20 @@ impl App {
             .await
             .ok_or_else(|| AppError::SyncEngineMissing(profile_id.to_string()))?;
         let report = engine.sync_once().await?;
+        self.prune_mirrors_after_pull(report.deletes_applied);
         Ok(SyncOutcome::from_report(profile_id, report))
+    }
+
+    /// A pulled `warpgate_profile` deletion leaves this device's mirror of
+    /// it behind (mirrors never sync); drop it. Best-effort: the next pass
+    /// or the next Warpgate refresh retries.
+    fn prune_mirrors_after_pull(&self, deletes_applied: usize) {
+        if deletes_applied == 0 {
+            return;
+        }
+        if let Err(e) = self.prune_warpgate_mirrors() {
+            tracing::warn!(error = %e, "pruning orphaned Warpgate mirrors failed");
+        }
     }
 
     pub async fn sync_status(

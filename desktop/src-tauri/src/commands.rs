@@ -2527,8 +2527,9 @@ pub struct HostSummary {
     pub auth_type: &'static str,
     pub os_type: Option<String>,
     pub group_id: Option<String>,
-    /// Mirrored from a Warpgate target; refreshed (and overwritten) by sync.
-    pub warpgate: bool,
+    /// Warpgate profile id when mirrored from a Warpgate target;
+    /// refreshed (and overwritten) by sync.
+    pub warpgate: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -2557,7 +2558,7 @@ pub async fn list_hosts(state: State<'_, AppState>) -> Result<Vec<HostSummary>, 
                 HostAuth::PrivateKey { .. } => "key",
                 HostAuth::Agent => "agent",
             },
-            warpgate: h.warpgate.is_some(),
+            warpgate: h.warpgate.as_ref().map(|w| w.profile_id.clone()),
             os_type: h.os_type,
             group_id: h.group_id,
         })
@@ -3691,7 +3692,7 @@ pub async fn save_warpgate_profile(
     id: Option<String>,
     input: WarpgateProfileInput,
 ) -> Result<String, String> {
-    let (app, _) = clone_app_and_sync(&state)?;
+    let (app, manager) = clone_app_and_sync(&state)?;
     let existing = match id.as_deref().filter(|s| !s.is_empty()) {
         Some(id) => Some(
             app.find_warpgate_profile(id)
@@ -3718,9 +3719,11 @@ pub async fn save_warpgate_profile(
         username: input.username.trim().to_string(),
         auth,
         tls_cert_sha256: input.tls_cert_sha256.filter(|s| !s.trim().is_empty()),
-        group_id: existing.and_then(|p| p.group_id.clone()),
+        legacy_group_id: existing.and_then(|p| p.legacy_group_id.clone()),
     };
-    app.save_warpgate_profile(&profile).map_err(|e| e.to_string())
+    let id = app.save_warpgate_profile(&profile).map_err(|e| e.to_string())?;
+    manager.schedule_debounced_sync_for_all(app);
+    Ok(id)
 }
 
 #[tauri::command]
@@ -3749,6 +3752,9 @@ pub struct HostGroupDto {
     pub name: String,
     pub parent_id: Option<String>,
     pub sort_order: i32,
+    /// Warpgate profile id when the group holds mirrored targets
+    /// (device-local, managed by refresh).
+    pub warpgate: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -3767,6 +3773,7 @@ fn group_to_dto(g: zeroterm_app::HostGroup) -> HostGroupDto {
         name: g.name,
         parent_id: g.parent_id,
         sort_order: g.sort_order,
+        warpgate: g.warpgate_profile,
     }
 }
 
@@ -3789,6 +3796,7 @@ pub async fn create_host_group(
         name: input.name,
         parent_id: input.parent_id.filter(|s| !s.is_empty()),
         sort_order: input.sort_order.unwrap_or(0),
+        warpgate_profile: None,
     };
     let id = app.save_host_group(&g).map_err(|e| e.to_string())?;
     manager.schedule_debounced_sync_for_all(app);
@@ -3807,6 +3815,7 @@ pub async fn update_host_group(
         name: input.name,
         parent_id: input.parent_id.filter(|s| !s.is_empty()),
         sort_order: input.sort_order.unwrap_or(0),
+        warpgate_profile: None,
     };
     app.update_host_group(&g).map_err(|e| e.to_string())?;
     manager.schedule_debounced_sync_for_all(app);
