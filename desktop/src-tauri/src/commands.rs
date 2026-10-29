@@ -3450,6 +3450,37 @@ fn keep_saved_secret(new: &mut zeroterm_app::HostAuth, existing: &zeroterm_app::
     }
 }
 
+/// Compare effective credentials after omitted secrets have been restored.
+fn host_auth_changed(existing: &HostAuth, new: &HostAuth) -> bool {
+    match (existing, new) {
+        (HostAuth::Password { value: old }, HostAuth::Password { value: new }) => old != new,
+        (
+            HostAuth::PrivateKey {
+                key_pem: old_key,
+                passphrase: old_passphrase,
+            },
+            HostAuth::PrivateKey {
+                key_pem: new_key,
+                passphrase: new_passphrase,
+            },
+        ) => old_key != new_key || old_passphrase != new_passphrase,
+        (HostAuth::Agent, HostAuth::Agent) => false,
+        _ => true,
+    }
+}
+
+fn verify_host_update_password(
+    path: &std::path::Path,
+    master_password: Option<&str>,
+) -> Result<(), String> {
+    let password = master_password
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "修改主机凭据需要验证主密码。".to_string())?;
+    App::open(path, password)
+        .map(|_| ())
+        .map_err(|_| "主密码验证失败，主机凭据未修改。".to_string())
+}
+
 impl HostInput {
     fn into_app_host(self, id: String) -> zeroterm_app::Host {
         zeroterm_app::Host {
@@ -3560,6 +3591,7 @@ pub async fn update_host(
     state: State<'_, AppState>,
     id: String,
     input: HostInput,
+    master_password: Option<String>,
 ) -> Result<(), String> {
     let (app, manager) = clone_app_and_sync(&state)?;
 
@@ -3580,6 +3612,19 @@ pub async fn update_host(
             return Err("private key is required".to_string());
         }
         _ => {}
+    }
+    if host_auth_changed(&existing.auth, &new_host.auth) {
+        let path = zeroterm_app::default_vault_path()
+            .ok_or_else(|| "no default vault path on this OS".to_string())?;
+        tokio::task::spawn_blocking(move || {
+            verify_host_update_password(&path, master_password.as_deref())
+        })
+        .await
+        .map_err(|e| format!("credential verification task failed: {e}"))??;
+        // Verification runs off-thread; do not save into a vault locked meanwhile.
+        if state.app.lock().unwrap_or_else(std::sync::PoisonError::into_inner).is_none() {
+            return Err("vault is locked".to_string());
+        }
     }
     app.update_host(&new_host).map_err(|e| e.to_string())?;
     manager.schedule_debounced_sync_for_all(app);
@@ -8080,6 +8125,66 @@ pub async fn list_system_fonts() -> Result<Vec<SystemFontDto>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn host_credentials_detect_changes_after_preserving_saved_secrets() {
+        let password = HostAuth::Password {
+            value: "saved".into(),
+        };
+        let mut omitted = HostAuth::Password {
+            value: String::new(),
+        };
+        keep_saved_secret(&mut omitted, &password);
+        assert!(!host_auth_changed(&password, &omitted));
+        assert!(host_auth_changed(
+            &password,
+            &HostAuth::Password {
+                value: "new".into()
+            }
+        ));
+        assert!(host_auth_changed(&password, &HostAuth::Agent));
+        assert!(host_auth_changed(&HostAuth::Agent, &password));
+        assert!(!host_auth_changed(&HostAuth::Agent, &HostAuth::Agent));
+
+        let key = HostAuth::PrivateKey {
+            key_pem: "saved-key".into(),
+            passphrase: Some("saved-passphrase".into()),
+        };
+        let mut omitted = HostAuth::PrivateKey {
+            key_pem: String::new(),
+            passphrase: None,
+        };
+        keep_saved_secret(&mut omitted, &key);
+        assert!(!host_auth_changed(&key, &omitted));
+        for (key_pem, passphrase) in [
+            ("new-key", Some("saved-passphrase")),
+            ("saved-key", Some("new-passphrase")),
+            ("new-key", None),
+        ] {
+            assert!(host_auth_changed(
+                &key,
+                &HostAuth::PrivateKey {
+                    key_pem: key_pem.into(),
+                    passphrase: passphrase.map(String::from),
+                }
+            ));
+        }
+        assert!(host_auth_changed(&key, &password));
+    }
+
+    #[test]
+    fn host_update_requires_correct_master_password() {
+        let root = std::env::temp_dir().join(format!("zeroterm-host-update-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("vault.sqlite");
+        let app = App::create(&path, "correct-password").unwrap();
+        assert!(verify_host_update_password(&path, None).is_err());
+        assert!(verify_host_update_password(&path, Some("")).is_err());
+        assert!(verify_host_update_password(&path, Some("wrong-password")).is_err());
+        assert!(verify_host_update_password(&path, Some("correct-password")).is_ok());
+        drop(app);
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn background_settings_are_clamped_to_supported_ranges() {

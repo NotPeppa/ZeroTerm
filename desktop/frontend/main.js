@@ -18298,6 +18298,7 @@ const hostSecretRevealError = document.getElementById("host-secret-reveal-error"
 const hostSecretRevealCancel = document.getElementById("host-secret-reveal-cancel");
 
 let editingHostId = null;
+let editingHostAuthType = null;
 let hfKeyPem = null;
 let hfForwards = [];
 let resolveHostSecretReveal = null;
@@ -18341,7 +18342,13 @@ function closeHostSecretReveal(masterPassword = null) {
   resolve?.(masterPassword);
 }
 
-function requestHostSecretRevealPassword() {
+function requestHostSecretRevealPassword(forUpdate = false) {
+  if (resolveHostSecretReveal) return Promise.resolve(null);
+  document.getElementById("host-secret-reveal-description").textContent = forUpdate
+    ? "修改主机密码、私钥或认证方式前，请验证当前主密码。"
+    : "请输入当前主密码后显示已保存的凭据。";
+  document.getElementById("host-secret-reveal-submit").textContent = forUpdate
+    ? "验证并保存" : "确认并显示";
   hostSecretRevealError.hidden = true;
   hostSecretRevealError.textContent = "";
   hostSecretRevealPassword.value = "";
@@ -18425,6 +18432,7 @@ hostForm.addEventListener("submit", saveHostForm);
 
 async function openHostEditor(id = null, defaultGroupId = "") {
   editingHostId = id;
+  editingHostAuthType = null;
   hostError.hidden = true;
   hostError.textContent = "";
   hostReadonly.hidden = true;
@@ -18453,6 +18461,7 @@ async function openHostEditor(id = null, defaultGroupId = "") {
       hfPort.value = h.port;
       hfUser.value = h.user;
       hfAuthType.value = h.authType;
+      editingHostAuthType = h.authType;
 
       if (h.authType === "password") {
         hfPassword.value = h.password ?? "";
@@ -18756,7 +18765,15 @@ async function saveHostForm(ev) {
   try {
     let savedHostId = editingHostId;
     if (editingHostId) {
-      await invoke("update_host", { id: editingHostId, input });
+      const hostId = editingHostId;
+      const changesCredentials = hfAuthType.value !== editingHostAuthType
+        || (auth.type === "password" && Boolean(auth.value))
+        || (auth.type === "private_key" && Boolean(auth.key_pem || auth.passphrase));
+      const masterPassword = changesCredentials
+        ? await requestHostSecretRevealPassword(true) : null;
+      if (changesCredentials && masterPassword === null) return;
+      if (editingHostId !== hostId || hostOverlay.hidden) return;
+      await invoke("update_host", { id: hostId, input, masterPassword });
     } else {
       savedHostId = await invoke("save_host", { input });
     }
