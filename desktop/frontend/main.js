@@ -657,7 +657,6 @@ const I18N = {
     "quick_connect.key.pick": "Choose file...",
     "quick_connect.key.none": "No key loaded",
     "quick_connect.error.pick_key": "Please choose a private key file",
-    "quick_connect.error.required_password": "user / host / password required",
     "quick_connect.error.required_host_user": "user / host required",
     "quick_connect.cancel": "Cancel",
     "quick_connect.connect": "Connect",
@@ -1761,7 +1760,6 @@ const I18N = {
     "quick_connect.key.pick": "选择文件...",
     "quick_connect.key.none": "未加载私钥",
     "quick_connect.error.pick_key": "请先选择私钥文件",
-    "quick_connect.error.required_password": "请填写用户 / 主机 / 密码",
     "quick_connect.error.required_host_user": "请填写用户 / 主机",
     "quick_connect.cancel": "取消",
     "quick_connect.connect": "连接",
@@ -14936,13 +14934,6 @@ quickConnectForm?.addEventListener("submit", async (ev) => {
   if (authType === "password") {
     const pw = String(quickConnectPassword?.value || "");
     input.auth = { type: "password", value: pw };
-    if (!pw) {
-    if (quickConnectError) {
-      quickConnectError.textContent = t("quick_connect.error.required_password");
-      quickConnectError.hidden = false;
-    }
-      return;
-    }
   } else if (authType === "key") {
     if (!quickConnectKeyPem) {
       if (quickConnectError) {

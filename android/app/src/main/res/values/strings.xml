@@ -336,7 +336,6 @@
     <string name="host_edit_agent_help">Uses SSH agent on the device (limited on Android).</string>
     <string name="host_edit_load_failed">Load failed</string>
     <string name="host_edit_host_user_required">Host and user required</string>
-    <string name="host_edit_password_required">Password required</string>
     <string name="host_edit_key_required">Private key PEM required</string>
     <string name="host_edit_save_failed">Save failed</string>
     <string name="host_edit_delete_failed">Delete failed</string>

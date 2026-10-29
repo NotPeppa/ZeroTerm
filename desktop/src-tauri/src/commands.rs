@@ -3550,9 +3550,6 @@ pub async fn save_host(state: State<'_, AppState>, input: HostInput) -> Result<S
     ) {
         return Err("private key is required".to_string());
     }
-    if matches!(&h.auth, zeroterm_app::HostAuth::Password { value } if value.is_empty()) {
-        return Err("password is required".to_string());
-    }
     let id = app.save_host(&h).map_err(|e| e.to_string())?;
     manager.schedule_debounced_sync_for_all(app);
     Ok(id)
@@ -3579,9 +3576,6 @@ pub async fn update_host(
     }
     keep_saved_secret(&mut new_host.auth, &existing.auth);
     match &new_host.auth {
-        zeroterm_app::HostAuth::Password { value } if value.is_empty() => {
-            return Err("password is required".to_string());
-        }
         zeroterm_app::HostAuth::PrivateKey { key_pem, .. } if key_pem.trim().is_empty() => {
             return Err("private key is required".to_string());
         }
@@ -6885,10 +6879,8 @@ pub async fn connect_quick_host(
         return Err("user and host are required".to_string());
     }
     let auth_methods = match input.auth {
+        // Empty password = `none` auth only (tried first by the ssh layer).
         QuickConnectAuthInput::Password { value } => {
-            if value.is_empty() {
-                return Err("password is required".to_string());
-            }
             vec![zeroterm_ssh::AuthMethod::Password(value)]
         }
         QuickConnectAuthInput::PrivateKey {

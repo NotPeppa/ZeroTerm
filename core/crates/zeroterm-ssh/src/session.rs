@@ -1005,24 +1005,26 @@ async fn authenticate(
     forward_identities: ForwardIdentities,
 ) -> Result<Session, SshError> {
     let mut last_error: Option<SshError> = None;
+    // Like OpenSSH, probe `none` first: gateways that carry the credential
+    // in the username (e.g. `token@ssh.instabox.sh`) accept it outright.
+    let mut authed = match handle.authenticate_none(&cfg.username).await {
+        Ok(r) => r.success(),
+        Err(e) => {
+            tracing::warn!(method = "none", error = %e, "auth method errored");
+            last_error = Some(e.into());
+            false
+        }
+    };
     for method in &cfg.auth_methods {
+        if authed {
+            break;
+        }
         match try_authenticate(&mut handle, &cfg.username, method).await {
-            Ok(true) => {
-                let handle = Arc::new(Mutex::new(handle));
-                let routes = Arc::new(Mutex::new(HashMap::new()));
-                tokio::spawn(dispatch_remote_forwards(
-                    remote_forward_rx,
-                    Arc::clone(&routes),
-                ));
-                return Ok(Session {
-                    handle,
-                    remote_forward_routes: routes,
-                    agent_forward_grants,
-                    forward_identities,
-                });
-            }
-            Ok(false) => {
-                tracing::debug!(method = method_name(method), "auth method rejected");
+            Ok(ok) => {
+                authed = ok;
+                if !ok {
+                    tracing::debug!(method = method_name(method), "auth method rejected");
+                }
             }
             Err(e) => {
                 tracing::warn!(method = method_name(method), error = %e, "auth method errored");
@@ -1030,7 +1032,21 @@ async fn authenticate(
             }
         }
     }
-    Err(last_error.unwrap_or(SshError::AuthFailed))
+    if !authed {
+        return Err(last_error.unwrap_or(SshError::AuthFailed));
+    }
+    let handle = Arc::new(Mutex::new(handle));
+    let routes = Arc::new(Mutex::new(HashMap::new()));
+    tokio::spawn(dispatch_remote_forwards(
+        remote_forward_rx,
+        Arc::clone(&routes),
+    ));
+    Ok(Session {
+        handle,
+        remote_forward_routes: routes,
+        agent_forward_grants,
+        forward_identities,
+    })
 }
 
 async fn dispatch_remote_forwards(

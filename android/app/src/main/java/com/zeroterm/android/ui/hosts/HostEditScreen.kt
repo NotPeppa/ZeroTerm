@@ -151,13 +151,7 @@ class HostEditViewModel(
         }
         val port: UShort = s.port.toUShortOrNull() ?: 22u
         val auth: HostAuthInput = when (s.authMode) {
-            AuthMode.Password -> {
-                if (s.password.isEmpty()) {
-                    _state.update { it.copy(error = appContext.getString(R.string.host_edit_password_required)) }
-                    return
-                }
-                HostAuthInput.Password(value = s.password)
-            }
+            AuthMode.Password -> HostAuthInput.Password(value = s.password)
             AuthMode.PrivateKey -> {
                 if (s.keyPem.isBlank()) {
                     _state.update { it.copy(error = appContext.getString(R.string.host_edit_key_required)) }

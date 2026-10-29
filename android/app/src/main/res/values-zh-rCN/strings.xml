@@ -336,7 +336,6 @@
     <string name="host_edit_agent_help">使用设备上的 SSH 代理（Android 上支持有限）。</string>
     <string name="host_edit_load_failed">加载失败</string>
     <string name="host_edit_host_user_required">主机和用户为必填</string>
-    <string name="host_edit_password_required">请输入密码</string>
     <string name="host_edit_key_required">请输入私钥 PEM</string>
     <string name="host_edit_save_failed">保存失败</string>
     <string name="host_edit_delete_failed">删除失败</string>

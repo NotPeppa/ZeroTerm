@@ -173,13 +173,7 @@ fun QuickConnectScreen(
                         return@Button
                     }
                     val auth = when (authMode) {
-                        AuthMode.Password -> {
-                            if (password.isEmpty()) {
-                                error = context.getString(R.string.host_edit_password_required)
-                                return@Button
-                            }
-                            HostAuthInput.Password(value = password)
-                        }
+                        AuthMode.Password -> HostAuthInput.Password(value = password)
                         AuthMode.PrivateKey -> {
                             if (keyPem.isBlank()) {
                                 error = context.getString(R.string.quick_connect_key_required)
