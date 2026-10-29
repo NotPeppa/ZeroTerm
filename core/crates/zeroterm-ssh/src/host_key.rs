@@ -159,10 +159,12 @@ impl HostKeyPolicy {
 
     /// Run the policy against an OpenSSH host certificate.
     ///
-    /// Interactive mode deliberately does not offer TOFU for certificates:
-    /// trusting a leaf certificate would become stale at renewal time and
-    /// bypass the CA model. Add the CA to known_hosts explicitly instead.
-    pub(crate) fn evaluate_certificate(
+    /// The leaf certificate itself is never TOFU-trusted (it would go stale
+    /// at renewal and bypass the CA model). With no applicable
+    /// `@cert-authority` line we do what OpenSSH does ("No matching CA
+    /// found. Retry with plain key"): judge the certificate's underlying
+    /// public key as a plain host key, which survives renewals.
+    pub(crate) async fn evaluate_certificate(
         &self,
         host: &str,
         port: u16,
@@ -174,8 +176,13 @@ impl HostKeyPolicy {
                 match store.check_certificate(host, port, certificate)? {
                     KnownHostCertificateStatus::Trusted => Ok(true),
                     KnownHostCertificateStatus::Unknown => {
-                        tracing::warn!(host, port, "no matching @cert-authority entry");
-                        Ok(false)
+                        tracing::debug!(
+                            host,
+                            port,
+                            "no matching @cert-authority entry; retrying with plain key"
+                        );
+                        let key = PublicKey::from(certificate.public_key().clone());
+                        self.evaluate(host, port, &key).await
                     }
                     KnownHostCertificateStatus::Revoked => {
                         tracing::warn!(host, port, "host certificate key or CA is @revoked");

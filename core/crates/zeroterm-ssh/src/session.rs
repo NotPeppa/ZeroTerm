@@ -307,6 +307,7 @@ impl Handler for ZeroTermHandler {
     ) -> Result<bool, Self::Error> {
         self.policy
             .evaluate_certificate(&self.host, self.port, server_certificate)
+            .await
             .map_err(russh::Error::IO)
     }
 
