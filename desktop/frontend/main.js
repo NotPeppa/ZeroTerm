@@ -692,6 +692,10 @@ const I18N = {
     "port_forward.title": "Port Forwarding",
     "port_forward.subtitle": "Start SSH forwards independently without opening a terminal session.",
     "port_forward.create": "New forward",
+    "port_forward.editor.source": "Host source",
+    "port_forward.editor.source.all": "All hosts",
+    "port_forward.editor.group": "Group",
+    "port_forward.editor.group.all": "All groups",
     "port_forward.refresh": "Refresh",
     "port_forward.search.placeholder": "Search host, port, or remote address...",
     "port_forward.empty.title": "No port forwards yet",
@@ -1795,6 +1799,10 @@ const I18N = {
     "port_forward.title": "端口转发",
     "port_forward.subtitle": "独立启动 SSH 转发，无需打开终端会话。",
     "port_forward.create": "新建转发",
+    "port_forward.editor.source": "主机来源",
+    "port_forward.editor.source.all": "全部主机",
+    "port_forward.editor.group": "分组",
+    "port_forward.editor.group.all": "全部分组",
     "port_forward.refresh": "刷新",
     "port_forward.search.placeholder": "搜索主机、端口或远端地址...",
     "port_forward.empty.title": "暂无端口转发",
@@ -3035,8 +3043,11 @@ const portForwardCreate = document.getElementById("port-forward-create");
 const portForwardEditor = document.getElementById("port-forward-editor");
 const portForwardEditorOverlay = document.getElementById("port-forward-editor-overlay");
 const portForwardEditorTitle = document.getElementById("port-forward-editor-title");
+const portForwardEditorSourceWrap = document.getElementById("port-forward-editor-source-wrap");
+const portForwardEditorSource = document.getElementById("port-forward-editor-source");
 const portForwardEditorHostWrap = document.getElementById("port-forward-editor-host-wrap");
 const portForwardEditorHost = document.getElementById("port-forward-editor-host");
+const portForwardEditorGroup = document.getElementById("port-forward-editor-group");
 const portForwardEditorClose = document.getElementById("port-forward-editor-close");
 const portForwardEditorAdd = document.getElementById("port-forward-editor-add");
 const portForwardEditorList = document.getElementById("port-forward-editor-list");
@@ -10856,6 +10867,7 @@ function openPortForwardEditor(row) {
   portForwardEditorIndex = row.id;
   portForwardEditorForwards = [forwardFromIO(row.forward)];
   if (portForwardEditorTitle) portForwardEditorTitle.textContent = t("port_forward.editor.title.edit", { hostName: row.hostName });
+  if (portForwardEditorSourceWrap) portForwardEditorSourceWrap.hidden = true;
   if (portForwardEditorHostWrap) portForwardEditorHostWrap.hidden = true;
   if (portForwardEditorAdd) portForwardEditorAdd.hidden = true;
   if (portForwardEditorError) {
@@ -10866,9 +10878,70 @@ function openPortForwardEditor(row) {
   if (portForwardEditorOverlay) portForwardEditorOverlay.hidden = false;
 }
 
+function portForwardSourceHosts() {
+  const source = portForwardEditorSource?.value || "all";
+  return hostsCache.filter((host) => source === "all"
+    || (source === "warpgate" ? Boolean(host.warpgate) : !host.warpgate));
+}
+
+function populatePortForwardGroupOptions() {
+  if (!portForwardEditorGroup) return;
+  const previous = portForwardEditorGroup.value;
+  const groupsById = new Map(hostGroups.map((group) => [group.id, group]));
+  const usedGroups = new Set(portForwardSourceHosts().map((host) =>
+    groupsById.has(host.groupId) ? host.groupId : "__ungrouped__"));
+  const groupPath = (group) => {
+    const names = [];
+    const seen = new Set();
+    while (group && !seen.has(group.id)) {
+      seen.add(group.id);
+      names.unshift(group.name);
+      group = groupsById.get(group.parentId);
+    }
+    return names.join(" / ");
+  };
+  const options = [{ value: "", label: t("port_forward.editor.group.all") }];
+  for (const group of hostGroups) {
+    if (usedGroups.has(group.id)) options.push({ value: group.id, label: groupPath(group) });
+  }
+  if (usedGroups.has("__ungrouped__")) {
+    options.push({ value: "__ungrouped__", label: t("groups.option.ungrouped") });
+  }
+  portForwardEditorGroup.innerHTML = "";
+  for (const { value, label } of options) {
+    const opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = label;
+    portForwardEditorGroup.appendChild(opt);
+  }
+  if (options.some((option) => option.value === previous)) portForwardEditorGroup.value = previous;
+  syncCustomSelect("port-forward-editor-group");
+  populatePortForwardHostOptions();
+}
+
+function populatePortForwardHostOptions() {
+  if (!portForwardEditorHost) return;
+  const previous = portForwardEditorHost.value;
+  const groupId = portForwardEditorGroup?.value || "";
+  const groupIds = new Set(hostGroups.map((group) => group.id));
+  portForwardEditorHost.innerHTML = "";
+  const hosts = portForwardSourceHosts().filter((host) => !groupId
+    || (groupId === "__ungrouped__" ? !groupIds.has(host.groupId) : host.groupId === groupId));
+  for (const host of hosts) {
+    const opt = document.createElement("option");
+    opt.value = host.id;
+    opt.textContent = `${host.name} (${host.user}@${host.host}:${host.port})`;
+    portForwardEditorHost.appendChild(opt);
+  }
+  if (hosts.some((host) => host.id === previous)) portForwardEditorHost.value = previous;
+  portForwardEditorHostId = portForwardEditorHost.value || "";
+  syncCustomSelect("port-forward-editor-host");
+}
+
 async function openPortForwardCreateEditor() {
   if (!portForwardEditor || !portForwardEditorHost) return;
-  await refreshHostsCacheFromVault({ silent: true });
+  await reloadHostGroupsFromVault();
+  await refreshHostsCacheFromVault();
   portForwardEditorMode = "create";
   portForwardEditorIndex = null;
   portForwardEditorHostId = "";
@@ -10880,15 +10953,11 @@ async function openPortForwardCreateEditor() {
     targetHost: "localhost",
     targetPort: "",
   }];
-  portForwardEditorHost.innerHTML = "";
-  for (const host of hostsCache) {
-    const opt = document.createElement("option");
-    opt.value = host.id;
-    opt.textContent = `${host.name} (${host.user}@${host.host}:${host.port})`;
-    portForwardEditorHost.appendChild(opt);
-  }
-  portForwardEditorHostId = portForwardEditorHost.value || "";
-  syncCustomSelect("port-forward-editor-host");
+  if (portForwardEditorSource) portForwardEditorSource.value = hostsSource || "all";
+  syncCustomSelect("port-forward-editor-source");
+  if (portForwardEditorGroup) portForwardEditorGroup.value = "";
+  populatePortForwardGroupOptions();
+  if (portForwardEditorSourceWrap) portForwardEditorSourceWrap.hidden = false;
   if (portForwardEditorTitle) portForwardEditorTitle.textContent = t("port_forward.editor.title.create");
   if (portForwardEditorHostWrap) portForwardEditorHostWrap.hidden = false;
   if (portForwardEditorAdd) portForwardEditorAdd.hidden = true;
@@ -13434,6 +13503,12 @@ function applyI18n() {
   setPlaceholder("port-forward-search", "port_forward.search.placeholder");
   setText("port-forward-editor-subtitle", "port_forward.editor.subtitle");
   setAttr("port-forward-editor-close", "aria-label", "port_forward.editor.close");
+  setText("port-forward-editor-group-label", "port_forward.editor.group");
+  setText("port-forward-editor-source-label", "port_forward.editor.source");
+  setOptionText("port-forward-editor-source", "all", "port_forward.editor.source.all");
+  setOptionText("port-forward-editor-source", "local", "hosts.source.local");
+  setOptionText("port-forward-editor-source", "warpgate", "hosts.source.warpgate");
+  syncCustomSelect("port-forward-editor-source");
   setText("port-forward-editor-host-label", "port_forward.editor.host");
   setText("port-forward-editor-kind-label", "port_forward.editor.kind");
   setOptionText("port-forward-editor-kind", "local", "port_forward.editor.kind.local");
@@ -14016,6 +14091,8 @@ portForwardButton?.addEventListener("click", () => setWorkspaceMode("port-forwar
 portForwardRefresh?.addEventListener("click", () => loadPortForwardPage().catch((e) => alert(String(e))));
 portForwardSearch?.addEventListener("input", renderPortForwardRows);
 portForwardCreate?.addEventListener("click", () => openPortForwardCreateEditor().catch((e) => alert(String(e))));
+portForwardEditorSource?.addEventListener("change", populatePortForwardGroupOptions);
+portForwardEditorGroup?.addEventListener("change", populatePortForwardHostOptions);
 portForwardEditorHost?.addEventListener("change", () => {
   portForwardEditorHostId = portForwardEditorHost.value;
 });

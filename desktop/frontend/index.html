@@ -254,10 +254,24 @@
                             </div>
                             <button id="port-forward-editor-close" type="button" class="workspace-icon-btn" aria-label="Close">✕</button>
                           </header>
-                          <label id="port-forward-editor-host-wrap" class="port-forward-editor-host" hidden>
-                            <span id="port-forward-editor-host-label">Host</span>
-                            <select id="port-forward-editor-host"></select>
+                          <label id="port-forward-editor-source-wrap" class="port-forward-editor-host" hidden>
+                            <span id="port-forward-editor-source-label">Host source</span>
+                            <select id="port-forward-editor-source">
+                              <option value="all">All hosts</option>
+                              <option value="local">ZeroTerm</option>
+                              <option value="warpgate">Warpgate</option>
+                            </select>
                           </label>
+                          <div id="port-forward-editor-host-wrap" class="port-forward-host-pickers" hidden>
+                            <label class="port-forward-editor-host">
+                              <span id="port-forward-editor-group-label">Group</span>
+                              <select id="port-forward-editor-group"></select>
+                            </label>
+                            <label class="port-forward-editor-host">
+                              <span id="port-forward-editor-host-label">Host</span>
+                              <select id="port-forward-editor-host"></select>
+                            </label>
+                          </div>
                           <div class="port-forward-form">
                             <div class="port-forward-field wide">
                               <span id="port-forward-editor-kind-label">Forward type</span>

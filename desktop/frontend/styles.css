@@ -1407,6 +1407,11 @@ body[data-app-theme="light"]:not(.has-app-bg) .settings-page-head {
   width: 100%;
 }
 
+/* Keep the focused selector and its menu above adjacent form controls. */
+.port-forward-editor .zt-select-wrap:focus-within {
+  z-index: 1700;
+}
+
 .port-forward-editor .zt-select-menu {
   max-height: 188px;
   z-index: 1600;
@@ -1435,6 +1440,16 @@ body[data-app-theme="light"]:not(.has-app-bg) .settings-page-head {
   margin-top: 4px;
   color: rgba(203, 213, 225, 0.74);
   font-size: 12px;
+}
+
+.port-forward-host-pickers {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 14px;
+}
+
+.port-forward-host-pickers > label {
+  min-width: 0;
 }
 
 .port-forward-editor-host {
