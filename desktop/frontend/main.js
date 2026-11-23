@@ -13120,6 +13120,208 @@ function fuzzyMatchSelectOption(label, query) {
   return qi === needle.length;
 }
 
+function compareSelectMenuLabels(a, b) {
+  return String(a || "").localeCompare(String(b || ""), undefined, {
+    sensitivity: "base",
+    numeric: true,
+  });
+}
+
+function resolveSftpHostMenuState({
+  query = "",
+  browseSource = "",
+  browseGroupId = "",
+  hostGroupsList = [],
+  hostsList = [],
+  selectedValue = "",
+  localHostValue = "__local__",
+  translate = t,
+}) {
+  const trimmedQuery = String(query || "").trim();
+  const hasWarpgate = hostGroupsList.some((group) => Boolean(group.warpgate))
+    || hostsList.some((host) => Boolean(host.warpgate));
+
+  if (trimmedQuery) {
+    const items = [];
+    const localLabel = translate("sftp.host.local");
+    if (fuzzyMatchSelectOption(localLabel, trimmedQuery)) {
+      items.push({
+        kind: "host",
+        label: localLabel,
+        meta: "",
+        value: localHostValue,
+        active: selectedValue === localHostValue,
+      });
+    }
+    const matches = hostsList
+      .filter((host) => fuzzyMatchSelectOption(`${host.name} ${host.user}@${host.host}:${host.port}`, trimmedQuery))
+      .sort((a, b) =>
+        compareSelectMenuLabels(a.name, b.name)
+        || compareSelectMenuLabels(`${a.user}@${a.host}:${a.port}`, `${b.user}@${b.host}:${b.port}`));
+    for (const host of matches) {
+      items.push({
+        kind: "host",
+        label: host.name,
+        meta: `${host.user}@${host.host}:${host.port}`,
+        value: host.id,
+        active: selectedValue === host.id,
+      });
+    }
+    return {
+      browseSource: hasWarpgate ? browseSource : "",
+      browseGroupId,
+      emptyText: translate("select.search.empty"),
+      items,
+    };
+  }
+
+  const effectiveSource = hasWarpgate
+    ? (browseSource === "local" || browseSource === "warpgate" ? browseSource : "")
+    : "";
+
+  // When Warpgate data exists and we are at root, show Local / ZeroTerm / Warpgate.
+  if (hasWarpgate && !effectiveSource) {
+    return {
+      browseSource: "",
+      browseGroupId: "",
+      emptyText: translate("select.search.empty"),
+      items: [
+        {
+          kind: "host",
+          label: translate("sftp.host.local"),
+          meta: "",
+          value: localHostValue,
+          active: selectedValue === localHostValue,
+        },
+        {
+          kind: "group",
+          label: translate("hosts.source.local"),
+          meta: "",
+          nextSource: "local",
+          nextGroupId: "",
+        },
+        {
+          kind: "group",
+          label: translate("hosts.source.warpgate"),
+          meta: "",
+          nextSource: "warpgate",
+          nextGroupId: "",
+        },
+      ],
+    };
+  }
+
+  const inSource = (warpgate) => {
+    if (!hasWarpgate) return !warpgate;
+    return effectiveSource === "warpgate" ? Boolean(warpgate) : !warpgate;
+  };
+  const sourceGroups = hostGroupsList.filter((group) => inSource(group.warpgate));
+  const sourceGroupsById = new Map(sourceGroups.map((group) => [group.id, group]));
+  const sourceHosts = hostsList.filter((host) => inSource(host.warpgate));
+
+  const rootLevelGroups = sourceGroups.filter((group) => {
+    const parentId = String(group.parentId || "");
+    return !parentId || !sourceGroupsById.has(parentId);
+  });
+  const orphanHosts = sourceHosts.filter((host) => {
+    const gid = String(host.groupId || "");
+    return !gid || !sourceGroupsById.has(gid);
+  });
+  // Warpgate mirrors each gateway under a root group named after the gateway
+  // (often literally "Warpgate"). When there is only one gateway root group,
+  // unwrap it so entering "Warpgate" shows its subgroups/targets directly
+  // instead of a redundant second "Warpgate" layer.
+  const implicitRootGroup = effectiveSource === "warpgate"
+    && rootLevelGroups.length === 1
+    && orphanHosts.length === 0
+    ? rootLevelGroups[0]
+    : null;
+
+  let currentGroup = browseGroupId ? sourceGroupsById.get(browseGroupId) || null : null;
+  if (implicitRootGroup && currentGroup?.id === implicitRootGroup.id) {
+    currentGroup = null;
+  }
+  const currentGroupId = currentGroup?.id || "";
+  const containerGroupId = currentGroupId || implicitRootGroup?.id || "";
+
+  const groupChildren = sourceGroups
+    .filter((group) => {
+      const parentId = String(group.parentId || "");
+      if (!containerGroupId) return !parentId || !sourceGroupsById.has(parentId);
+      return parentId === containerGroupId;
+    })
+    .sort((a, b) =>
+      Number(a.sortOrder || 0) - Number(b.sortOrder || 0) || compareSelectMenuLabels(a.name, b.name));
+
+  const hostRows = sourceHosts
+    .filter((host) => {
+      const gid = String(host.groupId || "");
+      if (!containerGroupId) return !gid || !sourceGroupsById.has(gid);
+      return gid === containerGroupId;
+    })
+    .sort((a, b) =>
+      compareSelectMenuLabels(a.name, b.name)
+      || compareSelectMenuLabels(`${a.user}@${a.host}:${a.port}`, `${b.user}@${b.host}:${b.port}`));
+
+  const items = [];
+  if (currentGroup) {
+    const rawParentId = currentGroup.parentId && sourceGroupsById.has(currentGroup.parentId)
+      ? currentGroup.parentId
+      : "";
+    const parentGroupId = implicitRootGroup && rawParentId === implicitRootGroup.id ? "" : rawParentId;
+    items.push({
+      kind: "back",
+      label: translate("files.button.back"),
+      meta: currentGroup.name,
+      nextSource: effectiveSource,
+      nextGroupId: parentGroupId,
+    });
+  } else if (hasWarpgate && effectiveSource) {
+    items.push({
+      kind: "back",
+      label: translate("files.button.back"),
+      meta: translate(effectiveSource === "warpgate" ? "hosts.source.warpgate" : "hosts.source.local"),
+      nextSource: "",
+      nextGroupId: "",
+    });
+  } else {
+    items.push({
+      kind: "host",
+      label: translate("sftp.host.local"),
+      meta: "",
+      value: localHostValue,
+      active: selectedValue === localHostValue,
+    });
+  }
+
+  for (const group of groupChildren) {
+    items.push({
+      kind: "group",
+      label: group.name,
+      meta: "",
+      nextSource: effectiveSource,
+      nextGroupId: group.id,
+    });
+  }
+
+  for (const host of hostRows) {
+    items.push({
+      kind: "host",
+      label: host.name,
+      meta: `${host.user}@${host.host}:${host.port}`,
+      value: host.id,
+      active: selectedValue === host.id,
+    });
+  }
+
+  return {
+    browseSource: effectiveSource,
+    browseGroupId: currentGroupId,
+    emptyText: (currentGroup || effectiveSource) ? translate("sftp.host.group.empty") : translate("select.search.empty"),
+    items,
+  };
+}
+
 function buildCustomSelect(selectEl) {
   if (!selectEl || selectEl.dataset.customSelectBound === "1") return;
   const isSftpHostSelectMenu = selectEl.id === "sftp-left-host" || selectEl.id === "sftp-right-host";
@@ -13161,6 +13363,7 @@ function buildCustomSelect(selectEl) {
   let selectedLabel = "";
   let customValue = "";
   let menuPortaled = false;
+  let sftpHostBrowseSource = "";
   let sftpHostBrowseGroupId = "";
 
   if (isSftpHostSelectMenu) {
@@ -13215,7 +13418,10 @@ function buildCustomSelect(selectEl) {
     menu.hidden = true;
     trigger.setAttribute("aria-expanded", "false");
     triggerInput.value = customValue || selectedLabel;
-    if (isSftpHostSelectMenu) sftpHostBrowseGroupId = "";
+    if (isSftpHostSelectMenu) {
+      sftpHostBrowseSource = "";
+      sftpHostBrowseGroupId = "";
+    }
     if (customSelectState.openId === selectEl.id) {
       customSelectState.openId = null;
     }
@@ -13245,6 +13451,7 @@ function buildCustomSelect(selectEl) {
     customSelectState.openId = selectEl.id;
     if (isSftpHostSelectMenu) {
       if (!preserveQuery) {
+        sftpHostBrowseSource = "";
         sftpHostBrowseGroupId = "";
         triggerInput.value = "";
       }
@@ -13262,15 +13469,8 @@ function buildCustomSelect(selectEl) {
     }
   };
 
-  const compareSelectMenuLabels = (a, b) =>
-    String(a || "").localeCompare(String(b || ""), undefined, {
-      sensitivity: "base",
-      numeric: true,
-    });
-
   const renderSftpHostMenu = () => {
     const query = (triggerInput.value || "").trim();
-    const groupsById = new Map(hostGroups.map((group) => [group.id, group]));
 
     const buildOption = ({ label, meta = "", active = false, kind = "host", onClick }) => {
       const item = document.createElement("button");
@@ -13306,122 +13506,50 @@ function buildCustomSelect(selectEl) {
       optionsBox.appendChild(item);
     };
 
-    // When the user types, search hosts across all groups (flat fuzzy match)
-    // instead of the hierarchical group browser.
-    if (query) {
-      optionsBox.innerHTML = "";
-      empty.textContent = t("select.search.empty");
-      const localLabel = t("sftp.host.local");
-      if (fuzzyMatchSelectOption(localLabel, query)) {
-        buildOption({
-          label: localLabel,
-          active: selectEl.value === localHostValue,
-          kind: "host",
-          onClick: () => {
-            selectEl.value = localHostValue;
-            selectEl.dataset.customValue = "";
-            selectEl.dispatchEvent(new Event("change", { bubbles: true }));
-            sync();
-            close();
-          },
-        });
-      }
-      const matches = hostsCache
-        .filter((host) => fuzzyMatchSelectOption(`${host.name} ${host.user}@${host.host}:${host.port}`, query))
-        .sort((a, b) =>
-          compareSelectMenuLabels(a.name, b.name)
-          || compareSelectMenuLabels(`${a.user}@${a.host}:${a.port}`, `${b.user}@${b.host}:${b.port}`));
-      for (const host of matches) {
-        buildOption({
-          label: host.name,
-          meta: `${host.user}@${host.host}:${host.port}`,
-          active: selectEl.value === host.id,
-          kind: "host",
-          onClick: () => {
-            selectEl.value = host.id;
-            selectEl.dataset.customValue = "";
-            selectEl.dispatchEvent(new Event("change", { bubbles: true }));
-            sync();
-            close();
-          },
-        });
-      }
-      empty.hidden = optionsBox.childElementCount > 0;
-      return;
-    }
+    const view = resolveSftpHostMenuState({
+      query,
+      browseSource: sftpHostBrowseSource,
+      browseGroupId: sftpHostBrowseGroupId,
+      hostGroupsList: hostGroups,
+      hostsList: hostsCache,
+      selectedValue: selectEl.value,
+      localHostValue,
+      translate: t,
+    });
+    sftpHostBrowseSource = view.browseSource;
+    sftpHostBrowseGroupId = view.browseGroupId;
 
-    const currentGroup = sftpHostBrowseGroupId ? groupsById.get(sftpHostBrowseGroupId) || null : null;
-    const currentGroupId = currentGroup?.id || "";
-    const groupChildren = hostGroups
-      .filter((group) => (group.parentId || "") === currentGroupId)
-      .sort((a, b) =>
-        Number(a.sortOrder || 0) - Number(b.sortOrder || 0) || compareSelectMenuLabels(a.name, b.name));
-    const hostRows = hostsCache
-      .filter((host) => {
-        const gid = String(host.groupId || "");
-        if (!currentGroup) return !gid || !groupsById.has(gid);
-        return gid === currentGroup.id;
-      })
-      .sort((a, b) =>
-        compareSelectMenuLabels(a.name, b.name)
-        || compareSelectMenuLabels(`${a.user}@${a.host}:${a.port}`, `${b.user}@${b.host}:${b.port}`));
-
-    empty.textContent = currentGroup ? t("sftp.host.group.empty") : t("select.search.empty");
+    empty.textContent = view.emptyText;
     optionsBox.innerHTML = "";
 
-    if (currentGroup) {
-      buildOption({
-        label: t("files.button.back"),
-        meta: currentGroup.name,
-        kind: "back",
-        onClick: () => {
-          sftpHostBrowseGroupId = currentGroup.parentId || "";
-          renderSftpHostMenu();
-          positionPortalMenu();
-        },
-      });
-    } else {
-      buildOption({
-        label: t("sftp.host.local"),
-        active: selectEl.value === localHostValue,
-        kind: "host",
-        onClick: () => {
-          selectEl.value = localHostValue;
-          selectEl.dataset.customValue = "";
-          selectEl.dispatchEvent(new Event("change", { bubbles: true }));
-          sync();
-          close();
-        },
-      });
-    }
-
-    for (const group of groupChildren) {
-      buildOption({
-        label: group.name,
-        meta: "",
-        kind: "group",
-        onClick: () => {
-          sftpHostBrowseGroupId = group.id;
-          renderSftpHostMenu();
-          positionPortalMenu();
-        },
-      });
-    }
-
-    for (const host of hostRows) {
-      buildOption({
-        label: host.name,
-        meta: `${host.user}@${host.host}:${host.port}`,
-        active: selectEl.value === host.id,
-        kind: "host",
-        onClick: () => {
-          selectEl.value = host.id;
-          selectEl.dataset.customValue = "";
-          selectEl.dispatchEvent(new Event("change", { bubbles: true }));
-          sync();
-          close();
-        },
-      });
+    for (const entry of view.items) {
+      if (entry.kind === "host") {
+        buildOption({
+          label: entry.label,
+          meta: entry.meta,
+          active: entry.active,
+          kind: "host",
+          onClick: () => {
+            selectEl.value = entry.value;
+            selectEl.dataset.customValue = "";
+            selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+            sync();
+            close();
+          },
+        });
+      } else {
+        buildOption({
+          label: entry.label,
+          meta: entry.meta,
+          kind: entry.kind,
+          onClick: () => {
+            sftpHostBrowseSource = entry.nextSource;
+            sftpHostBrowseGroupId = entry.nextGroupId;
+            renderSftpHostMenu();
+            positionPortalMenu();
+          },
+        });
+      }
     }
 
     empty.hidden = optionsBox.childElementCount > 0;
