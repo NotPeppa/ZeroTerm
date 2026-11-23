@@ -4018,6 +4018,274 @@ fn picker_starting_directory(
         .or_else(|| ssh_directory.filter(|path| path.is_dir()))
 }
 
+fn save_picker_starting_directory(
+    default_path: Option<&str>,
+    download_dir: Option<PathBuf>,
+    home_dir: Option<PathBuf>,
+) -> Option<PathBuf> {
+    let explicit = default_path
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+        .and_then(|path| {
+            if path.is_dir() {
+                Some(path)
+            } else {
+                path.parent()
+                    .filter(|parent| parent.is_dir())
+                    .map(Path::to_path_buf)
+            }
+        });
+    explicit
+        .or_else(|| download_dir.filter(|path| path.is_dir()))
+        .or_else(|| home_dir.filter(|path| path.is_dir()))
+}
+
+fn sanitize_default_file_name(name: Option<&str>) -> Option<String> {
+    let raw = name?.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    let cleaned = Path::new(raw)
+        .file_name()
+        .and_then(|segment| segment.to_str())
+        .map(str::trim)
+        .filter(|segment| !segment.is_empty() && *segment != "." && *segment != "..")?;
+    Some(cleaned.to_string())
+}
+
+#[cfg(target_os = "macos")]
+mod macos_save_picker {
+    use std::cell::RefCell;
+    use std::path::PathBuf;
+
+    use block2::RcBlock;
+    use objc2::rc::{autoreleasepool, Retained};
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSModalResponse, NSModalResponseOK, NSOpenPanel, NSSavePanel};
+    use objc2_foundation::{NSString, NSURL};
+    use tauri::AppHandle;
+
+    thread_local! {
+        // Track an open standalone panel on the macOS main thread so repeated
+        // clicks surface the existing panel instead of stacking dialogs.
+        static ACTIVE_PANEL: RefCell<Option<Retained<NSSavePanel>>> = const { RefCell::new(None) };
+    }
+
+    pub enum MacPanelKind {
+        SaveFile { default_name: Option<String> },
+        PickDirectory,
+    }
+
+    /// Present a standalone native `NSSavePanel` / `NSOpenPanel` asynchronously
+    /// via `beginWithCompletionHandler:` on the macOS main thread.
+    ///
+    /// Unlike `tauri-plugin-dialog`/`rfd` 0.16, this avoids:
+    /// - forcing `panel.setLevel(CGShieldingWindowLevel())`
+    /// - attaching a sheet (`beginSheetModalForWindow:`) to our custom
+    ///   `Overlay` / `hiddenTitle` window (which triggers ViewBridge geometry
+    ///   & transaction stalls when expanding/switching folders on macOS)
+    /// - blocking the main thread with `runModal()` or a Tokio worker thread
+    ///   with `blocking_save_file()`.
+    pub async fn run_panel(
+        app_handle: AppHandle,
+        kind: MacPanelKind,
+        title: Option<String>,
+        starting_directory: Option<PathBuf>,
+    ) -> Result<Option<PathBuf>, String> {
+        let (tx, rx) = tokio::sync::oneshot::channel::<Option<PathBuf>>();
+
+        app_handle
+            .run_on_main_thread(move || {
+                autoreleasepool(|_| {
+                    let Some(mtm) = MainThreadMarker::new() else {
+                        let _ = tx.send(None);
+                        return;
+                    };
+
+                    let already_open = ACTIVE_PANEL.with(|slot| {
+                        if let Some(existing) = slot.borrow().as_ref() {
+                            existing.makeKeyAndOrderFront(None);
+                            true
+                        } else {
+                            false
+                        }
+                    });
+                    if already_open {
+                        let _ = tx.send(None);
+                        return;
+                    }
+
+                    let panel: Retained<NSSavePanel> = match kind {
+                        MacPanelKind::SaveFile { default_name } => {
+                            let save_panel = NSSavePanel::savePanel(mtm);
+                            save_panel.setCanCreateDirectories(true);
+                            if let Some(name) = default_name {
+                                save_panel.setNameFieldStringValue(&NSString::from_str(&name));
+                            }
+                            save_panel
+                        }
+                        MacPanelKind::PickDirectory => {
+                            let open_panel = NSOpenPanel::openPanel(mtm);
+                            open_panel.setCanChooseDirectories(true);
+                            open_panel.setCanChooseFiles(false);
+                            open_panel.setAllowsMultipleSelection(false);
+                            open_panel.setCanCreateDirectories(true);
+                            Retained::into_super(open_panel)
+                        }
+                    };
+
+                    if let Some(title) = title {
+                        panel.setMessage(Some(&NSString::from_str(&title)));
+                    }
+                    if let Some(directory) = starting_directory {
+                        if let Some(path) = directory.to_str() {
+                            let url =
+                                NSURL::fileURLWithPath_isDirectory(&NSString::from_str(path), true);
+                            panel.setDirectoryURL(Some(&url));
+                        }
+                    }
+
+                    ACTIVE_PANEL.with(|slot| {
+                        *slot.borrow_mut() = Some(panel.clone());
+                    });
+
+                    let panel_cell = RefCell::new(Some(panel.clone()));
+                    let tx_cell = RefCell::new(Some(tx));
+                    let completion = RcBlock::new(move |response: NSModalResponse| {
+                        autoreleasepool(|_| {
+                            ACTIVE_PANEL.with(|slot| {
+                                *slot.borrow_mut() = None;
+                            });
+                            let result = panel_cell.borrow_mut().take().and_then(|p| {
+                                p.orderOut(None);
+                                if response == NSModalResponseOK {
+                                    p.URL()
+                                        .and_then(|url| url.path())
+                                        .map(|path| PathBuf::from(path.to_string()))
+                                } else {
+                                    None
+                                }
+                            });
+                            if let Some(sender) = tx_cell.borrow_mut().take() {
+                                let _ = sender.send(result);
+                            }
+                        });
+                    });
+
+                    panel.beginWithCompletionHandler(&completion);
+                });
+            })
+            .map_err(|e| format!("failed to dispatch native dialog to main thread: {e}"))?;
+
+        rx.await
+            .map_err(|_| "native file dialog closed unexpectedly".to_string())
+    }
+}
+
+/// Open a native Save File dialog for choosing a local download destination.
+#[tauri::command]
+pub async fn pick_save_file(
+    app_handle: AppHandle,
+    title: Option<String>,
+    default_path: Option<String>,
+    default_name: Option<String>,
+) -> Result<Option<String>, String> {
+    let starting_directory = save_picker_starting_directory(
+        default_path.as_deref(),
+        dirs::download_dir(),
+        dirs::home_dir(),
+    );
+    let sanitized_name = sanitize_default_file_name(default_name.as_deref());
+
+    #[cfg(target_os = "macos")]
+    let picked = macos_save_picker::run_panel(
+        app_handle,
+        macos_save_picker::MacPanelKind::SaveFile {
+            default_name: sanitized_name,
+        },
+        title,
+        starting_directory,
+    )
+    .await?;
+
+    #[cfg(not(target_os = "macos"))]
+    let picked = tauri::async_runtime::spawn_blocking(move || -> Result<Option<PathBuf>, String> {
+        use tauri_plugin_dialog::DialogExt;
+
+        let mut builder = app_handle.dialog().file();
+        if let Some(t) = title {
+            builder = builder.set_title(t);
+        }
+        if let Some(dir) = starting_directory {
+            builder = builder.set_directory(dir);
+        }
+        if let Some(name) = sanitized_name {
+            builder = builder.set_file_name(name);
+        }
+        builder
+            .blocking_save_file()
+            .map(|file_path| {
+                file_path
+                    .into_path()
+                    .map_err(|e| format!("unsupported dialog result: {e}"))
+            })
+            .transpose()
+    })
+    .await
+    .map_err(|e| format!("save dialog task failed: {e}"))??;
+
+    Ok(picked.map(|path| path.to_string_lossy().to_string()))
+}
+
+/// Open a native folder picker for choosing a local directory (e.g. SFTP folder download).
+#[tauri::command]
+pub async fn pick_local_directory(
+    app_handle: AppHandle,
+    title: Option<String>,
+    default_path: Option<String>,
+) -> Result<Option<String>, String> {
+    let starting_directory = save_picker_starting_directory(
+        default_path.as_deref(),
+        dirs::download_dir(),
+        dirs::home_dir(),
+    );
+
+    #[cfg(target_os = "macos")]
+    let picked = macos_save_picker::run_panel(
+        app_handle,
+        macos_save_picker::MacPanelKind::PickDirectory,
+        title,
+        starting_directory,
+    )
+    .await?;
+
+    #[cfg(not(target_os = "macos"))]
+    let picked = tauri::async_runtime::spawn_blocking(move || -> Result<Option<PathBuf>, String> {
+        use tauri_plugin_dialog::DialogExt;
+
+        let mut builder = app_handle.dialog().file();
+        if let Some(t) = title {
+            builder = builder.set_title(t);
+        }
+        if let Some(dir) = starting_directory {
+            builder = builder.set_directory(dir);
+        }
+        builder
+            .blocking_pick_folder()
+            .map(|file_path| {
+                file_path
+                    .into_path()
+                    .map_err(|e| format!("unsupported dialog result: {e}"))
+            })
+            .transpose()
+    })
+    .await
+    .map_err(|e| format!("folder dialog task failed: {e}"))??;
+
+    Ok(picked.map(|path| path.to_string_lossy().to_string()))
+}
+
 /// `tauri-plugin-dialog`/`rfd` does not currently expose AppKit's
 /// `showsHiddenFiles` option. Private keys commonly live below the hidden
 /// `~/.ssh` directory, so use the native switch for that picker on macOS.
@@ -8374,6 +8642,67 @@ mod tests {
             picker_starting_directory(Some("/path/that/does/not/exist"), Some(ssh.clone())),
             Some(ssh)
         );
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn save_picker_resolves_directory_and_sanitizes_file_name() {
+        let root =
+            std::env::temp_dir().join(format!("zeroterm-save-picker-{}", uuid::Uuid::new_v4()));
+        let explicit = root.join("explicit");
+        let downloads = root.join("Downloads");
+        let home = root.join("home");
+        std::fs::create_dir_all(&explicit).unwrap();
+        std::fs::create_dir_all(&downloads).unwrap();
+        std::fs::create_dir_all(&home).unwrap();
+
+        assert_eq!(
+            save_picker_starting_directory(
+                explicit.to_str(),
+                Some(downloads.clone()),
+                Some(home.clone()),
+            ),
+            Some(explicit.clone())
+        );
+        // A file path inside an existing directory resolves to its parent dir.
+        let nested_file = explicit.join("archive.tar.gz");
+        assert_eq!(
+            save_picker_starting_directory(
+                nested_file.to_str(),
+                Some(downloads.clone()),
+                Some(home.clone()),
+            ),
+            Some(explicit.clone())
+        );
+        // Missing path falls back to Downloads, then Home.
+        assert_eq!(
+            save_picker_starting_directory(
+                Some("/path/that/does/not/exist/file.txt"),
+                Some(downloads.clone()),
+                Some(home.clone()),
+            ),
+            Some(downloads)
+        );
+        assert_eq!(
+            save_picker_starting_directory(
+                None,
+                Some(root.join("missing-downloads")),
+                Some(home.clone()),
+            ),
+            Some(home)
+        );
+
+        assert_eq!(
+            sanitize_default_file_name(Some("report.pdf")),
+            Some("report.pdf".to_string())
+        );
+        assert_eq!(
+            sanitize_default_file_name(Some("/remote/dir/report.pdf")),
+            Some("report.pdf".to_string())
+        );
+        assert_eq!(sanitize_default_file_name(Some("   ")), None);
+        assert_eq!(sanitize_default_file_name(Some("..")), None);
 
         std::fs::remove_dir_all(root).unwrap();
     }

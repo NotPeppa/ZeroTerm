@@ -179,6 +179,8 @@ pub fn run() {
             commands::sync_repo_stats,
             commands::sync_delete_remote_repo,
             commands::pick_local_file,
+            commands::pick_save_file,
+            commands::pick_local_directory,
             commands::read_local_text_file,
             commands::local_read_text,
             commands::local_write_text,

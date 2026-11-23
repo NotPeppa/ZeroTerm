@@ -8764,6 +8764,7 @@ dependencies = [
  "arboard",
  "async-trait",
  "base64 0.22.1",
+ "block2",
  "chacha20poly1305",
  "dirs 5.0.1",
  "dispatch2",

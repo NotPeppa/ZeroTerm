@@ -20429,11 +20429,24 @@ function hideFilesContextMenu() {
   filesContextPaneKey = null;
 }
 
+function getSftpDownloadDefaultDirectory() {
+  for (const paneKey of ["left", "right"]) {
+    const candidatePane = sftpPanes?.[paneKey];
+    if (candidatePane && isLocalPane(candidatePane) && candidatePane.localConnected) {
+      const path = String(candidatePane.path || "").trim();
+      if (path) return path;
+    }
+  }
+  const configured = (localStorage.getItem(SETTINGS_KEY_SFTP_LOCAL_DIR) || "").trim();
+  return configured || null;
+}
+
 async function sftpDownloadFile(pane, entry) {
   if (!pane || pane.sftpId === null || !entry) return;
+  const defaultPath = getSftpDownloadDefaultDirectory();
   if (entry.kind === "dir") {
-    const destination = await invoke("plugin:dialog|open", {
-      options: { multiple: false, directory: true },
+    const destination = await invoke("pick_local_directory", {
+      defaultPath,
     });
     if (!destination) return;
     const destinationDir = Array.isArray(destination) ? String(destination[0] || "") : String(destination);
@@ -20524,8 +20537,9 @@ async function sftpDownloadFile(pane, entry) {
     return;
   }
 
-  const local = await invoke("plugin:dialog|save", {
-    options: { defaultPath: entry.name },
+  const local = await invoke("pick_save_file", {
+    defaultPath,
+    defaultName: entry.name,
   });
   if (!local) return;
   const plan = await planOverwriteForLocalPath(String(local), {
