@@ -5,7 +5,9 @@ const path = require("node:path");
 const vm = require("node:vm");
 const source = fs.readFileSync(path.join(__dirname, "../frontend/main.js"), "utf8");
 const start = source.indexOf("function openPortForwardEditor(");
-const end = source.indexOf("\nfunction closePortForwardEditor(", start);
+const end = source.indexOf("\nconst settingsSyncBackends", start) > start
+  ? source.indexOf("\nconst settingsSyncBackends", start)
+  : source.indexOf("\nfunction ", source.indexOf("\nasync function savePortForwardEditor(", start) + 1);
 assert(start >= 0 && end > start);
 function select(value = "") {
   let selected = value;
@@ -39,14 +41,32 @@ const context = {
   portForwardEditorSourceWrap: {}, portForwardEditorHostWrap: {},
   portForwardEditorTitle: {}, portForwardEditorAdd: {}, portForwardEditorError: {},
   portForwardEditorOverlay: {},
+  portForwardEditorKind: { value: "local" },
+  portForwardEditorKindTabs: null,
+  portForwardEditorBind: { value: "127.0.0.1" },
+  portForwardEditorBindPort: { value: "8080" },
+  portForwardEditorTargetHostWrap: {},
+  portForwardEditorTargetPortWrap: {},
+  portForwardEditorArrow: {},
+  portForwardEditorHint: {},
+  portForwardEditorTargetHost: { value: "localhost" },
+  portForwardEditorTargetPort: { value: "80" },
+  portForwardEditorSave: { disabled: false },
+  portForwardExpandedHosts: new Set(),
+  savedInvokes: [],
+  invoke: async (command, args) => { context.savedInvokes.push({ command, args }); },
+  loadPortForwardPage: async () => {},
   t: (key) => key === "hosts.source.warpgate" ? "Warpgate" : key,
-  syncCustomSelect() {}, syncPortForwardEditorFormFromState() {},
+  setText() {},
+  syncCustomSelect() {},
   forwardFromIO: (spec) => spec,
   refreshHostsCacheFromVault: async () => { context.hostsCache = hosts; },
 };
 const api = vm.runInNewContext(`${source.slice(start, end)}; ({
-  openPortForwardCreateEditor, openPortForwardEditor, populatePortForwardHostOptions, populatePortForwardGroupOptions,
+  openPortForwardCreateEditor, openPortForwardEditor, savePortForwardEditor, closePortForwardEditor,
+  populatePortForwardHostOptions, populatePortForwardGroupOptions,
   selectedHost: () => portForwardEditorHostId,
+  isHostLocked: () => portForwardEditorHostLocked,
 })`, context);
 const ids = () => context.portForwardEditorHost.options.map((opt) => opt.value);
 (async () => {
@@ -87,7 +107,29 @@ const ids = () => context.portForwardEditorHost.options.map((opt) => opt.value);
   assert.equal(context.portForwardEditorSourceWrap.hidden, true);
   assert.equal(context.portForwardEditorHostWrap.hidden, true);
   assert.equal(api.selectedHost(), "wg-b", "editing preserves the rule's original target");
+  assert.equal(api.isHostLocked(), false);
+
+  await api.openPortForwardCreateEditor({ hostId: "wg-b", hostName: "server" });
+  assert.equal(context.portForwardEditorSourceWrap.hidden, true, "group quick-add hides source filter");
+  assert.equal(context.portForwardEditorHostWrap.hidden, true, "group quick-add hides host picker");
+  assert.equal(api.selectedHost(), "wg-b", "group quick-add locks target host");
+  assert.equal(api.isHostLocked(), true);
+  assert.equal(context.portForwardEditorTitle.textContent, "port_forward.editor.title.create_for_host");
+  assert.equal(context.portForwardEditorOverlay.hidden, false);
+
+  context.portForwardEditorHost.value = "";
+  context.portForwardEditorBindPort.value = "18080";
+  context.portForwardEditorTargetPort.value = "8080";
+  await api.savePortForwardEditor();
+  assert.equal(context.savedInvokes.length, 1);
+  assert.equal(context.savedInvokes[0].command, "create_port_forward_rule");
+  assert.equal(context.savedInvokes[0].args.input.hostId, "wg-b", "saving a locked-host rule keeps the group host ID");
+  assert.equal(context.portForwardExpandedHosts.has("wg-b"), true, "saving expands the host group");
+  assert.equal(api.isHostLocked(), false, "closing resets locked-host state");
+
   context.refreshHostsCacheFromVault = async () => { throw new Error("vault unavailable"); };
+  await api.openPortForwardCreateEditor({ hostId: "wg-b", hostName: "server" });
+  assert.equal(api.selectedHost(), "wg-b", "group quick-add opens without needing a vault refresh");
   await assert.rejects(api.openPortForwardCreateEditor(), /vault unavailable/);
   console.log("port-forward-host-picker.test.js: passed");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

@@ -34,6 +34,7 @@ const rows = [
   { id: "other-sg", hostId: "other", hostName: "SG", forward: { bindPort: 8080 } },
 ];
 const calls = [];
+const createCalls = [];
 const context = {
   document: { createElement: element },
   portForwardList: element("div"),
@@ -43,6 +44,8 @@ const context = {
   svgIcon: (svg) => svg,
   fuzzyMatchSelectOption: () => false,
   openConfirmDialog: async () => true,
+  openPortForwardCreateEditor: async (target) => { createCalls.push(target); },
+  alert: () => {},
   invoke: async (command, args) => {
     calls.push({ command, args });
     if (command === "list_port_forward_status") return rows;
@@ -64,6 +67,19 @@ const actions = (card) => card.children[0].children[1].children;
   assert.deepEqual(groups().map((group) => body(group).children.length), [2, 1, 1]);
   assert.equal(groups()[0].children[0].children[1].textContent, "SG");
   assert.equal(groups()[0].children[0].children[2].textContent, "port_forward.group.summary 2 1");
+  assert.equal(groups()[0].children[0].children[3].tagName, "button");
+  assert.equal(groups()[0].children[0].children[3].title, "port_forward.group.add SG");
+  let prevented = false;
+  let stopped = false;
+  groups()[2].children[0].children[3].listeners.click({
+    preventDefault() { prevented = true; },
+    stopPropagation() { stopped = true; },
+  });
+  assert.equal(prevented, true, "group add button prevents details toggle");
+  assert.equal(stopped, true, "group add button stops event propagation");
+  assert.equal(createCalls.length, 1);
+  assert.equal(createCalls[0].hostId, "other", "group add targets that exact host ID");
+  assert.equal(createCalls[0].hostName, "SG");
   assert.equal(context.portForwardEmpty.hidden, true);
 
   groups()[0].open = true;
