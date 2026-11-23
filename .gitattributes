@@ -1,0 +1,30 @@
+# Normalize all text files to LF across platforms to prevent Windows CRLF issues
+* text=auto eol=lf
+
+# POSIX scripts (including remote SSH helper scripts bundled in Android raw resources) must stay LF
+*.sh text eol=lf
+*.bash text eol=lf
+*.zsh text eol=lf
+*.py text eol=lf
+
+# Windows batch scripts require CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.bmp binary
+*.ico binary
+*.icns binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.eot binary
+*.jar binary
+*.keystore binary
+*.jks binary

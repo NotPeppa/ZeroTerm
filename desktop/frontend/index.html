@@ -1752,9 +1752,12 @@ abcdefgHIJKLMNOPQRSTUVWXYZ
         <div class="dialog file-editor-dialog">
           <h3 id="file-editor-title">Edit Remote File</h3>
           <p id="file-editor-path" class="tiny muted"></p>
-          <p id="file-editor-hint" class="tiny muted">
-            Supports common UTF-8 text files. Press Ctrl/Cmd + S to save.
-          </p>
+          <div class="file-editor-meta">
+            <p id="file-editor-hint" class="tiny muted">
+              Supports common UTF-8 text files. Press Ctrl/Cmd + S to save.
+            </p>
+            <button id="file-editor-eol" class="file-editor-eol-btn" type="button" hidden>LF</button>
+          </div>
           <div class="file-editor-body">
             <div id="file-editor-tools-inline" class="file-editor-findbar" hidden>
               <button id="file-editor-findbar-expand" class="file-editor-findbar-expand" type="button"

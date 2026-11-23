@@ -881,6 +881,11 @@ const I18N = {
     "editor.hint.replaced_one": "Replaced 1 occurrence.",
     "editor.hint.replaced_many": "Replaced {count} occurrence(s).",
     "editor.hint.utf8_info": "UTF-8 text · {lines} lines · Ctrl/Cmd + S to save",
+    "editor.eol.lf_title": "Line endings: LF (\\n). Click to switch to CRLF (\\r\\n).",
+    "editor.eol.crlf_title": "Line endings: CRLF (\\r\\n). Click to switch to LF (\\n).",
+    "editor.eol.crlf_warn_title": "Windows CRLF (\\r\\n) detected — may break Linux Bash scripts. Click to convert to LF (\\n).",
+    "editor.eol.readonly_title": "Line endings: {eol} (read-only)",
+    "editor.hint.eol_switched": "Switched line endings to {eol}. Press Ctrl/Cmd + S to save.",
     "editor.find.placeholder": "Search...",
     "editor.replace.placeholder": "Replace...",
     "editor.match_case": "Match case",
@@ -1987,6 +1992,11 @@ const I18N = {
     "editor.hint.replaced_one": "已替换 1 处。",
     "editor.hint.replaced_many": "已替换 {count} 处。",
     "editor.hint.utf8_info": "UTF-8 文本 · {lines} 行 · Ctrl/Cmd + S 保存",
+    "editor.eol.lf_title": "当前换行符：LF (\\n)，点击切换为 CRLF (\\r\\n)",
+    "editor.eol.crlf_title": "当前换行符：CRLF (\\r\\n)，点击切换为 LF (\\n)",
+    "editor.eol.crlf_warn_title": "检测到 Windows CRLF (\\r\\n)，可能导致 Linux Bash 脚本报错，点击转换为 LF (\\n)",
+    "editor.eol.readonly_title": "当前换行符：{eol}（只读）",
+    "editor.hint.eol_switched": "已切换换行符为 {eol}，按 Ctrl/Cmd + S 保存。",
     "editor.find.placeholder": "查找...",
     "editor.replace.placeholder": "替换...",
     "editor.match_case": "区分大小写",
@@ -14053,6 +14063,7 @@ function applyI18n() {
     setText("file-editor-title", fileEditorState.dirty ? "editor.title.dirty" : "editor.title");
     if (fileEditorState.open) {
       fileEditorHint.textContent = fileEditorTextInfo(fileEditorGetValue());
+      updateFileEditorEolUi();
     }
   }
 
@@ -18876,6 +18887,7 @@ const fileEditorOverlay = document.getElementById("file-editor-overlay");
 const fileEditorTitle = document.getElementById("file-editor-title");
 const fileEditorPath = document.getElementById("file-editor-path");
 const fileEditorHint = document.getElementById("file-editor-hint");
+const fileEditorEolButton = document.getElementById("file-editor-eol");
 const fileEditorFindInput = document.getElementById("file-editor-find");
 const fileEditorReplaceInput = document.getElementById("file-editor-replace");
 const fileEditorToolsInline = document.getElementById("file-editor-tools-inline");
@@ -19102,9 +19114,11 @@ let fileEditorAce = null;
 const fileEditorState = {
   open: false,
   paneKey: null,
+  isRemote: true,
   path: "",
   originalContent: "",
   encoding: "UTF-8",
+  eolMode: "unix",
   dirty: false,
   saving: false,
 };
@@ -21147,6 +21161,62 @@ async function editEntryPermissions(pane, entry) {
   }
 }
 
+const POSIX_LINE_ENDING_BASENAMES = new Set([
+  "dockerfile", "makefile", ".env", ".gitignore", ".gitattributes",
+  ".bashrc", ".zshrc", ".profile", "nginx.conf", "sshd_config",
+  "authorized_keys", "known_hosts",
+]);
+
+const POSIX_LINE_ENDING_EXTS = new Set([
+  "sh", "bash", "zsh", "fish", "service", "conf", "cnf",
+]);
+
+function isPosixLineEndingPreferred(path, content = "") {
+  const leaf = basename(path || "").toLowerCase();
+  if (leaf) {
+    if (POSIX_LINE_ENDING_BASENAMES.has(leaf) || leaf.startsWith(".env.")) {
+      return true;
+    }
+    const idx = leaf.lastIndexOf(".");
+    if (idx > 0 && idx < leaf.length - 1) {
+      const ext = leaf.slice(idx + 1);
+      if (POSIX_LINE_ENDING_EXTS.has(ext)) return true;
+    }
+  }
+  const head = String(content || "").slice(0, 128);
+  return head.startsWith("#!/");
+}
+
+function detectEditorEolMode(content, { isRemote = true, isWindowsHost = isWindowsPlatform, path = "" } = {}) {
+  const text = String(content || "");
+  const crlfCount = (text.match(/\r\n/g) || []).length;
+  const lfCount = (text.replace(/\r\n/g, "").match(/\n/g) || []).length;
+  if (crlfCount > 0 || lfCount > 0) {
+    return crlfCount > lfCount ? "windows" : "unix";
+  }
+  if (/\r/.test(text)) {
+    return "unix";
+  }
+  if (isRemote || isPosixLineEndingPreferred(path, text)) {
+    return "unix";
+  }
+  return isWindowsHost ? "windows" : "unix";
+}
+
+function shouldWarnEditorCrlf(eolMode, { isRemote = true, path = "", content = "" } = {}) {
+  if (eolMode !== "windows") return false;
+  return Boolean(isRemote || isPosixLineEndingPreferred(path, content));
+}
+
+function fileEditorEolLabel(eolMode) {
+  return eolMode === "windows" ? "CRLF" : "LF";
+}
+
+function normalizeEditorContentForEol(content, eolMode) {
+  const lfText = String(content || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  return eolMode === "windows" ? lfText.replace(/\n/g, "\r\n") : lfText;
+}
+
 function ensureFileEditorAce() {
   if (fileEditorAce) return true;
   if (!window.ace) {
@@ -21161,6 +21231,7 @@ function ensureFileEditorAce() {
   fileEditorAce = window.ace.edit("file-editor-content");
   fileEditorAce.setTheme("ace/theme/tomorrow_night_bright");
   fileEditorAce.session.setMode("ace/mode/text");
+  fileEditorAce.session.setNewLineMode(fileEditorState.eolMode || "unix");
   fileEditorAce.session.setUseWrapMode(false);
   fileEditorAce.setShowPrintMargin(false);
   fileEditorAce.setOptions({
@@ -21175,6 +21246,7 @@ function ensureFileEditorAce() {
   fileEditorAce.session.on("change", () => {
     if (!fileEditorState.open) return;
     setFileEditorDirty(fileEditorGetValue() !== fileEditorState.originalContent);
+    updateFileEditorEolUi();
   });
 
   fileEditorAce.commands.addCommand({
@@ -21212,7 +21284,57 @@ function fileEditorSetValue(content) {
 
 function fileEditorGetValue() {
   if (!ensureFileEditorAce()) return "";
-  return fileEditorAce.getValue();
+  return normalizeEditorContentForEol(fileEditorAce.getValue(), fileEditorState.eolMode);
+}
+
+function setFileEditorEolMode(eolMode) {
+  const normalized = eolMode === "windows" ? "windows" : "unix";
+  fileEditorState.eolMode = normalized;
+  if (fileEditorAce) {
+    fileEditorAce.session.setNewLineMode(normalized);
+  }
+  updateFileEditorEolUi();
+}
+
+function updateFileEditorEolUi() {
+  if (!fileEditorEolButton) return;
+  if (!fileEditorState.open) {
+    fileEditorEolButton.hidden = true;
+    fileEditorEolButton.classList.remove("is-warning");
+    return;
+  }
+  const eol = fileEditorEolLabel(fileEditorState.eolMode);
+  const editable = fileEditorState.encoding === "UTF-8" && !fileEditorState.saving;
+  const warn = shouldWarnEditorCrlf(fileEditorState.eolMode, {
+    isRemote: fileEditorState.isRemote,
+    path: fileEditorState.path,
+    content: fileEditorAce ? fileEditorAce.getValue() : fileEditorState.originalContent,
+  });
+  fileEditorEolButton.hidden = false;
+  fileEditorEolButton.disabled = !editable;
+  fileEditorEolButton.textContent = warn ? `⚠ ${eol}` : eol;
+  fileEditorEolButton.classList.toggle("is-warning", warn);
+  const title = fileEditorState.encoding !== "UTF-8"
+    ? t("editor.eol.readonly_title", { eol })
+    : warn
+      ? t("editor.eol.crlf_warn_title")
+      : fileEditorState.eolMode === "windows"
+        ? t("editor.eol.crlf_title")
+        : t("editor.eol.lf_title");
+  fileEditorEolButton.title = title;
+  fileEditorEolButton.setAttribute("aria-label", title);
+}
+
+function toggleFileEditorEol() {
+  if (!fileEditorState.open || fileEditorState.saving || fileEditorState.encoding !== "UTF-8") return;
+  const nextMode = fileEditorState.eolMode === "windows" ? "unix" : "windows";
+  setFileEditorEolMode(nextMode);
+  const currentContent = fileEditorGetValue();
+  setFileEditorDirty(currentContent !== fileEditorState.originalContent);
+  fileEditorHint.textContent = t("editor.hint.eol_switched", {
+    eol: fileEditorEolLabel(nextMode),
+  });
+  fileEditorFocus();
 }
 
 function fileEditorSetReadOnly(readOnly) {
@@ -21368,13 +21490,16 @@ function replaceInEditor({ all = false } = {}) {
 function resetFileEditorState() {
   fileEditorState.open = false;
   fileEditorState.paneKey = null;
+  fileEditorState.isRemote = true;
   fileEditorState.path = "";
   fileEditorState.originalContent = "";
   fileEditorState.encoding = "UTF-8";
+  fileEditorState.eolMode = "unix";
   fileEditorState.dirty = false;
   fileEditorState.saving = false;
   if (fileEditorAce) {
     fileEditorSetValue("");
+    fileEditorAce.session.setNewLineMode("unix");
     fileEditorSetReadOnly(false);
     fileEditorAce.session.setMode("ace/mode/text");
     fileEditorAce.clearSelection();
@@ -21392,14 +21517,16 @@ function resetFileEditorState() {
   fileEditorTitle.textContent = t("editor.title");
   fileEditorSaveButton.disabled = false;
   fileEditorCancelButton.disabled = false;
+  updateFileEditorEolUi();
   setFileEditorError("");
 }
 
 function fileEditorTextInfo(content) {
   const encoding = fileEditorState.encoding || "UTF-8";
   const lines = String(content || "").split(/\r?\n/).length;
+  const eol = fileEditorEolLabel(fileEditorState.eolMode);
   const suffix = encoding === "UTF-8" ? "Ctrl/Cmd + S to save" : "read-only";
-  return `${encoding} text · ${lines} lines · ${suffix}`;
+  return `${encoding} text · ${lines} lines · ${eol} · ${suffix}`;
 }
 
 async function openFileEditorAtPath(pane, path) {
@@ -21424,8 +21551,9 @@ async function openFileEditorAtPath(pane, path) {
   refreshFileEditorLayout();
 
   try {
-    const readCommand = isLocalPane(pane) ? "local_read_text" : "sftp_read_text";
-    const readArgs = isLocalPane(pane)
+    const isRemote = !isLocalPane(pane);
+    const readCommand = isRemote ? "sftp_read_text" : "local_read_text";
+    const readArgs = !isRemote
       ? {
         path,
         maxBytes,
@@ -21436,23 +21564,33 @@ async function openFileEditorAtPath(pane, path) {
         maxBytes,
       };
     const doc = await invoke(readCommand, readArgs);
+    const eolMode = detectEditorEolMode(doc.content, {
+      isRemote,
+      isWindowsHost: isWindowsPlatform,
+      path: doc.path,
+    });
     fileEditorState.open = true;
     fileEditorState.paneKey = pane.key;
+    fileEditorState.isRemote = isRemote;
     fileEditorState.path = doc.path;
     fileEditorState.originalContent = doc.content;
     fileEditorState.encoding = String(doc.encoding || "UTF-8");
+    fileEditorState.eolMode = eolMode;
     fileEditorSetValue(doc.content);
+    setFileEditorEolMode(eolMode);
     fileEditorSetModeByPath(doc.path);
     fileEditorPath.textContent = `${doc.path} · ${formatSize(doc.size)}`;
     fileEditorHint.textContent = fileEditorTextInfo(doc.content);
     const editable = fileEditorState.encoding === "UTF-8";
     fileEditorSetReadOnly(!editable);
     fileEditorSaveButton.disabled = !editable;
-    setFileEditorDirty(false);
+    setFileEditorDirty(editable && fileEditorGetValue() !== doc.content);
+    updateFileEditorEolUi();
     refreshFileEditorLayout();
     fileEditorFocus();
   } catch (e) {
     fileEditorState.open = false;
+    updateFileEditorEolUi();
     setFileEditorError(t("editor.error.open_failed", { error: e }));
     fileEditorHint.textContent = t("editor.hint.unavailable");
     fileEditorTitle.textContent = t("editor.title");
@@ -21488,6 +21626,7 @@ async function saveRemoteEditor() {
   fileEditorState.saving = true;
   fileEditorSaveButton.disabled = true;
   fileEditorCancelButton.disabled = true;
+  updateFileEditorEolUi();
   setFileEditorError("");
 
   try {
@@ -21512,8 +21651,9 @@ async function saveRemoteEditor() {
     setFileEditorError(t("editor.error.save_failed", { error: e }));
   } finally {
     fileEditorState.saving = false;
-    fileEditorSaveButton.disabled = !fileEditorState.open;
+    fileEditorSaveButton.disabled = !fileEditorState.open || fileEditorState.encoding !== "UTF-8";
     fileEditorCancelButton.disabled = false;
+    updateFileEditorEolUi();
   }
 }
 
@@ -22197,6 +22337,7 @@ syncAiTerminalControlUi();
 
 fileEditorCancelButton.addEventListener("click", () => closeRemoteEditor());
 fileEditorSaveButton.addEventListener("click", () => saveRemoteEditor());
+fileEditorEolButton?.addEventListener("click", () => toggleFileEditorEol());
 // NOTE: clicking the backdrop intentionally does NOT close the editor —
 // it's far too easy to nuke unsaved edits with a stray click. Use the
 // Close button or Esc instead.

@@ -11662,6 +11662,58 @@ body[data-app-theme="light"] .theme-edit-preview-title {
   margin-bottom: 2px;
 }
 
+.file-editor-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.file-editor-meta #file-editor-hint {
+  margin: 0;
+  min-width: 0;
+}
+
+.file-editor-eol-btn {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  min-height: 22px;
+  border-radius: 6px;
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.file-editor-eol-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: var(--text);
+}
+
+.file-editor-eol-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.file-editor-eol-btn.is-warning {
+  border-color: rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.14);
+  color: #fbbf24;
+}
+
+.file-editor-eol-btn.is-warning:hover:not(:disabled) {
+  border-color: rgba(245, 158, 11, 0.68);
+  background: rgba(245, 158, 11, 0.22);
+  color: #fde68a;
+}
+
 /* Anchors the floating findbar over the editor, mirroring .pane-findbar. */
 .file-editor-body {
   position: relative;
@@ -14203,6 +14255,30 @@ body[data-app-theme="light"] .sftp-icon-unknown {
 }
 
 /* 13. Inline File Editor Ace Theme Overrides for Light Theme */
+body[data-app-theme="light"] .file-editor-eol-btn {
+  border-color: rgba(148, 163, 184, 0.45);
+  background: rgba(15, 23, 42, 0.04);
+  color: #475569;
+}
+
+body[data-app-theme="light"] .file-editor-eol-btn:hover:not(:disabled) {
+  border-color: rgba(100, 116, 139, 0.6);
+  background: rgba(15, 23, 42, 0.08);
+  color: #0f172a;
+}
+
+body[data-app-theme="light"] .file-editor-eol-btn.is-warning {
+  border-color: rgba(217, 119, 6, 0.42);
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+}
+
+body[data-app-theme="light"] .file-editor-eol-btn.is-warning:hover:not(:disabled) {
+  border-color: rgba(217, 119, 6, 0.62);
+  background: rgba(245, 158, 11, 0.2);
+  color: #92400e;
+}
+
 body[data-app-theme="light"] #file-editor-content {
   background: #ffffff !important;
   border-color: rgba(203, 213, 225, 0.8) !important;
